@@ -1,0 +1,3 @@
+# Lattice runtime artifacts
+.lattice/embeddings/
+.lattice/scip/

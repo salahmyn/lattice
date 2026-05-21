@@ -1,0 +1,23 @@
+id: wallet
+version: 2
+status: production
+purpose: |
+  Tracks the stored-value balance of a customer account and the credits and
+  debits that move it.
+owners:
+  business: payments
+  engineering: wallet-eng
+value:
+  customer: Customers can hold a balance and spend it instantly.
+capabilities:
+  - id: wallet_credit
+    summary: Add funds to a customer's wallet balance.
+    rules:
+      - A credit amount must be positive.
+invariants:
+  - id: INV-1
+    statement: A wallet balance is never negative.
+surface:
+  - type: event_emit
+    name: wallet.credited
+    semantics: Emitted after a wallet balance is increased.

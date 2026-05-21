@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RefundEvent",
+  "description": "Published when a refund is enqueued for asynchronous processing.",
+  "type": "object",
+  "required": ["order_id", "amount", "currency", "enqueued_at"],
+  "properties": {
+    "order_id": { "type": "string" },
+    "amount": { "type": "integer", "description": "Refund amount in minor units." },
+    "currency": { "type": "string", "minLength": 3, "maxLength": 3 },
+    "enqueued_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

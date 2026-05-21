@@ -1,0 +1,43 @@
+# Developer View
+
+_Generated from lattice.json — schema {{.SchemaVersion}}._
+
+## Feature catalog
+
+{{range .Features}}### {{.ID}}  `{{.Status}}`  v{{.Version}}
+
+{{.Purpose}}
+
+- Owners: business _{{.Owners.Business}}_, engineering _{{.Owners.Engineering}}_
+{{- if .Capabilities}}
+- Capabilities:
+{{- range .Capabilities}}
+  - `{{.ID}}` — {{.Summary}}
+{{- end}}
+{{- end}}
+{{- if .Invariants}}
+- Invariants:
+{{- range .Invariants}}
+  - `{{.ID}}` — {{.Statement}}
+{{- end}}
+{{- end}}
+{{- if .Implementations}}
+- Implemented by:
+{{- range .Implementations}}
+  - `{{.Symbol}}` ({{.Language}}) — {{.File}}:{{.Line}}
+{{- end}}
+{{- end}}
+{{- if .Children}}
+- Sub-features: {{range .Children}}`{{.}}` {{end}}
+{{- end}}
+
+{{end}}
+## Symbol index
+
+{{range .Symbols}}- `{{.FQN}}` → {{if .Feature}}{{.Feature}}{{else}}(unassigned){{end}} — {{.File}}:{{.Line}}
+{{end}}
+
+## Orphan and gap report
+
+{{$gaps := 0}}{{range .Violations}}{{if or (eq .Code "ORPHAN_ANNOTATION_FEATURE") (eq .Code "UNVERIFIED_INVARIANT") (eq .Code "UNENFORCED_INVARIANT") (eq .Code "UNIMPLEMENTED_CAPABILITY")}}- **{{.Code}}** {{.Message}}{{if .Location}} ({{.Location.File}}){{end}}
+{{$gaps = 1}}{{end}}{{end}}{{if eq $gaps 0}}_No orphans or gaps._{{end}}

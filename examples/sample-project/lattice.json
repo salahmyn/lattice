@@ -1,0 +1,661 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-05-21T20:19:55Z",
+  "generated_from_commit": "",
+  "features": [
+    {
+      "ID": "billing",
+      "Version": 1,
+      "Status": "production",
+      "Purpose": "Generates invoices for completed orders and keeps them consistent with the\namounts actually charged.\n",
+      "Owners": {
+        "Business": "finance",
+        "Engineering": "billing-eng",
+        "OnCall": ""
+      },
+      "Value": null,
+      "Capabilities": [
+        {
+          "ID": "invoice_generation",
+          "Summary": "Produce an invoice for a completed order.",
+          "Rules": [
+            "Every line item on an invoice corresponds to a charged amount."
+          ],
+          "CounterExamples": null
+        }
+      ],
+      "Invariants": [
+        {
+          "ID": "INV-1",
+          "Statement": "An invoice total equals the sum of its line items.",
+          "VerifiableBy": null
+        }
+      ],
+      "DependsOn": null,
+      "ComposesInvariantsOf": null,
+      "Surface": null,
+      "Decisions": null,
+      "Migration": null,
+      "Roles": null,
+      "StructuralChecks": null,
+      "Implementations": [
+        {
+          "Symbol": "App\\Billing\\Invoice",
+          "File": "src/billing/Invoice.php",
+          "Line": 7,
+          "Language": "php",
+          "ViaCapabilities": [
+            "invoice_generation"
+          ]
+        },
+        {
+          "Symbol": "App\\Billing\\Invoice::total",
+          "File": "src/billing/Invoice.php",
+          "Line": 15,
+          "Language": "php",
+          "ViaCapabilities": [
+            "invoice_generation"
+          ]
+        }
+      ],
+      "Verifications": [
+        {
+          "Symbol": "App\\Tests\\InvoiceTest::testTotalEqualsSumOfLineItems",
+          "File": "tests/InvoiceTest.php",
+          "Line": 10,
+          "Language": "php",
+          "Verifies": [
+            "billing:INV-1"
+          ]
+        }
+      ],
+      "MutationScores": null,
+      "Children": null,
+      "SourcePath": "features/billing.yaml"
+    },
+    {
+      "ID": "checkout",
+      "Version": 1,
+      "Status": "production",
+      "Purpose": "The checkout domain: everything that happens between a customer deciding to\nbuy and the order being settled or reversed.\n",
+      "Owners": {
+        "Business": "payments",
+        "Engineering": "checkout-eng",
+        "OnCall": ""
+      },
+      "Value": null,
+      "Capabilities": null,
+      "Invariants": null,
+      "DependsOn": null,
+      "ComposesInvariantsOf": null,
+      "Surface": null,
+      "Decisions": null,
+      "Migration": null,
+      "Roles": null,
+      "StructuralChecks": null,
+      "Implementations": null,
+      "Verifications": null,
+      "MutationScores": null,
+      "Children": [
+        "checkout.refund"
+      ],
+      "SourcePath": "features/checkout.yaml"
+    },
+    {
+      "ID": "checkout.refund",
+      "Version": 3,
+      "Status": "production",
+      "Purpose": "Lets customers refund a completed order back to their original payment\nmethod without contacting support.\n",
+      "Owners": {
+        "Business": "payments",
+        "Engineering": "checkout-eng",
+        "OnCall": "checkout-oncall"
+      },
+      "Value": {
+        "Customer": "Customers get their money back quickly and without friction.",
+        "Business": "Fewer support tickets and higher post-purchase trust."
+      },
+      "Capabilities": [
+        {
+          "ID": "self_service_refund",
+          "Summary": "A customer can refund their own completed order.",
+          "Rules": [
+            "The refund amount must never exceed the original charge.",
+            "Only completed orders are refundable."
+          ],
+          "CounterExamples": [
+            "Refunding an order that was never charged."
+          ]
+        }
+      ],
+      "Invariants": [
+        {
+          "ID": "INV-1",
+          "Statement": "A refund never exceeds the original amount charged for the order.",
+          "VerifiableBy": [
+            "test",
+            "structural"
+          ]
+        },
+        {
+          "ID": "INV-2",
+          "Statement": "An order can be refunded at most once.",
+          "VerifiableBy": null
+        }
+      ],
+      "DependsOn": [
+        "wallet"
+      ],
+      "ComposesInvariantsOf": null,
+      "Surface": null,
+      "Decisions": [
+        {
+          "ADR": "ADR-0001",
+          "Summary": "Refunds are processed asynchronously through a queue."
+        }
+      ],
+      "Migration": null,
+      "Roles": null,
+      "StructuralChecks": [
+        {
+          "ID": "no-raw-money-types",
+          "Command": [
+            "python3",
+            "tools/check_money.py"
+          ],
+          "VerifiesInvariants": [
+            "INV-1"
+          ],
+          "Scope": {
+            "Modules": [
+              "src/checkout"
+            ],
+            "Files": null
+          },
+          "Config": null
+        }
+      ],
+      "Implementations": [
+        {
+          "Symbol": "src.checkout.refund.mark_refunded",
+          "File": "src/checkout/refund.py",
+          "Line": 15,
+          "Language": "python",
+          "ViaCapabilities": null
+        },
+        {
+          "Symbol": "src.checkout.refund.validate_amount",
+          "File": "src/checkout/refund.py",
+          "Line": 8,
+          "Language": "python",
+          "ViaCapabilities": [
+            "self_service_refund"
+          ]
+        }
+      ],
+      "Verifications": [
+        {
+          "Symbol": "tests.test_refund.test_refund_is_not_repeatable",
+          "File": "tests/test_refund.py",
+          "Line": 15,
+          "Language": "python",
+          "Verifies": [
+            "checkout.refund:INV-2"
+          ]
+        },
+        {
+          "Symbol": "tests.test_refund.test_refund_never_exceeds_charge",
+          "File": "tests/test_refund.py",
+          "Line": 9,
+          "Language": "python",
+          "Verifies": [
+            "checkout.refund:INV-1"
+          ]
+        }
+      ],
+      "MutationScores": null,
+      "Children": null,
+      "SourcePath": "features/checkout/refund.yaml"
+    },
+    {
+      "ID": "wallet",
+      "Version": 2,
+      "Status": "production",
+      "Purpose": "Tracks the stored-value balance of a customer account and the credits and\ndebits that move it.\n",
+      "Owners": {
+        "Business": "payments",
+        "Engineering": "wallet-eng",
+        "OnCall": ""
+      },
+      "Value": {
+        "Customer": "Customers can hold a balance and spend it instantly.",
+        "Business": ""
+      },
+      "Capabilities": [
+        {
+          "ID": "wallet_credit",
+          "Summary": "Add funds to a customer's wallet balance.",
+          "Rules": [
+            "A credit amount must be positive."
+          ],
+          "CounterExamples": null
+        }
+      ],
+      "Invariants": [
+        {
+          "ID": "INV-1",
+          "Statement": "A wallet balance is never negative.",
+          "VerifiableBy": null
+        }
+      ],
+      "DependsOn": null,
+      "ComposesInvariantsOf": null,
+      "Surface": [
+        {
+          "Type": "event_emit",
+          "Method": "",
+          "Path": "",
+          "RequestSchema": "",
+          "ResponseSchema": "",
+          "Behavior": null,
+          "BreakingChangeFrom": "",
+          "Name": "wallet.credited",
+          "PayloadSchema": "",
+          "Semantics": "Emitted after a wallet balance is increased.",
+          "Auth": "",
+          "Schedule": "",
+          "Job": "",
+          "Description": ""
+        }
+      ],
+      "Decisions": null,
+      "Migration": null,
+      "Roles": null,
+      "StructuralChecks": null,
+      "Implementations": [
+        {
+          "Symbol": "src.wallet.credit.creditWallet",
+          "File": "src/wallet/credit.ts",
+          "Line": 10,
+          "Language": "typescript",
+          "ViaCapabilities": [
+            "wallet_credit"
+          ]
+        }
+      ],
+      "Verifications": [
+        {
+          "Symbol": "tests.credit.test.testWalletBalanceNeverNegative",
+          "File": "tests/credit.test.ts",
+          "Line": 6,
+          "Language": "typescript",
+          "Verifies": [
+            "wallet:INV-1"
+          ]
+        }
+      ],
+      "MutationScores": null,
+      "Children": null,
+      "SourcePath": "features/wallet.yaml"
+    }
+  ],
+  "symbols": [
+    {
+      "name": "Invoice",
+      "fqn": "App\\Billing\\Invoice",
+      "kind": "class",
+      "file": "src/billing/Invoice.php",
+      "line": 7,
+      "language": "php",
+      "is_test": false,
+      "feature": "billing",
+      "capabilities": [
+        "invoice_generation"
+      ]
+    },
+    {
+      "name": "total",
+      "fqn": "App\\Billing\\Invoice::total",
+      "kind": "method",
+      "file": "src/billing/Invoice.php",
+      "line": 15,
+      "language": "php",
+      "enclosing_fqn": "App\\Billing\\Invoice",
+      "is_test": false,
+      "feature": "billing",
+      "capabilities": [
+        "invoice_generation"
+      ],
+      "enforces_invariants": [
+        "INV-1"
+      ]
+    },
+    {
+      "name": "mark_refunded",
+      "fqn": "src.checkout.refund.mark_refunded",
+      "kind": "function",
+      "file": "src/checkout/refund.py",
+      "line": 15,
+      "language": "python",
+      "is_test": false,
+      "feature": "checkout.refund",
+      "enforces_invariants": [
+        "INV-2"
+      ]
+    },
+    {
+      "name": "validate_amount",
+      "fqn": "src.checkout.refund.validate_amount",
+      "kind": "function",
+      "file": "src/checkout/refund.py",
+      "line": 8,
+      "language": "python",
+      "is_test": false,
+      "feature": "checkout.refund",
+      "capabilities": [
+        "self_service_refund"
+      ],
+      "enforces_invariants": [
+        "INV-1"
+      ]
+    },
+    {
+      "name": "creditWallet",
+      "fqn": "src.wallet.credit.creditWallet",
+      "kind": "function",
+      "file": "src/wallet/credit.ts",
+      "line": 10,
+      "language": "typescript",
+      "is_test": false,
+      "feature": "wallet",
+      "capabilities": [
+        "wallet_credit"
+      ],
+      "enforces_invariants": [
+        "INV-1"
+      ]
+    },
+    {
+      "name": "main",
+      "fqn": "tools.check_money.main",
+      "kind": "function",
+      "file": "tools/check_money.py",
+      "line": 13,
+      "language": "python",
+      "is_test": false
+    }
+  ],
+  "tests": [
+    {
+      "name": "InvoiceTest",
+      "fqn": "App\\Tests\\InvoiceTest",
+      "kind": "class",
+      "file": "tests/InvoiceTest.php",
+      "line": 8,
+      "language": "php",
+      "is_test": true
+    },
+    {
+      "name": "testTotalEqualsSumOfLineItems",
+      "fqn": "App\\Tests\\InvoiceTest::testTotalEqualsSumOfLineItems",
+      "kind": "method",
+      "file": "tests/InvoiceTest.php",
+      "line": 10,
+      "language": "php",
+      "enclosing_fqn": "App\\Tests\\InvoiceTest",
+      "is_test": true,
+      "verifies": [
+        "billing:INV-1"
+      ]
+    },
+    {
+      "name": "testWalletBalanceNeverNegative",
+      "fqn": "tests.credit.test.testWalletBalanceNeverNegative",
+      "kind": "function",
+      "file": "tests/credit.test.ts",
+      "line": 6,
+      "language": "typescript",
+      "is_test": true,
+      "verifies": [
+        "wallet:INV-1"
+      ]
+    },
+    {
+      "name": "test_refund_is_not_repeatable",
+      "fqn": "tests.test_refund.test_refund_is_not_repeatable",
+      "kind": "function",
+      "file": "tests/test_refund.py",
+      "line": 15,
+      "language": "python",
+      "is_test": true,
+      "verifies": [
+        "checkout.refund:INV-2"
+      ]
+    },
+    {
+      "name": "test_refund_never_exceeds_charge",
+      "fqn": "tests.test_refund.test_refund_never_exceeds_charge",
+      "kind": "function",
+      "file": "tests/test_refund.py",
+      "line": 9,
+      "language": "python",
+      "is_test": true,
+      "verifies": [
+        "checkout.refund:INV-1"
+      ]
+    }
+  ],
+  "modules": [
+    {
+      "file": "src/billing/Invoice.php",
+      "language": "php",
+      "symbol_fqns": [
+        "App\\Billing\\Invoice",
+        "App\\Billing\\Invoice::total"
+      ]
+    },
+    {
+      "file": "src/checkout/refund.py",
+      "language": "python",
+      "symbol_fqns": [
+        "src.checkout.refund.mark_refunded",
+        "src.checkout.refund.validate_amount"
+      ]
+    },
+    {
+      "file": "src/wallet/credit.ts",
+      "language": "typescript",
+      "feature": "wallet",
+      "symbol_fqns": [
+        "src.wallet.credit.creditWallet"
+      ]
+    },
+    {
+      "file": "tests/InvoiceTest.php",
+      "language": "php",
+      "symbol_fqns": [
+        "App\\Tests\\InvoiceTest",
+        "App\\Tests\\InvoiceTest::testTotalEqualsSumOfLineItems"
+      ]
+    },
+    {
+      "file": "tests/credit.test.ts",
+      "language": "typescript",
+      "symbol_fqns": [
+        "tests.credit.test.testWalletBalanceNeverNegative"
+      ]
+    },
+    {
+      "file": "tests/test_refund.py",
+      "language": "python",
+      "symbol_fqns": [
+        "tests.test_refund.test_refund_is_not_repeatable",
+        "tests.test_refund.test_refund_never_exceeds_charge"
+      ]
+    },
+    {
+      "file": "tools/check_money.py",
+      "language": "python",
+      "symbol_fqns": [
+        "tools.check_money.main"
+      ]
+    }
+  ],
+  "initiatives": [
+    {
+      "ID": "refund-async-revamp",
+      "Type": "initiative",
+      "Status": "in_progress",
+      "Created": "2026-01-15T00:00:00Z",
+      "TargetCompletion": "2026-03-01",
+      "ActualCompletion": "",
+      "ProposesChangesTo": [
+        {
+          "Manifest": "checkout.refund",
+          "FromVersion": 2,
+          "ToVersion": 3
+        }
+      ],
+      "Motivation": "Refunds are processed synchronously inside the checkout request, which makes\nthe request slow and couples refund success to request latency. This\ninitiative moves refund processing onto an asynchronous queue.\n",
+      "SuccessCriteria": [
+        {
+          "ID": "SC-1",
+          "Statement": "Refund requests return without waiting for settlement.",
+          "Measure": "p95 refund-request latency",
+          "Target": "under 200ms",
+          "Actual": ""
+        },
+        {
+          "ID": "SC-2",
+          "Statement": "No refund is lost when the queue is briefly unavailable.",
+          "Measure": "refund delivery rate under induced queue downtime",
+          "Target": "100%",
+          "Actual": ""
+        }
+      ],
+      "Contracts": [
+        {
+          "Path": "schemas/refund-event.v1.json",
+          "Description": "The event payload published when a refund is enqueued.",
+          "LockedAt": "2026-01-20T00:00:00Z"
+        }
+      ],
+      "Streams": [
+        {
+          "ID": "backend",
+          "Owner": "checkout-eng",
+          "Description": "Queue producer, consumer, and idempotency handling."
+        }
+      ],
+      "Migration": null,
+      "SourcePath": "work/initiatives/refund-async-revamp/initiative.yaml"
+    }
+  ],
+  "tasks": [
+    {
+      "ID": "B-01",
+      "Title": "Add the refund-enqueued event producer",
+      "Initiative": "refund-async-revamp",
+      "Stream": "backend",
+      "Status": "done",
+      "StatusSource": "manual",
+      "Owner": "checkout-eng",
+      "Suitability": {
+        "AgentAutonomous": true,
+        "AgentPair": false,
+        "HumanOnly": false
+      },
+      "Produces": [
+        {
+          "Kind": "code",
+          "Description": "A producer that publishes refund-event.v1 messages.",
+          "AnnotationTarget": "checkout.refund"
+        }
+      ],
+      "DependsOn": null,
+      "Unblocks": [
+        "B-02"
+      ],
+      "Verifies": [
+        "checkout.refund:INV-1"
+      ],
+      "Estimate": "2 days",
+      "Links": {
+        "PR": "",
+        "Branch": "",
+        "RelatedDecisions": null
+      },
+      "SourcePath": "work/initiatives/refund-async-revamp/tasks/B-01.yaml"
+    },
+    {
+      "ID": "B-02",
+      "Title": "Make the refund consumer idempotent",
+      "Initiative": "refund-async-revamp",
+      "Stream": "backend",
+      "Status": "in_progress",
+      "StatusSource": "manual",
+      "Owner": "checkout-eng",
+      "Suitability": {
+        "AgentAutonomous": false,
+        "AgentPair": true,
+        "HumanOnly": false
+      },
+      "Produces": [
+        {
+          "Kind": "code",
+          "Description": "A consumer that processes each refund event at most once.",
+          "AnnotationTarget": "checkout.refund"
+        }
+      ],
+      "DependsOn": [
+        {
+          "Task": "B-01",
+          "Contract": ""
+        },
+        {
+          "Task": "",
+          "Contract": "schemas/refund-event.v1.json"
+        }
+      ],
+      "Unblocks": null,
+      "Verifies": [
+        "checkout.refund:INV-2"
+      ],
+      "Estimate": "3 days",
+      "Links": {
+        "PR": "",
+        "Branch": "",
+        "RelatedDecisions": null
+      },
+      "SourcePath": "work/initiatives/refund-async-revamp/tasks/B-02.yaml"
+    }
+  ],
+  "structural_checks": [
+    {
+      "id": "no-raw-money-types",
+      "feature": "checkout.refund",
+      "command": [
+        "python3",
+        "tools/check_money.py"
+      ],
+      "verifies_invariants": [
+        "INV-1"
+      ],
+      "scope": {
+        "Modules": [
+          "src/checkout"
+        ],
+        "Files": null
+      }
+    }
+  ],
+  "code_graph": {
+    "indexed_by": "scip",
+    "language_indexes": {
+      "php": ".lattice/scip/php.scip",
+      "python": ".lattice/scip/python.scip",
+      "typescript": ".lattice/scip/typescript.scip"
+    }
+  },
+  "violations": []
+}

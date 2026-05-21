@@ -1,0 +1,34 @@
+# Lattice configuration. See the design doc, section 30 and 23.
+
+agentic:
+  llm:
+    enabled: false           # set true to enable LLM-backed capabilities
+    provider: anthropic      # anthropic | openai | ollama
+    model: claude-sonnet-4-7
+    api_key_env: ANTHROPIC_API_KEY
+    base_url: ""
+    timeout: 30s
+    max_tokens: 2000
+
+mutation_testing:
+  enabled: false
+  scope: invariant_enforcers
+  thresholds:
+    default: 80
+    overrides: {}
+  timeout_per_mutant: 60s
+
+analysis:
+  similarity_warn_threshold: 0.75
+  similarity_duplicate_threshold: 0.9
+
+subprocess:
+  default_timeout: 60s
+
+scip:
+  commit_indexes: false
+
+decomposition:
+  max_invariants: 20
+  max_capabilities: 15
+  max_surfaces: 8

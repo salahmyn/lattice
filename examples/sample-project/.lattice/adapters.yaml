@@ -1,0 +1,8 @@
+# Language adapter activation.
+adapters:
+  python:
+    enabled: true
+  typescript:
+    enabled: true
+  php:
+    enabled: true

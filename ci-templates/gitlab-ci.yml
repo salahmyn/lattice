@@ -1,0 +1,30 @@
+# Lattice CI template for GitLab CI.
+#
+# Include this in your .gitlab-ci.yml. It builds the lattice binary, refreshes
+# the knowledge graph, and fails the pipeline on any validation error.
+
+stages:
+  - lattice
+
+lattice:
+  stage: lattice
+  image: golang:1.23
+  script:
+    - go build -o /usr/local/bin/lattice ./cmd/lattice
+    - lattice doctor
+    # Optional: install SCIP indexers for blast-radius analysis.
+    # - pip install scip-python
+    # - npm install -g @sourcegraph/scip-typescript
+    - lattice extract --with-code-graph
+    - lattice validate
+    - lattice structural-checks run
+    # Optional: fast mutation testing on changed invariant-enforcing code.
+    # - lattice mutation run --scope changed
+  artifacts:
+    when: always
+    paths:
+      - lattice.json
+    expire_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"

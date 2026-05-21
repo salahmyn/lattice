@@ -1,0 +1,18 @@
+id: B-01
+title: Add the refund-enqueued event producer
+initiative: refund-async-revamp
+stream: backend
+status: done
+status_source: manual
+owner: checkout-eng
+suitability:
+  agent_autonomous: true
+  agent_pair: false
+  human_only: false
+produces:
+  - kind: code
+    description: A producer that publishes refund-event.v1 messages.
+    annotation_target: checkout.refund
+verifies:
+  - checkout.refund:INV-1
+estimate: 2 days

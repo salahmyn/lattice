@@ -1,0 +1,9 @@
+id: checkout
+version: 1
+status: production
+purpose: |
+  The checkout domain: everything that happens between a customer deciding to
+  buy and the order being settled or reversed.
+owners:
+  business: payments
+  engineering: checkout-eng

@@ -1,0 +1,17 @@
+id: billing
+version: 1
+status: production
+purpose: |
+  Generates invoices for completed orders and keeps them consistent with the
+  amounts actually charged.
+owners:
+  business: finance
+  engineering: billing-eng
+capabilities:
+  - id: invoice_generation
+    summary: Produce an invoice for a completed order.
+    rules:
+      - Every line item on an invoice corresponds to a charged amount.
+invariants:
+  - id: INV-1
+    statement: An invoice total equals the sum of its line items.

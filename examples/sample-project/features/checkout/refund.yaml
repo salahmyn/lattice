@@ -1,0 +1,42 @@
+id: checkout.refund
+version: 3
+status: production
+purpose: |
+  Lets customers refund a completed order back to their original payment
+  method without contacting support.
+owners:
+  business: payments
+  engineering: checkout-eng
+  on_call: checkout-oncall
+value:
+  customer: Customers get their money back quickly and without friction.
+  business: Fewer support tickets and higher post-purchase trust.
+capabilities:
+  - id: self_service_refund
+    summary: A customer can refund their own completed order.
+    rules:
+      - The refund amount must never exceed the original charge.
+      - Only completed orders are refundable.
+    counter_examples:
+      - Refunding an order that was never charged.
+invariants:
+  - id: INV-1
+    statement: A refund never exceeds the original amount charged for the order.
+    verifiable_by:
+      - test
+      - structural
+  - id: INV-2
+    statement: An order can be refunded at most once.
+depends_on:
+  - wallet
+decisions:
+  - adr: ADR-0001
+    summary: Refunds are processed asynchronously through a queue.
+structural_checks:
+  - id: no-raw-money-types
+    command: ["python3", "tools/check_money.py"]
+    verifies_invariants:
+      - INV-1
+    scope:
+      modules:
+        - src/checkout

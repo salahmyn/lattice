@@ -1,0 +1,38 @@
+# Product View
+
+_Generated from lattice.json — schema {{.SchemaVersion}}._
+
+## Feature taxonomy
+
+{{range .Features}}- `{{.ID}}` ({{.Status}}) — {{.Purpose}}
+{{end}}
+
+## Capability inventory
+
+{{range .Features}}{{$fid := .ID}}{{range .Capabilities}}- **{{$fid}}:{{.ID}}** — {{.Summary}}
+{{end}}{{end}}
+
+## Active initiatives
+
+{{if .Initiatives}}{{range .Initiatives}}### {{.ID}}  `{{.Status}}`
+
+{{.Motivation}}
+{{- if .Streams}}
+- Streams: {{range .Streams}}`{{.ID}}` {{end}}
+{{- end}}
+{{- if .Contracts}}
+- Contracts:
+{{- range .Contracts}}
+  - `{{.Path}}`{{if .LockedAt}} (locked {{.LockedAt}}){{end}}
+{{- end}}
+{{- end}}
+
+{{end}}{{else}}_No initiatives._
+{{end}}
+
+## Migration phases
+
+{{$any := 0}}{{range .Features}}{{if .Migration}}{{$fid := .ID}}### {{$fid}} — {{.Migration.Strategy}}
+{{range .Migration.Phases}}- {{.ID}}: {{.Description}} `{{.Status}}`
+{{end}}
+{{$any = 1}}{{end}}{{end}}{{if eq $any 0}}_No active migrations._{{end}}

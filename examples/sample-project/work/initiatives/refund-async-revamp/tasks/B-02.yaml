@@ -1,0 +1,21 @@
+id: B-02
+title: Make the refund consumer idempotent
+initiative: refund-async-revamp
+stream: backend
+status: in_progress
+status_source: manual
+owner: checkout-eng
+suitability:
+  agent_autonomous: false
+  agent_pair: true
+  human_only: false
+produces:
+  - kind: code
+    description: A consumer that processes each refund event at most once.
+    annotation_target: checkout.refund
+depends_on:
+  - task: B-01
+  - contract: schemas/refund-event.v1.json
+verifies:
+  - checkout.refund:INV-2
+estimate: 3 days

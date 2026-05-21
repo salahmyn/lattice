@@ -1,0 +1,30 @@
+id: refund-async-revamp
+type: initiative
+status: in_progress
+created: 2026-01-15T00:00:00Z
+target_completion: 2026-03-01
+proposes_changes_to:
+  - manifest: checkout.refund
+    from_version: 2
+    to_version: 3
+motivation: |
+  Refunds are processed synchronously inside the checkout request, which makes
+  the request slow and couples refund success to request latency. This
+  initiative moves refund processing onto an asynchronous queue.
+success_criteria:
+  - id: SC-1
+    statement: Refund requests return without waiting for settlement.
+    measure: p95 refund-request latency
+    target: under 200ms
+  - id: SC-2
+    statement: No refund is lost when the queue is briefly unavailable.
+    measure: refund delivery rate under induced queue downtime
+    target: 100%
+contracts:
+  - path: schemas/refund-event.v1.json
+    description: The event payload published when a refund is enqueued.
+    locked_at: 2026-01-20T00:00:00Z
+streams:
+  - id: backend
+    owner: checkout-eng
+    description: Queue producer, consumer, and idempotency handling.

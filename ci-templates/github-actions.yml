@@ -1,0 +1,51 @@
+# Lattice CI template for GitHub Actions.
+#
+# Drop this in as .github/workflows/lattice.yml. It builds the lattice binary,
+# refreshes the knowledge graph, and fails the build on any validation error.
+name: Lattice
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lattice:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Build lattice
+        run: go build -o /usr/local/bin/lattice ./cmd/lattice
+
+      - name: Doctor
+        run: lattice doctor
+
+      # Optional: install SCIP indexers for blast-radius analysis.
+      # - run: pip install scip-python
+      # - run: npm install -g @sourcegraph/scip-typescript
+
+      - name: Extract knowledge graph
+        run: lattice extract --with-code-graph
+
+      - name: Validate
+        run: lattice validate
+
+      - name: Structural checks
+        run: lattice structural-checks run
+
+      # Optional: fast mutation testing on changed invariant-enforcing code.
+      # - name: Mutation testing
+      #   run: lattice mutation run --scope changed
+
+      - name: Upload knowledge graph
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lattice-json
+          path: lattice.json

@@ -1,0 +1,28 @@
+id: checkout.refund
+version: 4
+status: proposal
+purpose: |
+  Lets customers refund a completed order to their wallet balance instead of
+  their original payment method, in addition to the existing card refund.
+owners:
+  business: payments
+  engineering: checkout-eng
+value:
+  customer: Customers can choose an instant wallet refund over a slower card refund.
+capabilities:
+  - id: wallet_refund_destination
+    summary: A customer can direct a refund to their wallet balance.
+    rules:
+      - A wallet refund must credit the same amount the order was charged.
+invariants:
+  - id: INV-3
+    statement: A wallet refund credits the wallet by exactly the refunded amount.
+depends_on:
+  - wallet
+surface:
+  - type: http
+    method: POST
+    path: /api/refunds
+    breaking_change_from: /api/refunds
+    behavior:
+      - Accepts a new optional "destination" field.

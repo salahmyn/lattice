@@ -1,0 +1,32 @@
+{
+  "name": "@salahmyn/mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for Lattice — wraps the lattice CLI and exposes it to MCP hosts.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "lattice-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "node --test --import tsx test/",
+    "lint": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "execa": "^9.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.41",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}

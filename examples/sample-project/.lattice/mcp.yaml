@@ -1,0 +1,5 @@
+# MCP server configuration (consumed by @salahmyn/mcp-server).
+lattice_binary: lattice     # path to the lattice CLI
+confirmation_policy: preview # preview | auto
+tools:
+  enabled: []                # empty = all tools enabled
