@@ -12,6 +12,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/extract"
 	"github.com/salahmyn/lattice/pkg/lattice/graph"
+	"github.com/salahmyn/lattice/pkg/lattice/importer"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/scip"
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
@@ -101,6 +102,12 @@ func buildGraph(ctx context.Context, ws *workspace.Workspace, withCodeGraph bool
 	res, err := extract.Extract(ctx, ws, reg, extract.Options{})
 	if err != nil {
 		return schema.KnowledgeGraph{}, err
+	}
+
+	// Merge the brownfield sidecar map: features link to code without
+	// annotations having to be written into source.
+	if am, amErr := importer.LoadAnnotationMap(filepath.Join(ws.ImportDir(), importer.AnnotationMapFileName)); amErr == nil {
+		importer.ApplyAnnotationMap(res.Modules, am)
 	}
 
 	return graph.Build(graph.Input{

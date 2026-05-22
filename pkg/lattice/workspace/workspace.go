@@ -199,6 +199,10 @@ func (w *Workspace) GraphPath() string { return filepath.Join(w.LatticeDir, "lat
 // GraphShardDir returns the directory holding knowledge-graph shards.
 func (w *Workspace) GraphShardDir() string { return filepath.Join(w.LatticeDir, "graph") }
 
+// ImportDir returns the directory holding the brownfield import session
+// (session.yaml, candidates.json, drafts).
+func (w *Workspace) ImportDir() string { return filepath.Join(w.LatticeDir, "import") }
+
 // MutationScoresPath returns the path to the committed mutation scores.
 func (w *Workspace) MutationScoresPath() string {
 	return filepath.Join(w.LatticeDir, "mutation-scores.json")

@@ -27,6 +27,22 @@ type Config struct {
 	SCIP            SCIP            `yaml:"scip"`
 	Decomposition   Decomposition   `yaml:"decomposition"`
 	Knowledge       Knowledge       `yaml:"knowledge"`
+	Import          Import          `yaml:"import"`
+}
+
+// Import configures brownfield adoption (`lattice import`).
+type Import struct {
+	// MinCandidateSymbols is the fewest production symbols a source directory
+	// must hold to be discovered as a feature candidate.
+	MinCandidateSymbols int            `yaml:"min_candidate_symbols"`
+	Coverage            ImportCoverage `yaml:"coverage"`
+}
+
+// ImportCoverage configures the adoption coverage report.
+type ImportCoverage struct {
+	// Exclude is a set of slash-path globs dropped from the symbol universe
+	// before coverage is measured (generated code, fixtures).
+	Exclude []string `yaml:"exclude"`
 }
 
 // Knowledge configures how the knowledge graph is emitted.
@@ -149,6 +165,7 @@ func Default() Config {
 		Knowledge: Knowledge{Sharding: Sharding{
 			Enabled: false, Strategy: "by_feature_group", MaxFeaturesPerShard: 200,
 		}},
+		Import: Import{MinCandidateSymbols: 3},
 	}
 }
 

@@ -1,0 +1,12 @@
+id: checkout
+version: 1
+status: proposal
+purpose: 'TODO: state what checkout does. Drafted by `lattice import` from src/checkout (2 symbols).'
+owners:
+  business: TODO-team
+  engineering: TODO-team
+capabilities:
+  - id: todo_capability
+    summary: 'TODO: name a behavior of this feature.'
+    rules:
+      - 'TODO: state a rule this capability must follow.'

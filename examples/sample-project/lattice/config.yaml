@@ -38,3 +38,8 @@ knowledge:
     enabled: false              # split lattice.json into per-group shards
     strategy: by_feature_group  # by_feature_group | by_size
     max_features_per_shard: 200
+
+import:
+  min_candidate_symbols: 2      # smallest directory that can stand as a candidate
+  coverage:
+    exclude: []                 # slash-path globs dropped from the symbol universe

@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "candidates": [
+    {
+      "id": "cand_8dceaaa303db",
+      "package": "src/billing",
+      "language": "php",
+      "symbols": [
+        "App\\Billing\\Invoice",
+        "App\\Billing\\Invoice::total"
+      ],
+      "files": [
+        "src/billing/Invoice.php"
+      ],
+      "confidence": 0.5,
+      "evidence": [
+        {
+          "signal": "package_structure",
+          "detail": "2 symbols across 1 file(s) in src/billing"
+        }
+      ]
+    },
+    {
+      "id": "cand_a370e01104fd",
+      "package": "src/checkout",
+      "language": "python",
+      "symbols": [
+        "src.checkout.refund.mark_refunded",
+        "src.checkout.refund.validate_amount"
+      ],
+      "files": [
+        "src/checkout/refund.py"
+      ],
+      "confidence": 0.5,
+      "evidence": [
+        {
+          "signal": "package_structure",
+          "detail": "2 symbols across 1 file(s) in src/checkout"
+        }
+      ]
+    }
+  ],
+  "coverage": {
+    "discovery": {
+      "total_symbols": 6,
+      "clustered_symbols": 4,
+      "ratio": 0.6667,
+      "by_package": [
+        {
+          "package": "src/billing",
+          "total_symbols": 2,
+          "clustered_symbols": 2,
+          "ratio": 1
+        },
+        {
+          "package": "src/checkout",
+          "total_symbols": 2,
+          "clustered_symbols": 2,
+          "ratio": 1
+        },
+        {
+          "package": "src/wallet",
+          "total_symbols": 1,
+          "clustered_symbols": 0,
+          "ratio": 0
+        },
+        {
+          "package": "tools",
+          "total_symbols": 1,
+          "clustered_symbols": 0,
+          "ratio": 0
+        }
+      ]
+    }
+  }
+}

@@ -11,6 +11,7 @@ agent that can run a shell command).
 - [5. Day-to-day commands](#5-day-to-day-commands)
 - [6. Using Lattice with an AI service](#6-using-lattice-with-an-ai-service)
 - [7. The agent loop](#7-the-agent-loop)
+- [8. Adopting an existing codebase](#8-adopting-an-existing-codebase)
 
 ---
 
@@ -344,3 +345,46 @@ names are shown; the CLI equivalent is in parentheses.
 The contract that makes this reliable: every tool returns structured JSON, and
 every error carries a `next_action` — the agent branches on fields, never on
 prose.
+
+---
+
+## 8. Adopting an existing codebase
+
+Sections 4–7 assume a greenfield project. To adopt Lattice into a codebase
+that already exists, use `lattice import` — it discovers the features latent
+in the code, drafts their manifests, and attaches the code to them, producing
+a graph indistinguishable from a hand-authored one.
+
+The pipeline is five stages, each re-runnable and `--json`-capable:
+
+```sh
+lattice import scan     [--scope <dir>]   # discover feature candidates (static, no LLM)
+lattice import draft                      # draft a manifest per candidate (LLM, deterministic fallback)
+lattice import review   [<candidate-id>]  # review one candidate; --accept / --reject
+lattice import verify                     # validate the generated manifests
+lattice import inscribe [--inline]        # attach code to the accepted features
+lattice import status                     # session progress and coverage
+```
+
+1. **Scan** clusters the code into feature candidates by static analysis
+   alone and writes `lattice/import/candidates.json`. It is deterministic and
+   needs no LLM — useful on its own as a structural map of an unfamiliar repo.
+2. **Draft** turns each candidate into a draft manifest. With an LLM
+   configured it names and describes the feature from the candidate's
+   evidence; with `--no-llm` (or no LLM) it falls back to mechanical names and
+   `TODO` prose. Brownfield import works fully air-gapped.
+3. **Review** works one candidate at a time. `--accept` writes the draft into
+   `lattice/features/` as a real `proposal` manifest; `--reject` records the
+   decision. Re-running `scan` reconciles rather than discarding decisions.
+4. **Verify** runs the full validation engine over the generated manifests —
+   the mechanical fact-check that the import is correct.
+5. **Inscribe** attaches code to the accepted features, two ways:
+   - the default **sidecar** mode writes `annotation-map.yaml`, which the
+     graph builder merges on every `extract` — the full graph with no source
+     change, so adoption needs no code-mod PR;
+   - `--inline` inserts real annotations into source (preview, then `--apply`
+     to write; compile-checked). `lattice import uninscribe` reverses it.
+
+`lattice coverage` reports adoption as three ratios: how much code is
+clustered into candidates (discovery), attached to an accepted feature
+(documentation), and carries fact-checked invariants (verification).
