@@ -3,9 +3,9 @@
 /lattice
 /lattice.exe
 
-# Lattice runtime artifacts (per .lattice/ layout)
-.lattice/embeddings/
-.lattice/scip/
+# Lattice runtime cache
+lattice/.cache/
+**/lattice/.cache/
 
 # Go
 *.test

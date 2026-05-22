@@ -5,6 +5,15 @@
 // field order, which gives canonical, diff-stable on-disk output.
 package schema
 
+import "strings"
+
+// InlineText collapses all internal whitespace (including newlines) in s to
+// single spaces and trims the ends. Use it when a multi-line field such as a
+// manifest `purpose` is rendered in a single-line or inline context.
+func InlineText(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
 // Status is the lifecycle state of a feature manifest.
 type Status string
 
@@ -34,6 +43,7 @@ type Manifest struct {
 	DependsOn            []string          `yaml:"depends_on,omitempty"`
 	ComposesInvariantsOf []string          `yaml:"composes_invariants_of,omitempty"`
 	Surface              []Surface         `yaml:"surface,omitempty"`
+	Errors               []ErrorDecl       `yaml:"errors,omitempty"`
 	Decisions            []Decision        `yaml:"decisions,omitempty"`
 	Migration            *Migration        `yaml:"migration,omitempty"`
 	Roles                []Role            `yaml:"roles,omitempty"`
@@ -136,6 +146,14 @@ type Surface struct {
 	Job      string `yaml:"job,omitempty"`
 
 	// module
+	Description string `yaml:"description,omitempty"`
+}
+
+// ErrorDecl is one entry in a feature's error/response contract: a named
+// failure mode a caller can observe.
+type ErrorDecl struct {
+	Code        string `yaml:"code"`
+	Status      int    `yaml:"status,omitempty"` // HTTP status, when applicable
 	Description string `yaml:"description,omitempty"`
 }
 

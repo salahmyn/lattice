@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "generated_at": "2026-05-21T20:19:55Z",
-  "generated_from_commit": "",
+  "generated_at": "2026-05-22T11:31:49Z",
+  "generated_from_commit": "18f4e8874b0fed0a7b98deda380044ac654d56ce",
   "features": [
     {
       "ID": "billing",
@@ -34,6 +34,7 @@
       "DependsOn": null,
       "ComposesInvariantsOf": null,
       "Surface": null,
+      "Errors": null,
       "Decisions": null,
       "Migration": null,
       "Roles": null,
@@ -89,6 +90,7 @@
       "DependsOn": null,
       "ComposesInvariantsOf": null,
       "Surface": null,
+      "Errors": null,
       "Decisions": null,
       "Migration": null,
       "Roles": null,
@@ -148,6 +150,7 @@
       ],
       "ComposesInvariantsOf": null,
       "Surface": null,
+      "Errors": null,
       "Decisions": [
         {
           "ADR": "ADR-0001",
@@ -268,6 +271,7 @@
           "Description": ""
         }
       ],
+      "Errors": null,
       "Decisions": null,
       "Migration": null,
       "Roles": null,
@@ -276,7 +280,7 @@
         {
           "Symbol": "src.wallet.credit.creditWallet",
           "File": "src/wallet/credit.ts",
-          "Line": 10,
+          "Line": 11,
           "Language": "typescript",
           "ViaCapabilities": [
             "wallet_credit"
@@ -308,6 +312,7 @@
       "line": 7,
       "language": "php",
       "is_test": false,
+      "exported": true,
       "feature": "billing",
       "capabilities": [
         "invoice_generation"
@@ -322,6 +327,7 @@
       "language": "php",
       "enclosing_fqn": "App\\Billing\\Invoice",
       "is_test": false,
+      "exported": true,
       "feature": "billing",
       "capabilities": [
         "invoice_generation"
@@ -338,6 +344,7 @@
       "line": 15,
       "language": "python",
       "is_test": false,
+      "exported": true,
       "feature": "checkout.refund",
       "enforces_invariants": [
         "INV-2"
@@ -351,6 +358,7 @@
       "line": 8,
       "language": "python",
       "is_test": false,
+      "exported": true,
       "feature": "checkout.refund",
       "capabilities": [
         "self_service_refund"
@@ -364,9 +372,10 @@
       "fqn": "src.wallet.credit.creditWallet",
       "kind": "function",
       "file": "src/wallet/credit.ts",
-      "line": 10,
+      "line": 11,
       "language": "typescript",
       "is_test": false,
+      "exported": true,
       "feature": "wallet",
       "capabilities": [
         "wallet_credit"
@@ -382,7 +391,8 @@
       "file": "tools/check_money.py",
       "line": 13,
       "language": "python",
-      "is_test": false
+      "is_test": false,
+      "exported": true
     }
   ],
   "tests": [
@@ -393,7 +403,8 @@
       "file": "tests/InvoiceTest.php",
       "line": 8,
       "language": "php",
-      "is_test": true
+      "is_test": true,
+      "exported": true
     },
     {
       "name": "testTotalEqualsSumOfLineItems",
@@ -404,6 +415,7 @@
       "language": "php",
       "enclosing_fqn": "App\\Tests\\InvoiceTest",
       "is_test": true,
+      "exported": true,
       "verifies": [
         "billing:INV-1"
       ]
@@ -416,6 +428,7 @@
       "line": 6,
       "language": "typescript",
       "is_test": true,
+      "exported": true,
       "verifies": [
         "wallet:INV-1"
       ]
@@ -428,6 +441,7 @@
       "line": 15,
       "language": "python",
       "is_test": true,
+      "exported": true,
       "verifies": [
         "checkout.refund:INV-2"
       ]
@@ -440,6 +454,7 @@
       "line": 9,
       "language": "python",
       "is_test": true,
+      "exported": true,
       "verifies": [
         "checkout.refund:INV-1"
       ]
@@ -501,6 +516,24 @@
       ]
     }
   ],
+  "surfaces": [
+    {
+      "type": "event_emit",
+      "name": "wallet.credited",
+      "feature": "wallet",
+      "declared": true,
+      "implemented": true,
+      "implemented_by": [
+        {
+          "file": "src/wallet/credit.ts",
+          "line": 5,
+          "symbol": "src.wallet.credit.creditWallet",
+          "detected": false
+        }
+      ]
+    }
+  ],
+  "errors": [],
   "initiatives": [
     {
       "ID": "refund-async-revamp",
@@ -548,7 +581,7 @@
         }
       ],
       "Migration": null,
-      "SourcePath": "work/initiatives/refund-async-revamp/initiative.yaml"
+      "SourcePath": "initiatives/refund-async-revamp/initiative.yaml"
     }
   ],
   "tasks": [
@@ -585,7 +618,7 @@
         "Branch": "",
         "RelatedDecisions": null
       },
-      "SourcePath": "work/initiatives/refund-async-revamp/tasks/B-01.yaml"
+      "SourcePath": "initiatives/refund-async-revamp/tasks/B-01.yaml"
     },
     {
       "ID": "B-02",
@@ -627,7 +660,7 @@
         "Branch": "",
         "RelatedDecisions": null
       },
-      "SourcePath": "work/initiatives/refund-async-revamp/tasks/B-02.yaml"
+      "SourcePath": "initiatives/refund-async-revamp/tasks/B-02.yaml"
     }
   ],
   "structural_checks": [
@@ -652,10 +685,10 @@
   "code_graph": {
     "indexed_by": "scip",
     "language_indexes": {
-      "php": ".lattice/scip/php.scip",
-      "python": ".lattice/scip/python.scip",
-      "typescript": ".lattice/scip/typescript.scip"
+      "php": ".cache/scip/php.scip",
+      "python": ".cache/scip/python.scip",
+      "typescript": ".cache/scip/typescript.scip"
     }
   },
-  "violations": []
+  "violations": null
 }

@@ -33,11 +33,11 @@ func newAgentContextCommand(io *IO) *cobra.Command {
 		Use:   "context",
 		Short: "Assemble a self-contained agent context bundle",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			kg, err := buildGraph(cmd.Context(), io.Repo, false)
+			kg, ws, err := graphFor(io, cmd, false)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
-			ac, err := views.BuildAgentContext(io.Repo, kg, task)
+			ac, err := views.BuildAgentContext(ws, kg, task)
 			if err != nil {
 				return io.fail("CONTEXT_FAILED", err.Error(), nil)
 			}
@@ -48,9 +48,14 @@ func newAgentContextCommand(io *IO) *cobra.Command {
 	return cmd
 }
 
-func capabilities(repo string) *agentic.Capabilities {
-	cfg, _ := config.Load(repo)
-	return agentic.New(repo, cfg)
+// capabilities resolves the workspace and builds the agentic capabilities.
+func capabilities(io *IO) (*agentic.Capabilities, error) {
+	ws, err := openWorkspace(io)
+	if err != nil {
+		return nil, err
+	}
+	cfg, _ := config.Load(ws.LatticeDir)
+	return agentic.New(ws, cfg), nil
 }
 
 // readAllStdin reads the entire standard input.
@@ -66,7 +71,11 @@ func newAgentSuggestAnnotationCommand(io *IO) *cobra.Command {
 			if err != nil {
 				return io.fail("BAD_LINE", "line must be an integer", nil)
 			}
-			res, err := capabilities(io.Repo).SuggestAnnotation(cmd.Context(), args[0], line)
+			caps, err := capabilities(io)
+			if err != nil {
+				return io.fail("NO_WORKSPACE", err.Error(), nil)
+			}
+			res, err := caps.SuggestAnnotation(cmd.Context(), args[0], line)
 			if err != nil {
 				return io.fail("AGENT_FAILED", err.Error(), nil)
 			}
@@ -104,7 +113,11 @@ func newAgentDraftProposalCommand(io *IO) *cobra.Command {
 			if err != nil {
 				return io.fail("AGENT_PROSE_READ", err.Error(), nil)
 			}
-			res, err := capabilities(io.Repo).DraftProposal(cmd.Context(), string(prose), target)
+			caps, err := capabilities(io)
+			if err != nil {
+				return io.fail("NO_WORKSPACE", err.Error(), nil)
+			}
+			res, err := caps.DraftProposal(cmd.Context(), string(prose), target)
 			if err != nil {
 				return io.fail("AGENT_FAILED", err.Error(), nil)
 			}
@@ -132,7 +145,11 @@ func newAgentRecommendDecompositionCommand(io *IO) *cobra.Command {
 		Short: "Recommend a sub-feature decomposition for an over-large feature",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			res, err := capabilities(io.Repo).RecommendDecomposition(cmd.Context(), args[0])
+			caps, err := capabilities(io)
+			if err != nil {
+				return io.fail("NO_WORKSPACE", err.Error(), nil)
+			}
+			res, err := caps.RecommendDecomposition(cmd.Context(), args[0])
 			if err != nil {
 				return io.fail("AGENT_FAILED", err.Error(), nil)
 			}
@@ -165,7 +182,11 @@ func newAgentNarrateCommand(io *IO) *cobra.Command {
 			if len(args) == 1 {
 				scope = args[0]
 			}
-			res, err := capabilities(io.Repo).Narrate(cmd.Context(), scope)
+			caps, err := capabilities(io)
+			if err != nil {
+				return io.fail("NO_WORKSPACE", err.Error(), nil)
+			}
+			res, err := caps.Narrate(cmd.Context(), scope)
 			if err != nil {
 				return io.fail("AGENT_FAILED", err.Error(), nil)
 			}

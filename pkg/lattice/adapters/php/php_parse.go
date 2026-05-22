@@ -22,6 +22,8 @@ var attributeKinds = map[string]string{
 	"DependsOnFeature":        "depends_on_feature",
 	"Role":                    "role",
 	"SuppressesInvariant":     "suppresses_invariant",
+	"Surface":                 "surface",
+	"Error":                   "error",
 	"ModuleFeature":           "module_feature",
 	"ModuleEnforcesInvariant": "module_enforces_invariant",
 	"ModuleDependsOnFeature":  "module_depends_on_feature",
@@ -94,6 +96,7 @@ func (p *phpParser) addClass(n *sitter.Node, namespace string, kind ir.SymbolKin
 		File: p.mod.File, Line: line(n), IsTest: p.testFile,
 		Annotations: p.declAttributes(n),
 		BaseClasses: p.baseClasses(n, namespace),
+		Exported:    true, // top-level classes/traits/interfaces are public
 	}
 	p.mod.Symbols = append(p.mod.Symbols, sym)
 
@@ -113,6 +116,7 @@ func (p *phpParser) addClass(n *sitter.Node, namespace string, kind ir.SymbolKin
 				File: p.mod.File, Line: line(c), EnclosingFQN: fqn,
 				Annotations: p.declAttributes(c),
 				IsTest:      p.testFile,
+				Exported:    phpMethodExported(c, p.src),
 			})
 		}
 	}
@@ -127,7 +131,23 @@ func (p *phpParser) addSymbol(name string, kind ir.SymbolKind, namespace, enclos
 		Name: name, FQN: qualify(namespace, name), Kind: kind,
 		File: p.mod.File, Line: line(n), EnclosingFQN: enclosing,
 		Annotations: p.declAttributes(n), IsTest: p.testFile,
+		Exported: true, // top-level functions are public
 	})
+}
+
+// phpMethodExported reports whether a method is part of the public surface:
+// true unless it carries a private/protected visibility modifier.
+func phpMethodExported(n *sitter.Node, src []byte) bool {
+	for i := 0; i < int(n.NamedChildCount()); i++ {
+		c := n.NamedChild(i)
+		if c.Type() == "visibility_modifier" {
+			switch c.Content(src) {
+			case "private", "protected":
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // declAttributes collects attributes attached to a declaration node.

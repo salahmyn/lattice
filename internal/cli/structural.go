@@ -22,7 +22,7 @@ func newStructuralListCommand(io *IO) *cobra.Command {
 		Use:   "list",
 		Short: "List declared structural checks",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			kg, err := buildGraph(cmd.Context(), io.Repo, false)
+			kg, _, err := graphFor(io, cmd, false)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
@@ -47,17 +47,17 @@ func newStructuralRunCommand(io *IO) *cobra.Command {
 		Use:   "run",
 		Short: "Run structural checks as subprocesses",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			kg, err := buildGraph(cmd.Context(), io.Repo, false)
+			kg, ws, err := graphFor(io, cmd, false)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
-			cfg, _ := config.Load(io.Repo)
+			cfg, _ := config.Load(ws.LatticeDir)
 
 			checks := kg.StructuralChecks
 			if scopeModule != "" {
 				checks = filterChecksByModule(checks, scopeModule)
 			}
-			results := plugins.RunAll(cmd.Context(), io.Repo, checks, cfg.Subprocess.DefaultTimeoutDuration())
+			results := plugins.RunAll(cmd.Context(), ws.PrimaryCodeRoot().Abs, checks, cfg.Subprocess.DefaultTimeoutDuration())
 
 			var violations []schema.Violation
 			for _, r := range results {

@@ -32,15 +32,20 @@ const (
 
 // Symbol is one named code construct.
 type Symbol struct {
-	Name         string       `json:"name"`
-	FQN          string       `json:"fqn"` // adapter-determined, globally unique
-	Kind         SymbolKind   `json:"kind"`
-	File         string       `json:"file"`
-	Line         int          `json:"line"`
-	EnclosingFQN string       `json:"enclosing_fqn,omitempty"` // for methods
-	BaseClasses  []string     `json:"base_classes,omitempty"`  // FQNs of bases
-	IsTest       bool         `json:"is_test"`
-	Annotations  []Annotation `json:"annotations,omitempty"`
+	Name         string     `json:"name"`
+	FQN          string     `json:"fqn"` // adapter-determined, globally unique
+	Kind         SymbolKind `json:"kind"`
+	File         string     `json:"file"`
+	Line         int        `json:"line"`
+	EnclosingFQN string     `json:"enclosing_fqn,omitempty"` // for methods
+	BaseClasses  []string   `json:"base_classes,omitempty"`  // FQNs of bases
+	IsTest       bool       `json:"is_test"`
+	// Exported reports whether the symbol is part of its module's public
+	// surface (TS `export`, a non-underscore Python name, a non-private PHP
+	// member). Private helpers are kept in the graph but excluded from a
+	// feature's implementation edges.
+	Exported    bool         `json:"exported"`
+	Annotations []Annotation `json:"annotations,omitempty"`
 }
 
 // Diagnostic is a non-fatal issue an adapter found while parsing — e.g. an
@@ -52,11 +57,26 @@ type Diagnostic struct {
 	Message string `json:"message"`
 }
 
+// Surface is a user- or system-facing interaction point a module exposes —
+// an HTTP route, an emitted/consumed event, a webhook, a scheduled job.
+// Adapters populate these from framework route-registration calls
+// (Detected=true) and from @surface annotations (Detected=false).
+type Surface struct {
+	Type     string `json:"type"`             // http|event_emit|event_consume|webhook_receive|scheduled
+	Method   string `json:"method,omitempty"` // http / webhook
+	Path     string `json:"path,omitempty"`   // http / webhook
+	Name     string `json:"name,omitempty"`   // event / scheduled
+	Symbol   string `json:"symbol,omitempty"` // FQN of the implementing symbol, when known
+	Line     int    `json:"line"`
+	Detected bool   `json:"detected,omitempty"` // auto-detected from a framework call
+}
+
 // Module is the IR for a single source file.
 type Module struct {
 	File              string       `json:"file"`
 	Language          string       `json:"language"`
 	ModuleAnnotations []Annotation `json:"module_annotations,omitempty"`
 	Symbols           []Symbol     `json:"symbols,omitempty"`
+	Surfaces          []Surface    `json:"surfaces,omitempty"`
 	Diagnostics       []Diagnostic `json:"diagnostics,omitempty"`
 }

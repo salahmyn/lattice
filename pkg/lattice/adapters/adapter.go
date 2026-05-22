@@ -65,9 +65,9 @@ type LanguageAdapter interface {
 	// snippet idiomatic to this language.
 	RenderAnnotationSuggestion(symbol ir.Symbol, suggested []AnnotationSuggestion) (string, error)
 
-	// SCIPIndexerCommand returns the command that produces a SCIP index for
-	// this language, or ErrIndexerNotConfigured.
-	SCIPIndexerCommand(repoPath string) ([]string, error)
+	// SCIPIndexerCommand returns the command that indexes repoPath and writes
+	// a SCIP index to outputPath, or ErrIndexerNotConfigured.
+	SCIPIndexerCommand(repoPath, outputPath string) ([]string, error)
 
 	// MutationRunnerCommand returns the command that mutation-tests the given
 	// files, or ErrMutationRunnerNotConfigured.

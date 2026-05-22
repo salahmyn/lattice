@@ -6,7 +6,7 @@ _Generated from lattice.json — schema {{.SchemaVersion}}._
 
 {{range .Features}}### {{.ID}}  `{{.Status}}`  v{{.Version}}
 
-{{.Purpose}}
+{{trimSpace .Purpose}}
 
 - Owners: business _{{.Owners.Business}}_, engineering _{{.Owners.Engineering}}_
 {{- if .Capabilities}}

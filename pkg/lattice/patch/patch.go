@@ -16,15 +16,16 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/graph"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/validate"
+	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
-// Engine applies patches against one repository.
+// Engine applies patches against one workspace.
 type Engine struct {
-	repo string
+	ws *workspace.Workspace
 }
 
-// New returns a patch engine rooted at repoPath.
-func New(repoPath string) *Engine { return &Engine{repo: repoPath} }
+// New returns a patch engine for the given workspace.
+func New(ws *workspace.Workspace) *Engine { return &Engine{ws: ws} }
 
 // evaluation is the shared result of computing a patch's effect.
 type evaluation struct {
@@ -56,7 +57,7 @@ func (e *Engine) Apply(ctx context.Context, p schema.Patch) (schema.PatchResult,
 			Message:    "patch refused: would introduce error-severity violations",
 		}, nil
 	}
-	abs := filepath.Join(e.repo, filepath.FromSlash(ev.targetPath))
+	abs := filepath.Join(e.ws.LatticeDir, filepath.FromSlash(ev.targetPath))
 	if err := atomicWrite(abs, ev.newYAML); err != nil {
 		return schema.PatchResult{}, err
 	}
@@ -72,26 +73,26 @@ func (e *Engine) evaluate(ctx context.Context, p schema.Patch) (evaluation, erro
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	adCfg, err := config.LoadAdapters(e.repo)
+	adCfg, err := config.LoadAdapters(e.ws.LatticeDir)
 	if err != nil {
 		return evaluation{}, err
 	}
-	cfg, _ := config.Load(e.repo)
+	cfg, _ := config.Load(e.ws.LatticeDir)
 	reg := all.Registry(adCfg)
 
-	res, err := extract.Extract(ctx, e.repo, reg, extract.Options{IncludeProposals: true})
+	res, err := extract.Extract(ctx, e.ws, reg, extract.Options{IncludeProposals: true})
 	if err != nil {
 		return evaluation{}, err
 	}
 
-	before := validate.Validate(buildGraph(res), cfg)
+	before := validate.Validate(buildGraph(res), cfg, validate.Options{ReviewMode: e.ws.Review})
 
 	ev, err := e.applyToCorpus(&res, p)
 	if err != nil {
 		return evaluation{}, err
 	}
 
-	after := validate.Validate(buildGraph(res), cfg)
+	after := validate.Validate(buildGraph(res), cfg, validate.Options{ReviewMode: e.ws.Review})
 	ev.preview.IntroducedViolations = diffViolations(after, before)
 	ev.preview.ResolvedViolations = diffViolations(before, after)
 	return ev, nil

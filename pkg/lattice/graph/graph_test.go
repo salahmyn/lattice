@@ -18,7 +18,7 @@ func sampleInput() Input {
 			File: "src/refund.py", Language: "python",
 			Symbols: []ir.Symbol{{
 				Name: "validate", FQN: "src.refund.validate", Kind: ir.KindFunction,
-				File: "src/refund.py", Line: 3,
+				File: "src/refund.py", Line: 3, Exported: true,
 				Annotations: []ir.Annotation{
 					{Kind: "feature", Args: []interface{}{"checkout.refund"}},
 					{Kind: "enforces_invariant", Args: []interface{}{"INV-1"}},
@@ -45,6 +45,57 @@ func TestBuildResolvesChildrenAndImplementations(t *testing.T) {
 	}
 	if len(kg.Symbols) != 1 || kg.Symbols[0].Feature != "checkout.refund" {
 		t.Errorf("symbol feature not resolved: %+v", kg.Symbols)
+	}
+}
+
+func TestBuildSurfacesAndErrors(t *testing.T) {
+	in := Input{
+		Manifests: []schema.Manifest{{
+			ID: "cart", Version: 1, Status: schema.StatusProduction,
+			Surface: []schema.Surface{{Type: schema.SurfaceHTTP, Method: "GET", Path: "/carts/:id"}},
+			Errors:  []schema.ErrorDecl{{Code: "not_found", Status: 404}},
+		}},
+		Modules: []ir.Module{{
+			File: "src/index.ts", Language: "typescript",
+			ModuleAnnotations: []ir.Annotation{
+				{Kind: "module_feature", Args: []interface{}{"cart"}},
+			},
+			Surfaces: []ir.Surface{
+				{Type: "http", Method: "GET", Path: "/carts/:id", Detected: true},
+				{Type: "http", Method: "GET", Path: "/health", Detected: true},
+			},
+			Symbols: []ir.Symbol{{
+				Name: "CartError", FQN: "src.index.CartError", Kind: ir.KindClass,
+				File: "src/index.ts", Exported: true,
+				Annotations: []ir.Annotation{
+					{Kind: "error", Args: []interface{}{"not_found 404"}},
+				},
+			}},
+		}},
+	}
+	kg := Build(in, Options{})
+
+	if len(kg.Surfaces) != 2 {
+		t.Fatalf("surfaces = %d, want 2", len(kg.Surfaces))
+	}
+	for _, s := range kg.Surfaces {
+		switch s.Path {
+		case "/carts/:id":
+			if !s.Declared || !s.Implemented {
+				t.Errorf("/carts/:id declared=%v implemented=%v, want both", s.Declared, s.Implemented)
+			}
+		case "/health":
+			if s.Declared || !s.Implemented {
+				t.Errorf("/health declared=%v implemented=%v, want implemented-only", s.Declared, s.Implemented)
+			}
+		}
+	}
+
+	if len(kg.Errors) != 1 {
+		t.Fatalf("errors = %d, want 1", len(kg.Errors))
+	}
+	if e := kg.Errors[0]; !e.Declared || !e.Implemented || e.Status != 404 {
+		t.Errorf("error %+v, want declared+implemented status 404", e)
 	}
 }
 

@@ -9,15 +9,16 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/scip"
+	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
-// scipIndexPaths returns the absolute .scip index paths for every adapter.
-func scipIndexPaths(repo string) []string {
-	adCfg, _ := config.LoadAdapters(repo)
+// scipIndexPaths returns the .scip index paths for every adapter.
+func scipIndexPaths(ws *workspace.Workspace) []string {
+	adCfg, _ := config.LoadAdapters(ws.LatticeDir)
 	reg := all.Registry(adCfg)
 	var paths []string
 	for _, lang := range reg.Names() {
-		paths = append(paths, filepath.Join(repo, ".lattice", "scip", lang+".scip"))
+		paths = append(paths, filepath.Join(ws.SCIPDir(), lang+".scip"))
 	}
 	return paths
 }
@@ -28,7 +29,11 @@ func newBlastRadiusCommand(io *IO) *cobra.Command {
 		Short: "Show the code-level impact of a symbol via SCIP",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			corpus, err := scip.Load(scipIndexPaths(io.Repo)...)
+			ws, err := openWorkspace(io)
+			if err != nil {
+				return io.fail("NO_WORKSPACE", err.Error(), nil)
+			}
+			corpus, err := scip.Load(scipIndexPaths(ws)...)
 			if err != nil {
 				return io.fail("SCIP_LOAD_FAILED", err.Error(), nil)
 			}
@@ -62,7 +67,7 @@ func newSymbolCommand(io *IO) *cobra.Command {
 		Short: "Show the Lattice context of a code symbol",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			kg, err := buildGraph(cmd.Context(), io.Repo, false)
+			kg, _, err := graphFor(io, cmd, false)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}

@@ -13,12 +13,17 @@ type KnowledgeGraph struct {
 	Symbols          []GraphSymbol          `json:"symbols"`
 	Tests            []GraphSymbol          `json:"tests"`
 	Modules          []GraphModule          `json:"modules"`
+	Surfaces         []GraphSurface         `json:"surfaces"`
+	Errors           []GraphError           `json:"errors"`
 	Initiatives      []Initiative           `json:"initiatives"`
 	Tasks            []Task                 `json:"tasks"`
 	StructuralChecks []GraphStructuralCheck `json:"structural_checks"`
 
 	CodeGraph  CodeGraph   `json:"code_graph"`
 	Violations []Violation `json:"violations"`
+
+	// Review marks a graph built without source code (manifest-only).
+	Review bool `json:"review,omitempty"`
 }
 
 // GraphSymbol is a code (or test) symbol with its resolved Lattice edges.
@@ -31,6 +36,7 @@ type GraphSymbol struct {
 	Language     string `json:"language"`
 	EnclosingFQN string `json:"enclosing_fqn,omitempty"`
 	IsTest       bool   `json:"is_test"`
+	Exported     bool   `json:"exported"`
 
 	// Resolved edges (effective annotation set, after module/role/inheritance
 	// propagation).
@@ -67,6 +73,41 @@ type GraphStructuralCheck struct {
 	Command            []string             `json:"command"`
 	VerifiesInvariants []string             `json:"verifies_invariants"`
 	Scope              StructuralCheckScope `json:"scope,omitempty"`
+}
+
+// GraphSurface is one user- or system-facing interaction, fusing what a
+// manifest declares with what the code actually exposes. It is the
+// machine-readable interaction inventory: every HTTP route, event, webhook,
+// and scheduled job, and whether declaration and implementation agree.
+type GraphSurface struct {
+	Type          string        `json:"type"`
+	Method        string        `json:"method,omitempty"`
+	Path          string        `json:"path,omitempty"`
+	Name          string        `json:"name,omitempty"`
+	Feature       string        `json:"feature,omitempty"`
+	Declared      bool          `json:"declared"`    // present in a feature manifest
+	Implemented   bool          `json:"implemented"` // found in source
+	ImplementedBy []SurfaceImpl `json:"implemented_by,omitempty"`
+}
+
+// SurfaceImpl is one code site that exposes a surface.
+type SurfaceImpl struct {
+	File     string `json:"file"`
+	Line     int    `json:"line"`
+	Symbol   string `json:"symbol,omitempty"`
+	Detected bool   `json:"detected"` // auto-detected from a framework call
+}
+
+// GraphError is one entry of a feature's error/response contract, fusing what
+// the manifest declares with the @error annotations found in code.
+type GraphError struct {
+	Code        string        `json:"code"`
+	Status      int           `json:"status,omitempty"`
+	Description string        `json:"description,omitempty"`
+	Feature     string        `json:"feature,omitempty"`
+	Declared    bool          `json:"declared"`    // present in a feature manifest
+	Implemented bool          `json:"implemented"` // raised by annotated code
+	RaisedBy    []SurfaceImpl `json:"raised_by,omitempty"`
 }
 
 // CodeGraph references the SCIP indexes; the call/reference graph stays in

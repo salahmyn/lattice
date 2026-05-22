@@ -18,6 +18,7 @@ var knownAnnotations = map[string]bool{
 	"feature": true, "feature_capability": true, "capability": true,
 	"enforces_invariant": true, "verifies": true, "verifies_capability": true,
 	"depends_on_feature": true, "role": true, "suppresses_invariant": true,
+	"surface": true, "error": true,
 	"module_feature": true, "module_enforces_invariant": true,
 	"module_depends_on_feature": true,
 }
@@ -105,6 +106,7 @@ func (p *pyParser) addClass(n *sitter.Node, anns []ir.Annotation) {
 		Name: name, FQN: fqn, Kind: ir.KindClass,
 		File: p.mod.File, Line: line(n), Annotations: anns,
 		BaseClasses: p.baseClasses(n), IsTest: p.testFile,
+		Exported: isPublicName(name),
 	}
 	p.mod.Symbols = append(p.mod.Symbols, sym)
 
@@ -139,8 +141,15 @@ func (p *pyParser) addFunction(n *sitter.Node, anns []ir.Annotation, enclosingFQ
 	p.mod.Symbols = append(p.mod.Symbols, ir.Symbol{
 		Name: name, FQN: fqn, Kind: kind,
 		File: p.mod.File, Line: line(n), EnclosingFQN: enclosingFQN,
-		Annotations: anns, IsTest: isTest,
+		Annotations: anns, IsTest: isTest, Exported: isPublicName(name),
 	})
+}
+
+// isPublicName reports whether a Python name is part of the public surface.
+// Python has no export keyword; the leading-underscore convention marks a
+// name as module-private.
+func isPublicName(name string) bool {
+	return !strings.HasPrefix(name, "_")
 }
 
 // baseClasses returns the superclass names of a class definition.

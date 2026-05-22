@@ -1,14 +1,12 @@
 package cli
 
 import (
-	"path/filepath"
 	"sort"
 	"strconv"
 
 	"github.com/spf13/cobra"
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
-	"github.com/salahmyn/lattice/pkg/lattice/graph"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/validate"
 )
@@ -17,26 +15,35 @@ type validateReport struct {
 	Violations []schema.Violation `json:"violations"`
 	Errors     int                `json:"errors"`
 	Warnings   int                `json:"warnings"`
+	ReviewMode bool               `json:"review_mode"`
 	OK         bool               `json:"ok"`
 }
 
 func newValidateCommand(io *IO) *cobra.Command {
-	return &cobra.Command{
+	var review bool
+	cmd := &cobra.Command{
 		Use:   "validate",
-		Short: "Extract and validate the repository",
+		Short: "Extract and validate the workspace",
 		Long:  "Runs every validation rule and exits non-zero if any error-severity violation is found.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			kg, err := buildGraph(cmd.Context(), io.Repo, false)
+			ws, err := openWorkspace(io)
 			if err != nil {
 				return io.fail("VALIDATE_FAILED", err.Error(), nil)
 			}
-			cfg, _ := config.Load(io.Repo)
+			if review {
+				ws.Review = true
+			}
+			kg, err := buildGraph(cmd.Context(), ws, false)
+			if err != nil {
+				return io.fail("VALIDATE_FAILED", err.Error(), nil)
+			}
+			cfg, _ := config.Load(ws.LatticeDir)
 
-			violations := validate.Validate(kg, cfg)
+			violations := validate.Validate(kg, cfg, validate.Options{ReviewMode: ws.Review})
 			kg.Violations = violations
-			_ = graph.Write(filepath.Join(io.Repo, "lattice.json"), kg)
+			_, _ = writeGraph(ws, cfg, kg)
 
-			report := validateReport{Violations: violations}
+			report := validateReport{Violations: violations, ReviewMode: ws.Review}
 			for _, v := range violations {
 				if v.IsError() {
 					report.Errors++
@@ -57,9 +64,14 @@ func newValidateCommand(io *IO) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&review, "review", false, "manifest-only mode: skip code-coupled checks")
+	return cmd
 }
 
 func renderValidate(io *IO, r validateReport) {
+	if r.ReviewMode {
+		io.printf("review mode: no code accessible — annotation and verification checks deferred to CI\n")
+	}
 	if len(r.Violations) == 0 {
 		io.printf("validate: clean (0 violations)\n")
 		return

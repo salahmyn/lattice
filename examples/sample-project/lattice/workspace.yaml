@@ -1,0 +1,5 @@
+# Lattice workspace.
+#
+# embedded: this lattice/ directory lives inside a single code repository.
+# Lattice extracts source from the repository that contains lattice/.
+mode: embedded

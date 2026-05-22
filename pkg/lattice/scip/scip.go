@@ -4,6 +4,7 @@ package scip
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -23,20 +24,25 @@ type IndexResult struct {
 	Error      string `json:"error,omitempty"`
 }
 
-// Orchestrate runs the SCIP indexer for every adapter concurrently. Indexers
-// that are not installed are reported as skipped rather than failed.
-func Orchestrate(ctx context.Context, repo string, reg *adapters.Registry, timeout time.Duration) []IndexResult {
+// Orchestrate runs the SCIP indexer for every adapter concurrently against a
+// code root, writing indexes into outDir. Indexers that are not installed are
+// reported as skipped rather than failed.
+func Orchestrate(ctx context.Context, codeRoot, outDir string, reg *adapters.Registry, timeout time.Duration) []IndexResult {
+	_ = os.MkdirAll(outDir, 0o755)
+
 	type job struct {
-		lang string
-		cmd  []string
+		lang   string
+		cmd    []string
+		output string
 	}
 	var jobs []job
 	for _, a := range reg.All() {
-		cmd, err := a.SCIPIndexerCommand(repo)
+		output := filepath.Join(outDir, a.Name()+".scip")
+		cmd, err := a.SCIPIndexerCommand(codeRoot, output)
 		if err != nil || len(cmd) == 0 {
 			continue
 		}
-		jobs = append(jobs, job{lang: a.Name(), cmd: cmd})
+		jobs = append(jobs, job{lang: a.Name(), cmd: cmd, output: output})
 	}
 
 	results := make([]IndexResult, len(jobs))
@@ -45,7 +51,7 @@ func Orchestrate(ctx context.Context, repo string, reg *adapters.Registry, timeo
 		wg.Add(1)
 		go func(i int, j job) {
 			defer wg.Done()
-			results[i] = runIndexer(ctx, repo, j.lang, j.cmd, timeout)
+			results[i] = runIndexer(ctx, codeRoot, j.lang, j.output, j.cmd, timeout)
 		}(i, j)
 	}
 	wg.Wait()
@@ -55,11 +61,8 @@ func Orchestrate(ctx context.Context, repo string, reg *adapters.Registry, timeo
 }
 
 // runIndexer executes one indexer command with a timeout.
-func runIndexer(ctx context.Context, repo, lang string, cmd []string, timeout time.Duration) IndexResult {
-	out := IndexResult{
-		Language:   lang,
-		OutputPath: filepath.ToSlash(filepath.Join(".lattice", "scip", lang+".scip")),
-	}
+func runIndexer(ctx context.Context, codeRoot, lang, output string, cmd []string, timeout time.Duration) IndexResult {
+	out := IndexResult{Language: lang, OutputPath: output}
 	if _, err := exec.LookPath(cmd[0]); err != nil {
 		out.Skipped = true
 		out.Error = cmd[0] + " not installed"
@@ -73,7 +76,7 @@ func runIndexer(ctx context.Context, repo, lang string, cmd []string, timeout ti
 		defer cancel()
 	}
 	c := exec.CommandContext(runCtx, cmd[0], cmd[1:]...)
-	c.Dir = repo
+	c.Dir = codeRoot
 	combined, err := c.CombinedOutput()
 	if err != nil {
 		out.Error = strings.TrimSpace(string(combined))

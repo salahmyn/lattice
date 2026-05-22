@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
+	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
 // AgentContext is the pre-assembled bundle returned by `lattice agent context`.
@@ -73,7 +74,7 @@ type DecisionContext struct {
 
 // BuildAgentContext assembles the bundle for a task. If taskID is empty the
 // bundle covers the whole repository at a summary level.
-func BuildAgentContext(repo string, kg schema.KnowledgeGraph, taskID string) (AgentContext, error) {
+func BuildAgentContext(ws *workspace.Workspace, kg schema.KnowledgeGraph, taskID string) (AgentContext, error) {
 	ac := AgentContext{
 		PatchWorkflow: map[string]any{
 			"preview_tool":          "lattice_preview_patch",
@@ -109,7 +110,7 @@ func BuildAgentContext(repo string, kg schema.KnowledgeGraph, taskID string) (Ag
 				featureSet[ref[:i]] = true
 			}
 		}
-		ac.Contracts = contractsForInitiative(repo, kg, task.Initiative)
+		ac.Contracts = contractsForInitiative(ws, kg, task.Initiative)
 	}
 	if len(featureSet) == 0 {
 		for _, m := range kg.Features {
@@ -138,9 +139,9 @@ func BuildAgentContext(repo string, kg schema.KnowledgeGraph, taskID string) (Ag
 	sort.Strings(ac.DownstreamConsumers)
 	ac.DownstreamConsumers = uniq(ac.DownstreamConsumers)
 
-	ac.CurrentCode = codeForFeatures(repo, kg, featureSet, false)
-	ac.VerifyingTests = codeForFeatures(repo, kg, featureSet, true)
-	ac.RelatedDecisions = decisionsForFeatures(repo, kg, featureSet)
+	ac.CurrentCode = codeForFeatures(ws, kg, featureSet, false)
+	ac.VerifyingTests = codeForFeatures(ws, kg, featureSet, true)
+	ac.RelatedDecisions = decisionsForFeatures(ws, kg, featureSet)
 	ac.AnnotationConventions = annotationConventions(kg, featureSet)
 	return ac, nil
 }
@@ -160,7 +161,7 @@ func enforcerIndex(kg schema.KnowledgeGraph) map[string][]string {
 	return idx
 }
 
-func contractsForInitiative(repo string, kg schema.KnowledgeGraph, initiativeID string) []ContractContext {
+func contractsForInitiative(ws *workspace.Workspace, kg schema.KnowledgeGraph, initiativeID string) []ContractContext {
 	var out []ContractContext
 	for _, in := range kg.Initiatives {
 		if in.ID != initiativeID {
@@ -168,7 +169,7 @@ func contractsForInitiative(repo string, kg schema.KnowledgeGraph, initiativeID 
 		}
 		for _, ct := range in.Contracts {
 			cc := ContractContext{Path: ct.Path, LockedAt: ct.LockedAt}
-			if data, err := os.ReadFile(filepath.Join(repo, ct.Path)); err == nil {
+			if data, err := os.ReadFile(filepath.Join(ws.LatticeDir, filepath.FromSlash(ct.Path))); err == nil {
 				cc.Content = string(data)
 			}
 			out = append(out, cc)
@@ -177,7 +178,7 @@ func contractsForInitiative(repo string, kg schema.KnowledgeGraph, initiativeID 
 	return out
 }
 
-func codeForFeatures(repo string, kg schema.KnowledgeGraph, features map[string]bool, tests bool) []CodeContext {
+func codeForFeatures(ws *workspace.Workspace, kg schema.KnowledgeGraph, features map[string]bool, tests bool) []CodeContext {
 	pool := kg.Symbols
 	if tests {
 		pool = kg.Tests
@@ -190,8 +191,10 @@ func codeForFeatures(repo string, kg schema.KnowledgeGraph, features map[string]
 		}
 		seen[s.File] = true
 		cc := CodeContext{File: s.File, FQN: s.FQN}
-		if data, err := os.ReadFile(filepath.Join(repo, s.File)); err == nil {
-			cc.Content = string(data)
+		if abs := resolveCodeFile(ws, s.File); abs != "" {
+			if data, err := os.ReadFile(abs); err == nil {
+				cc.Content = string(data)
+			}
 		}
 		out = append(out, cc)
 	}
@@ -199,7 +202,27 @@ func codeForFeatures(repo string, kg schema.KnowledgeGraph, features map[string]
 	return out
 }
 
-func decisionsForFeatures(repo string, kg schema.KnowledgeGraph, features map[string]bool) []DecisionContext {
+// resolveCodeFile maps a graph-relative source path back to an absolute path
+// by trying each code root, with and without the multi-root name prefix.
+func resolveCodeFile(ws *workspace.Workspace, file string) string {
+	file = filepath.FromSlash(file)
+	for _, root := range ws.CodeRoots {
+		if !root.Available {
+			continue
+		}
+		for _, candidate := range []string{
+			filepath.Join(root.Abs, file),
+			filepath.Join(root.Abs, strings.TrimPrefix(file, root.Name+string(filepath.Separator))),
+		} {
+			if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
+				return candidate
+			}
+		}
+	}
+	return ""
+}
+
+func decisionsForFeatures(ws *workspace.Workspace, kg schema.KnowledgeGraph, features map[string]bool) []DecisionContext {
 	seen := map[string]bool{}
 	var out []DecisionContext
 	for _, m := range kg.Features {
@@ -212,7 +235,7 @@ func decisionsForFeatures(repo string, kg schema.KnowledgeGraph, features map[st
 			}
 			seen[d.ADR] = true
 			dc := DecisionContext{ADR: d.ADR, Summary: d.Summary}
-			if content := readADR(repo, d.ADR); content != "" {
+			if content := readADR(ws.DecisionsDir(), d.ADR); content != "" {
 				dc.Content = content
 			}
 			out = append(out, dc)
@@ -221,16 +244,15 @@ func decisionsForFeatures(repo string, kg schema.KnowledgeGraph, features map[st
 	return out
 }
 
-// readADR looks for an ADR file under decisions/ by id prefix.
-func readADR(repo, adr string) string {
-	dir := filepath.Join(repo, "decisions")
-	entries, err := os.ReadDir(dir)
+// readADR looks for an ADR file in decisionsDir by id prefix.
+func readADR(decisionsDir, adr string) string {
+	entries, err := os.ReadDir(decisionsDir)
 	if err != nil {
 		return ""
 	}
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), adr) {
-			if data, err := os.ReadFile(filepath.Join(dir, e.Name())); err == nil {
+			if data, err := os.ReadFile(filepath.Join(decisionsDir, e.Name())); err == nil {
 				return string(data)
 			}
 		}

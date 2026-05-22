@@ -65,21 +65,41 @@ func newCorpus(kg schema.KnowledgeGraph, cfg config.Config) *corpus {
 	return c
 }
 
+// Options controls a validation run.
+type Options struct {
+	// ReviewMode runs only the checks that need no source code: manifest,
+	// dependency, and initiative/task integrity. The code-coupled checks
+	// (annotation and verification integrity) are skipped — used when an
+	// operator has access to the lattice/ directory but not the code.
+	ReviewMode bool
+}
+
 // Validate runs all rules and returns the complete, sorted violation set,
 // including any extraction violations already present on the graph.
-func Validate(kg schema.KnowledgeGraph, cfg config.Config) []schema.Violation {
+func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schema.Violation {
 	c := newCorpus(kg, cfg)
 	var v []schema.Violation
 
 	v = append(v, kg.Violations...) // parse errors carried from extraction
 	v = append(v, c.checkManifests()...)
 	v = append(v, c.checkDependencies()...)
-	v = append(v, c.checkAnnotations()...)
-	v = append(v, c.checkVerification()...)
 	v = append(v, c.checkInitiativesAndTasks()...)
+
+	if !opts.ReviewMode {
+		v = append(v, c.checkAnnotations()...)
+		v = append(v, c.checkVerification()...)
+		v = append(v, c.checkSurfaces()...)
+		v = append(v, c.checkErrors()...)
+	}
 
 	sortViolations(v)
 	return dedupe(v)
+}
+
+// CodeCoupledChecks names the validation categories that review mode defers.
+var CodeCoupledChecks = []string{
+	"annotation integrity", "verification integrity",
+	"surface integrity", "error-contract integrity",
 }
 
 // HasErrors reports whether any violation is error-severity.

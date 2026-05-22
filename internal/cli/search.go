@@ -24,7 +24,7 @@ func newSearchCommand(io *IO) *cobra.Command {
 		Short: "Search features, capabilities, and invariants",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			kg, err := buildGraph(cmd.Context(), io.Repo, false)
+			kg, _, err := graphFor(io, cmd, false)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}

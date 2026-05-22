@@ -4,13 +4,25 @@ _Generated from lattice.json — schema {{.SchemaVersion}}._
 
 ## Feature taxonomy
 
-{{range .Features}}- `{{.ID}}` ({{.Status}}) — {{.Purpose}}
+{{range .Features}}- `{{.ID}}` ({{.Status}}) — {{inline .Purpose}}
 {{end}}
 
 ## Capability inventory
 
 {{range .Features}}{{$fid := .ID}}{{range .Capabilities}}- **{{$fid}}:{{.ID}}** — {{.Summary}}
 {{end}}{{end}}
+
+## User / system interactions
+
+{{if .Surfaces}}{{range .Surfaces}}- `{{surfaceLabel .}}` — {{if .Feature}}{{.Feature}}{{else}}(unassigned){{end}}{{if and .Declared .Implemented}}{{else if .Declared}} ⚠ declared, not implemented{{else}} ⚠ implemented, undeclared{{end}}
+{{end}}{{else}}_No interactions._
+{{end}}
+
+## Error contract
+
+{{if .Errors}}{{range .Errors}}- `{{.Code}}`{{if .Status}} ({{.Status}}){{end}} — {{if .Feature}}{{.Feature}}{{else}}(unassigned){{end}}{{if and .Declared .Implemented}}{{else if .Declared}} ⚠ declared, not raised{{else}} ⚠ raised, undeclared{{end}}
+{{end}}{{else}}_No declared errors._
+{{end}}
 
 ## Active initiatives
 

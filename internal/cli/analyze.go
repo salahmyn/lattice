@@ -21,7 +21,11 @@ func newAnalyzeProposalCommand(io *IO) *cobra.Command {
 		Short: "Analyze a proposal manifest against the corpus",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			report, err := analyze.NewAnalyzer(io.Repo).AnalyzeProposal(cmd.Context(), args[0])
+			ws, err := openWorkspace(io)
+			if err != nil {
+				return io.fail("NO_WORKSPACE", err.Error(), nil)
+			}
+			report, err := analyze.NewAnalyzer(ws).AnalyzeProposal(cmd.Context(), args[0])
 			if err != nil {
 				return io.fail("ANALYZE_FAILED", err.Error(), nil)
 			}
@@ -43,7 +47,11 @@ func newAnalyzeEvalCommand(io *IO) *cobra.Command {
 			if baseline == "" {
 				return io.fail("EVAL_NO_BASELINE", "--baseline directory is required", nil)
 			}
-			result, err := analyze.NewAnalyzer(io.Repo).Eval(cmd.Context(), baseline)
+			ws, err := openWorkspace(io)
+			if err != nil {
+				return io.fail("NO_WORKSPACE", err.Error(), nil)
+			}
+			result, err := analyze.NewAnalyzer(ws).Eval(cmd.Context(), baseline)
 			if err != nil {
 				return io.fail("EVAL_FAILED", err.Error(), nil)
 			}

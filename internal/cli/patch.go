@@ -28,8 +28,12 @@ func newPatchCommand(io *IO) *cobra.Command {
 			if err != nil {
 				return io.fail("PATCH_PARSE_FAILED", err.Error(), nil)
 			}
+			ws, err := openWorkspace(io)
+			if err != nil {
+				return io.fail("NO_WORKSPACE", err.Error(), nil)
+			}
 
-			engine := patch.New(io.Repo)
+			engine := patch.New(ws)
 			if doApply {
 				result, err := engine.Apply(cmd.Context(), p)
 				if err != nil {

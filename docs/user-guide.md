@@ -57,7 +57,7 @@ cd lattice-mcp && npm install && npm run build
 | Concept | What it is |
 |---|---|
 | **Feature** | A unit of system meaning, with a dotted id (`checkout.refund`). |
-| **Manifest** | One YAML file under `features/` declaring one feature. |
+| **Manifest** | One YAML file under `lattice/features/` declaring one feature. |
 | **Capability** | A named behavior of a feature, with prose rules. |
 | **Invariant** | A constraint a feature must always hold (`INV-1`). |
 | **Annotation** | A decorator / JSDoc tag / PHP attribute linking code to a manifest. |
@@ -83,15 +83,19 @@ Every declared invariant needs an **enforcer** (code annotated
 ### Step 1 — Initialize
 
 ```sh
-lattice init
+lattice init                 # new project
+lattice migrate              # upgrading a v0.1.0 flat-layout repository
 ```
 
-Scaffolds `.lattice/` (config + 8 shipped agent skills), `features/`,
-`work/initiatives/`, `decisions/`, `schemas/`, `src/`, `tests/`.
+`init` scaffolds a single `lattice/` directory holding config, the 8 shipped
+agent skills, and `features/`, `initiatives/`, `decisions/`, `schemas/`. Your
+source code stays where it already is. `lattice/workspace.yaml` selects
+**embedded** mode (lattice/ inside one code repo) or **standalone** mode
+(lattice/ as its own repo governing external code roots).
 
 ### Step 2 — Declare a feature
 
-Write `features/checkout/refund.yaml` (or `lattice new feature checkout.refund`):
+Write `lattice/features/checkout/refund.yaml` (or `lattice new feature checkout.refund`):
 
 ```yaml
 id: checkout.refund
@@ -150,13 +154,21 @@ lattice validate           # exits 0 when clean, non-zero on violations
   `lattice patch --from-file change.json --preview` then `--apply`. The engine
   refuses an apply that would introduce new errors.
 - Assess a proposed change before committing:
-  `lattice analyze proposal features/.../proposals/new-thing.yaml`.
+  `lattice analyze proposal lattice/features/.../proposals/new-thing.yaml`.
 - Coordinate larger work as an **initiative** with tasks and streams.
 
 ### Step 6 — Commit
 
-`lattice.json`, the manifests, and `.lattice/` are committed to git. Wire
-`lattice validate` into CI with the templates in `ci-templates/`.
+The whole `lattice/` directory (manifests, `lattice.json`, config, skills) is
+committed to git; `lattice/.cache/` is gitignored. Wire `lattice validate`
+into CI with the templates in `ci-templates/`.
+
+> **Multi-repo / review mode.** In standalone mode the `lattice/` directory is
+> its own repository — add it to code repos as a submodule, or keep it free-
+> standing. When code roots are not accessible (the PM/QA case), Lattice runs
+> **review mode**: it validates manifests, dependencies, and initiatives, and
+> defers the code-coupled checks to CI. Force it with `lattice validate
+> --review`.
 
 ---
 
@@ -169,7 +181,8 @@ lattice feature list                  # what features exist
 lattice feature show checkout.refund   # one feature, hydrated
 lattice symbol <fqn>                   # Lattice context of a code symbol
 lattice search "refund" [--semantic]   # find features/capabilities/invariants
-lattice view developer|product|business
+lattice view developer|product|business|c4   # c4: Context/Container/Component
+lattice view c4 --format structurizr          # C4 as a Structurizr DSL workspace
 lattice analyze proposal <file>        # conflict + impact analysis
 lattice patch --from-file p.json --preview|--apply
 lattice initiative show <id>           # initiative + tasks
@@ -191,7 +204,7 @@ There are three integration surfaces — use whichever your assistant supports:
 | Surface | What it is | Best for |
 |---|---|---|
 | **MCP server** | 21 tools over the Model Context Protocol | Claude Code, Claude Desktop, Codex, Gemini, Cursor |
-| **Agent skills** | Markdown how-to packs in `.lattice/skills/` | Any agent that can read files |
+| **Agent skills** | Markdown how-to packs in `lattice/skills/` | Any agent that can read files |
 | **CLI + `--json`** | Shell out to `lattice … --json` | Any agent that can run a command |
 
 The MCP server simply wraps the CLI, so all three give the same capabilities.
@@ -219,13 +232,13 @@ or write `.mcp.json` directly:
 }
 ```
 
-Then the shipped skills are already on disk at `.lattice/skills/lattice/`.
+Then the shipped skills are already on disk at `lattice/skills/lattice/`.
 Point Claude Code at them in `CLAUDE.md`:
 
 ```markdown
 ## Lattice
 This repo uses Lattice. Before changing code, read the relevant skill in
-`.lattice/skills/lattice/` and call `lattice_get_agent_context` for the task.
+`lattice/skills/lattice/` and call `lattice_get_agent_context` for the task.
 Validate with `lattice_validate` before finishing.
 ```
 
@@ -282,7 +295,7 @@ server is only a convenience wrapper. Give the agent this instruction:
 ```
 This repository uses Lattice. The `lattice` CLI is the interface.
 - Run `lattice <command> --json` for machine-readable output.
-- Read `.lattice/skills/lattice/` for how-to guidance.
+- Read `lattice/skills/lattice/` for how-to guidance.
 - Before editing: `lattice agent context --task <id> --json`.
 - Edit manifests only via `lattice patch --from-file <f> --preview` then `--apply`.
 - Before finishing: `lattice validate --json` must report `"ok": true`.
@@ -297,7 +310,7 @@ Whatever the surface, an AI assistant should follow the same loop. MCP tool
 names are shown; the CLI equivalent is in parentheses.
 
 1. **Orient** — list skills and load the relevant ones.
-   `lattice skills list` → read `.lattice/skills/lattice/working-tasks/SKILL.md`.
+   `lattice skills list` → read `lattice/skills/lattice/working-tasks/SKILL.md`.
 
 2. **Pick work** — `lattice_pick_next_task` (`lattice task pick-next --json`).
    Returns the next task whose dependencies are satisfied.

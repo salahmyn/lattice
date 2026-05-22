@@ -6,7 +6,7 @@ expertly without re-deriving how it works. Lattice **ships** skills; it never
 
 ## Shipped skills
 
-Eight skills ship with the binary and are copied into `.lattice/skills/lattice/`
+Eight skills ship with the binary and are copied into `lattice/skills/lattice/`
 on `lattice init`, so they version-control with the project:
 
 ```sh
@@ -30,7 +30,7 @@ lattice skills export lattice/authoring-manifests --out ./tmp
 Each skill is a folder:
 
 ```
-.lattice/skills/lattice/authoring-manifests/
+lattice/skills/lattice/authoring-manifests/
 ├── SKILL.md            # the primary, operational instructions
 ├── examples/           # optional worked examples
 └── reference/          # optional deep-dive material, loaded on demand
@@ -52,7 +52,7 @@ description: How to write a well-formed Lattice feature manifest.
 
 ## Custom skills
 
-Add team-specific skills under `.lattice/skills/<org>/<skill-id>/`. They ship
+Add team-specific skills under `lattice/skills/<org>/<skill-id>/`. They ship
 with the repo and are listed alongside the built-in skills — useful for
 codifying conventions like "how we name capabilities at Acme Corp".
 

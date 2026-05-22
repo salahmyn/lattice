@@ -48,6 +48,8 @@ var decoratorNames = map[string]string{
 	"depends_on_feature":        "depends_on_feature",
 	"role":                      "role",
 	"suppresses_invariant":      "suppresses_invariant",
+	"surface":                   "surface",
+	"error":                     "error",
 	"module_feature":            "module_feature",
 	"module_enforces_invariant": "module_enforces_invariant",
 	"module_depends_on_feature": "module_depends_on_feature",
@@ -92,12 +94,8 @@ func renderArgs(args []interface{}) string {
 }
 
 // SCIPIndexerCommand returns the scip-python indexer command.
-func (a *Adapter) SCIPIndexerCommand(repoPath string) ([]string, error) {
-	return []string{
-		"scip-python", "index",
-		"--cwd", repoPath,
-		"--output", filepath.Join(repoPath, ".lattice", "scip", "python.scip"),
-	}, nil
+func (a *Adapter) SCIPIndexerCommand(repoPath, outputPath string) ([]string, error) {
+	return []string{"scip-python", "index", "--cwd", repoPath, "--output", outputPath}, nil
 }
 
 // MutationRunnerCommand returns the mutmut command for the target files.

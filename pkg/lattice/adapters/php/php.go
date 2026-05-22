@@ -45,6 +45,8 @@ var attributeNames = map[string]string{
 	"depends_on_feature":        "DependsOnFeature",
 	"role":                      "Role",
 	"suppresses_invariant":      "SuppressesInvariant",
+	"surface":                   "Surface",
+	"error":                     "Error",
 	"module_feature":            "ModuleFeature",
 	"module_enforces_invariant": "ModuleEnforcesInvariant",
 	"module_depends_on_feature": "ModuleDependsOnFeature",
@@ -89,12 +91,8 @@ func renderArgs(args []interface{}) string {
 }
 
 // SCIPIndexerCommand returns the scip-php indexer command.
-func (a *Adapter) SCIPIndexerCommand(repoPath string) ([]string, error) {
-	return []string{
-		"scip-php", "index",
-		"--cwd", repoPath,
-		"--output", filepath.Join(repoPath, ".lattice", "scip", "php.scip"),
-	}, nil
+func (a *Adapter) SCIPIndexerCommand(repoPath, outputPath string) ([]string, error) {
+	return []string{"scip-php", "index", "--cwd", repoPath, "--output", outputPath}, nil
 }
 
 // MutationRunnerCommand returns the Infection command.

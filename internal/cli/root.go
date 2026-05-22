@@ -23,6 +23,7 @@ func NewRootCommand() *cobra.Command {
 		newVersionCommand(io),
 		newDoctorCommand(io),
 		newInitCommand(io),
+		newMigrateCommand(io),
 		newAdaptersCommand(io),
 		newExtractCommand(io),
 		newValidateCommand(io),

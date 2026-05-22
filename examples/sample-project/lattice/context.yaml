@@ -1,0 +1,25 @@
+# C4 Level-1 (System Context): the people and external systems the code
+# cannot reveal. Consumed by `lattice view c4`.
+
+system: Storefront
+description: An online storefront — checkout, refunds, wallet, and billing.
+
+actors:
+  - id: customer
+    name: Customer
+    description: A person buying products and managing refunds.
+    uses: [checkout, wallet]
+  - id: finance_analyst
+    name: Finance Analyst
+    description: Reconciles invoices against settled payments.
+    uses: [billing]
+
+external_systems:
+  - id: payment_gateway
+    name: Payment Gateway
+    description: Third-party card processor that settles and reverses charges.
+    used_by: [checkout]
+  - id: email_provider
+    name: Email Provider
+    description: Transactional email service for invoices and receipts.
+    used_by: [billing]

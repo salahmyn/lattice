@@ -10,13 +10,13 @@ import (
 )
 
 func newViewCommand(io *IO) *cobra.Command {
-	var out, task string
+	var out, task, format string
 	cmd := &cobra.Command{
 		Use:   "view <name>",
-		Short: "Render a view: developer | product | business | agent_context",
+		Short: "Render a view: developer | product | business | c4 | agent_context",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			kg, err := buildGraph(cmd.Context(), io.Repo, false)
+			kg, ws, err := graphFor(io, cmd, false)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
@@ -24,15 +24,26 @@ func newViewCommand(io *IO) *cobra.Command {
 			var rendered string
 			switch args[0] {
 			case "developer", "product":
-				rendered, err = views.Render(io.Repo, args[0], kg)
+				rendered, err = views.Render(ws.ViewsDir(), args[0], kg)
+			case "c4":
+				switch format {
+				case "structurizr", "dsl":
+					rendered = views.RenderC4Structurizr(ws, kg)
+				default:
+					rendered = views.RenderC4(ws, kg)
+				}
 			case "business":
-				res, nErr := capabilities(io.Repo).Narrate(cmd.Context(), "repo")
+				caps, nErr := capabilities(io)
+				if nErr != nil {
+					return io.fail("NO_WORKSPACE", nErr.Error(), nil)
+				}
+				res, nErr := caps.Narrate(cmd.Context(), "repo")
 				if nErr != nil {
 					return io.fail("VIEW_FAILED", nErr.Error(), nil)
 				}
 				rendered = res.Markdown
 			case "agent_context":
-				ac, acErr := views.BuildAgentContext(io.Repo, kg, task)
+				ac, acErr := views.BuildAgentContext(ws, kg, task)
 				if acErr != nil {
 					return io.fail("VIEW_FAILED", acErr.Error(), nil)
 				}
@@ -66,6 +77,7 @@ func newViewCommand(io *IO) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&out, "out", "", "write the view to a file")
 	cmd.Flags().StringVar(&task, "task", "", "task id (for agent_context)")
+	cmd.Flags().StringVar(&format, "format", "mermaid", "c4 output: mermaid | structurizr")
 	return cmd
 }
 

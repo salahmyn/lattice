@@ -25,10 +25,11 @@ go build -o lattice ./cmd/lattice
 ## Quick start
 
 ```sh
-# 1. Scaffold a repository.
+# 1. Scaffold a workspace (creates the lattice/ directory).
 lattice init
+# Upgrading a v0.1.0 repository? Run `lattice migrate` instead.
 
-# 2. Write a feature manifest at features/checkout/refund.yaml:
+# 2. Write a feature manifest at lattice/features/checkout/refund.yaml:
 #    id: checkout.refund
 #    version: 1
 #    status: production
@@ -62,13 +63,14 @@ A complete, validating three-language example lives in
 
 | Command | Purpose |
 |---|---|
-| `lattice init` | Scaffold the repository layout |
+| `lattice init` | Scaffold a workspace (the `lattice/` directory) |
+| `lattice migrate` | Upgrade a v0.1.0 flat-layout repository |
 | `lattice doctor` | Check optional prerequisites |
 | `lattice extract` | Build the knowledge graph (`lattice.json`) |
 | `lattice validate` | Run every validation rule |
 | `lattice analyze proposal <f>` | Conflict and impact analysis |
 | `lattice patch --from-file <f>` | Preview/apply a typed artifact edit |
-| `lattice view <name>` | Render developer / product / business views |
+| `lattice view <name>` | Render developer / product / business / c4 views |
 | `lattice agent <cap>` | LLM-backed capabilities (deterministic fallback) |
 | `lattice mutation run` | Mutation-test invariant-enforcing code |
 | `lattice structural-checks run` | Run structural invariant checks |
@@ -83,6 +85,29 @@ Every command supports `--json` for machine-readable output.
 - [MCP setup](docs/mcp-setup.md) — connecting Lattice to Claude Desktop
 - [Structural checks](docs/structural-checks.md) — authoring custom checks
 - [Agent skills](docs/skills.md) — authoring team-specific skills
+
+## Workspace layout
+
+Every Lattice-maintained artifact lives under one `lattice/` directory:
+
+```
+lattice/
+├── config.yaml, adapters.yaml, mcp.yaml, workspace.yaml
+├── context.yaml     C4 actors + external systems
+├── features/        feature manifests
+├── initiatives/     initiatives and tasks
+├── decisions/       ADRs
+├── schemas/         locked contracts
+├── skills/          shipped + custom agent skills
+├── views/           view-template overrides
+├── graph/           knowledge-graph shards (when sharding is enabled)
+├── lattice.json     the knowledge graph (or shard index)
+└── .cache/          gitignored: SCIP indexes, embeddings
+```
+
+`workspace.yaml` picks **embedded** mode (lattice/ inside one code repo) or
+**standalone** mode (lattice/ as its own repo governing external code roots —
+usable as a git submodule, and accessible to PMs/QA without code access).
 
 ## Architecture
 

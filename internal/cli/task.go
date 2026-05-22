@@ -21,7 +21,7 @@ func newTaskListCommand(io *IO) *cobra.Command {
 		Use:   "list",
 		Short: "List tasks",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			kg, err := buildGraph(cmd.Context(), io.Repo, false)
+			kg, _, err := graphFor(io, cmd, false)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
@@ -50,7 +50,7 @@ func newTaskPickNextCommand(io *IO) *cobra.Command {
 		Use:   "pick-next",
 		Short: "Pick the next actionable task (dependencies satisfied)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			kg, err := buildGraph(cmd.Context(), io.Repo, false)
+			kg, _, err := graphFor(io, cmd, false)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}

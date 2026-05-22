@@ -11,18 +11,19 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/graph"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/scip"
+	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
-// Analyzer runs conflict and impact analysis against a repository.
+// Analyzer runs conflict and impact analysis against a workspace.
 type Analyzer struct {
-	repo     string
+	ws       *workspace.Workspace
 	embedder Embedder
 }
 
-// NewAnalyzer returns an analyzer for repoPath using the dependency-free
+// NewAnalyzer returns an analyzer for the workspace using the dependency-free
 // lexical embedder.
-func NewAnalyzer(repoPath string) *Analyzer {
-	return &Analyzer{repo: repoPath, embedder: NewLexicalEmbedder()}
+func NewAnalyzer(ws *workspace.Workspace) *Analyzer {
+	return &Analyzer{ws: ws, embedder: NewLexicalEmbedder()}
 }
 
 // WithEmbedder overrides the semantic embedder (e.g. an ONNX-backed one).
@@ -42,11 +43,11 @@ func (a *Analyzer) AnalyzeProposal(ctx context.Context, proposalPath string) (Im
 		return ImpactReport{}, fmt.Errorf("load proposal: %w", err)
 	}
 
-	adCfg, _ := config.LoadAdapters(a.repo)
-	cfg, _ := config.Load(a.repo)
+	adCfg, _ := config.LoadAdapters(a.ws.LatticeDir)
+	cfg, _ := config.Load(a.ws.LatticeDir)
 	reg := all.Registry(adCfg)
 
-	res, err := extract.Extract(ctx, a.repo, reg, extract.Options{})
+	res, err := extract.Extract(ctx, a.ws, reg, extract.Options{})
 	if err != nil {
 		return ImpactReport{}, err
 	}
@@ -81,7 +82,7 @@ func (a *Analyzer) AnalyzeProposal(ctx context.Context, proposalPath string) (Im
 // SCIP for the symbols that implement it. Returns Available=false when no
 // SCIP indexes are present.
 func (a *Analyzer) blastRadius(res extract.Result, featureID string) *BlastRadius {
-	corpus, err := scip.Load(scipPaths(a.repo)...)
+	corpus, err := scip.Load(scipPaths(a.ws)...)
 	if err != nil || corpus.Empty() {
 		return &BlastRadius{Available: false}
 	}
@@ -111,11 +112,11 @@ func (a *Analyzer) blastRadius(res extract.Result, featureID string) *BlastRadiu
 	return br
 }
 
-func scipPaths(repo string) []string {
+func scipPaths(ws *workspace.Workspace) []string {
 	langs := []string{"python", "typescript", "php"}
 	out := make([]string, 0, len(langs))
 	for _, l := range langs {
-		out = append(out, filepath.Join(repo, ".lattice", "scip", l+".scip"))
+		out = append(out, filepath.Join(ws.SCIPDir(), l+".scip"))
 	}
 	return out
 }

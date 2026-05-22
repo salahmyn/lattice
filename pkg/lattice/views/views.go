@@ -1,6 +1,6 @@
 // Package views renders human-readable views from the Lattice knowledge
 // graph. Each view is a Go text/template; a repo may override any template by
-// placing one at .lattice/views/<name>.tmpl.
+// placing one at lattice/views/<name>.tmpl.
 package views
 
 import (
@@ -9,10 +9,25 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
+
+// funcs are the helpers available to every view template (builtin or
+// repo-override): `inline` collapses a multi-line field to one line,
+// `trimSpace` strips leading/trailing whitespace.
+var funcs = template.FuncMap{
+	"inline":    schema.InlineText,
+	"trimSpace": strings.TrimSpace,
+	"surfaceLabel": func(s schema.GraphSurface) string {
+		if s.Path != "" {
+			return strings.TrimSpace(s.Method + " " + s.Path)
+		}
+		return strings.TrimSpace(s.Type + " " + s.Name)
+	},
+}
 
 //go:embed templates/*.tmpl
 var builtinTemplates embed.FS
@@ -20,14 +35,14 @@ var builtinTemplates embed.FS
 // Names lists the template-driven views.
 var Names = []string{"developer", "product"}
 
-// Render renders the named view from the knowledge graph. If the repo has an
-// override at .lattice/views/<name>.tmpl, that template is used instead.
-func Render(repo, name string, kg schema.KnowledgeGraph) (string, error) {
-	tmplText, err := loadTemplate(repo, name)
+// Render renders the named view from the knowledge graph. If viewsDir holds
+// an override at <name>.tmpl, that template is used instead of the builtin.
+func Render(viewsDir, name string, kg schema.KnowledgeGraph) (string, error) {
+	tmplText, err := loadTemplate(viewsDir, name)
 	if err != nil {
 		return "", err
 	}
-	tmpl, err := template.New(name).Parse(tmplText)
+	tmpl, err := template.New(name).Funcs(funcs).Parse(tmplText)
 	if err != nil {
 		return "", fmt.Errorf("parse %s template: %w", name, err)
 	}
@@ -39,8 +54,8 @@ func Render(repo, name string, kg schema.KnowledgeGraph) (string, error) {
 }
 
 // loadTemplate returns the override template if present, else the builtin.
-func loadTemplate(repo, name string) (string, error) {
-	override := filepath.Join(repo, ".lattice", "views", name+".tmpl")
+func loadTemplate(viewsDir, name string) (string, error) {
+	override := filepath.Join(viewsDir, name+".tmpl")
 	if data, err := os.ReadFile(override); err == nil {
 		return string(data), nil
 	}

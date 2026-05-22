@@ -5,6 +5,7 @@ package lattice
 
 import (
 	"context"
+	"path/filepath"
 
 	"github.com/salahmyn/lattice/pkg/lattice/adapters/all"
 	"github.com/salahmyn/lattice/pkg/lattice/agentic"
@@ -16,30 +17,38 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/scip"
 	"github.com/salahmyn/lattice/pkg/lattice/validate"
+	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
-// Lattice is an open handle to one repository.
+// Lattice is an open handle to one workspace.
 type Lattice struct {
-	repo string
-	cfg  config.Config
+	ws  *workspace.Workspace
+	cfg config.Config
 }
 
-// Open returns a Lattice handle for the repository at path.
+// Open returns a Lattice handle for the workspace found from path.
 func Open(_ context.Context, path string) (*Lattice, error) {
-	cfg, err := config.Load(path)
+	ws, err := workspace.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	return &Lattice{repo: path, cfg: cfg}, nil
+	cfg, err := config.Load(ws.LatticeDir)
+	if err != nil {
+		return nil, err
+	}
+	return &Lattice{ws: ws, cfg: cfg}, nil
 }
 
-// Extract builds the knowledge graph from the repository.
+// Workspace returns the resolved workspace.
+func (l *Lattice) Workspace() *workspace.Workspace { return l.ws }
+
+// Extract builds the knowledge graph from the workspace.
 func (l *Lattice) Extract(ctx context.Context) (schema.KnowledgeGraph, error) {
-	adCfg, err := config.LoadAdapters(l.repo)
+	adCfg, err := config.LoadAdapters(l.ws.LatticeDir)
 	if err != nil {
 		return schema.KnowledgeGraph{}, err
 	}
-	res, err := extract.Extract(ctx, l.repo, all.Registry(adCfg), extract.Options{})
+	res, err := extract.Extract(ctx, l.ws, all.Registry(adCfg), extract.Options{})
 	if err != nil {
 		return schema.KnowledgeGraph{}, err
 	}
@@ -52,13 +61,13 @@ func (l *Lattice) Extract(ctx context.Context) (schema.KnowledgeGraph, error) {
 	}, graph.Options{}), nil
 }
 
-// Validate extracts and validates the repository.
+// Validate extracts and validates the workspace.
 func (l *Lattice) Validate(ctx context.Context) ([]schema.Violation, error) {
 	kg, err := l.Extract(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return validate.Validate(kg, l.cfg), nil
+	return validate.Validate(kg, l.cfg, validate.Options{ReviewMode: l.ws.Review}), nil
 }
 
 // ListFeatures returns every feature manifest.
@@ -100,7 +109,7 @@ func (l *Lattice) GetSymbolContext(ctx context.Context, fqn string) (*schema.Gra
 
 // GetBlastRadius returns the SCIP-derived blast radius of a symbol.
 func (l *Lattice) GetBlastRadius(_ context.Context, fqn string) (scip.BlastRadius, error) {
-	corpus, err := scip.Load(scipPaths(l.repo)...)
+	corpus, err := scip.Load(scipPaths(l.ws)...)
 	if err != nil {
 		return scip.BlastRadius{}, err
 	}
@@ -109,29 +118,29 @@ func (l *Lattice) GetBlastRadius(_ context.Context, fqn string) (scip.BlastRadiu
 
 // PreviewPatch evaluates a patch without writing.
 func (l *Lattice) PreviewPatch(ctx context.Context, p schema.Patch) (schema.PatchPreview, error) {
-	return patch.New(l.repo).Preview(ctx, p)
+	return patch.New(l.ws).Preview(ctx, p)
 }
 
 // ApplyPatch applies a patch atomically.
 func (l *Lattice) ApplyPatch(ctx context.Context, p schema.Patch) (schema.PatchResult, error) {
-	return patch.New(l.repo).Apply(ctx, p)
+	return patch.New(l.ws).Apply(ctx, p)
 }
 
 // AnalyzeProposal runs conflict and impact analysis on a proposal manifest.
 func (l *Lattice) AnalyzeProposal(ctx context.Context, proposalPath string) (analyze.ImpactReport, error) {
-	return analyze.NewAnalyzer(l.repo).AnalyzeProposal(ctx, proposalPath)
+	return analyze.NewAnalyzer(l.ws).AnalyzeProposal(ctx, proposalPath)
 }
 
 // SuggestAnnotation proposes annotations for the symbol at file:line.
 func (l *Lattice) SuggestAnnotation(ctx context.Context, file string, line int) (agentic.AnnotationResult, error) {
-	return agentic.New(l.repo, l.cfg).SuggestAnnotation(ctx, file, line)
+	return agentic.New(l.ws, l.cfg).SuggestAnnotation(ctx, file, line)
 }
 
-func scipPaths(repo string) []string {
+func scipPaths(ws *workspace.Workspace) []string {
 	langs := []string{"python", "typescript", "php"}
 	out := make([]string, 0, len(langs))
 	for _, lang := range langs {
-		out = append(out, repo+"/.lattice/scip/"+lang+".scip")
+		out = append(out, filepath.Join(ws.SCIPDir(), lang+".scip"))
 	}
 	return out
 }

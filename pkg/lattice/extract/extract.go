@@ -1,5 +1,6 @@
-// Package extract discovers and loads every Lattice artifact in a repository:
-// feature manifests, initiatives, tasks, and parsed source IR.
+// Package extract discovers and loads every Lattice artifact: feature
+// manifests, initiatives, tasks (all under the lattice/ directory) and the
+// parsed source IR of the workspace's code roots.
 package extract
 
 import (
@@ -14,69 +15,72 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/adapters"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
+	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
-// Result is everything extraction found in a repository.
+// Result is everything extraction found.
 type Result struct {
 	Manifests   []schema.Manifest
 	Initiatives []schema.Initiative
 	Tasks       []schema.Task
 	Modules     []ir.Module
 	Violations  []schema.Violation // load/parse failures, surfaced as violations
+	// Review is true when no code root was accessible: manifests, initiatives
+	// and tasks were loaded, but no source was parsed.
+	Review bool
 }
 
 // Options controls extraction breadth.
 type Options struct {
 	IncludeProposals bool // load manifests under proposals/ directories
+	ForceReview      bool // skip source parsing even when code is available
 }
 
-// skipDirs are directory names never descended into.
+// skipDirs are directory names never descended into when scanning code.
 var skipDirs = map[string]bool{
 	".git": true, ".lattice": true, "node_modules": true, "vendor": true,
 	"__pycache__": true, ".venv": true, "venv": true, "dist": true, "build": true,
 }
 
-// Extract scans repoPath and returns all artifacts. Source files are parsed
+// Extract loads all artifacts for a workspace. Source files are parsed
 // concurrently through the adapter registry.
-func Extract(ctx context.Context, repoPath string, reg *adapters.Registry, opts Options) (Result, error) {
+func Extract(ctx context.Context, w *workspace.Workspace, reg *adapters.Registry, opts Options) (Result, error) {
 	var res Result
 
-	manifests, mErr := loadManifests(repoPath, opts)
+	manifests, mErr := loadManifests(w, opts)
 	res.Manifests = manifests
 	res.Violations = append(res.Violations, mErr...)
 
-	inits, tasks, iErr := loadInitiativesAndTasks(repoPath)
+	inits, tasks, iErr := loadInitiativesAndTasks(w)
 	res.Initiatives = inits
 	res.Tasks = tasks
 	res.Violations = append(res.Violations, iErr...)
 
-	modules, parseViol := parseSources(ctx, repoPath, reg)
+	if w.Review || opts.ForceReview {
+		res.Review = true
+		return res, nil
+	}
+
+	modules, parseViol := parseSources(ctx, w, reg)
 	res.Modules = modules
 	res.Violations = append(res.Violations, parseViol...)
-
 	return res, nil
 }
 
-// loadManifests loads every feature manifest under features/.
-func loadManifests(repoPath string, opts Options) ([]schema.Manifest, []schema.Violation) {
-	dir := filepath.Join(repoPath, "features")
+// loadManifests loads every feature manifest under lattice/features/.
+// SourcePath is recorded relative to the lattice/ directory.
+func loadManifests(w *workspace.Workspace, opts Options) ([]schema.Manifest, []schema.Violation) {
 	var manifests []schema.Manifest
 	var viol []schema.Violation
 
-	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+	_ = filepath.WalkDir(w.FeaturesDir(), func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
-		if d.IsDir() {
-			if skipDirs[d.Name()] {
-				return filepath.SkipDir
-			}
+		if d.IsDir() || !isYAML(path) {
 			return nil
 		}
-		if !isYAML(path) {
-			return nil
-		}
-		rel, _ := filepath.Rel(repoPath, path)
+		rel, _ := filepath.Rel(w.LatticeDir, path)
 		rel = filepath.ToSlash(rel)
 		if !opts.IncludeProposals && strings.Contains(rel, "/proposals/") {
 			return nil
@@ -99,9 +103,10 @@ func loadManifests(repoPath string, opts Options) ([]schema.Manifest, []schema.V
 	return manifests, viol
 }
 
-// loadInitiativesAndTasks loads every initiative and its tasks.
-func loadInitiativesAndTasks(repoPath string) ([]schema.Initiative, []schema.Task, []schema.Violation) {
-	root := filepath.Join(repoPath, "work", "initiatives")
+// loadInitiativesAndTasks loads every initiative and its tasks from
+// lattice/initiatives/<id>/.
+func loadInitiativesAndTasks(w *workspace.Workspace) ([]schema.Initiative, []schema.Task, []schema.Violation) {
+	root := w.InitiativesDir()
 	var inits []schema.Initiative
 	var tasks []schema.Task
 	var viol []schema.Violation
@@ -115,7 +120,7 @@ func loadInitiativesAndTasks(repoPath string) ([]schema.Initiative, []schema.Tas
 			continue
 		}
 		initPath := filepath.Join(root, e.Name(), "initiative.yaml")
-		rel, _ := filepath.Rel(repoPath, initPath)
+		rel, _ := filepath.Rel(w.LatticeDir, initPath)
 		rel = filepath.ToSlash(rel)
 		in, lerr := schema.LoadInitiative(initPath)
 		if lerr != nil {
@@ -138,7 +143,7 @@ func loadInitiativesAndTasks(repoPath string) ([]schema.Initiative, []schema.Tas
 				continue
 			}
 			tp := filepath.Join(taskDir, te.Name())
-			trel, _ := filepath.Rel(repoPath, tp)
+			trel, _ := filepath.Rel(w.LatticeDir, tp)
 			trel = filepath.ToSlash(trel)
 			t, terr := schema.LoadTask(tp)
 			if terr != nil {
@@ -164,58 +169,77 @@ func loadInitiativesAndTasks(repoPath string) ([]schema.Initiative, []schema.Tas
 	return inits, tasks, viol
 }
 
-// parseSources walks the repo and parses every adapter-handled file into IR.
-func parseSources(ctx context.Context, repoPath string, reg *adapters.Registry) ([]ir.Module, []schema.Violation) {
-	var paths []string
-	_ = filepath.WalkDir(repoPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
+// sourceFile pairs an absolute path with its workspace-relative display path.
+type sourceFile struct {
+	abs string
+	rel string
+}
+
+// parseSources walks every available code root and parses adapter-handled
+// files into IR. Display paths are relative to the code root; when more than
+// one root is present they are prefixed with the root name.
+func parseSources(ctx context.Context, w *workspace.Workspace, reg *adapters.Registry) ([]ir.Module, []schema.Violation) {
+	multiRoot := availableRootCount(w) > 1
+	var files []sourceFile
+
+	for _, root := range w.CodeRoots {
+		if !root.Available {
+			continue
 		}
-		if d.IsDir() {
-			if skipDirs[d.Name()] {
-				return filepath.SkipDir
+		_ = filepath.WalkDir(root.Abs, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
 			}
+			if d.IsDir() {
+				if skipDirs[d.Name()] || path == w.LatticeDir {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if reg.For(path) == nil {
+				return nil
+			}
+			rel, _ := filepath.Rel(root.Abs, path)
+			rel = filepath.ToSlash(rel)
+			if multiRoot {
+				rel = root.Name + "/" + rel
+			}
+			files = append(files, sourceFile{abs: path, rel: rel})
 			return nil
-		}
-		if reg.For(path) != nil {
-			paths = append(paths, path)
-		}
-		return nil
-	})
-	sort.Strings(paths)
+		})
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].rel < files[j].rel })
 
 	type out struct {
 		mod  ir.Module
 		viol *schema.Violation
 	}
-	results := make([]out, len(paths))
+	results := make([]out, len(files))
 
 	const workers = 8
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, workers)
 
-	for i, p := range paths {
+	for i, f := range files {
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(i int, p string) {
+		go func(i int, f sourceFile) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			rel, _ := filepath.Rel(repoPath, p)
-			rel = filepath.ToSlash(rel)
-			ad := reg.For(p)
-			src, rerr := os.ReadFile(p)
+			ad := reg.For(f.abs)
+			src, rerr := os.ReadFile(f.abs)
 			if rerr != nil {
 				results[i] = out{viol: &schema.Violation{
 					Code: schema.CodeAdapterParseError, Severity: schema.SeverityError,
-					Message: "failed to read source: " + rerr.Error(), Location: &schema.Location{File: rel},
+					Message: "failed to read source: " + rerr.Error(), Location: &schema.Location{File: f.rel},
 				}}
 				return
 			}
-			mod, perr := ad.Parse(ctx, rel, src)
+			mod, perr := ad.Parse(ctx, f.rel, src)
 			if perr != nil {
 				v := &schema.Violation{
 					Code: schema.CodeAdapterParseError, Severity: schema.SeverityError,
-					Message: perr.Error(), Location: &schema.Location{File: rel},
+					Message: perr.Error(), Location: &schema.Location{File: f.rel},
 				}
 				if pe, ok := perr.(*adapters.ParseError); ok {
 					v.Location.Line = pe.Line
@@ -224,7 +248,7 @@ func parseSources(ctx context.Context, repoPath string, reg *adapters.Registry) 
 				return
 			}
 			results[i] = out{mod: mod}
-		}(i, p)
+		}(i, f)
 	}
 	wg.Wait()
 
@@ -245,6 +269,16 @@ func parseSources(ctx context.Context, repoPath string, reg *adapters.Registry) 
 		modules = append(modules, r.mod)
 	}
 	return modules, viol
+}
+
+func availableRootCount(w *workspace.Workspace) int {
+	n := 0
+	for _, r := range w.CodeRoots {
+		if r.Available {
+			n++
+		}
+	}
+	return n
 }
 
 func isYAML(path string) bool {

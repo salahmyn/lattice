@@ -1,5 +1,5 @@
 // Package config loads and represents Lattice's per-repo configuration from
-// the .lattice/ directory.
+// the lattice/ directory.
 package config
 
 import (
@@ -11,17 +11,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Dir is the per-repo config directory name.
-const Dir = ".lattice"
-
-// File names within Dir.
+// File names within the lattice/ directory.
 const (
 	ConfigFile   = "config.yaml"
 	AdaptersFile = "adapters.yaml"
 	MCPFile      = "mcp.yaml"
 )
 
-// Config is the top-level .lattice/config.yaml model.
+// Config is the top-level lattice/config.yaml model.
 type Config struct {
 	Agentic         Agentic         `yaml:"agentic"`
 	MutationTesting MutationTesting `yaml:"mutation_testing"`
@@ -29,6 +26,20 @@ type Config struct {
 	Subprocess      Subprocess      `yaml:"subprocess"`
 	SCIP            SCIP            `yaml:"scip"`
 	Decomposition   Decomposition   `yaml:"decomposition"`
+	Knowledge       Knowledge       `yaml:"knowledge"`
+}
+
+// Knowledge configures how the knowledge graph is emitted.
+type Knowledge struct {
+	Sharding Sharding `yaml:"sharding"`
+}
+
+// Sharding controls splitting lattice.json into per-group shard files.
+type Sharding struct {
+	Enabled  bool   `yaml:"enabled"`
+	Strategy string `yaml:"strategy"` // by_feature_group | by_size
+	// MaxFeaturesPerShard bounds a shard under the by_size strategy.
+	MaxFeaturesPerShard int `yaml:"max_features_per_shard"`
 }
 
 // Agentic configures the optional LLM-backed capabilities.
@@ -135,14 +146,17 @@ func Default() Config {
 		Subprocess:    Subprocess{DefaultTimeout: "60s"},
 		SCIP:          SCIP{CommitIndexes: false},
 		Decomposition: Decomposition{MaxInvariants: 20, MaxCapabilities: 15, MaxSurfaces: 8},
+		Knowledge: Knowledge{Sharding: Sharding{
+			Enabled: false, Strategy: "by_feature_group", MaxFeaturesPerShard: 200,
+		}},
 	}
 }
 
-// Load reads .lattice/config.yaml from repoPath, layering it over Default().
-// A missing file is not an error: the defaults are returned.
-func Load(repoPath string) (Config, error) {
+// Load reads config.yaml from the lattice/ directory, layering it over
+// Default(). A missing file is not an error: the defaults are returned.
+func Load(latticeDir string) (Config, error) {
 	cfg := Default()
-	path := filepath.Join(repoPath, Dir, ConfigFile)
+	path := filepath.Join(latticeDir, ConfigFile)
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return cfg, nil

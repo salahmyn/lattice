@@ -41,7 +41,7 @@ func newDoctorCommand(io *IO) *cobra.Command {
 		Short: "Check installed prerequisites",
 		Long:  "Reports which optional tools (SCIP indexers, mutation runners, LLM config) are available.",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			report := runDoctor(io.Repo)
+			report := runDoctor(io)
 			if io.JSON {
 				return io.printJSON(report)
 			}
@@ -51,29 +51,37 @@ func newDoctorCommand(io *IO) *cobra.Command {
 	}
 }
 
-func runDoctor(repo string) doctorReport {
+func runDoctor(io *IO) doctorReport {
 	var checks []doctorCheck
 
-	adCfg, _ := config.LoadAdapters(repo)
+	// Doctor works before `lattice init`: fall back to defaults if there is
+	// no workspace yet.
+	adCfg := config.DefaultAdapters()
+	cfg := config.Default()
+	codeRoot := io.Repo
+	if ws, err := openWorkspace(io); err == nil {
+		adCfg, _ = config.LoadAdapters(ws.LatticeDir)
+		cfg, _ = config.Load(ws.LatticeDir)
+		codeRoot = ws.PrimaryCodeRoot().Abs
+	}
 	reg := all.Registry(adCfg)
 
 	for _, a := range reg.All() {
 		// SCIP indexer.
-		if cmd, err := a.SCIPIndexerCommand(repo); err == nil && len(cmd) > 0 {
-			checks = append(checks, toolCheck("SCIP indexer ("+a.Name()+")", "scip", cmd[0], repo))
+		if cmd, err := a.SCIPIndexerCommand(codeRoot, ""); err == nil && len(cmd) > 0 {
+			checks = append(checks, toolCheck("SCIP indexer ("+a.Name()+")", "scip", cmd[0], codeRoot))
 		}
 		// Mutation runner.
-		if cmd, err := a.MutationRunnerCommand(repo, []string{"_probe_"}); err == nil && len(cmd) > 0 {
+		if cmd, err := a.MutationRunnerCommand(codeRoot, []string{"_probe_"}); err == nil && len(cmd) > 0 {
 			tool := cmd[0]
 			if tool == "npx" && len(cmd) > 1 {
 				tool = cmd[1]
 			}
-			checks = append(checks, toolCheck("Mutation runner ("+a.Name()+")", "mutation", tool, repo))
+			checks = append(checks, toolCheck("Mutation runner ("+a.Name()+")", "mutation", tool, codeRoot))
 		}
 	}
 
 	// LLM provider configuration.
-	cfg, _ := config.Load(repo)
 	llm := cfg.Agentic.LLM
 	llmCheck := doctorCheck{Name: "LLM provider", Category: "agentic"}
 	switch {

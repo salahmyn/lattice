@@ -6,6 +6,7 @@
  * @feature wallet
  * @capability wallet_credit
  * @enforces INV-1
+ * @surface event_emit wallet.credited
  */
 export function creditWallet(accountId: string, balance: number, amount: number): number {
   if (amount <= 0) {

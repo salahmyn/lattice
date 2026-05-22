@@ -2,7 +2,7 @@
 
 agentic:
   llm:
-    enabled: false           # set true to enable LLM-backed capabilities
+    enabled: true           # set true to enable LLM-backed capabilities
     provider: anthropic      # anthropic | openai | ollama
     model: claude-sonnet-4-7
     api_key_env: ANTHROPIC_API_KEY
@@ -32,3 +32,9 @@ decomposition:
   max_invariants: 20
   max_capabilities: 15
   max_surfaces: 8
+
+knowledge:
+  sharding:
+    enabled: false              # split lattice.json into per-group shards
+    strategy: by_feature_group  # by_feature_group | by_size
+    max_features_per_shard: 200

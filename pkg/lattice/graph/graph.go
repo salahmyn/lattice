@@ -20,6 +20,8 @@ type Input struct {
 	Initiatives []schema.Initiative
 	Tasks       []schema.Task
 	Violations  []schema.Violation
+	// Review marks a graph built without source (the PM/QA review case).
+	Review bool
 }
 
 // Options pins environment-derived fields so output can be byte-identical.
@@ -47,7 +49,8 @@ func Build(in Input, opts Options) schema.KnowledgeGraph {
 				Name: sym.Name, FQN: sym.FQN, Kind: string(sym.Kind),
 				File: sym.File, Line: sym.Line, Language: mod.Language,
 				EnclosingFQN: sym.EnclosingFQN, IsTest: sym.IsTest,
-				Feature: r.feature, Capabilities: r.capabilities,
+				Exported: sym.Exported,
+				Feature:  r.feature, Capabilities: r.capabilities,
 				EnforcesInvariants: r.enforces, DependsOnFeatures: r.dependsOn,
 				Roles: r.roles, Verifies: r.verifies, SuppressedInvariants: r.suppressed,
 			}
@@ -64,6 +67,8 @@ func Build(in Input, opts Options) schema.KnowledgeGraph {
 	manifests := hydrateManifests(in.Manifests, symbols, tests)
 	checks := collectStructuralChecks(manifests)
 	tasks := computeUnblocks(in.Tasks)
+	surfaces := buildSurfaces(in.Manifests, in.Modules, res)
+	errors := buildErrors(in.Manifests, in.Modules, res)
 
 	sortGraphSymbols(symbols)
 	sortGraphSymbols(tests)
@@ -90,6 +95,12 @@ func Build(in Input, opts Options) schema.KnowledgeGraph {
 	if modules == nil {
 		modules = []schema.GraphModule{}
 	}
+	if surfaces == nil {
+		surfaces = []schema.GraphSurface{}
+	}
+	if errors == nil {
+		errors = []schema.GraphError{}
+	}
 	if checks == nil {
 		checks = []schema.GraphStructuralCheck{}
 	}
@@ -109,11 +120,14 @@ func Build(in Input, opts Options) schema.KnowledgeGraph {
 		Symbols:             symbols,
 		Tests:               tests,
 		Modules:             modules,
+		Surfaces:            surfaces,
+		Errors:              errors,
 		Initiatives:         initiatives,
 		Tasks:               tasks,
 		StructuralChecks:    checks,
 		CodeGraph:           schema.CodeGraph{IndexedBy: "scip", LanguageIndexes: opts.LanguageIndexes},
 		Violations:          violations,
+		Review:              in.Review,
 	}
 }
 
@@ -157,7 +171,7 @@ func hydrateManifests(manifests []schema.Manifest, symbols, tests []schema.Graph
 		m.Verifications = nil
 
 		for _, s := range symbols {
-			if s.Feature != m.ID {
+			if s.Feature != m.ID || !isImplementationEdge(s) {
 				continue
 			}
 			m.Implementations = append(m.Implementations, schema.Implementation{
@@ -183,6 +197,23 @@ func hydrateManifests(manifests []schema.Manifest, symbols, tests []schema.Graph
 		})
 	}
 	return out
+}
+
+// implementationKinds are the symbol kinds that can implement a feature.
+// Type-only declarations (interfaces, type aliases) are excluded.
+var implementationKinds = map[string]bool{
+	string(ir.KindClass):    true,
+	string(ir.KindFunction): true,
+	string(ir.KindMethod):   true,
+	string(ir.KindTrait):    true,
+}
+
+// isImplementationEdge reports whether a symbol should appear among a
+// feature's implementation edges. It must be an implementation-bearing kind
+// (not an interface) and part of its module's public surface — private
+// helpers stay in the graph but are not feature implementations.
+func isImplementationEdge(s schema.GraphSymbol) bool {
+	return implementationKinds[s.Kind] && s.Exported
 }
 
 // childrenOf returns the immediate dot-nested children of a feature id.

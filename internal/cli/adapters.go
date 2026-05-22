@@ -26,7 +26,10 @@ func newAdaptersListCommand(io *IO) *cobra.Command {
 		Use:   "list",
 		Short: "List registered language adapters",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			adCfg, _ := config.LoadAdapters(io.Repo)
+			adCfg := config.DefaultAdapters()
+			if ws, err := openWorkspace(io); err == nil {
+				adCfg, _ = config.LoadAdapters(ws.LatticeDir)
+			}
 			reg := all.Registry(adCfg)
 			var infos []adapterInfo
 			for _, a := range reg.All() {

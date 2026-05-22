@@ -32,7 +32,7 @@ func TestValidateCleanFeature(t *testing.T) {
 			FQN: "t.t", IsTest: true, Verifies: []string{"checkout.refund:INV-1"},
 		}},
 	}
-	got := codes(Validate(kg, config.Default()))
+	got := codes(Validate(kg, config.Default(), Options{}))
 	for _, unwanted := range []string{
 		schema.CodeUnverifiedInvariant, schema.CodeUnenforcedInvariant,
 		schema.CodeSubfeatureParentMissing,
@@ -51,7 +51,7 @@ func TestValidateUnverifiedAndUnenforced(t *testing.T) {
 			Invariants: []schema.Invariant{{ID: "INV-1", Statement: "never negative"}},
 		}},
 	}
-	got := codes(Validate(kg, config.Default()))
+	got := codes(Validate(kg, config.Default(), Options{}))
 	if !got[schema.CodeUnenforcedInvariant] {
 		t.Error("expected UNENFORCED_INVARIANT")
 	}
@@ -69,7 +69,7 @@ func TestValidateDependencyCycle(t *testing.T) {
 				Owners: schema.Owners{Business: "b", Engineering: "e"}, DependsOn: []string{"a"}},
 		},
 	}
-	if !codes(Validate(kg, config.Default()))[schema.CodeDependsOnCycle] {
+	if !codes(Validate(kg, config.Default(), Options{}))[schema.CodeDependsOnCycle] {
 		t.Error("expected DEPENDS_ON_CYCLE")
 	}
 }
@@ -81,7 +81,7 @@ func TestValidateBadIDFormat(t *testing.T) {
 			Owners: schema.Owners{Business: "b", Engineering: "e"},
 		}},
 	}
-	if !codes(Validate(kg, config.Default()))[schema.CodeManifestIDFormat] {
+	if !codes(Validate(kg, config.Default(), Options{}))[schema.CodeManifestIDFormat] {
 		t.Error("expected MANIFEST_ID_FORMAT")
 	}
 }

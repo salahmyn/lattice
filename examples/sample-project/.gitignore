@@ -1,3 +1,2 @@
-# Lattice runtime artifacts
-.lattice/embeddings/
-.lattice/scip/
+# Lattice runtime cache
+lattice/.cache/

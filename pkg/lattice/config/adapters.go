@@ -41,10 +41,11 @@ func (a AdaptersConfig) IsEnabled(name string) bool {
 	return s.Enabled
 }
 
-// LoadAdapters reads .lattice/adapters.yaml, falling back to DefaultAdapters.
-func LoadAdapters(repoPath string) (AdaptersConfig, error) {
+// LoadAdapters reads adapters.yaml from the lattice/ directory, falling back
+// to DefaultAdapters.
+func LoadAdapters(latticeDir string) (AdaptersConfig, error) {
 	cfg := DefaultAdapters()
-	path := filepath.Join(repoPath, Dir, AdaptersFile)
+	path := filepath.Join(latticeDir, AdaptersFile)
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return cfg, nil

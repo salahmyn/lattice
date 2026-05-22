@@ -3,7 +3,6 @@ package cli
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"sort"
 
 	"github.com/spf13/cobra"
@@ -28,19 +27,19 @@ func newMutationRunCommand(io *IO) *cobra.Command {
 		Use:   "run",
 		Short: "Run mutation tests and record per-invariant scores",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			kg, err := buildGraph(cmd.Context(), io.Repo, false)
+			kg, ws, err := graphFor(io, cmd, false)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
-			adCfg, _ := config.LoadAdapters(io.Repo)
-			cfg, _ := config.Load(io.Repo)
-			runner := mutation.NewRunner(io.Repo, all.Registry(adCfg), cfg)
+			adCfg, _ := config.LoadAdapters(ws.LatticeDir)
+			cfg, _ := config.Load(ws.LatticeDir)
+			runner := mutation.NewRunner(ws.PrimaryCodeRoot().Abs, all.Registry(adCfg), cfg)
 
 			report := runner.Run(cmd.Context(), kg, mutation.Options{
 				Scope:     mutation.Scope(scope),
 				FeatureID: feature,
 			})
-			writeMutationScores(io.Repo, report.PerInvariant)
+			writeMutationScores(ws.MutationScoresPath(), report.PerInvariant)
 
 			if io.JSON {
 				return io.printJSON(report)
@@ -78,7 +77,11 @@ func newMutationScoresCommand(io *IO) *cobra.Command {
 		Use:   "scores",
 		Short: "Show recorded mutation scores",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			scores := readMutationScores(io.Repo)
+			ws, err := openWorkspace(io)
+			if err != nil {
+				return io.fail("NO_WORKSPACE", err.Error(), nil)
+			}
+			scores := readMutationScores(ws.MutationScoresPath())
 			if feature != "" {
 				filtered := map[string]float64{}
 				for k, v := range scores {
@@ -105,21 +108,17 @@ func newMutationScoresCommand(io *IO) *cobra.Command {
 	return cmd
 }
 
-func mutationScoresPath(repo string) string {
-	return filepath.Join(repo, ".lattice", "mutation-scores.json")
-}
-
-func writeMutationScores(repo string, scores map[string]float64) {
+func writeMutationScores(path string, scores map[string]float64) {
 	if scores == nil {
 		scores = map[string]float64{}
 	}
 	data, _ := json.MarshalIndent(scores, "", "  ")
-	_ = os.WriteFile(mutationScoresPath(repo), append(data, '\n'), 0o644)
+	_ = os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
-func readMutationScores(repo string) map[string]float64 {
+func readMutationScores(path string) map[string]float64 {
 	scores := map[string]float64{}
-	data, err := os.ReadFile(mutationScoresPath(repo))
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return scores
 	}

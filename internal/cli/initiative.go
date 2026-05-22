@@ -27,7 +27,7 @@ func newInitiativeListCommand(io *IO) *cobra.Command {
 		Use:   "list",
 		Short: "List initiatives",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			kg, err := buildGraph(cmd.Context(), io.Repo, false)
+			kg, _, err := graphFor(io, cmd, false)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
@@ -48,7 +48,7 @@ func newInitiativeShowCommand(io *IO) *cobra.Command {
 		Short: "Show an initiative and its tasks",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			kg, err := buildGraph(cmd.Context(), io.Repo, false)
+			kg, _, err := graphFor(io, cmd, false)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
@@ -81,7 +81,7 @@ func newInitiativeKanbanCommand(io *IO) *cobra.Command {
 		Short: "Show an initiative's tasks grouped by status",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			kg, err := buildGraph(cmd.Context(), io.Repo, false)
+			kg, _, err := graphFor(io, cmd, false)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
@@ -122,7 +122,7 @@ func newInitiativeCriticalPathCommand(io *IO) *cobra.Command {
 		Short: "Compute the critical path through an initiative's tasks",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			kg, err := buildGraph(cmd.Context(), io.Repo, false)
+			kg, _, err := graphFor(io, cmd, false)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}

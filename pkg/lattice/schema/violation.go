@@ -41,6 +41,14 @@ const (
 	CodeStructuralCheckTimedOut     = "STRUCTURAL_CHECK_TIMED_OUT"
 	CodeSuppressionWithoutReason    = "SUPPRESSION_WITHOUT_REASON"
 
+	// Surface integrity
+	CodeSurfaceUndeclared    = "SURFACE_UNDECLARED"
+	CodeSurfaceUnimplemented = "SURFACE_UNIMPLEMENTED"
+
+	// Error-contract integrity
+	CodeErrorUndeclared    = "ERROR_UNDECLARED"
+	CodeErrorUnimplemented = "ERROR_UNIMPLEMENTED"
+
 	// Initiative and task integrity
 	CodeInitiativeSchema                   = "INITIATIVE_SCHEMA"
 	CodeTaskSchema                         = "TASK_SCHEMA"

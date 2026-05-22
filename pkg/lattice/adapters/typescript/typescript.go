@@ -48,6 +48,8 @@ var jsdocTags = map[string]string{
 	"depends_on_feature":        "depends-on-feature",
 	"role":                      "role",
 	"suppresses_invariant":      "suppresses",
+	"surface":                   "surface",
+	"error":                     "error",
 	"module_feature":            "module-feature",
 	"module_enforces_invariant": "module-enforces",
 	"module_depends_on_feature": "module-depends-on-feature",
@@ -94,12 +96,8 @@ func renderArgs(args []interface{}) string {
 }
 
 // SCIPIndexerCommand returns the scip-typescript indexer command.
-func (a *Adapter) SCIPIndexerCommand(repoPath string) ([]string, error) {
-	return []string{
-		"scip-typescript", "index",
-		"--cwd", repoPath,
-		"--output", filepath.Join(repoPath, ".lattice", "scip", "typescript.scip"),
-	}, nil
+func (a *Adapter) SCIPIndexerCommand(repoPath, outputPath string) ([]string, error) {
+	return []string{"scip-typescript", "index", "--cwd", repoPath, "--output", outputPath}, nil
 }
 
 // MutationRunnerCommand returns the Stryker command for the target files.
