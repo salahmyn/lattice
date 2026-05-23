@@ -1,0 +1,54 @@
+{{define "coverage.html"}}{{template "layout" .}}{{end}}
+
+{{define "body"}}
+<div class="grid gap-6 md:grid-cols-3 mb-8">
+  {{template "coverageCard" (dict "Title" "Discovery"     "Subtitle" "symbols clustered into a candidate" "Ratio" .Discovery.Ratio     "N" .Discovery.ClusteredSymbols   "Total" .Discovery.TotalSymbols)}}
+  {{template "coverageCard" (dict "Title" "Documentation" "Subtitle" "symbols attached to an accepted feature" "Ratio" .Documentation.Ratio "N" .Documentation.AttachedSymbols "Total" .Documentation.TotalSymbols)}}
+  {{template "coverageCard" (dict "Title" "Verification"  "Subtitle" "invariants enforced and verified" "Ratio" .Verification.Ratio  "N" .Verification.VerifiedInvariants "Total" .Verification.TotalInvariants)}}
+</div>
+
+<section class="bg-white rounded-lg border border-slate-200 overflow-hidden">
+  <div class="px-6 py-4 border-b border-slate-200 flex items-baseline justify-between">
+    <h2 class="text-lg font-semibold">Discovery by package</h2>
+    <p class="text-xs text-slate-500">Sorted by lowest coverage first — the adoption roadmap.</p>
+  </div>
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+      <tr>
+        <th class="px-6 py-2 text-left font-medium">Package</th>
+        <th class="px-6 py-2 text-right font-medium">Clustered</th>
+        <th class="px-6 py-2 text-right font-medium">Total</th>
+        <th class="px-6 py-2 text-right font-medium w-64">Ratio</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {{range .Packages}}
+      <tr>
+        <td class="px-6 py-2 font-mono text-xs">{{.Package}}</td>
+        <td class="px-6 py-2 text-right tabular-nums">{{.ClusteredSymbols}}</td>
+        <td class="px-6 py-2 text-right tabular-nums">{{.TotalSymbols}}</td>
+        <td class="px-6 py-2 text-right">
+          <div class="flex items-center justify-end gap-2">
+            <div class="w-32 h-2 bg-slate-100 rounded">
+              <div class="h-2 rounded {{if lt .Ratio 0.5}}bg-rose-500{{else if lt .Ratio 0.9}}bg-amber-500{{else}}bg-emerald-500{{end}}"
+                   style="width: {{percent .Ratio}}%"></div>
+            </div>
+            <span class="text-xs tabular-nums w-12 text-right">{{percent .Ratio}}%</span>
+          </div>
+        </td>
+      </tr>
+      {{else}}
+      <tr><td colspan="4" class="px-6 py-6 text-center text-sm text-slate-500">No import session — run <code class="font-mono">lattice import scan</code></td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+{{end}}
+
+{{define "coverageCard"}}
+<div class="bg-white rounded-lg border border-slate-200 p-6">
+  <div class="text-xs uppercase text-slate-500 tracking-wide">{{.Title}}</div>
+  <div class="mt-2 text-4xl font-semibold tabular-nums {{if lt .Ratio 0.5}}text-rose-700{{else if lt .Ratio 0.9}}text-amber-700{{else}}text-emerald-700{{end}}">{{percent .Ratio}}%</div>
+  <div class="mt-1 text-xs text-slate-500">{{.N}} / {{.Total}} {{.Subtitle}}</div>
+</div>
+{{end}}

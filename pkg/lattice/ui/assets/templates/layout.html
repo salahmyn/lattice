@@ -1,0 +1,47 @@
+{{define "layout"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} — Lattice</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+  <header class="bg-white border-b border-slate-200">
+    <div class="max-w-7xl mx-auto px-6 py-3 flex items-center gap-6">
+      <a href="/" class="font-mono font-bold text-lg text-slate-900">lattice</a>
+      <nav class="flex items-center gap-4 text-sm">
+        <a href="/" class="{{if eq .Active "overview"}}text-slate-900 font-medium{{else}}text-slate-500 hover:text-slate-900{{end}}">Overview</a>
+        <a href="/features" class="{{if eq .Active "features"}}text-slate-900 font-medium{{else}}text-slate-500 hover:text-slate-900{{end}}">Features</a>
+        <a href="/entry-points" class="{{if eq .Active "entry-points"}}text-slate-900 font-medium{{else}}text-slate-500 hover:text-slate-900{{end}}">Entry points</a>
+        <a href="/coverage" class="{{if eq .Active "coverage"}}text-slate-900 font-medium{{else}}text-slate-500 hover:text-slate-900{{end}}">Coverage</a>
+        <a href="/validation" class="{{if eq .Active "validation"}}text-slate-900 font-medium{{else}}text-slate-500 hover:text-slate-900{{end}}">Validation</a>
+        <a href="/import" class="{{if eq .Active "import"}}text-slate-900 font-medium{{else}}text-slate-500 hover:text-slate-900{{end}}">Import</a>
+        <a href="/config" class="{{if eq .Active "config"}}text-slate-900 font-medium{{else}}text-slate-500 hover:text-slate-900{{end}}">Config</a>
+      </nav>
+      <form action="/search" method="get" class="ml-auto flex items-center gap-2">
+        <input type="search" name="q" placeholder="Search features, entry points, symbols…"
+               class="text-sm px-3 py-1.5 border border-slate-200 rounded-md w-72 focus:outline-none focus:border-slate-400" />
+        {{if .JSONHref}}<a href="{{.JSONHref}}" class="text-xs font-mono text-slate-500 hover:text-slate-900">JSON</a>{{end}}
+      </form>
+    </div>
+    {{if .Breadcrumbs}}
+    <div class="max-w-7xl mx-auto px-6 py-2 text-xs text-slate-500 flex items-center gap-2">
+      {{range $i, $c := .Breadcrumbs}}
+        {{if $i}}<span>›</span>{{end}}
+        {{if $c.Href}}<a href="{{$c.Href}}" class="hover:text-slate-900">{{$c.Label}}</a>{{else}}<span class="text-slate-900">{{$c.Label}}</span>{{end}}
+      {{end}}
+    </div>
+    {{end}}
+  </header>
+  <main class="max-w-7xl mx-auto px-6 py-8">
+    {{template "body" .Body}}
+  </main>
+  <footer class="max-w-7xl mx-auto px-6 py-6 text-xs text-slate-400">
+    Lattice v0.4.0 — UI consumes <a href="{{.JSONHref}}" class="hover:text-slate-700">/api/v1/*</a> wrappers over the same KnowledgeGraph the CLI prints.
+  </footer>
+</body>
+</html>
+{{end}}

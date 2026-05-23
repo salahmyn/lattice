@@ -1,0 +1,26 @@
+/* Lattice UI overrides — minimal; Tailwind CDN covers the rest.
+   Kept here so the UI degrades gracefully if the CDN is unreachable
+   (e.g. air-gapped dogfood). */
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+code, .font-mono, pre, dd.font-mono {
+  font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* Mermaid containers can overflow on small viewports; let the user
+   pan horizontally rather than collapse the layout. */
+.mermaid {
+  overflow-x: auto;
+}
+
+/* When Tailwind CDN fails, the page is still readable. */
+.bg-white { background: #fff; }
+.bg-slate-50 { background: #f8fafc; }
+.bg-slate-100 { background: #f1f5f9; }
+.text-slate-900 { color: #0f172a; }
+.text-slate-700 { color: #334155; }
+.text-slate-500 { color: #64748b; }
+.text-slate-400 { color: #94a3b8; }

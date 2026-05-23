@@ -1,0 +1,76 @@
+{{define "import-candidate.html"}}{{template "layout" .}}{{end}}
+
+{{define "body"}}
+{{with .Row}}
+<div class="grid gap-6 lg:grid-cols-3">
+  <section class="lg:col-span-2 bg-white rounded-lg border border-slate-200 p-6">
+    <h1 class="text-2xl font-semibold text-slate-900 font-mono">{{.ID}}</h1>
+    <dl class="mt-4 grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+      <dt class="text-slate-500">Package</dt><dd class="font-mono text-xs">{{.Package}}</dd>
+      <dt class="text-slate-500">Confidence</dt><dd>{{printf "%.1f" .Confidence}}</dd>
+      <dt class="text-slate-500">Symbols</dt><dd class="tabular-nums">{{len .Symbols}}</dd>
+      {{if .FeatureID}}<dt class="text-slate-500">Drafted as</dt><dd class="font-mono text-xs">{{.FeatureID}}</dd>{{end}}
+      <dt class="text-slate-500">Decision</dt><dd>{{if .Decision}}{{.Decision}}{{else}}pending{{end}}</dd>
+    </dl>
+
+    <h2 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide">Symbols ({{len .Symbols}})</h2>
+    <ul class="mt-2 space-y-1 font-mono text-xs text-slate-700 max-h-72 overflow-y-auto">
+      {{range .Symbols}}<li>{{.}}</li>{{end}}
+    </ul>
+
+    {{if .Evidence}}
+    <h2 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide">Evidence</h2>
+    <ul class="mt-2 space-y-1 text-xs text-slate-600">
+      {{range .Evidence}}<li><span class="font-mono px-1 bg-slate-100 rounded mr-2">{{.Signal}}</span>{{.Detail}}</li>{{end}}
+    </ul>
+    {{end}}
+  </section>
+
+  <aside class="space-y-6">
+    <section class="bg-white rounded-lg border border-slate-200 p-6">
+      <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide">Actions</h2>
+      {{if not .Decision}}
+      <div class="mt-3 flex gap-2">
+        <button onclick="decide('{{.ID}}','accept')" class="flex-1 px-3 py-2 text-sm bg-emerald-600 text-white rounded hover:bg-emerald-700">Accept</button>
+        <button onclick="decide('{{.ID}}','reject')" class="flex-1 px-3 py-2 text-sm bg-rose-600 text-white rounded hover:bg-rose-700">Reject</button>
+      </div>
+      {{else}}
+      <p class="mt-3 text-sm text-slate-500">Already <strong>{{.Decision}}</strong>. Use the CLI <code class="font-mono">lattice import undo {{.ID}}</code> to revert.</p>
+      {{end}}
+    </section>
+
+    {{if $.Draft.ID}}
+    <section class="bg-white rounded-lg border border-slate-200 p-6">
+      <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide">Draft manifest</h2>
+      <div class="mt-3 text-xs">
+        <p class="font-mono">{{$.Draft.ID}}</p>
+        <p class="mt-2 text-slate-700">{{$.Draft.Purpose}}</p>
+        {{if $.Draft.Capabilities}}
+        <ul class="mt-3 space-y-1">
+          {{range $.Draft.Capabilities}}
+          <li class="border-l-2 border-slate-200 pl-3">
+            <span class="font-mono">{{.ID}}</span>
+            <p class="text-slate-600">{{.Summary}}</p>
+          </li>
+          {{end}}
+        </ul>
+        {{end}}
+      </div>
+    </section>
+    {{end}}
+  </aside>
+</div>
+{{end}}
+
+<script>
+async function decide(id, action) {
+  const r = await fetch('/api/v1/import/decisions', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({decisions: {[id]: action}}),
+  });
+  if (!r.ok) { alert('decision failed: ' + r.status); return; }
+  window.location.reload();
+}
+</script>
+{{end}}

@@ -1,0 +1,16 @@
+{{define "flow.html"}}{{template "layout" .}}{{end}}
+
+{{define "body"}}
+{{with .}}
+<section class="bg-white rounded-lg border border-slate-200 p-6">
+  <h1 class="text-lg font-semibold text-slate-900 font-mono">{{.ID}}</h1>
+  <div class="mermaid mt-6 text-sm">
+{{.Mermaid}}
+  </div>
+</section>
+{{end}}
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", flowchart: { curve: "linear" } });
+</script>
+{{end}}

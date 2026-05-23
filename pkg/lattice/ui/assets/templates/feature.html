@@ -1,0 +1,92 @@
+{{define "feature.html"}}{{template "layout" .}}{{end}}
+
+{{define "body"}}
+{{with .Feature}}
+<div class="grid gap-6 lg:grid-cols-3">
+  <section class="lg:col-span-2 bg-white rounded-lg border border-slate-200 p-6">
+    <div class="flex items-baseline gap-3">
+      <h1 class="text-2xl font-semibold text-slate-900 font-mono">{{.ID}}</h1>
+      {{if eq (printf "%v" .Status) "production"}}<span class="px-2 py-0.5 text-xs rounded bg-emerald-50 text-emerald-700">production</span>
+      {{else if eq (printf "%v" .Status) "proposal"}}<span class="px-2 py-0.5 text-xs rounded bg-amber-50 text-amber-700">proposal</span>
+      {{else if eq (printf "%v" .Status) "deprecated"}}<span class="px-2 py-0.5 text-xs rounded bg-rose-50 text-rose-700">deprecated</span>{{end}}
+      <span class="ml-auto text-xs text-slate-400">v{{.Version}}</span>
+    </div>
+    {{if .Purpose}}<p class="mt-3 text-slate-700">{{.Purpose}}</p>{{end}}
+    {{if .Owners.Business}}<p class="mt-2 text-sm text-slate-500">Owners — business: <span class="font-mono">{{.Owners.Business}}</span> · engineering: <span class="font-mono">{{.Owners.Engineering}}</span></p>{{end}}
+
+    <h2 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide">Capabilities ({{len .Capabilities}})</h2>
+    <ul class="mt-2 space-y-3">
+      {{range .Capabilities}}
+      <li class="border-l-2 border-slate-200 pl-4">
+        <div class="flex items-baseline gap-2">
+          <span class="font-mono text-sm">{{.ID}}</span>
+        </div>
+        <p class="text-sm text-slate-700 mt-1">{{.Summary}}</p>
+        {{if .Rules}}
+        <ul class="mt-1 text-xs text-slate-500 list-disc list-inside">
+          {{range .Rules}}<li>{{.}}</li>{{end}}
+        </ul>
+        {{end}}
+      </li>
+      {{end}}
+    </ul>
+
+    {{if .Invariants}}
+    <h2 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide">Invariants ({{len .Invariants}})</h2>
+    <ul class="mt-2 space-y-2">
+      {{range .Invariants}}
+      <li class="border-l-2 border-slate-200 pl-4">
+        <span class="font-mono text-xs px-1 bg-slate-100 rounded">{{.ID}}</span>
+        <span class="text-sm text-slate-700 ml-2">{{.Statement}}</span>
+      </li>
+      {{end}}
+    </ul>
+    {{end}}
+
+    {{if .Implementations}}
+    <h2 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide">Implementations ({{len .Implementations}})</h2>
+    <ul class="mt-2 space-y-1 font-mono text-xs text-slate-700">
+      {{range .Implementations}}
+      <li class="truncate">{{shortFQN .Symbol}} <span class="text-slate-400 ml-1">({{.Language}})</span></li>
+      {{end}}
+    </ul>
+    {{end}}
+  </section>
+
+  <aside class="space-y-6">
+    {{if $.ReachedBy}}
+    <section class="bg-white rounded-lg border border-slate-200 p-6">
+      <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide">Reached by ({{len $.ReachedBy}})</h2>
+      <p class="text-xs text-slate-400 mt-1">Entry points whose flow visits this feature.</p>
+      <ul class="mt-3 space-y-2 text-sm">
+        {{range $.ReachedBy}}
+        <li>
+          <a href="/entry-points/{{.ID}}" class="block hover:bg-slate-50 -mx-2 px-2 py-1 rounded">
+            <div class="font-mono text-xs text-slate-500">{{.Kind}}</div>
+            <div class="text-slate-900">
+              {{if eq .Kind "http_route"}}{{.Trigger.Method}} {{.Trigger.Path}}
+              {{else if eq .Kind "cli"}}{{.Trigger.Command}}
+              {{else if eq .Kind "queue"}}queue: {{.Trigger.Queue}}
+              {{else}}{{.ID}}{{end}}
+            </div>
+          </a>
+        </li>
+        {{end}}
+      </ul>
+    </section>
+    {{end}}
+
+    {{if .DependsOn}}
+    <section class="bg-white rounded-lg border border-slate-200 p-6">
+      <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide">Depends on</h2>
+      <ul class="mt-3 space-y-1 text-sm">
+        {{range .DependsOn}}
+        <li><a href="/features/{{.}}" class="font-mono text-xs hover:underline">{{.}}</a></li>
+        {{end}}
+      </ul>
+    </section>
+    {{end}}
+  </aside>
+</div>
+{{end}}
+{{end}}

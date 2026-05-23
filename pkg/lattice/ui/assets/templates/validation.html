@@ -1,0 +1,48 @@
+{{define "validation.html"}}{{template "layout" .}}{{end}}
+
+{{define "body"}}
+<div class="grid gap-6 md:grid-cols-3 mb-8">
+  <div class="bg-white rounded-lg border border-slate-200 p-6">
+    <div class="text-xs uppercase text-slate-500 tracking-wide">Status</div>
+    <div class="mt-2 text-4xl font-semibold {{if .OK}}text-emerald-700{{else}}text-rose-700{{end}}">{{if .OK}}OK{{else}}FAIL{{end}}</div>
+  </div>
+  <div class="bg-white rounded-lg border border-slate-200 p-6">
+    <div class="text-xs uppercase text-slate-500 tracking-wide">Errors</div>
+    <div class="mt-2 text-4xl font-semibold tabular-nums {{if gt .Errors 0}}text-rose-700{{end}}">{{.Errors}}</div>
+  </div>
+  <div class="bg-white rounded-lg border border-slate-200 p-6">
+    <div class="text-xs uppercase text-slate-500 tracking-wide">Warnings</div>
+    <div class="mt-2 text-4xl font-semibold tabular-nums {{if gt .Warnings 0}}text-amber-700{{end}}">{{.Warnings}}</div>
+  </div>
+</div>
+
+{{if .Codes}}
+<section class="space-y-6">
+  {{range .Codes}}
+  {{$code := .}}
+  {{$violations := index $.ByCode .}}
+  <div class="bg-white rounded-lg border border-slate-200 overflow-hidden">
+    <div class="px-6 py-3 border-b border-slate-200 flex items-baseline justify-between">
+      <h2 class="font-mono text-sm font-semibold">{{$code}}</h2>
+      <span class="text-xs text-slate-500">{{len $violations}} occurrence(s)</span>
+    </div>
+    <ul class="divide-y divide-slate-100">
+      {{range $violations}}
+      <li class="px-6 py-2 text-sm">
+        <div class="flex items-baseline gap-3">
+          <span class="text-xs uppercase {{if .IsError}}text-rose-600{{else}}text-amber-600{{end}}">{{.Severity}}</span>
+          <span class="text-slate-700">{{.Message}}</span>
+        </div>
+        {{if .NextAction}}<div class="mt-1 text-xs text-slate-500 font-mono">→ {{.NextAction.Kind}}{{if .NextAction.Ref}} {{.NextAction.Ref}}{{end}}</div>{{end}}
+      </li>
+      {{end}}
+    </ul>
+  </div>
+  {{end}}
+</section>
+{{else}}
+<section class="bg-white rounded-lg border border-slate-200 p-12 text-center">
+  <p class="text-emerald-700 font-medium">Nothing to triage — every rule passes.</p>
+</section>
+{{end}}
+{{end}}

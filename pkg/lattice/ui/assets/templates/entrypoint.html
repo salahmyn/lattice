@@ -1,0 +1,65 @@
+{{define "entrypoint.html"}}{{template "layout" .}}{{end}}
+
+{{define "body"}}
+{{with .}}
+<div class="grid gap-6 lg:grid-cols-3">
+  <section class="lg:col-span-2 bg-white rounded-lg border border-slate-200 p-6">
+    <div class="flex items-baseline gap-3">
+      <span class="font-mono text-xs px-2 py-0.5 bg-slate-100 rounded">{{.Kind}}</span>
+      <h1 class="text-2xl font-semibold text-slate-900 font-mono">{{.ID}}</h1>
+    </div>
+    {{if .Purpose}}<p class="mt-3 text-slate-700">{{.Purpose}}</p>{{end}}
+
+    <h2 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide">Trigger</h2>
+    <dl class="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+      {{if .Trigger.Method}}<dt class="text-slate-500">Method</dt><dd class="font-mono">{{.Trigger.Method}}</dd>{{end}}
+      {{if .Trigger.Path}}<dt class="text-slate-500">Path</dt><dd class="font-mono">{{.Trigger.Path}}</dd>{{end}}
+      {{if .Trigger.Schedule}}<dt class="text-slate-500">Schedule</dt><dd class="font-mono">{{.Trigger.Schedule}}</dd>{{end}}
+      {{if .Trigger.Command}}<dt class="text-slate-500">Command</dt><dd class="font-mono">{{.Trigger.Command}}</dd>{{end}}
+      {{if .Trigger.Queue}}<dt class="text-slate-500">Queue</dt><dd class="font-mono">{{.Trigger.Queue}}</dd>{{end}}
+      {{if .Trigger.Event}}<dt class="text-slate-500">Event</dt><dd class="font-mono">{{.Trigger.Event}}</dd>{{end}}
+    </dl>
+
+    <h2 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide">Handler</h2>
+    <p class="mt-2 font-mono text-xs text-slate-700">{{.Handler.Symbol}}</p>
+    {{if .Handler.File}}<p class="font-mono text-xs text-slate-500">{{.Handler.File}}{{if .Handler.Line}}:{{.Handler.Line}}{{end}}</p>{{end}}
+
+    {{if .Flow}}
+    <h2 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide">Flow ({{len .Flow}})</h2>
+    <ul class="mt-2 space-y-2">
+      {{range .Flow}}
+      <li class="border-l-2 border-emerald-300 pl-4">
+        <a href="/features/{{.Feature}}" class="font-mono text-sm hover:underline">{{.Feature}}</a>
+        {{if .Capability}}<span class="ml-2 text-xs text-slate-500">cap: {{.Capability}}</span>{{end}}
+        {{if .ViaSymbols}}
+        <details class="mt-1 text-xs text-slate-500">
+          <summary class="cursor-pointer">via {{len .ViaSymbols}} symbol(s)</summary>
+          <ul class="mt-1 pl-4 font-mono">{{range .ViaSymbols}}<li>{{shortFQN .}}</li>{{end}}</ul>
+        </details>
+        {{end}}
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <p class="mt-4 text-sm text-amber-700 bg-amber-50 px-3 py-2 rounded border border-amber-200">
+      This entry point reaches no annotated feature — verify will flag it as <code class="font-mono">UNCLASSIFIED_ENTRY_POINT</code>.
+    </p>
+    {{end}}
+
+    {{if .SideEffects}}
+    <h2 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide">Side effects ({{len .SideEffects}})</h2>
+    <ul class="mt-2 space-y-1 text-sm">
+      {{range .SideEffects}}<li><span class="font-mono text-xs px-1 bg-slate-100 rounded">{{.Kind}}</span> {{.Target}}</li>{{end}}
+    </ul>
+    {{end}}
+  </section>
+
+  <aside>
+    <a href="/flows/{{.ID}}" class="block bg-white rounded-lg border border-slate-200 p-6 hover:bg-slate-50">
+      <div class="text-sm font-medium text-slate-900">View flow diagram →</div>
+      <p class="text-xs text-slate-500 mt-1">Mermaid flowchart of trigger → handler → reached features.</p>
+    </a>
+  </aside>
+</div>
+{{end}}
+{{end}}

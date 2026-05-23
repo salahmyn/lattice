@@ -206,6 +206,41 @@ in the IR).
 
 ---
 
+## 4c. The web UI (v0.4.0)
+
+`lattice serve` boots a local HTTP server that consumes the same
+KnowledgeGraph the CLI produces. Single binary, no Node, no build step.
+
+```sh
+lattice serve              # http://127.0.0.1:7070
+lattice serve --port 8080
+lattice serve --host 0.0.0.0 --token <X>   # non-loopback requires --token
+```
+
+The browser tabs map to the artefacts you already know:
+
+| Page | What it shows |
+|---|---|
+| `/` | Workspace + counts (features, entry points by kind, violations) |
+| `/features` · `/features/{id}` | All features; click-through to detail + *reached-by entry points* |
+| `/entry-points` · `/entry-points/{id}` | HTTP/CLI/queue tables; click into the flow |
+| `/flows/{id}` | Mermaid flowchart per entry point |
+| `/coverage` | Three-ratio adoption dashboard + per-package gaps (the adoption roadmap) |
+| `/validation` | Violations grouped by code, severity, `next_action` chips |
+| `/search?q=` | Global search across features / caps / invariants / EPs / symbols |
+| `/import` · `/import/{candidate}` | Candidates table with filters + inline Accept/Reject |
+| `/config` | `config.yaml` + `workspace.yaml` editor with strict-validation save |
+
+A `/api/v1/*` tree mirrors every page as JSON, same shape the CLI emits
+with `--json`. The import-decisions endpoint reuses the v0.2.1 batch
+driver so a UI accept and a CLI accept produce byte-identical state.
+
+Security defaults: loopback bind needs no token. Any non-loopback host
+refuses to start unless `--token <X>` is supplied, and every request
+then must carry `X-Lattice-Token: <X>`.
+
+---
+
 ## 5. Day-to-day commands
 
 ```sh
@@ -219,6 +254,7 @@ lattice view developer|product|business|c4   # c4: Context/Container/Component
 lattice view c4 --format structurizr          # C4 as a Structurizr DSL workspace
 lattice view entry-points                     # every trigger (HTTP/CLI/cron/queue) grouped by kind
 lattice view flows [<ep-id>]                  # Mermaid: trigger -> handler -> features
+lattice serve [--port 7070] [--token X]       # v0.4.0 web UI: tracking + visualising + editing
 lattice analyze proposal <file>        # conflict + impact analysis
 lattice patch --from-file p.json --preview|--apply
 lattice initiative show <id>           # initiative + tasks

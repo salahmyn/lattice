@@ -1,0 +1,44 @@
+{{define "entrypoints.html"}}{{template "layout" .}}{{end}}
+
+{{define "body"}}
+{{range .OrderedKinds}}
+{{$kind := .}}
+{{$eps := index $.ByKind .}}
+<section id="{{$kind}}" class="mb-8 bg-white rounded-lg border border-slate-200 overflow-hidden">
+  <div class="px-6 py-4 border-b border-slate-200 flex items-baseline justify-between">
+    <h2 class="text-lg font-semibold capitalize">{{$kind}}</h2>
+    <span class="text-xs text-slate-500 tabular-nums">{{len $eps}} entries</span>
+  </div>
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+      <tr>
+        <th class="px-6 py-2 text-left font-medium">Trigger</th>
+        <th class="px-6 py-2 text-left font-medium">Handler</th>
+        <th class="px-6 py-2 text-left font-medium">Features reached</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {{range $eps}}
+      <tr class="hover:bg-slate-50 cursor-pointer" onclick="window.location='/entry-points/{{.ID}}'">
+        <td class="px-6 py-2 font-mono text-xs">
+          {{if eq .Kind "http_route"}}<span class="font-semibold">{{.Trigger.Method}}</span> {{.Trigger.Path}}
+          {{else if eq .Kind "cli"}}{{.Trigger.Command}}
+          {{else if eq .Kind "queue"}}queue: {{.Trigger.Queue}}
+          {{else if eq .Kind "cron"}}{{.Trigger.Schedule}}
+          {{else}}{{.ID}}{{end}}
+        </td>
+        <td class="px-6 py-2 font-mono text-xs text-slate-700 truncate max-w-md">{{shortFQN .Handler.Symbol}}</td>
+        <td class="px-6 py-2 text-xs">
+          {{if .Flow}}
+            {{range $i, $s := .Flow}}{{if $i}}, {{end}}<a href="/features/{{$s.Feature}}" onclick="event.stopPropagation()" class="text-slate-700 hover:underline">{{$s.Feature}}</a>{{end}}
+          {{else}}
+            <span class="text-slate-400 italic">none — orphan trigger</span>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+{{end}}
+{{end}}

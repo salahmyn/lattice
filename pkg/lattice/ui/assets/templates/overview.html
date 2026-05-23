@@ -1,0 +1,71 @@
+{{define "overview.html"}}{{template "layout" .}}{{end}}
+
+{{define "body"}}
+<div class="grid gap-6 lg:grid-cols-3">
+  <section class="lg:col-span-2 bg-white rounded-lg border border-slate-200 p-6">
+    <h1 class="text-2xl font-semibold text-slate-900">Workspace</h1>
+    <dl class="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+      <dt class="text-slate-500">Lattice dir</dt>
+      <dd class="font-mono text-xs">{{.Workspace.LatticeDir}}</dd>
+      <dt class="text-slate-500">Mode</dt>
+      <dd>{{.Workspace.Mode}}</dd>
+      <dt class="text-slate-500">Schema version</dt>
+      <dd>{{.KG.SchemaVersion}}</dd>
+      <dt class="text-slate-500">Last extract</dt>
+      <dd>{{if .KG.GeneratedAt}}{{.KG.GeneratedAt}}{{else}}<span class="text-slate-400">never — run <code class="font-mono">lattice extract</code></span>{{end}}</dd>
+    </dl>
+    <h2 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide">Code roots</h2>
+    <ul class="mt-2 space-y-1 text-sm">
+      {{range .Workspace.CodeRoots}}
+      <li class="flex items-baseline gap-3">
+        <span class="font-mono text-xs px-2 py-0.5 bg-slate-100 rounded">{{.Name}}</span>
+        <span class="font-mono text-xs text-slate-700">{{.Path}}</span>
+        {{if .Available}}<span class="text-xs text-emerald-600">available</span>{{else}}<span class="text-xs text-rose-600">unavailable</span>{{end}}
+      </li>
+      {{else}}
+      <li class="text-sm text-slate-400">No code roots configured — using workspace defaults.</li>
+      {{end}}
+    </ul>
+  </section>
+
+  <section class="bg-white rounded-lg border border-slate-200 p-6">
+    <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide">Counts</h2>
+    <ul class="mt-3 space-y-3">
+      <li class="flex items-baseline justify-between">
+        <a href="/features" class="hover:underline text-slate-900">Features</a>
+        <span class="text-2xl font-semibold tabular-nums">{{len .KG.Features}}</span>
+      </li>
+      <li class="flex items-baseline justify-between">
+        <a href="/entry-points" class="hover:underline text-slate-900">Entry points</a>
+        <span class="text-2xl font-semibold tabular-nums">{{len .KG.EntryPoints}}</span>
+      </li>
+      <li class="flex items-baseline justify-between">
+        <span class="text-slate-700">Symbols</span>
+        <span class="text-2xl font-semibold tabular-nums">{{len .KG.Symbols}}</span>
+      </li>
+      <li class="flex items-baseline justify-between">
+        <span class="text-slate-700">Tests</span>
+        <span class="text-2xl font-semibold tabular-nums">{{len .KG.Tests}}</span>
+      </li>
+      <li class="flex items-baseline justify-between">
+        <span class="text-slate-700">Violations</span>
+        <span class="text-2xl font-semibold tabular-nums {{if gt (len .KG.Violations) 0}}text-amber-600{{end}}">{{len .KG.Violations}}</span>
+      </li>
+    </ul>
+  </section>
+</div>
+
+{{if .EPsByKind}}
+<section class="mt-8 bg-white rounded-lg border border-slate-200 p-6">
+  <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide">Entry points by kind</h2>
+  <div class="mt-3 flex flex-wrap gap-4 text-sm">
+    {{range .OrderedKinds}}
+    <a href="/entry-points#{{.}}" class="px-3 py-2 rounded-md bg-slate-50 hover:bg-slate-100 border border-slate-200">
+      <span class="font-mono text-xs text-slate-500">{{.}}</span>
+      <span class="ml-2 font-semibold tabular-nums">{{index $.EPsByKind .}}</span>
+    </a>
+    {{end}}
+  </div>
+</section>
+{{end}}
+{{end}}

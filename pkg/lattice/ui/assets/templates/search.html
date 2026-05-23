@@ -1,0 +1,28 @@
+{{define "search.html"}}{{template "layout" .}}{{end}}
+
+{{define "body"}}
+<section class="bg-white rounded-lg border border-slate-200 p-6">
+  <h1 class="text-lg font-semibold text-slate-900">
+    {{if .Query}}Search: <span class="font-mono text-sm">{{.Query}}</span>{{else}}Search{{end}}
+  </h1>
+  {{if .Query}}
+    {{if .Hits}}
+      <p class="text-xs text-slate-500 mt-1">{{len .Hits}} result(s) — ranked by match quality.</p>
+      <ul class="mt-4 divide-y divide-slate-100">
+        {{range .Hits}}
+        <li class="py-2">
+          <a href="{{.Href}}" class="block hover:bg-slate-50 -mx-2 px-2 py-1 rounded">
+            <span class="font-mono text-xs px-1.5 py-0.5 bg-slate-100 rounded mr-2 align-middle">{{.Type}}</span>
+            <span class="text-sm text-slate-900">{{.Label}}</span>
+          </a>
+        </li>
+        {{end}}
+      </ul>
+    {{else}}
+      <p class="mt-4 text-sm text-slate-500">No matches.</p>
+    {{end}}
+  {{else}}
+    <p class="mt-2 text-sm text-slate-500">Type in the header search box to find features, capabilities, invariants, entry points, or annotated symbols.</p>
+  {{end}}
+</section>
+{{end}}

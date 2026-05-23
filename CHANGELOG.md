@@ -2,6 +2,54 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.4.0]
+
+Web UI — `lattice serve`. See
+[docs/v0.4.0-ui-proposal.md](docs/v0.4.0-ui-proposal.md).
+
+### Added
+- **`lattice serve`** boots an HTTP server on `127.0.0.1:7070` (default)
+  rendering server-side HTML and exposing a `/api/v1/*` JSON tree that
+  mirrors CLI `--json` shapes. Single binary, embedded assets via
+  `go:embed`, no Node, no Electron, no build pipeline.
+- **Security model.** Loopback bind needs no token. `--host <non-loopback>`
+  refuses to start without `--token <X>`; every request then must
+  carry `X-Lattice-Token: <X>` or returns 401.
+- **Pages.**
+  - `/` — workspace overview (mode, code roots, last extract) + counts
+    (features, entry points by kind, symbols, tests, violations).
+  - `/features` and `/features/{id}` — table + detail with capabilities,
+    invariants, implementations, and **reached-by entry points** (the
+    inverse of EP→features).
+  - `/entry-points` and `/entry-points/{id}` — grouped tables (HTTP/CLI/
+    queue/...) with click-through to feature pages.
+  - `/flows/{id}` — embedded Mermaid flowchart per entry point.
+  - `/coverage` — three-ratio adoption dashboard + per-package table
+    sorted by adoption ascending (the gaps surface first).
+  - `/validation` — violations grouped by code, severity badges,
+    `next_action` chip on each row.
+  - `/search?q=` — global search across features / capabilities /
+    invariants / entry points / symbols, ranked exact > prefix >
+    substring.
+  - `/import` and `/import/{candidate}` — candidates table with filters
+    (package, decision) and inline Accept / Reject buttons that POST
+    to `/api/v1/import/decisions` (reuses the v0.2.1 batch driver, so
+    auto-promote-parents and "no draft" skip semantics are identical
+    to the CLI).
+  - `/config` — side-by-side textareas for `config.yaml` and
+    `workspace.yaml`. PUT validates with `yaml.Decoder.KnownFields(true)`:
+    typos and type mismatches return HTTP 422 with the exact line
+    number; the file is never half-written.
+- **JSON API.** Read endpoints (`overview`, `features`, `entry-points`,
+  `coverage`, `validation`, `search`, `import/candidates`, `config`) plus
+  two write endpoints (`POST /api/v1/import/decisions`, `PUT /api/v1/config`).
+
+### Notes
+- A real frontend SPA / reflect-driven schema form generator / live diff
+  preview / candidate bundle drawer are v0.4.1 ideas; v0.4.0 uses
+  textareas because they round-trip exactly and surface YAML parse
+  errors verbatim.
+
 ## [0.3.0]
 
 Entry-points & flows — the second axis of the knowledge graph. See

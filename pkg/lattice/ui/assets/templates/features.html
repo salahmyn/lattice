@@ -1,0 +1,37 @@
+{{define "features.html"}}{{template "layout" .}}{{end}}
+
+{{define "body"}}
+<div class="bg-white rounded-lg border border-slate-200 overflow-hidden">
+  <div class="px-6 py-4 border-b border-slate-200 flex items-baseline justify-between">
+    <h1 class="text-lg font-semibold text-slate-900">{{len .}} features</h1>
+    <p class="text-xs text-slate-500">Click a row to see the full manifest, implementations, and which entry points reach it.</p>
+  </div>
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+      <tr>
+        <th class="px-6 py-2 text-left font-medium">ID</th>
+        <th class="px-6 py-2 text-left font-medium">Status</th>
+        <th class="px-6 py-2 text-left font-medium">Purpose</th>
+        <th class="px-6 py-2 text-right font-medium">Capabilities</th>
+        <th class="px-6 py-2 text-right font-medium">Implementations</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {{range .}}
+      <tr class="hover:bg-slate-50 cursor-pointer" onclick="window.location='/features/{{.ID}}'">
+        <td class="px-6 py-2 font-mono text-xs">{{.ID}}</td>
+        <td class="px-6 py-2">
+          {{if eq (printf "%v" .Status) "production"}}<span class="px-2 py-0.5 text-xs rounded bg-emerald-50 text-emerald-700">production</span>
+          {{else if eq (printf "%v" .Status) "proposal"}}<span class="px-2 py-0.5 text-xs rounded bg-amber-50 text-amber-700">proposal</span>
+          {{else if eq (printf "%v" .Status) "deprecated"}}<span class="px-2 py-0.5 text-xs rounded bg-rose-50 text-rose-700">deprecated</span>
+          {{else}}<span class="text-xs text-slate-500">{{.Status}}</span>{{end}}
+        </td>
+        <td class="px-6 py-2 text-slate-700 max-w-md truncate">{{.Purpose}}</td>
+        <td class="px-6 py-2 text-right tabular-nums">{{len .Capabilities}}</td>
+        <td class="px-6 py-2 text-right tabular-nums">{{len .Implementations}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
