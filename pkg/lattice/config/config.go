@@ -60,7 +60,27 @@ type Sharding struct {
 
 // Agentic configures the optional LLM-backed capabilities.
 type Agentic struct {
-	LLM LLM `yaml:"llm"`
+	LLM  LLM  `yaml:"llm"`
+	Tone Tone `yaml:"tone"`
+}
+
+// Tone shapes the voice of every LLM-generated prose field — feature
+// purposes, capability summaries, business narratives, annotation
+// rationales. The labeler renders this into a contract that prepends
+// the system prompt so a single setting steers all agentic capabilities.
+// All fields are optional; the zero value yields the historical
+// engineering-leaning voice.
+type Tone struct {
+	// Audience drives vocabulary: business | product | engineering | mixed.
+	// "business" leans plain language, "engineering" allows jargon.
+	Audience string `yaml:"audience"`
+	// ReadingLevel: simple | intermediate | expert.
+	ReadingLevel string `yaml:"reading_level"`
+	// AvoidJargon turns on a stronger anti-jargon clause.
+	AvoidJargon bool `yaml:"avoid_jargon"`
+	// ExtraInstructions is appended verbatim to the tone contract so a
+	// team can pin domain-specific words or examples.
+	ExtraInstructions string `yaml:"extra_instructions"`
 }
 
 // LLM configures the provider for agentic capabilities.

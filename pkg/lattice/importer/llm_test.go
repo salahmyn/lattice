@@ -58,4 +58,35 @@ func TestLabelWithLLMFallsBackOnFailure(t *testing.T) {
 	if len(drafts) != 1 || drafts[0].Manifest.ID != "billing" {
 		t.Fatalf("a failed LLM call must fall back to the deterministic label: %+v", drafts)
 	}
+	if drafts[0].Mode != ModeFallback {
+		t.Errorf("a fallback draft must report ModeFallback, got %q", drafts[0].Mode)
+	}
+}
+
+// TestLabelModesAndProgress proves the per-candidate outcome plumbing — the
+// fix for the misleading "[llm (openai)]" mode line that hid silent
+// fallbacks during the v0.2.0 dogfood run.
+func TestLabelModesAndProgress(t *testing.T) {
+	cf := Discover(sampleModules(), Options{MinCandidateSymbols: 3})
+
+	t.Run("llm reply tagged as ModeLLM", func(t *testing.T) {
+		reply := `{"id":"x","purpose":"y","capabilities":[{"id":"c","summary":"s"}]}`
+		var events []Mode
+		drafts := LabelWithLLM(context.Background(), cf,
+			fakeProvider{reply: reply},
+			LLMLabelOptions{Progress: func(_, _ int, _ string, m Mode) { events = append(events, m) }})
+		if drafts[0].Mode != ModeLLM {
+			t.Errorf("got %q, want %q", drafts[0].Mode, ModeLLM)
+		}
+		if len(events) != 1 || events[0] != ModeLLM {
+			t.Errorf("progress callback received %v, want [%q]", events, ModeLLM)
+		}
+	})
+
+	t.Run("deterministic-only path tagged as ModeDeterministic", func(t *testing.T) {
+		drafts := Label(cf)
+		if drafts[0].Mode != ModeDeterministic {
+			t.Errorf("got %q, want %q", drafts[0].Mode, ModeDeterministic)
+		}
+	})
 }

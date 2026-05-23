@@ -23,10 +23,15 @@ type AnnotationMap struct {
 	Features []AnnotationMapFeature  `yaml:"features"`
 }
 
-// AnnotationMapFeature maps one feature id to its implementing symbol FQNs.
+// AnnotationMapFeature maps one feature id to its implementing symbol FQNs,
+// optionally with per-capability symbol assignments. Capabilities is the
+// v0.2.1 addition that lets sidecar mode produce capability edges (not
+// just feature edges) so the 172 UNIMPLEMENTED_CAPABILITY warnings the
+// dogfood revealed are auto-resolved for confident matches.
 type AnnotationMapFeature struct {
-	ID      string   `yaml:"id"`
-	Symbols []string `yaml:"symbols"`
+	ID           string              `yaml:"id"`
+	Symbols      []string            `yaml:"symbols"`
+	Capabilities map[string][]string `yaml:"capabilities,omitempty"`
 }
 
 // LoadAnnotationMap reads the sidecar map from path.
@@ -55,28 +60,47 @@ func SaveAnnotationMap(path string, am AnnotationMap) error {
 }
 
 // ApplyAnnotationMap overlays the sidecar map onto parsed modules: every
-// symbol the map names gains a synthetic `feature` annotation, exactly as if
-// it had been annotated in source. Any in-code annotations stay first in the
-// list, so an explicit @feature still wins. Mutates modules in place.
+// symbol the map names gains a synthetic `feature` annotation (and, when
+// the sidecar assigns it, a synthetic `capability` annotation too), exactly
+// as if it had been annotated in source. Any in-code annotations stay
+// first in the list, so an explicit @feature still wins. Mutates modules
+// in place.
 func ApplyAnnotationMap(modules []ir.Module, am AnnotationMap) {
-	byFQN := map[string]string{}
+	feature := map[string]string{}
+	caps := map[string][]string{} // FQN -> capability ids
 	for _, f := range am.Features {
 		for _, s := range f.Symbols {
-			if _, exists := byFQN[s]; !exists {
-				byFQN[s] = f.ID
+			if _, exists := feature[s]; !exists {
+				feature[s] = f.ID
+			}
+		}
+		for capID, fqns := range f.Capabilities {
+			for _, s := range fqns {
+				caps[s] = append(caps[s], capID)
+				// Capability implies feature membership even if the
+				// flat Symbols list didn't include this FQN.
+				if _, exists := feature[s]; !exists {
+					feature[s] = f.ID
+				}
 			}
 		}
 	}
-	if len(byFQN) == 0 {
+	if len(feature) == 0 {
 		return
 	}
 	for mi := range modules {
 		for si := range modules[mi].Symbols {
 			sym := &modules[mi].Symbols[si]
-			if feature, ok := byFQN[sym.FQN]; ok {
+			if fid, ok := feature[sym.FQN]; ok {
 				sym.Annotations = append(sym.Annotations, ir.Annotation{
 					Kind: "feature",
-					Args: []interface{}{feature},
+					Args: []interface{}{fid},
+				})
+			}
+			for _, capID := range caps[sym.FQN] {
+				sym.Annotations = append(sym.Annotations, ir.Annotation{
+					Kind: "capability",
+					Args: []interface{}{capID},
 				})
 			}
 		}

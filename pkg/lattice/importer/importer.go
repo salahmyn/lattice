@@ -63,10 +63,29 @@ type Candidate struct {
 
 // CandidatesFile is the on-disk Stage-1 artifact (import/candidates.json).
 type CandidatesFile struct {
-	Version    int         `json:"version"`
-	Scope      string      `json:"scope,omitempty"`
+	Version int `json:"version"`
+	// Scopes records the --scope values the scan was run with. It is
+	// informational (the candidates themselves are already filtered).
+	Scopes     []string    `json:"scopes,omitempty"`
 	Candidates []Candidate `json:"candidates"`
 	Coverage   Coverage    `json:"coverage"`
+}
+
+// UnmarshalJSON accepts both the legacy {"scope": "<string>"} and the
+// {"scopes": [...]} multi-scope form so v0.2.0 candidates files still load.
+func (cf *CandidatesFile) UnmarshalJSON(data []byte) error {
+	type alias CandidatesFile
+	aux := struct {
+		Scope string `json:"scope,omitempty"`
+		*alias
+	}{alias: (*alias)(cf)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if aux.Scope != "" && len(cf.Scopes) == 0 {
+		cf.Scopes = []string{aux.Scope}
+	}
+	return nil
 }
 
 // candidateID derives a stable ID from the cluster's symbol set.

@@ -42,9 +42,10 @@ FEATURE GROUP: %s
 Output: markdown narrative only.`, g.name, g.details())
 
 		resp, err := c.provider.Complete(ctx, CompletionRequest{
-			SystemPrompt: "You write executive-facing product narratives.",
-			UserMessage:  prompt,
-			MaxTokens:    c.cfg.Agentic.LLM.MaxTokens,
+			SystemPrompt: ToneContract(c.cfg.Agentic.Tone) +
+				"You write executive-facing product narratives.",
+			UserMessage: prompt,
+			MaxTokens:   c.cfg.Agentic.LLM.MaxTokens,
 		})
 		if err != nil {
 			return NarrativeResult{Mode: ModeDeterministic, Markdown: templatedNarrative(groups)}, nil

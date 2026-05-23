@@ -15,9 +15,11 @@ const DefaultMinCandidateSymbols = 3
 
 // Options tunes Stage-1 discovery.
 type Options struct {
-	// Scope, when set, restricts discovery to source files under this
-	// code-root-relative subtree (e.g. "src/billing").
-	Scope string
+	// Scopes, when non-empty, restricts discovery to source files under any
+	// of these code-root-relative subtrees (e.g. "Modules/Accounts").
+	// Multi-scope lets a reviewer drive several bounded contexts in one
+	// pass — replaces the "scan, then hand-filter candidates.json" pattern.
+	Scopes []string
 	// MinCandidateSymbols is the fewest production symbols a directory must
 	// hold to become a candidate. Below it, its symbols stay unclustered and
 	// drag down discovery coverage. Zero falls back to the default.
@@ -77,17 +79,56 @@ func Discover(modules []ir.Module, opts Options) CandidatesFile {
 
 	return CandidatesFile{
 		Version:    candidatesVersion,
-		Scope:      opts.Scope,
+		Scopes:     append([]string(nil), opts.Scopes...),
 		Candidates: candidates,
 		Coverage:   computeCoverage(pkgTotals, clustered),
 	}
+}
+
+// InScopes reports whether file falls under any of the given scope subtrees.
+// Empty scopes means "no restriction" — consistent with the discovery
+// behaviour, so this helper is reusable at draft/review filter time too.
+func InScopes(file string, scopes []string) bool {
+	if len(scopes) == 0 {
+		return true
+	}
+	for _, s := range scopes {
+		if inScope(file, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// FilterByScopes returns a copy of cf containing only candidates whose
+// files lie under at least one of scopes. Empty scopes returns cf
+// untouched. Used by draft/review to scope late without re-running scan.
+func FilterByScopes(cf CandidatesFile, scopes []string) CandidatesFile {
+	if len(scopes) == 0 {
+		return cf
+	}
+	out := cf
+	out.Candidates = nil
+	for _, c := range cf.Candidates {
+		keep := false
+		for _, f := range c.Files {
+			if InScopes(f, scopes) {
+				keep = true
+				break
+			}
+		}
+		if keep {
+			out.Candidates = append(out.Candidates, c)
+		}
+	}
+	return out
 }
 
 // groupByDirectory buckets every in-scope symbol by its source directory.
 func groupByDirectory(modules []ir.Module, opts Options) map[string]*dirGroup {
 	groups := make(map[string]*dirGroup)
 	for _, m := range modules {
-		if !inScope(m.File, opts.Scope) || excluded(m.File, opts.Exclude) {
+		if !InScopes(m.File, opts.Scopes) || excluded(m.File, opts.Exclude) {
 			continue
 		}
 		dir := path.Dir(m.File)

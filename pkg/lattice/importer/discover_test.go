@@ -103,11 +103,44 @@ func TestDiscoverIsDeterministic(t *testing.T) {
 }
 
 func TestDiscoverScopeFilter(t *testing.T) {
-	cf := Discover(sampleModules(), Options{Scope: "src/users", MinCandidateSymbols: 1})
+	cf := Discover(sampleModules(), Options{Scopes: []string{"src/users"}, MinCandidateSymbols: 1})
 	if len(cf.Candidates) != 1 || cf.Candidates[0].Package != "src/users" {
 		t.Fatalf("scope did not restrict discovery: %+v", cf.Candidates)
 	}
 	if cf.Coverage.Discovery.TotalSymbols != 1 {
 		t.Errorf("scoped total = %d, want 1", cf.Coverage.Discovery.TotalSymbols)
+	}
+}
+
+// TestDiscoverMultiScope proves that multiple --scope values are unioned —
+// the v0.2.1 fix for the dogfood pattern of "I want 4 modules but scope
+// is single-value, so I post-filter candidates.json by hand".
+func TestDiscoverMultiScope(t *testing.T) {
+	cf := Discover(sampleModules(), Options{
+		Scopes:              []string{"src/billing", "src/users"},
+		MinCandidateSymbols: 1,
+	})
+	if len(cf.Candidates) != 2 {
+		t.Fatalf("multi-scope kept %d candidates, want 2: %+v", len(cf.Candidates), cf.Candidates)
+	}
+	pkgs := []string{cf.Candidates[0].Package, cf.Candidates[1].Package}
+	if !(pkgs[0] == "src/billing" || pkgs[1] == "src/billing") ||
+		!(pkgs[0] == "src/users" || pkgs[1] == "src/users") {
+		t.Errorf("multi-scope packages = %v, want both src/billing and src/users", pkgs)
+	}
+}
+
+func TestFilterByScopes(t *testing.T) {
+	cf := Discover(sampleModules(), Options{MinCandidateSymbols: 1})
+	if len(cf.Candidates) < 2 {
+		t.Fatalf("setup expected at least 2 candidates, got %d", len(cf.Candidates))
+	}
+	filtered := FilterByScopes(cf, []string{"src/users"})
+	if len(filtered.Candidates) != 1 || filtered.Candidates[0].Package != "src/users" {
+		t.Errorf("filter kept %+v, want only src/users", filtered.Candidates)
+	}
+	// Empty scopes is a no-op.
+	if got := FilterByScopes(cf, nil); len(got.Candidates) != len(cf.Candidates) {
+		t.Errorf("empty scope should not filter")
 	}
 }

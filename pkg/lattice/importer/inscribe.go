@@ -9,6 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/salahmyn/lattice/pkg/lattice/adapters"
+	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 )
 
@@ -45,9 +46,13 @@ func LoadInscribeRecord(path string) ([]InscribeEdit, error) {
 }
 
 // FeatureSymbols links an accepted feature to its implementing symbol FQNs.
+// Capabilities (added in v0.2.1) carries the manifest's capability list so
+// the sidecar writer can attempt method↔capability matching, populating
+// capability edges rather than leaving every cap UNIMPLEMENTED.
 type FeatureSymbols struct {
-	Feature string
-	Symbols []string
+	Feature      string
+	Symbols      []string
+	Capabilities []schema.Capability
 }
 
 // InscribeEdit is one planned inline annotation insertion.

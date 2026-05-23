@@ -11,9 +11,27 @@ import (
 // DraftsDirName is the subdirectory of the import dir holding draft manifests.
 const DraftsDirName = "drafts"
 
+// Mode is how a single draft was produced. The CLI prints a per-mode count so
+// silent LLM failures (every candidate falling back to deterministic) are
+// visible instead of hidden behind a single "[llm]" label.
+type Mode string
+
+const (
+	// ModeDeterministic — no LLM configured; deterministic labeler ran.
+	ModeDeterministic Mode = "deterministic"
+	// ModeLLM — fresh LLM response this run.
+	ModeLLM Mode = "llm"
+	// ModeCached — served from the label cache (still LLM-derived).
+	ModeCached Mode = "cached"
+	// ModeFallback — LLM was configured but the call or parse failed; the
+	// deterministic skeleton was used instead.
+	ModeFallback Mode = "fallback"
+)
+
 // Draft pairs a candidate with the manifest drafted for it.
 type Draft struct {
 	CandidateID string          `json:"candidate_id"`
+	Mode        Mode            `json:"mode"`
 	Manifest    schema.Manifest `json:"manifest"`
 }
 
@@ -33,7 +51,11 @@ func Label(cf CandidatesFile) []Draft {
 	seen := map[string]bool{}
 	for _, c := range cf.Candidates {
 		id := uniqueID(deriveFeatureID(c.Package), seen)
-		drafts = append(drafts, Draft{CandidateID: c.ID, Manifest: draftManifest(id, c)})
+		drafts = append(drafts, Draft{
+			CandidateID: c.ID,
+			Mode:        ModeDeterministic,
+			Manifest:    draftManifest(id, c),
+		})
 	}
 	return drafts
 }

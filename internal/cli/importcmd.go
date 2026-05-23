@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +33,9 @@ func newImportCommand(io *IO) *cobra.Command {
 		newImportVerifyCommand(io),
 		newImportInscribeCommand(io),
 		newImportUninscribeCommand(io),
+		newImportPromoteParentsCommand(io),
+		newImportResetCommand(io),
+		newImportUndoCommand(io),
 		newImportStatusCommand(io),
 	)
 	return cmd
@@ -39,7 +43,7 @@ func newImportCommand(io *IO) *cobra.Command {
 
 type importStatus struct {
 	Status                string  `json:"status"`
-	Scope                 string  `json:"scope,omitempty"`
+	Scopes                []string `json:"scopes,omitempty"`
 	Candidates            int     `json:"candidates"`
 	Accepted              int     `json:"accepted"`
 	Rejected              int     `json:"rejected"`
@@ -48,7 +52,7 @@ type importStatus struct {
 }
 
 func newImportScanCommand(io *IO) *cobra.Command {
-	var scope string
+	var scopes []string
 	cmd := &cobra.Command{
 		Use:   "scan",
 		Short: "Stage 1 — discover feature candidates by static analysis (no LLM)",
@@ -69,7 +73,7 @@ func newImportScanCommand(io *IO) *cobra.Command {
 
 			cfg, _ := config.Load(ws.LatticeDir)
 			cf := importer.Discover(modules, importer.Options{
-				Scope:               scope,
+				Scopes:              scopes,
 				MinCandidateSymbols: cfg.Import.MinCandidateSymbols,
 				Exclude:             cfg.Import.Coverage.Exclude,
 			})
@@ -92,8 +96,8 @@ func newImportScanCommand(io *IO) *cobra.Command {
 			}
 			d := cf.Coverage.Discovery
 			io.printf("Discovered %d feature candidates -> %s\n", len(cf.Candidates), candPath)
-			if scope != "" {
-				io.printf("  scope:    %s\n", scope)
+			if len(scopes) > 0 {
+				io.printf("  scopes:   %s\n", strings.Join(scopes, ", "))
 			}
 			io.printf("  coverage: %.1f%% (%d/%d production symbols clustered)\n",
 				d.Ratio*100, d.ClusteredSymbols, d.TotalSymbols)
@@ -104,7 +108,8 @@ func newImportScanCommand(io *IO) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&scope, "scope", "", "restrict discovery to a code-root-relative subtree")
+	cmd.Flags().StringSliceVar(&scopes, "scope", nil,
+		"restrict discovery to one or more code-root-relative subtrees (repeatable, or comma-separated)")
 	return cmd
 }
 
@@ -126,7 +131,7 @@ func newImportStatusCommand(io *IO) *cobra.Command {
 			doc := importer.ComputeDocumentation(cf, sess.Decisions)
 			st := importStatus{
 				Status:                sess.Status,
-				Scope:                 sess.Scope,
+				Scopes:                sess.Scopes,
 				Candidates:            sess.Candidates,
 				Accepted:              countDecisions(sess.Decisions, importer.DecisionAccepted),
 				Rejected:              countDecisions(sess.Decisions, importer.DecisionRejected),
@@ -137,8 +142,8 @@ func newImportStatusCommand(io *IO) *cobra.Command {
 				return io.printJSON(st)
 			}
 			io.printf("Import session: %s\n", st.Status)
-			if st.Scope != "" {
-				io.printf("  scope:                  %s\n", st.Scope)
+			if len(st.Scopes) > 0 {
+				io.printf("  scopes:                 %s\n", strings.Join(st.Scopes, ", "))
 			}
 			io.printf("  candidates:             %d\n", st.Candidates)
 			io.printf("  accepted / rejected:    %d / %d\n", st.Accepted, st.Rejected)
@@ -201,6 +206,187 @@ func newCoverageCommand(io *IO) *cobra.Command {
 }
 
 // countDecisions counts session decisions equal to want.
+// newImportResetCommand clears review state — decisions + drafts — without
+// re-running the (expensive) scan. By default it leaves accepted feature
+// manifests in place because humans may have edited them; --also-features
+// removes those too for a clean-slate redo.
+func newImportResetCommand(io *IO) *cobra.Command {
+	var alsoFeatures bool
+	cmd := &cobra.Command{
+		Use:   "reset",
+		Short: "Clear draft manifests and review decisions (keeps the scan)",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			ws, err := openWorkspace(io)
+			if err != nil {
+				return io.fail("NO_WORKSPACE", err.Error(), nil)
+			}
+			sessPath := filepath.Join(ws.ImportDir(), importer.SessionFileName)
+			sess, _ := importer.LoadSession(sessPath)
+			cleared := len(sess.Decisions)
+			sess.Decisions = nil
+			if sess.Status == importer.StatusReviewing || sess.Status == importer.StatusDrafted {
+				sess.Status = importer.StatusScanned
+			}
+			if err := importer.SaveSession(sessPath, sess); err != nil {
+				return io.fail("IMPORT_WRITE_FAILED", err.Error(), nil)
+			}
+			draftsRemoved := 0
+			draftsDir := filepath.Join(ws.ImportDir(), importer.DraftsDirName)
+			if entries, derr := os.ReadDir(draftsDir); derr == nil {
+				for _, e := range entries {
+					if !e.IsDir() {
+						if err := os.Remove(filepath.Join(draftsDir, e.Name())); err == nil {
+							draftsRemoved++
+						}
+					}
+				}
+			}
+			featuresRemoved := 0
+			if alsoFeatures {
+				_ = os.RemoveAll(ws.FeaturesDir())
+				_ = os.MkdirAll(ws.FeaturesDir(), 0o755)
+				featuresRemoved = -1 // signal "all"
+			}
+			if io.JSON {
+				return io.printJSON(map[string]interface{}{
+					"cleared_decisions": cleared,
+					"removed_drafts":    draftsRemoved,
+					"removed_features":  featuresRemoved == -1,
+				})
+			}
+			io.printf("Reset import session: cleared %d decision(s), removed %d draft(s)\n",
+				cleared, draftsRemoved)
+			if alsoFeatures {
+				io.printf("  --also-features: wiped %s\n", ws.FeaturesDir())
+			}
+			io.printf("Candidates kept. Next: `lattice import draft`.\n")
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&alsoFeatures, "also-features", false,
+		"also delete every manifest under features/ (destructive — accepts can have been hand-edited)")
+	return cmd
+}
+
+// newImportUndoCommand reverts one per-candidate decision. If the
+// decision was an accept, the generated manifest file is removed. The
+// candidate stays in candidates.json so it can be re-reviewed.
+func newImportUndoCommand(io *IO) *cobra.Command {
+	return &cobra.Command{
+		Use:   "undo <candidate-id>",
+		Short: "Revert one review decision (deletes the manifest if it was an accept)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			ws, err := openWorkspace(io)
+			if err != nil {
+				return io.fail("NO_WORKSPACE", err.Error(), nil)
+			}
+			candID := args[0]
+			sessPath := filepath.Join(ws.ImportDir(), importer.SessionFileName)
+			sess, _ := importer.LoadSession(sessPath)
+			prev, ok := sess.Decisions[candID]
+			if !ok {
+				return io.fail("NO_DECISION", "no recorded decision for "+candID, nil)
+			}
+			removed := ""
+			if prev == importer.DecisionAccepted {
+				draftPath := filepath.Join(ws.ImportDir(), importer.DraftsDirName, candID+".yaml")
+				if m, derr := schema.LoadManifest(draftPath); derr == nil {
+					mp := filepath.Join(ws.FeaturesDir(),
+						filepath.FromSlash(strings.ReplaceAll(m.ID, ".", "/"))+".yaml")
+					if rerr := os.Remove(mp); rerr == nil {
+						removed = mp
+					}
+				}
+			}
+			delete(sess.Decisions, candID)
+			if err := importer.SaveSession(sessPath, sess); err != nil {
+				return io.fail("IMPORT_WRITE_FAILED", err.Error(), nil)
+			}
+			if io.JSON {
+				return io.printJSON(map[string]interface{}{
+					"candidate":        candID,
+					"previous_decision": prev,
+					"removed_manifest":  removed,
+				})
+			}
+			io.printf("Undid %s decision for %s\n", prev, candID)
+			if removed != "" {
+				io.printf("  - removed manifest %s\n", removed)
+			}
+			io.printf("Re-review with: lattice import review %s\n", candID)
+			return nil
+		},
+	}
+}
+
+// newImportPromoteParentsCommand backfills missing umbrella manifests for
+// every dotted feature id under features/. Most accepts already auto-promote
+// during review; this command is the bulk fix-up for repos imported before
+// auto-promote existed, or after hand-editing.
+func newImportPromoteParentsCommand(io *IO) *cobra.Command {
+	return &cobra.Command{
+		Use:   "promote-parents",
+		Short: "Create umbrella manifests for every missing ancestor of a dotted feature id",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			ws, err := openWorkspace(io)
+			if err != nil {
+				return io.fail("NO_WORKSPACE", err.Error(), nil)
+			}
+			created, err := importer.PromoteParents(ws.FeaturesDir())
+			if err != nil {
+				return io.fail("IMPORT_WRITE_FAILED", err.Error(), nil)
+			}
+			if io.JSON {
+				return io.printJSON(map[string]interface{}{
+					"created": created, "count": len(created),
+				})
+			}
+			if len(created) == 0 {
+				io.printf("No missing parents — every dotted feature id already has its ancestors.\n")
+				return nil
+			}
+			io.printf("Promoted %d umbrella manifest(s) under %s\n", len(created), ws.FeaturesDir())
+			for _, fid := range created {
+				io.printf("  + %s\n", fid)
+			}
+			io.printf("\nVerify the result: lattice import verify\n")
+			return nil
+		},
+	}
+}
+
+// providerLabel describes the labeling provider for the summary line.
+func providerLabel(active bool, provider agentic.Provider) string {
+	if active {
+		return "llm (" + provider.Name() + ")"
+	}
+	return "deterministic"
+}
+
+// formatModeCounts renders the honest per-mode breakdown — replaces the old
+// single-mode line that hid silent fallbacks behind a misleading "[llm]" tag.
+func formatModeCounts(counts map[importer.Mode]int, provider string) string {
+	total := 0
+	for _, n := range counts {
+		total += n
+	}
+	parts := []string{}
+	add := func(m importer.Mode, label string) {
+		if n := counts[m]; n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, label))
+		}
+	}
+	add(importer.ModeLLM, "LLM")
+	add(importer.ModeCached, "cached")
+	add(importer.ModeFallback, "fallback")
+	add(importer.ModeDeterministic, "deterministic")
+	if len(parts) == 0 {
+		return fmt.Sprintf("provider: %s", provider)
+	}
+	return fmt.Sprintf("provider: %s   outcomes: %s", provider, strings.Join(parts, ", "))
+}
+
 func countDecisions(decisions map[string]string, want string) int {
 	n := 0
 	for _, d := range decisions {
@@ -213,6 +399,8 @@ func countDecisions(decisions map[string]string, want string) int {
 
 func newImportDraftCommand(io *IO) *cobra.Command {
 	var noLLM bool
+	var scopes []string
+	var audienceOverride string
 	cmd := &cobra.Command{
 		Use:   "draft",
 		Short: "Stage 2 — draft a manifest for each candidate (grounded LLM, deterministic fallback)",
@@ -226,17 +414,42 @@ func newImportDraftCommand(io *IO) *cobra.Command {
 				return io.fail("NO_IMPORT_SESSION",
 					"no candidates; run `lattice import scan` first", nil)
 			}
+			// Late scope filter — replaces the post-scan Python hand-filter
+			// I needed during dogfooding to target a handful of modules.
+			cf = importer.FilterByScopes(cf, scopes)
+			if len(scopes) > 0 && len(cf.Candidates) == 0 {
+				return io.fail("EMPTY_SCOPE",
+					"no candidates match --scope "+strings.Join(scopes, ", "), nil)
+			}
 
 			cfg, _ := config.Load(ws.LatticeDir)
 			provider := agentic.FromConfig(cfg.Agentic.LLM)
-			mode := "deterministic"
 			var drafts []importer.Draft
-			if !noLLM && agentic.Enabled(provider) {
+			llmActive := !noLLM && agentic.Enabled(provider)
+			if llmActive {
+				// Per-candidate progress: emit a line to stderr as each
+				// candidate finishes labeling, so a long LLM run is never
+				// silent and silent fallbacks are immediately visible.
+				// Skipped in JSON mode to keep stderr clean for tooling.
+				var progress func(done, total int, candID string, mode importer.Mode)
+				if !io.JSON {
+					progress = func(done, total int, candID string, mode importer.Mode) {
+						io.errorf("  [%3d/%d] %s  %s\n", done, total, candID, mode)
+					}
+				}
+				// Compose the tone contract from config, with a CLI
+				// --audience override for a one-shot voice change.
+				tone := cfg.Agentic.Tone
+				if audienceOverride != "" {
+					tone.Audience = audienceOverride
+				}
+				sysPrompt := agentic.ToneContract(tone) + importer.LabelSystemPromptDefault()
 				drafts = importer.LabelWithLLM(cmd.Context(), cf, provider, importer.LLMLabelOptions{
-					MaxTokens: cfg.Agentic.LLM.MaxTokens,
-					CacheDir:  ws.CacheDir(),
+					MaxTokens:    cfg.Agentic.LLM.MaxTokens,
+					CacheDir:     ws.CacheDir(),
+					Progress:     progress,
+					SystemPrompt: sysPrompt,
 				})
-				mode = "llm (" + provider.Name() + ")"
 			} else {
 				drafts = importer.Label(cf)
 			}
@@ -256,23 +469,41 @@ func newImportDraftCommand(io *IO) *cobra.Command {
 				sess.Status = importer.StatusDrafted
 				_ = importer.SaveSession(sessPath, sess)
 			}
-			if io.JSON {
-				return io.printJSON(drafts)
-			}
-			io.printf("Drafted %d manifest(s) [%s] -> %s\n", len(drafts), mode, draftsDir)
+
+			// Honest mode breakdown. Replaces the misleading single
+			// "[llm (openai)]" label that hid every silent fallback.
+			counts := map[importer.Mode]int{}
 			for _, d := range drafts {
-				io.printf("  %s  ->  %s\n", d.CandidateID, d.Manifest.ID)
+				counts[d.Mode]++
+			}
+			if io.JSON {
+				return io.printJSON(map[string]interface{}{
+					"drafts":      drafts,
+					"mode_counts": counts,
+					"provider":    providerLabel(llmActive, provider),
+				})
+			}
+			io.printf("Drafted %d manifest(s) -> %s\n", len(drafts), draftsDir)
+			io.printf("  %s\n", formatModeCounts(counts, providerLabel(llmActive, provider)))
+			for _, d := range drafts {
+				io.printf("  %s  [%s]  ->  %s\n", d.CandidateID, d.Mode, d.Manifest.ID)
 			}
 			io.printf("\nReview them: lattice import review <candidate-id>\n")
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&noLLM, "no-llm", false, "force the deterministic labeler even when an LLM is configured")
+	cmd.Flags().StringSliceVar(&scopes, "scope", nil,
+		"only draft candidates whose files lie under any of these subtrees (repeatable)")
+	cmd.Flags().StringVar(&audienceOverride, "audience", "",
+		"override agentic.tone.audience for this run (business|product|engineering|mixed or free-form)")
 	return cmd
 }
 
 func newImportReviewCommand(io *IO) *cobra.Command {
-	var accept, reject bool
+	var accept, reject, acceptAll, rejectAll bool
+	var scopes, wheres []string
+	var fromFile string
 	cmd := &cobra.Command{
 		Use:   "review [candidate-id]",
 		Short: "Stage 3 — review a candidate's bundle and accept or reject it",
@@ -287,14 +518,31 @@ func newImportReviewCommand(io *IO) *cobra.Command {
 				return io.fail("NO_IMPORT_SESSION",
 					"no candidates; run `lattice import scan` first", nil)
 			}
+			cfFiltered := importer.FilterByScopes(cf, scopes)
 			sessPath := filepath.Join(ws.ImportDir(), importer.SessionFileName)
 			sess, _ := importer.LoadSession(sessPath)
+
+			// Bulk paths: --from-file and --accept-all/--reject-all are
+			// exclusive with the single-candidate flow.
+			if fromFile != "" {
+				return reviewFromFile(io, ws, cf, sess, sessPath, fromFile)
+			}
+			if acceptAll || rejectAll {
+				if acceptAll && rejectAll {
+					return io.fail("BAD_FLAGS", "choose --accept-all or --reject-all, not both", nil)
+				}
+				action := importer.DecisionAccepted
+				if rejectAll {
+					action = importer.DecisionRejected
+				}
+				return reviewBulk(io, ws, cfFiltered, sess, sessPath, wheres, action)
+			}
 
 			if len(args) == 0 {
 				if accept || reject {
 					return io.fail("NO_CANDIDATE", "--accept/--reject needs a candidate id", nil)
 				}
-				return reviewList(io, cf, sess)
+				return reviewList(io, cfFiltered, sess)
 			}
 			if accept && reject {
 				return io.fail("BAD_FLAGS", "choose --accept or --reject, not both", nil)
@@ -315,6 +563,16 @@ func newImportReviewCommand(io *IO) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&accept, "accept", false, "accept the candidate: write its manifest under features/")
 	cmd.Flags().BoolVar(&reject, "reject", false, "reject the candidate")
+	cmd.Flags().BoolVar(&acceptAll, "accept-all", false,
+		"bulk-accept every candidate matching --scope and --where filters")
+	cmd.Flags().BoolVar(&rejectAll, "reject-all", false,
+		"bulk-reject every candidate matching --scope and --where filters")
+	cmd.Flags().StringVar(&fromFile, "from-file", "",
+		"apply a decisions.yaml batch (atomic; PR-friendly)")
+	cmd.Flags().StringSliceVar(&scopes, "scope", nil,
+		"restrict to candidates under any of these subtrees (repeatable)")
+	cmd.Flags().StringSliceVar(&wheres, "where", nil,
+		"predicate filter for bulk ops; e.g. package=modules/X, confidence>=0.7, symbols<5 (repeatable, AND-ed)")
 	return cmd
 }
 
@@ -353,19 +611,181 @@ func reviewDecide(io *IO, ws *workspace.Workspace, sess importer.Session, sessPa
 		return io.fail("IMPORT_WRITE_FAILED", err.Error(), nil)
 	}
 
+	// Auto-promote ancestors: a dotted id like accounts.api.wrappers.subscription
+	// needs accounts.api.wrappers / accounts.api / accounts to exist or verify
+	// cascades with SUBFEATURE_PARENT_MISSING. PromoteParents is idempotent
+	// and only writes manifests that don't already exist.
+	var promoted []string
+	if decision == importer.DecisionAccepted {
+		var perr error
+		promoted, perr = importer.PromoteParents(ws.FeaturesDir())
+		if perr != nil {
+			return io.fail("IMPORT_WRITE_FAILED", perr.Error(), nil)
+		}
+	}
+
 	if io.JSON {
-		out := map[string]string{"candidate": cand.ID, "decision": decision}
+		out := map[string]interface{}{"candidate": cand.ID, "decision": decision}
 		if manifestPath != "" {
 			out["manifest"] = manifestPath
+		}
+		if len(promoted) > 0 {
+			out["promoted_parents"] = promoted
 		}
 		return io.printJSON(out)
 	}
 	if manifestPath != "" {
 		io.printf("accepted %s -> %s\n", cand.ID, manifestPath)
+		for _, p := range promoted {
+			io.printf("  + parent  %s  (auto-created umbrella manifest)\n", p)
+		}
 		io.printf("verify the generated substrate: lattice import verify\n")
 	} else {
 		io.printf("rejected %s\n", cand.ID)
 	}
+	return nil
+}
+
+// reviewFromFile applies an entire decisions.yaml batch atomically. It does
+// the per-candidate work in one pass and runs PromoteParents once at the
+// end — for a 50-candidate batch that's one filesystem walk instead of 50.
+func reviewFromFile(io *IO, ws *workspace.Workspace, cf importer.CandidatesFile,
+	sess importer.Session, sessPath, path string) error {
+
+	decisions, err := importer.LoadDecisionsFile(path)
+	if err != nil {
+		return io.fail("BAD_DECISIONS_FILE", err.Error(), nil)
+	}
+	return applyBatch(io, ws, cf, sess, sessPath, decisions, "from-file: "+path)
+}
+
+// reviewBulk applies --accept-all / --reject-all with optional --where
+// predicates. The scope filter is already applied to cf by the caller.
+func reviewBulk(io *IO, ws *workspace.Workspace, cf importer.CandidatesFile,
+	sess importer.Session, sessPath string, wheres []string, action string) error {
+
+	preds := []importer.CandidatePredicate{}
+	for _, w := range wheres {
+		p, err := importer.ParseWhere(w)
+		if err != nil {
+			return io.fail("BAD_WHERE", err.Error(), nil)
+		}
+		preds = append(preds, p)
+	}
+	match := importer.AndPredicates(preds)
+	decisions := map[string]string{}
+	for _, c := range cf.Candidates {
+		if match(c) {
+			decisions[c.ID] = action
+		}
+	}
+	if len(decisions) == 0 {
+		return io.fail("EMPTY_BULK", "no candidates match the given filters", nil)
+	}
+	return applyBatch(io, ws, cf, sess, sessPath, decisions, fmt.Sprintf("bulk: %d matched", len(decisions)))
+}
+
+// applyBatch is the shared driver: write manifests for accepts, record
+// every decision in the session, run PromoteParents once at the end.
+func applyBatch(io *IO, ws *workspace.Workspace, cf importer.CandidatesFile,
+	sess importer.Session, sessPath string, decisions map[string]string, source string) error {
+
+	if sess.Decisions == nil {
+		sess.Decisions = map[string]string{}
+	}
+	candByID := map[string]importer.Candidate{}
+	for _, c := range cf.Candidates {
+		candByID[c.ID] = c
+	}
+	type result struct {
+		Candidate string `json:"candidate"`
+		Decision  string `json:"decision"`
+		Manifest  string `json:"manifest,omitempty"`
+		Skipped   string `json:"skipped,omitempty"`
+	}
+	results := make([]result, 0, len(decisions))
+	wroteAccept := false
+
+	for candID, decision := range decisions {
+		cand, ok := candByID[candID]
+		if !ok {
+			results = append(results, result{Candidate: candID, Decision: decision,
+				Skipped: "unknown candidate (not in current scan)"})
+			continue
+		}
+		r := result{Candidate: candID, Decision: decision}
+		if decision == importer.DecisionAccepted {
+			draftPath := filepath.Join(ws.ImportDir(), importer.DraftsDirName, cand.ID+".yaml")
+			m, derr := schema.LoadManifest(draftPath)
+			if derr != nil {
+				r.Skipped = "no draft (run `lattice import draft` first)"
+				results = append(results, r)
+				continue
+			}
+			mp := filepath.Join(ws.FeaturesDir(),
+				filepath.FromSlash(strings.ReplaceAll(m.ID, ".", "/"))+".yaml")
+			if exists(mp) {
+				r.Skipped = "manifest already exists: " + mp
+				results = append(results, r)
+				continue
+			}
+			if err := os.MkdirAll(filepath.Dir(mp), 0o755); err != nil {
+				return io.fail("IMPORT_WRITE_FAILED", err.Error(), nil)
+			}
+			if err := schema.SaveCanonical(mp, m); err != nil {
+				return io.fail("IMPORT_WRITE_FAILED", err.Error(), nil)
+			}
+			r.Manifest = mp
+			wroteAccept = true
+		}
+		sess.Decisions[candID] = decision
+		results = append(results, r)
+	}
+	sess.Status = importer.StatusReviewing
+	if err := importer.SaveSession(sessPath, sess); err != nil {
+		return io.fail("IMPORT_WRITE_FAILED", err.Error(), nil)
+	}
+
+	// One PromoteParents pass at the end is far cheaper than one per
+	// accept when the batch is large.
+	var promoted []string
+	if wroteAccept {
+		var perr error
+		promoted, perr = importer.PromoteParents(ws.FeaturesDir())
+		if perr != nil {
+			return io.fail("IMPORT_WRITE_FAILED", perr.Error(), nil)
+		}
+	}
+
+	if io.JSON {
+		return io.printJSON(map[string]interface{}{
+			"source":           source,
+			"results":          results,
+			"promoted_parents": promoted,
+		})
+	}
+	accepted, rejected, skipped := 0, 0, 0
+	for _, r := range results {
+		switch {
+		case r.Skipped != "":
+			skipped++
+		case r.Decision == importer.DecisionAccepted:
+			accepted++
+		case r.Decision == importer.DecisionRejected:
+			rejected++
+		}
+	}
+	io.printf("Batch review applied (%s)\n", source)
+	io.printf("  accepted: %d   rejected: %d   skipped: %d\n", accepted, rejected, skipped)
+	if len(promoted) > 0 {
+		io.printf("  auto-created %d umbrella parent manifest(s)\n", len(promoted))
+	}
+	for _, r := range results {
+		if r.Skipped != "" {
+			io.printf("  ~ %s  [%s]  skipped: %s\n", r.Candidate, r.Decision, r.Skipped)
+		}
+	}
+	io.printf("\nVerify the result: lattice import verify\n")
 	return nil
 }
 
@@ -532,8 +952,20 @@ func newImportInscribeCommand(io *IO) *cobra.Command {
 			}
 
 			am := importer.AnnotationMap{}
+			capEdges := 0
 			for _, a := range accepted {
-				am.Features = append(am.Features, importer.AnnotationMapFeature{ID: a.Feature, Symbols: a.Symbols})
+				// Heuristic capability matching — populates per-cap
+				// symbol links so verify doesn't fire UNIMPLEMENTED_CAPABILITY
+				// for every cap on every accepted feature.
+				capLinks := importer.MatchCapabilities(a.Symbols, a.Capabilities)
+				for _, fqns := range capLinks {
+					capEdges += len(fqns)
+				}
+				am.Features = append(am.Features, importer.AnnotationMapFeature{
+					ID:           a.Feature,
+					Symbols:      a.Symbols,
+					Capabilities: capLinks,
+				})
 			}
 			amPath := filepath.Join(ws.ImportDir(), importer.AnnotationMapFileName)
 			if err := importer.SaveAnnotationMap(amPath, am); err != nil {
@@ -543,8 +975,10 @@ func newImportInscribeCommand(io *IO) *cobra.Command {
 			if io.JSON {
 				return io.printJSON(am)
 			}
-			io.printf("Wrote sidecar map (%d feature(s)) -> %s\n", len(am.Features), amPath)
-			io.printf("The graph now links these features to code — no source was modified.\n")
+			io.printf("Wrote sidecar map (%d feature(s), %d capability edge(s)) -> %s\n",
+				len(am.Features), capEdges, amPath)
+			io.printf("Sidecar mode: NO source files were modified.\n")
+			io.printf("To write real annotations into source instead: lattice import inscribe --inline --apply\n")
 			io.printf("Run `lattice extract` to rebuild lattice.json.\n")
 			return nil
 		},
@@ -619,13 +1053,25 @@ func acceptedFeatures(io *IO, ws *workspace.Workspace, cf importer.CandidatesFil
 		if sess.Decisions[c.ID] != importer.DecisionAccepted {
 			continue
 		}
+		// Prefer the accepted feature manifest in features/ — a human may
+		// have edited capabilities there. Fall back to the draft when the
+		// feature file has been renamed or removed.
 		draftPath := filepath.Join(ws.ImportDir(), importer.DraftsDirName, c.ID+".yaml")
 		m, derr := schema.LoadManifest(draftPath)
 		if derr != nil {
 			return nil, io.fail("NO_DRAFT",
 				"accepted candidate "+c.ID+" has no draft; run `lattice import draft`", nil)
 		}
-		out = append(out, importer.FeatureSymbols{Feature: m.ID, Symbols: c.Symbols})
+		acceptedPath := filepath.Join(ws.FeaturesDir(),
+			filepath.FromSlash(strings.ReplaceAll(m.ID, ".", "/"))+".yaml")
+		if real, err := schema.LoadManifest(acceptedPath); err == nil {
+			m = real
+		}
+		out = append(out, importer.FeatureSymbols{
+			Feature:      m.ID,
+			Symbols:      c.Symbols,
+			Capabilities: m.Capabilities,
+		})
 	}
 	return out, nil
 }

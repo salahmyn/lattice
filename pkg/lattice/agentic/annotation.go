@@ -50,9 +50,10 @@ Output JSON: {"suggestions":[{"annotation":str,"args":[str],"rationale":str,"con
 		file, line, mustJSON(det))
 
 	resp, err := c.provider.Complete(ctx, CompletionRequest{
-		SystemPrompt: "You suggest Lattice code annotations. Reply with JSON only.",
-		UserMessage:  prompt,
-		MaxTokens:    c.cfg.Agentic.LLM.MaxTokens,
+		SystemPrompt: ToneContract(c.cfg.Agentic.Tone) +
+			"You suggest Lattice code annotations. Reply with JSON only.",
+		UserMessage: prompt,
+		MaxTokens:   c.cfg.Agentic.LLM.MaxTokens,
 	})
 	if err != nil {
 		return result, nil // deterministic fallback on any LLM failure

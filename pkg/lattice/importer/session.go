@@ -33,10 +33,10 @@ const (
 // It records the scan scope and every per-candidate decision so a re-scan
 // reconciles rather than discards human work.
 type Session struct {
-	Version    int    `yaml:"version"`
-	Scope      string `yaml:"scope,omitempty"`
-	Status     string `yaml:"status"`
-	Candidates int    `yaml:"candidates"`
+	Version    int      `yaml:"version"`
+	Scopes     []string `yaml:"scopes,omitempty"`
+	Status     string   `yaml:"status"`
+	Candidates int      `yaml:"candidates"`
 	// Decisions maps a candidate ID to a reviewer decision. Empty after a
 	// scan; populated by the Stage-3 review loop.
 	Decisions map[string]string `yaml:"decisions,omitempty"`
@@ -68,7 +68,7 @@ func SaveSession(path string, s Session) error {
 func NewScannedSession(prior Session, cf CandidatesFile) Session {
 	s := Session{
 		Version:    sessionVersion,
-		Scope:      cf.Scope,
+		Scopes:     append([]string(nil), cf.Scopes...),
 		Status:     StatusScanned,
 		Candidates: len(cf.Candidates),
 		Decisions:  map[string]string{},

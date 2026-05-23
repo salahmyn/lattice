@@ -17,6 +17,15 @@ type LLMLabelOptions struct {
 	// CacheDir, when set, caches label results by candidate id so a re-run is
 	// stable and cheap despite the LLM being non-deterministic.
 	CacheDir string
+	// Progress, when set, is invoked after each candidate is labeled. It runs
+	// on the labeling goroutine, so keep it cheap. The done counter is 1-based
+	// (1 means "first candidate just finished").
+	Progress func(done, total int, candidateID string, mode Mode)
+	// SystemPrompt overrides the default labeling system prompt. The CLI uses
+	// this to inject the agentic.tone contract — see agentic.ToneContract —
+	// so a single config field steers the voice of every prose field.
+	// Empty string falls back to the default.
+	SystemPrompt string
 }
 
 const labelSystemPrompt = "You label a cluster of code as one software feature for the " +
@@ -24,18 +33,28 @@ const labelSystemPrompt = "You label a cluster of code as one software feature f
 	"never invent symbols, capabilities, or behavior the evidence does not show. " +
 	"Reply with JSON only."
 
+// LabelSystemPromptDefault exposes the baseline labeling prompt so callers
+// (the CLI) can prepend a voice contract from agentic.ToneContract.
+func LabelSystemPromptDefault() string { return labelSystemPrompt }
+
 // LabelWithLLM runs Stage 2 with an LLM: each candidate is labeled from a
 // grounded prompt built only from its own evidence. Any candidate the LLM
 // cannot label falls back to the deterministic skeleton, so the result is
-// always complete. Labels are cached by candidate id.
+// always complete. Labels are cached by candidate id. If opts.Progress is
+// set it is called after each candidate with its outcome — so a 50-minute
+// run isn't silent and every silent fallback is visible.
 func LabelWithLLM(ctx context.Context, cf CandidatesFile, provider agentic.Provider, opts LLMLabelOptions) []Draft {
 	cache := loadLabelCache(opts.CacheDir)
 	seen := map[string]bool{}
 	drafts := make([]Draft, 0, len(cf.Candidates))
-	for _, c := range cf.Candidates {
-		m := llmLabelOne(ctx, c, provider, opts, cache)
+	total := len(cf.Candidates)
+	for i, c := range cf.Candidates {
+		m, mode := llmLabelOne(ctx, c, provider, opts, cache)
 		m.ID = uniqueID(sanitizeFeatureID(m.ID, c.Package), seen)
-		drafts = append(drafts, Draft{CandidateID: c.ID, Manifest: m})
+		drafts = append(drafts, Draft{CandidateID: c.ID, Mode: mode, Manifest: m})
+		if opts.Progress != nil {
+			opts.Progress(i+1, total, c.ID, mode)
+		}
 	}
 	cache.save()
 	return drafts
@@ -53,33 +72,39 @@ type labelResponse struct {
 }
 
 // llmLabelOne labels a single candidate, falling back to the deterministic
-// skeleton on any cache miss + LLM failure.
+// skeleton on any cache miss + LLM failure. Returns the manifest and the
+// mode that produced it so the caller can report honest per-candidate
+// outcomes (llm | cached | fallback) rather than a single misleading label.
 func llmLabelOne(ctx context.Context, c Candidate, provider agentic.Provider,
-	opts LLMLabelOptions, cache *labelCache) schema.Manifest {
+	opts LLMLabelOptions, cache *labelCache) (schema.Manifest, Mode) {
 
 	if m, ok := cache.get(c.ID); ok {
-		return m
+		return m, ModeCached
 	}
 	fallback := draftManifest(deriveFeatureID(c.Package), c)
 
+	sysPrompt := opts.SystemPrompt
+	if sysPrompt == "" {
+		sysPrompt = labelSystemPrompt
+	}
 	resp, err := provider.Complete(ctx, agentic.CompletionRequest{
-		SystemPrompt: labelSystemPrompt,
+		SystemPrompt: sysPrompt,
 		UserMessage:  groundedLabelPrompt(c),
 		MaxTokens:    opts.MaxTokens,
 	})
 	if err != nil {
-		return fallback
+		return fallback, ModeFallback
 	}
 	var parsed labelResponse
 	if jerr := json.Unmarshal([]byte(extractJSON(resp.Text)), &parsed); jerr != nil {
-		return fallback
+		return fallback, ModeFallback
 	}
 	m := manifestFromLabel(parsed)
 	if m.ID == "" || len(m.Capabilities) == 0 {
-		return fallback
+		return fallback, ModeFallback
 	}
 	cache.put(c.ID, m)
-	return m
+	return m, ModeLLM
 }
 
 // groundedLabelPrompt builds the per-candidate prompt from its evidence only.
