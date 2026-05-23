@@ -10,6 +10,7 @@ type KnowledgeGraph struct {
 	GeneratedFromCommit string `json:"generated_from_commit"`
 
 	Features         []Manifest             `json:"features"`
+	EntryPoints      []EntryPoint           `json:"entry_points,omitempty"`
 	Symbols          []GraphSymbol          `json:"symbols"`
 	Tests            []GraphSymbol          `json:"tests"`
 	Modules          []GraphModule          `json:"modules"`

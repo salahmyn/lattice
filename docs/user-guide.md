@@ -173,6 +173,39 @@ into CI with the templates in `ci-templates/`.
 
 ---
 
+## 4b. Entry points & flows (v0.3.0)
+
+The feature axis answers *what does the system know about?* The
+**entry-point axis** answers *what happens when X is triggered?* It
+makes HTTP routes, CLI commands, scheduled jobs, queue workers, and
+event consumers first-class artefacts and traces each one through the
+features its handler reaches.
+
+Entry points are discovered automatically on every `lattice extract` by
+per-framework detectors. v0.3.0 ships Laravel HTTP, CLI, and queue;
+cron and other frameworks come in v0.3.1.
+
+```sh
+lattice extract                          # also detects entry points
+lattice view entry-points                # table by kind
+lattice view flows                       # mermaid flowcharts for all reachable EPs
+lattice view flows --task ep.http.post.api.v2.refunds  # one flowchart
+```
+
+The flow tracer joins entry points to features by module proximity: a
+feature is "reached" when one of its implementation symbols lives in the
+handler's class, file, or 2-level enclosing module. Coarser than a SCIP
+call-graph walk but works without an indexer; SCIP-backed transitive
+tracing is on the v0.3.1 roadmap.
+
+Four new validation rules surface entry-point integrity issues:
+`UNCLASSIFIED_ENTRY_POINT` (handler reaches no feature),
+`DUPLICATE_TRIGGER` (routing collision), `PHANTOM_FLOW` (flow step
+names a non-existent feature), and `HANDLER_MISSING` (handler FQN not
+in the IR).
+
+---
+
 ## 5. Day-to-day commands
 
 ```sh
@@ -184,6 +217,8 @@ lattice symbol <fqn>                   # Lattice context of a code symbol
 lattice search "refund" [--semantic]   # find features/capabilities/invariants
 lattice view developer|product|business|c4   # c4: Context/Container/Component
 lattice view c4 --format structurizr          # C4 as a Structurizr DSL workspace
+lattice view entry-points                     # every trigger (HTTP/CLI/cron/queue) grouped by kind
+lattice view flows [<ep-id>]                  # Mermaid: trigger -> handler -> features
 lattice analyze proposal <file>        # conflict + impact analysis
 lattice patch --from-file p.json --preview|--apply
 lattice initiative show <id>           # initiative + tasks

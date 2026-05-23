@@ -90,6 +90,7 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 		v = append(v, c.checkVerification()...)
 		v = append(v, c.checkSurfaces()...)
 		v = append(v, c.checkErrors()...)
+		v = append(v, checkEntryPoints(kg)...)
 	}
 
 	sortViolations(v)

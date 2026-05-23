@@ -13,7 +13,7 @@ func newViewCommand(io *IO) *cobra.Command {
 	var out, task, format string
 	cmd := &cobra.Command{
 		Use:   "view <name>",
-		Short: "Render a view: developer | product | business | c4 | agent_context",
+		Short: "Render a view: developer | product | business | c4 | agent_context | entry-points | flows",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			kg, ws, err := graphFor(io, cmd, false)
@@ -32,6 +32,10 @@ func newViewCommand(io *IO) *cobra.Command {
 				default:
 					rendered = views.RenderC4(ws, kg)
 				}
+			case "entry-points", "entry_points", "entrypoints":
+				rendered = views.RenderEntryPoints(kg)
+			case "flows", "flow":
+				rendered = views.RenderFlows(kg, task)
 			case "business":
 				caps, nErr := capabilities(io)
 				if nErr != nil {

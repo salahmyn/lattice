@@ -10,6 +10,8 @@ import (
 
 	"github.com/salahmyn/lattice/pkg/lattice/adapters/all"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/entrypoints"
+	_ "github.com/salahmyn/lattice/pkg/lattice/entrypoints/laravel" // registers Laravel detectors
 	"github.com/salahmyn/lattice/pkg/lattice/extract"
 	"github.com/salahmyn/lattice/pkg/lattice/graph"
 	"github.com/salahmyn/lattice/pkg/lattice/importer"
@@ -110,7 +112,7 @@ func buildGraph(ctx context.Context, ws *workspace.Workspace, withCodeGraph bool
 		importer.ApplyAnnotationMap(res.Modules, am)
 	}
 
-	return graph.Build(graph.Input{
+	kg := graph.Build(graph.Input{
 		Manifests:   res.Manifests,
 		Modules:     res.Modules,
 		Initiatives: res.Initiatives,
@@ -120,7 +122,19 @@ func buildGraph(ctx context.Context, ws *workspace.Workspace, withCodeGraph bool
 	}, graph.Options{
 		Commit:          gitCommit(ws.LatticeDir),
 		LanguageIndexes: indexPaths(reg.Names()),
-	}), nil
+	})
+
+	// v0.3.0 entry-point detection: every framework detector registered
+	// in pkg/lattice/entrypoints/* contributes the triggers it finds,
+	// then the module-proximity flow tracer joins them to the feature
+	// axis. Skipped in review mode (no source to walk).
+	if !ws.Review {
+		if eps, derr := entrypoints.DetectAll(ctx, ws, res.Modules); derr == nil {
+			kg.EntryPoints = entrypoints.Trace(eps, kg.Features)
+		}
+	}
+
+	return kg, nil
 }
 
 // runExtract performs extraction + graph build and writes the knowledge graph.

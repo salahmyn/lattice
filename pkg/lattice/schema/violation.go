@@ -62,6 +62,12 @@ const (
 	CodeDependsOnFeatureNotDeclared = "DEPENDS_ON_FEATURE_NOT_DECLARED"
 	CodeAdapterParseError           = "ADAPTER_PARSE_ERROR"
 	CodeSCIPIndexStale              = "SCIP_INDEX_STALE"
+
+	// Entry-point integrity (v0.3.0)
+	CodeUnclassifiedEntryPoint = "UNCLASSIFIED_ENTRY_POINT" // EP reaches zero features
+	CodeHandlerMissing         = "HANDLER_MISSING"          // EP handler symbol not in IR
+	CodeDuplicateTrigger       = "DUPLICATE_TRIGGER"        // two EPs share (kind, trigger)
+	CodePhantomFlow            = "PHANTOM_FLOW"             // flow step names a non-existent feature
 )
 
 // Location points at a place in a file.

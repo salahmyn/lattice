@@ -2,6 +2,101 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.3.0]
+
+Entry-points & flows — the second axis of the knowledge graph. See
+[docs/v0.3.0-entry-points-proposal.md](docs/v0.3.0-entry-points-proposal.md).
+
+### Added
+- **`EntryPoint` schema.** First-class artefact for every trigger of a
+  running system — HTTP route, CLI command, scheduled job, queue worker,
+  event consumer. Persists under `lattice/entry-points/` and joins the
+  knowledge graph as `entry_points`.
+- **Per-framework detectors** (`pkg/lattice/entrypoints/<framework>/`).
+  v0.3.0 ships three Laravel detectors:
+  - **HTTP routes** — parses `routes/*.php` and `Modules/*/Routes/*.php`,
+    recognising `Route::<verb>('path', 'Class@method')`,
+    `Route::<verb>('path', [Class::class, 'method'])`, and
+    `Route::resource/apiResource(name, Ctrl::class)`. Resolves array-form
+    short names through the file's `use` map.
+  - **CLI commands** — classes extending `Illuminate\Console\Command`;
+    command name comes from `$signature`.
+  - **Queue jobs** — classes implementing `ShouldQueue`; queue name from
+    `$queue` property when present.
+- **Module-proximity flow tracer.** Joins entry points to features: a
+  feature is reached when its implementation symbols share the handler's
+  class, file, or 2-level enclosing module. Per-step capability assignment
+  reuses the v0.2.1 token-overlap matcher. SCIP-backed transitive tracing
+  lands in v0.3.1.
+- **`lattice view entry-points`.** Markdown table per kind (HTTP shows
+  method+path, cron the schedule, queue the queue name).
+- **`lattice view flows [<ep-id>]`.** Mermaid flowchart per entry point —
+  trigger → handler → reached features (with capability sublabel) → side
+  effects.
+- **Four new validation rules.** `UNCLASSIFIED_ENTRY_POINT` (warning when
+  a handler reaches no feature), `DUPLICATE_TRIGGER` (warning on routing
+  collisions), `PHANTOM_FLOW` (error when a flow step names a non-
+  existent feature), `HANDLER_MISSING` (warning when a handler FQN is
+  absent from the IR).
+
+### Notes
+- Cron/scheduler detection and full `lattice import` pipeline integration
+  for entry points are deferred to v0.3.1.
+
+---
+
+## [0.2.1]
+
+Brownfield ergonomics + LLM tone control. Follow-on to v0.2.0 from
+real-world dogfooding on a 1900-PHP-file Laravel codebase.
+
+### Added
+- **Honest per-candidate draft outcomes + streaming progress.** `lattice
+  import draft` now reports `provider: llm (openai)   outcomes: 50 LLM,
+  3 cached, 2 fallback` instead of the misleading single `[llm (openai)]`
+  label that hid silent fallbacks. A per-candidate line streams to stderr
+  during the run so a 50-minute LLM pass is no longer silent.
+- **`lattice import promote-parents`** + automatic ancestor promotion on
+  every accept. A dotted feature id like `accounts.api.wrappers.subscription`
+  auto-materialises its missing parents (`accounts`, `accounts.api`,
+  `accounts.api.wrappers`) as umbrella manifests, eliminating the cascade
+  of `SUBFEATURE_PARENT_MISSING` errors that hit the v0.2.0 dogfood.
+- **Multi-`--scope`.** Every stage that targets candidates now accepts
+  repeated `--scope` values: `lattice import scan --scope modules/X
+  --scope modules/Y`. Promotes `scope` from string to `[]string` across
+  `Options`, `CandidatesFile`, `Session` (with a backward-compat
+  unmarshal). `draft` and `review` filter the candidate set at runtime —
+  no more hand-filtering candidates.json.
+- **Bulk review.** Two new paths replace shell-loop review:
+  - `--from-file decisions.yaml` applies a YAML batch atomically.
+  - `--accept-all|--reject-all --where 'package=modules/X' --where
+    'confidence>=0.7'`. Predicates compose with AND. `PromoteParents`
+    runs once at the end of a batch instead of once per accept.
+- **`lattice import reset`** + **`lattice import undo <candidate-id>`**.
+  Session-level rollback. `reset` clears decisions + draft manifests
+  (`--also-features` wipes accepted features too). `undo` reverts one
+  decision and deletes the generated manifest if it was an accept.
+- **Heuristic capability-level sidecar.** `lattice import inscribe`
+  (sidecar mode) now attempts a token-overlap match between each
+  candidate symbol and the manifest's capability names+summaries+rules.
+  Successful matches emit per-capability edges in `annotation-map.yaml`.
+  Cut `UNIMPLEMENTED_CAPABILITY` warnings on the dogfood from 172 → 46
+  (73% reduction). Inscribe message now explicit: "Sidecar mode: NO
+  source files were modified." with a pointer to `--inline --apply`.
+- **`agentic.tone` config block.** One knob steers the voice of every
+  LLM-generated prose field (feature purposes, capability summaries,
+  business narratives, annotation rationales):
+  ```yaml
+  agentic:
+    tone:
+      audience: business           # business | product | engineering | mixed
+      reading_level: simple        # simple | intermediate | expert
+      avoid_jargon: true
+      extra_instructions: |
+        Refer to merchants, not "users".
+  ```
+  CLI override per run: `lattice import draft --audience product`.
+
 ## [0.2.0]
 
 Brownfield adoption complete — Inscribe. See
