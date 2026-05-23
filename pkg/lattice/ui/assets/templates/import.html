@@ -54,7 +54,9 @@
     <tbody class="divide-y divide-slate-100" id="rows">
       {{range .Rows}}
       <tr id="row-{{.ID}}">
-        <td class="px-4 py-2 font-mono text-xs"><a href="/import/{{.ID}}" class="hover:underline">{{.ID}}</a></td>
+        <td class="px-4 py-2 font-mono text-xs">
+          <a href="/import/{{.ID}}" class="hover:underline" onclick="openDrawer('{{.ID}}'); return false;" title="Open bundle in drawer (Shift-click to navigate)">{{.ID}}</a>
+        </td>
         <td class="px-4 py-2 font-mono text-xs">{{.Package}}</td>
         <td class="px-4 py-2 text-right tabular-nums">{{printf "%.1f" .Confidence}}</td>
         <td class="px-4 py-2 text-right tabular-nums">{{len .Symbols}}</td>
@@ -78,6 +80,19 @@
   </table>
 </div>
 
+<!-- v0.4.1: slide-in candidate drawer. Bookmarkable /import/{id} route
+     still works (Shift-click any candidate row to navigate normally),
+     but the default click stays on the table so review pacing isn't
+     interrupted by full-page nav between candidates. -->
+<div id="drawer-backdrop" class="hidden fixed inset-0 bg-black/30 z-40" onclick="closeDrawer()"></div>
+<aside id="drawer" class="hidden fixed top-0 right-0 h-full w-full sm:w-[640px] bg-white shadow-2xl z-50 overflow-y-auto">
+  <div class="px-6 py-4 border-b border-slate-200 flex items-baseline justify-between sticky top-0 bg-white">
+    <h2 id="drawer-title" class="font-mono text-sm text-slate-900">…</h2>
+    <button onclick="closeDrawer()" class="text-slate-500 hover:text-slate-900" aria-label="Close">✕</button>
+  </div>
+  <div id="drawer-body" class="px-6 py-4 text-sm">loading…</div>
+</aside>
+
 <script>
 async function decide(id, action) {
   const r = await fetch('/api/v1/import/decisions', {
@@ -88,6 +103,73 @@ async function decide(id, action) {
   if (!r.ok) { alert('decision failed: ' + r.status); return; }
   // Refresh page so counts + decision badge update; no client state machine.
   window.location.reload();
+}
+
+function openDrawer(id) {
+  const back = document.getElementById('drawer-backdrop');
+  const drawer = document.getElementById('drawer');
+  document.getElementById('drawer-title').textContent = id;
+  document.getElementById('drawer-body').textContent = 'loading…';
+  back.classList.remove('hidden');
+  drawer.classList.remove('hidden');
+  fetch('/api/v1/import/candidates/' + encodeURIComponent(id))
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(renderDrawer)
+    .catch(err => {
+      document.getElementById('drawer-body').textContent = 'error: ' + err;
+    });
+}
+function closeDrawer() {
+  document.getElementById('drawer-backdrop').classList.add('hidden');
+  document.getElementById('drawer').classList.add('hidden');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+function renderDrawer(payload) {
+  const c = payload.candidate;
+  const d = payload.draft;
+  const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const decisionBadge = c.decision === 'accepted' ?
+    '<span class="px-2 py-0.5 text-xs rounded bg-emerald-50 text-emerald-700">accepted</span>' :
+    c.decision === 'rejected' ?
+    '<span class="px-2 py-0.5 text-xs rounded bg-rose-50 text-rose-700">rejected</span>' :
+    '<span class="text-xs text-slate-400">pending</span>';
+  const actionRow = !c.decision ? `
+    <div class="mt-4 flex gap-2">
+      <button onclick="decide('${esc(c.id)}','accept')" class="flex-1 px-3 py-2 text-sm bg-emerald-600 text-white rounded hover:bg-emerald-700">Accept</button>
+      <button onclick="decide('${esc(c.id)}','reject')" class="flex-1 px-3 py-2 text-sm bg-rose-600 text-white rounded hover:bg-rose-700">Reject</button>
+    </div>` : `
+    <p class="mt-4 text-sm text-slate-500">Already <strong>${esc(c.decision)}</strong>. Use <code class="font-mono">lattice import undo ${esc(c.id)}</code> to revert.</p>`;
+  const evidence = (c.evidence||[]).map(e => `<li><span class="font-mono px-1 bg-slate-100 rounded mr-2">${esc(e.signal)}</span>${esc(e.detail)}</li>`).join('');
+  const symbols = (c.symbols||[]).slice(0, 200).map(s => `<li>${esc(s)}</li>`).join('');
+  // schema.Manifest has yaml tags but no json tags, so default-marshalling
+  // yields PascalCase keys (ID / Capabilities / Summary). Stay aligned
+  // with the API rather than adding speculative json tags that would
+  // ripple through every other endpoint.
+  const caps = d ? (d.Capabilities||[]).map(cap => `
+      <li class="border-l-2 border-slate-200 pl-3">
+        <span class="font-mono">${esc(cap.ID)}</span>
+        <p class="text-slate-600">${esc(cap.Summary)}</p>
+      </li>`).join('') : '';
+
+  document.getElementById('drawer-body').innerHTML = `
+    <dl class="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+      <dt class="text-slate-500">Package</dt><dd class="font-mono text-xs">${esc(c.package)}</dd>
+      <dt class="text-slate-500">Confidence</dt><dd>${(c.confidence||0).toFixed(1)}</dd>
+      <dt class="text-slate-500">Symbols</dt><dd class="tabular-nums">${(c.symbols||[]).length}</dd>
+      <dt class="text-slate-500">Decision</dt><dd>${decisionBadge}</dd>
+      ${d ? `<dt class="text-slate-500">Drafted as</dt><dd class="font-mono text-xs">${esc(d.ID)}</dd>` : ''}
+    </dl>
+    ${actionRow}
+    ${d ? `
+      <h3 class="mt-6 text-xs uppercase tracking-wide text-slate-500">Draft purpose</h3>
+      <p class="mt-1 text-sm text-slate-700">${esc(d.Purpose)}</p>
+      ${caps ? `<h3 class="mt-4 text-xs uppercase tracking-wide text-slate-500">Capabilities</h3><ul class="mt-1 space-y-2 text-xs">${caps}</ul>` : ''}
+    ` : ''}
+    ${evidence ? `<h3 class="mt-6 text-xs uppercase tracking-wide text-slate-500">Evidence</h3><ul class="mt-1 space-y-1 text-xs text-slate-600">${evidence}</ul>` : ''}
+    ${symbols ? `<h3 class="mt-6 text-xs uppercase tracking-wide text-slate-500">Symbols</h3><ul class="mt-1 font-mono text-xs text-slate-700 max-h-72 overflow-y-auto">${symbols}</ul>` : ''}
+    <p class="mt-6 text-xs text-slate-400">Bookmark: <a href="/import/${esc(c.id)}" class="underline">/import/${esc(c.id)}</a></p>
+  `;
 }
 </script>
 {{end}}

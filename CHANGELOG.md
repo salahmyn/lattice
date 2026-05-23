@@ -2,6 +2,69 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.4.1]
+
+UI polish: schema-driven form, candidate drawer, diff preview.
+
+### Added
+- **Reflect-driven schema form generator** on `/config`. New
+  `/api/v1/config/schema` reflects over `config.Config` and emits a
+  nested `FieldSpec` tree; the page renders an `<input>` per field
+  (bool→checkbox, int→number, string→text, []string→textarea, struct→
+  `<details>`). PUT `/api/v1/config/fields` accepts `{paths: {a.b.c:
+  value}}`, round-trips through the current YAML, applies via
+  reflection, validates KnownFields-strict, and writes — type
+  mismatches return HTTP 422 with a precise per-path error before any
+  file is touched. Adding a new yaml-tagged field anywhere in
+  `pkg/lattice/config` surfaces in the UI on next restart, no template
+  change required.
+- **Candidate bundle drawer** on `/import`. Clicking a candidate id
+  fetches `/api/v1/import/candidates/{id}` and slides in a right-edge
+  drawer with symbols + evidence + draft + Accept/Reject buttons.
+  Bookmarkable `/import/{id}` route still works (Shift-click any row
+  to navigate normally).
+- **Diff preview on config save.** Pure-JS LCS-based unified diff
+  below each textarea highlights added / removed / unchanged lines as
+  the user types, with a +X / -Y summary in the action row.
+
+## [0.3.1]
+
+Entry-points + flows hardening on top of v0.3.0. See
+[docs/v0.3.0-entry-points-proposal.md](docs/v0.3.0-entry-points-proposal.md).
+
+### Added
+- **Laravel cron detector.** Parses `$schedule->command/job/call(...)`
+  chains in Console kernels; recognises the Laravel chain shortcuts
+  (`->daily()` / `->everyMinute()` / `->cron('expr')` / 19 others) and
+  maps them to cron expressions so `EntryPoint.Trigger.Schedule` is
+  always machine-readable.
+- **FastAPI HTTP detector** — proves the v0.3.0 detector framework is
+  genuinely cross-framework, not Laravel-only. Matches `@app.<verb>` /
+  `@router.<verb>` decorators above (optionally async) function defs;
+  handles multi-line decorators with nested-paren args like
+  `dependencies=[Depends(auth)]`.
+- **SCIP-backed transitive flow tracer.** When SCIP indexes exist in
+  `lattice/.cache/scip/`, BFS the call graph from each EP handler
+  through transitive callees. New `pkg/lattice/scip/calls.go` builds
+  caller→callees via "most recent definition before line L wins"
+  attribution; depth-capped at 8 hops; falls back to v0.3.0
+  module-proximity so the graph is never worse than before.
+- **EntryPoint persistence + LLM labelling.** `lattice/entry-points/`
+  becomes a peer of `lattice/features/`. `extract` merges detected EPs
+  with on-disk persisted EPs (persisted purpose wins, detector flow
+  fills in) and LLM-labels any EP that lacks a purpose, using the
+  v0.2.1 `agentic.tone` contract — one config knob steers both feature
+  and entry-point prose.
+- **`lattice doctor --probe-llm`** sends one tiny round-trip via the
+  configured provider and reports the verbatim response (elapsed ms,
+  tokens, reply) or the raw error with a targeted suggestion
+  (`upgrade_required` → "upgrade plan", `no such host` → "check
+  base_url for typos or VPN", etc).
+- **Doublestar exclude globs.** `import.coverage.exclude` now accepts
+  `**` recursive patterns (`Modules/**/Database/Migrations/**`) via
+  `github.com/bmatcuk/doublestar/v4`. The old `path.Match` was
+  single-segment-only.
+
 ## [0.4.0]
 
 Web UI — `lattice serve`. See

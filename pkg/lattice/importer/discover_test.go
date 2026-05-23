@@ -2,6 +2,7 @@ package importer
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
@@ -142,5 +143,45 @@ func TestFilterByScopes(t *testing.T) {
 	// Empty scopes is a no-op.
 	if got := FilterByScopes(cf, nil); len(got.Candidates) != len(cf.Candidates) {
 		t.Errorf("empty scope should not filter")
+	}
+}
+
+// TestExcludeDoublestar proves v0.2.1 #8: a recursive `**` glob
+// excludes a whole tree across arbitrary depth, which path.Match
+// couldn't do.
+func TestExcludeDoublestar(t *testing.T) {
+	mods := []ir.Module{
+		{File: "app/Http/Foo.php", Language: "php", Symbols: []ir.Symbol{
+			{Name: "Foo", FQN: "App\\Http\\Foo", Kind: "class", Exported: true},
+			{Name: "bar", FQN: "App\\Http\\Foo::bar", Kind: "method", Exported: true},
+			{Name: "baz", FQN: "App\\Http\\Foo::baz", Kind: "method", Exported: true},
+		}},
+		// Migration files at variable depth that path.Match couldn't
+		// glob with a single pattern.
+		{File: "Modules/A/Database/Migrations/2020_x.php", Language: "php", Symbols: []ir.Symbol{
+			{Name: "Mig1", FQN: "Mig1", Kind: "class", Exported: true},
+		}},
+		{File: "Modules/B/Sub/Database/Migrations/2021_y.php", Language: "php", Symbols: []ir.Symbol{
+			{Name: "Mig2", FQN: "Mig2", Kind: "class", Exported: true},
+		}},
+	}
+	cf := Discover(mods, Options{
+		MinCandidateSymbols: 1,
+		Exclude:             []string{"Modules/**/Database/Migrations/**"},
+	})
+	for _, c := range cf.Candidates {
+		if strings.Contains(c.Package, "Migrations") {
+			t.Errorf("doublestar exclude failed to drop %s", c.Package)
+		}
+	}
+	// app/Http must still be discovered — the wildcard didn't over-match.
+	found := false
+	for _, c := range cf.Candidates {
+		if c.Package == "app/Http" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("exclude over-matched: app/Http should still be a candidate, got %+v", cf.Candidates)
 	}
 }

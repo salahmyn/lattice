@@ -9,8 +9,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/salahmyn/lattice/pkg/lattice/adapters/all"
+	"github.com/salahmyn/lattice/pkg/lattice/agentic"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/entrypoints"
+	_ "github.com/salahmyn/lattice/pkg/lattice/entrypoints/fastapi" // registers FastAPI HTTP detector
 	_ "github.com/salahmyn/lattice/pkg/lattice/entrypoints/laravel" // registers Laravel detectors
 	"github.com/salahmyn/lattice/pkg/lattice/extract"
 	"github.com/salahmyn/lattice/pkg/lattice/graph"
@@ -124,13 +126,45 @@ func buildGraph(ctx context.Context, ws *workspace.Workspace, withCodeGraph bool
 		LanguageIndexes: indexPaths(reg.Names()),
 	})
 
-	// v0.3.0 entry-point detection: every framework detector registered
-	// in pkg/lattice/entrypoints/* contributes the triggers it finds,
-	// then the module-proximity flow tracer joins them to the feature
-	// axis. Skipped in review mode (no source to walk).
+	// v0.3.0 entry-point detection + v0.3.1 SCIP/persistence/labeling.
+	// Skipped in review mode (no source to walk).
 	if !ws.Review {
 		if eps, derr := entrypoints.DetectAll(ctx, ws, res.Modules); derr == nil {
-			kg.EntryPoints = entrypoints.Trace(eps, kg.Features)
+			scipCorpus, _ := scip.Load(scipIndexPaths(ws)...)
+			detected := entrypoints.TraceWithSCIP(eps, kg.Features, scipCorpus)
+			// v0.3.1: merge with any EPs already persisted to disk so
+			// a human-authored purpose / status survives re-extracts.
+			persisted, _ := entrypoints.LoadEntryPoints(ws.EntryPointsDir())
+			merged := entrypoints.Merge(detected, persisted)
+
+			// v0.3.1: LLM-label EPs that don't yet carry a purpose.
+			// Tone-aware via the same agentic.ToneContract the
+			// importer uses, so a single tone setting steers both
+			// feature and entry-point prose.
+			cfg, _ := config.Load(ws.LatticeDir)
+			provider := agentic.FromConfig(cfg.Agentic.LLM)
+			if agentic.Enabled(provider) {
+				skip := map[string]bool{}
+				for _, p := range persisted {
+					if p.Purpose != "" {
+						skip[p.ID] = true
+					}
+				}
+				merged = entrypoints.LabelEntryPoints(ctx, merged, entrypoints.LabelOptions{
+					Provider:     provider,
+					SystemPrompt: agentic.ToneContract(cfg.Agentic.Tone),
+					MaxTokens:    cfg.Agentic.LLM.MaxTokens,
+					Skip:         skip,
+				})
+				// Persist newly-labeled EPs so the next extract is fast
+				// (no LLM round-trip) and a human can edit on disk.
+				for _, ep := range merged {
+					if ep.Purpose != "" && !skip[ep.ID] {
+						_, _ = entrypoints.SaveEntryPoint(ws.EntryPointsDir(), ep)
+					}
+				}
+			}
+			kg.EntryPoints = merged
 		}
 	}
 
@@ -198,3 +232,4 @@ func indexPaths(languages []string) map[string]string {
 	}
 	return paths
 }
+

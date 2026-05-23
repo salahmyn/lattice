@@ -178,6 +178,10 @@ func (w *Workspace) ContextPath() string { return filepath.Join(w.LatticeDir, "c
 // FeaturesDir returns the directory holding feature manifests.
 func (w *Workspace) FeaturesDir() string { return filepath.Join(w.LatticeDir, "features") }
 
+// EntryPointsDir returns the directory holding accepted entry-point
+// manifests — peer to FeaturesDir for the invocation axis.
+func (w *Workspace) EntryPointsDir() string { return filepath.Join(w.LatticeDir, "entry-points") }
+
 // InitiativesDir returns the directory holding initiatives and tasks.
 func (w *Workspace) InitiativesDir() string { return filepath.Join(w.LatticeDir, "initiatives") }
 

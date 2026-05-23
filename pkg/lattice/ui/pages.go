@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"bytes"
 	"net/http"
 	"sort"
 	"strings"
@@ -26,15 +27,25 @@ type crumb struct {
 }
 
 func (s *Server) render(w http.ResponseWriter, name string, data pageData) {
-	tpl, err := s.templates()
+	tpls, err := s.templates()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := tpl.ExecuteTemplate(w, name, data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	tpl, ok := tpls[name]
+	if !ok {
+		http.Error(w, "unknown template: "+name, http.StatusInternalServerError)
+		return
 	}
+	// Execute into a buffer first so a template error returns a clean 500
+	// rather than half a page plus a superfluous WriteHeader log line.
+	var buf bytes.Buffer
+	if err := tpl.ExecuteTemplate(&buf, name, data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = buf.WriteTo(w)
 }
 
 // --- Pages ---

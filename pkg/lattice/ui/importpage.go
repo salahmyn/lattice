@@ -154,6 +154,42 @@ func (s *Server) apiImportCandidates(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, rows)
 }
 
+// apiImportCandidate returns one candidate's full bundle — symbols,
+// evidence, draft manifest, decision. Feeds the v0.4.1 drawer so the
+// reviewer can open and accept/reject without full-page navigation
+// between candidates.
+func (s *Server) apiImportCandidate(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	rows, _, err := s.collectImportRows(r)
+	if err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	var row importCandidateRow
+	found := false
+	for _, x := range rows {
+		if x.ID == id {
+			row, found = x, true
+			break
+		}
+	}
+	if !found {
+		writeJSONError(w, errStr("no such candidate: "+id), http.StatusNotFound)
+		return
+	}
+	// Load the draft manifest if present so the drawer can show it
+	// without a second round trip.
+	var draft *schema.Manifest
+	draftPath := filepath.Join(s.ws.ImportDir(), importer.DraftsDirName, row.ID+".yaml")
+	if m, err := schema.LoadManifest(draftPath); err == nil && m != nil {
+		draft = m
+	}
+	writeJSON(w, map[string]interface{}{
+		"candidate": row,
+		"draft":     draft,
+	})
+}
+
 // decisionPayload mirrors the CLI batch shape: candidate_id ->
 // "accept" | "reject". Reusing the v0.2.1 batch driver keeps the UI
 // and CLI byte-for-byte identical.

@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
+
 	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 )
 
@@ -292,9 +294,14 @@ func inScope(file, scope string) bool {
 }
 
 // excluded reports whether file matches any exclude glob.
+//
+// v0.2.1 #8: backed by doublestar so patterns can recurse with `**` —
+// the natural way to exclude a whole tree like Modules/**/Database/
+// Migrations/**. The old path.Match was single-segment-only and forced
+// users to enumerate every depth.
 func excluded(file string, globs []string) bool {
 	for _, g := range globs {
-		if ok, _ := path.Match(g, file); ok {
+		if ok, _ := doublestar.Match(g, file); ok {
 			return true
 		}
 	}

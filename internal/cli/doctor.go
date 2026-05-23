@@ -21,8 +21,25 @@ type doctorCheck struct {
 }
 
 type doctorReport struct {
-	Checks []doctorCheck `json:"checks"`
-	OK     bool          `json:"ok"`
+	Checks   []doctorCheck `json:"checks"`
+	OK       bool          `json:"ok"`
+	LLMProbe *llmProbe     `json:"llm_probe,omitempty"`
+}
+
+// llmProbe is the v0.2.1 #7 addition: the verbatim result of a single
+// tiny LLM round-trip. Lets a user diagnose a misconfigured provider
+// once, instead of meeting the same error per-candidate during a 50-
+// minute draft pass.
+type llmProbe struct {
+	OK          bool   `json:"ok"`
+	Provider    string `json:"provider"`
+	Model       string `json:"model"`
+	BaseURL     string `json:"base_url,omitempty"`
+	Reply       string `json:"reply,omitempty"`
+	Tokens      int    `json:"tokens_used,omitempty"`
+	ElapsedMS   int64  `json:"elapsed_ms,omitempty"`
+	Error       string `json:"error,omitempty"`
+	Suggestion  string `json:"suggestion,omitempty"`
 }
 
 // installHints maps an optional tool to its install instruction.
@@ -36,12 +53,20 @@ var installHints = map[string]string{
 }
 
 func newDoctorCommand(io *IO) *cobra.Command {
-	return &cobra.Command{
+	var probeLLM bool
+	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check installed prerequisites",
-		Long:  "Reports which optional tools (SCIP indexers, mutation runners, LLM config) are available.",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		Long: `Reports which optional tools (SCIP indexers, mutation runners, LLM config)
+are available. With --probe-llm, also sends a tiny test request to the
+configured LLM and reports the verbatim provider response so a setup
+problem (upgrade_required / unsupported_model / DNS failure) surfaces
+once, not 55 times during a draft run.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			report := runDoctor(io)
+			if probeLLM {
+				report.LLMProbe = probeLLMProvider(cmd.Context(), io)
+			}
 			if io.JSON {
 				return io.printJSON(report)
 			}
@@ -49,6 +74,9 @@ func newDoctorCommand(io *IO) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&probeLLM, "probe-llm", false,
+		"send a tiny test request via the configured LLM provider and report the actual response")
+	return cmd
 }
 
 func runDoctor(io *IO) doctorReport {
@@ -150,4 +178,24 @@ func renderDoctor(io *IO, report doctorReport) {
 		}
 	}
 	io.printf("\nOptional tools missing above are only needed for the features that use them.\n")
+	if report.LLMProbe != nil {
+		io.printf("\nLLM probe — %s / %s\n", report.LLMProbe.Provider, report.LLMProbe.Model)
+		if report.LLMProbe.OK {
+			io.printf("  [ok] reply in %dms (%d tokens): %s\n",
+				report.LLMProbe.ElapsedMS, report.LLMProbe.Tokens,
+				truncateString(report.LLMProbe.Reply, 80))
+		} else {
+			io.printf("  [x ] %s\n", report.LLMProbe.Error)
+			if report.LLMProbe.Suggestion != "" {
+				io.printf("       %s\n", report.LLMProbe.Suggestion)
+			}
+		}
+	}
+}
+
+func truncateString(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }

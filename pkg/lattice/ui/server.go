@@ -44,9 +44,13 @@ type Options struct {
 
 // Server is the HTTP entry point. It is safe for concurrent use.
 type Server struct {
-	ws      *workspace.Workspace
-	opts    Options
-	tpl     *template.Template
+	ws   *workspace.Workspace
+	opts Options
+	// tpl holds one isolated parsed tree per page so that each page's
+	// {{define "body"}} block is scoped to its own page; without the
+	// per-page isolation, Go templates flatten the namespace and the
+	// last-parsed body wins for every page.
+	tpl     map[string]*template.Template
 	tplOnce sync.Once
 	tplErr  error
 	static  fs.FS
@@ -158,9 +162,12 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/validation", s.apiValidation)
 	mux.HandleFunc("GET /api/v1/search", s.apiSearch)
 	mux.HandleFunc("GET /api/v1/import/candidates", s.apiImportCandidates)
+	mux.HandleFunc("GET /api/v1/import/candidates/{id}", s.apiImportCandidate)
 	mux.HandleFunc("POST /api/v1/import/decisions", s.apiImportDecisions)
 	mux.HandleFunc("GET /api/v1/config", s.apiConfig)
 	mux.HandleFunc("PUT /api/v1/config", s.apiConfigPut)
+	mux.HandleFunc("GET /api/v1/config/schema", s.apiConfigSchema)
+	mux.HandleFunc("PUT /api/v1/config/fields", s.apiConfigFields)
 
 	return mux
 }
@@ -253,29 +260,52 @@ var tplFuncs = template.FuncMap{
 	},
 }
 
-// templates loads the embedded HTML once and reuses it. Errors are
-// memoised so a broken template surfaces consistently rather than
-// flickering between requests.
-func (s *Server) templates() (*template.Template, error) {
+// templates loads the embedded HTML once and reuses it. Each page lives in
+// its own parsed tree (a clone of layout.html + that one page), which
+// isolates the page's {{define "body"}} block from every other page's body —
+// without this isolation Go's flat template namespace makes the last-parsed
+// body win for every page.
+func (s *Server) templates() (map[string]*template.Template, error) {
 	s.tplOnce.Do(func() {
-		t := template.New("").Funcs(tplFuncs)
 		entries, err := assetsFS.ReadDir("assets/templates")
 		if err != nil {
 			s.tplErr = err
 			return
 		}
+		// 1. Parse layout.html into the base set.
+		layoutData, err := assetsFS.ReadFile("assets/templates/layout.html")
+		if err != nil {
+			s.tplErr = err
+			return
+		}
+		base, err := template.New("").Funcs(tplFuncs).Parse(string(layoutData))
+		if err != nil {
+			s.tplErr = fmt.Errorf("template layout.html: %w", err)
+			return
+		}
+		// 2. For every other page, clone the base and parse the page on top.
+		pages := map[string]*template.Template{}
 		for _, e := range entries {
+			if e.Name() == "layout.html" {
+				continue
+			}
 			data, err := assetsFS.ReadFile(filepath.Join("assets/templates", e.Name()))
 			if err != nil {
 				s.tplErr = err
 				return
 			}
-			if _, err := t.New(e.Name()).Parse(string(data)); err != nil {
+			clone, err := base.Clone()
+			if err != nil {
+				s.tplErr = fmt.Errorf("clone base for %s: %w", e.Name(), err)
+				return
+			}
+			if _, err := clone.Parse(string(data)); err != nil {
 				s.tplErr = fmt.Errorf("template %s: %w", e.Name(), err)
 				return
 			}
+			pages[e.Name()] = clone
 		}
-		s.tpl = t
+		s.tpl = pages
 	})
 	return s.tpl, s.tplErr
 }

@@ -11,16 +11,16 @@
 </section>
 
 <section class="bg-white rounded-lg border border-slate-200 p-6 mb-6">
-  <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide">Quick view — LLM + tone (v0.2.1)</h2>
-  <dl class="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-    <dt class="text-slate-500">LLM enabled</dt><dd>{{if .LLM.Enabled}}yes{{else}}no{{end}}</dd>
-    <dt class="text-slate-500">Provider</dt><dd class="font-mono">{{if .LLM.Provider}}{{.LLM.Provider}}{{else}}<span class="text-slate-400">none</span>{{end}}</dd>
-    <dt class="text-slate-500">Model</dt><dd class="font-mono">{{.LLM.Model}}</dd>
-    <dt class="text-slate-500">API key env</dt><dd class="font-mono">{{.LLM.APIKeyEnv}}</dd>
-    <dt class="text-slate-500">Tone audience</dt><dd>{{if .Tone.Audience}}{{.Tone.Audience}}{{else}}<span class="text-slate-400">default (mixed)</span>{{end}}</dd>
-    <dt class="text-slate-500">Reading level</dt><dd>{{if .Tone.ReadingLevel}}{{.Tone.ReadingLevel}}{{else}}<span class="text-slate-400">default</span>{{end}}</dd>
-    <dt class="text-slate-500">Avoid jargon</dt><dd>{{if .Tone.AvoidJargon}}yes{{else}}no{{end}}</dd>
-  </dl>
+  <div class="flex items-baseline justify-between">
+    <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide">Form editor (v0.4.1)</h2>
+    <span class="text-xs text-slate-400">Reflect-generated from <code class="font-mono">config.Config</code>; new fields surface automatically.</span>
+  </div>
+  <div id="config-form" class="mt-4 text-sm">loading…</div>
+  <div class="mt-4 flex items-center gap-3">
+    <button onclick="saveFields()" class="px-4 py-1.5 bg-slate-900 text-white text-sm rounded">Save changed fields</button>
+    <span id="form-status" class="text-xs text-slate-500"></span>
+    <span class="ml-auto text-xs text-slate-400">Or edit the raw YAML below for fields the form doesn't expose.</span>
+  </div>
 </section>
 
 <div class="grid gap-6 lg:grid-cols-2">
@@ -29,9 +29,13 @@
       <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide">config.yaml</h2>
       <span class="font-mono text-xs text-slate-400">{{.ConfigPath}}</span>
     </div>
-    <textarea id="config-raw" rows="24" class="w-full font-mono text-xs border border-slate-200 rounded p-3" spellcheck="false">{{.ConfigRaw}}</textarea>
-    <button onclick="saveConfig()" class="mt-3 px-4 py-1.5 bg-slate-900 text-white text-sm rounded">Save config.yaml</button>
-    <span id="config-status" class="ml-3 text-xs text-slate-500"></span>
+    <textarea id="config-raw" data-original="{{.ConfigRaw}}" rows="24" class="w-full font-mono text-xs border border-slate-200 rounded p-3" spellcheck="false" oninput="updateDiff('config')">{{.ConfigRaw}}</textarea>
+    <div class="mt-3 flex items-center gap-3">
+      <button onclick="saveConfig()" class="px-4 py-1.5 bg-slate-900 text-white text-sm rounded">Save config.yaml</button>
+      <span id="config-status" class="text-xs text-slate-500"></span>
+      <span id="config-diff-summary" class="ml-auto text-xs text-slate-500"></span>
+    </div>
+    <pre id="config-diff" class="mt-3 text-xs font-mono whitespace-pre overflow-x-auto bg-slate-50 border border-slate-200 rounded p-3 hidden"></pre>
   </section>
 
   <section class="bg-white rounded-lg border border-slate-200 p-6">
@@ -39,9 +43,13 @@
       <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide">workspace.yaml</h2>
       <span class="font-mono text-xs text-slate-400">{{.WorkspacePath}}</span>
     </div>
-    <textarea id="workspace-raw" rows="24" class="w-full font-mono text-xs border border-slate-200 rounded p-3" spellcheck="false">{{.WorkspaceRaw}}</textarea>
-    <button onclick="saveWorkspace()" class="mt-3 px-4 py-1.5 bg-slate-900 text-white text-sm rounded">Save workspace.yaml</button>
-    <span id="workspace-status" class="ml-3 text-xs text-slate-500"></span>
+    <textarea id="workspace-raw" data-original="{{.WorkspaceRaw}}" rows="24" class="w-full font-mono text-xs border border-slate-200 rounded p-3" spellcheck="false" oninput="updateDiff('workspace')">{{.WorkspaceRaw}}</textarea>
+    <div class="mt-3 flex items-center gap-3">
+      <button onclick="saveWorkspace()" class="px-4 py-1.5 bg-slate-900 text-white text-sm rounded">Save workspace.yaml</button>
+      <span id="workspace-status" class="text-xs text-slate-500"></span>
+      <span id="workspace-diff-summary" class="ml-auto text-xs text-slate-500"></span>
+    </div>
+    <pre id="workspace-diff" class="mt-3 text-xs font-mono whitespace-pre overflow-x-auto bg-slate-50 border border-slate-200 rounded p-3 hidden"></pre>
   </section>
 </div>
 
@@ -66,5 +74,191 @@ async function put(payload, statusId) {
 }
 function saveConfig()    { put({config_raw:    document.getElementById('config-raw').value},    'config-status'); }
 function saveWorkspace() { put({workspace_raw: document.getElementById('workspace-raw').value}, 'workspace-status'); }
+
+// v0.4.1: reflect-driven form generator. /api/v1/config/schema returns
+// a nested [{path,label,kind,value,children}] tree built from
+// reflection over config.Config; we render an input per field and PUT
+// only the changed paths to /api/v1/config/fields.
+let originalValues = {};
+async function loadForm() {
+  const r = await fetch('/api/v1/config/schema');
+  if (!r.ok) {
+    document.getElementById('config-form').textContent = 'schema unavailable';
+    return;
+  }
+  const spec = await r.json();
+  const root = document.getElementById('config-form');
+  root.innerHTML = '';
+  originalValues = {};
+  spec.forEach(f => root.appendChild(renderField(f, 0)));
+}
+function renderField(f, depth) {
+  if (f.kind === 'struct') {
+    const wrap = document.createElement('details');
+    wrap.open = depth < 1; // top-level open by default
+    wrap.className = 'mt-2 border border-slate-200 rounded';
+    const summary = document.createElement('summary');
+    summary.className = 'px-3 py-2 bg-slate-50 cursor-pointer font-medium text-slate-700';
+    summary.textContent = f.label;
+    wrap.appendChild(summary);
+    const inner = document.createElement('div');
+    inner.className = 'px-3 py-2 space-y-2';
+    (f.children || []).forEach(c => inner.appendChild(renderField(c, depth + 1)));
+    wrap.appendChild(inner);
+    return wrap;
+  }
+  const row = document.createElement('div');
+  row.className = 'flex items-baseline gap-3';
+  const label = document.createElement('label');
+  label.className = 'w-48 text-xs text-slate-500 font-mono shrink-0';
+  label.textContent = f.path;
+  label.title = f.path;
+  row.appendChild(label);
+
+  let input;
+  switch (f.kind) {
+    case 'bool':
+      input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = !!f.value;
+      input.dataset.kind = 'bool';
+      break;
+    case 'int':
+    case 'float':
+      input = document.createElement('input');
+      input.type = 'number';
+      input.value = f.value ?? '';
+      input.className = 'px-2 py-1 border border-slate-200 rounded text-sm w-32';
+      input.dataset.kind = f.kind;
+      break;
+    case 'string_slice':
+      input = document.createElement('textarea');
+      input.rows = Math.max(2, (f.value || []).length);
+      input.className = 'flex-1 px-2 py-1 border border-slate-200 rounded text-xs font-mono';
+      input.value = (f.value || []).join('\n');
+      input.dataset.kind = 'string_slice';
+      break;
+    case 'json':
+      input = document.createElement('span');
+      input.className = 'text-xs text-slate-400';
+      input.textContent = '(edit in raw YAML below)';
+      break;
+    default: // string
+      input = document.createElement('input');
+      input.type = 'text';
+      input.value = f.value ?? '';
+      input.className = 'flex-1 px-2 py-1 border border-slate-200 rounded text-sm';
+      input.dataset.kind = 'string';
+  }
+  if (input.dataset.kind) {
+    input.dataset.path = f.path;
+    originalValues[f.path] = currentValueOf(input);
+  }
+  row.appendChild(input);
+  return row;
+}
+function currentValueOf(el) {
+  switch (el.dataset.kind) {
+    case 'bool':   return el.checked;
+    case 'int':    return el.value === '' ? 0 : parseInt(el.value, 10);
+    case 'float':  return el.value === '' ? 0 : parseFloat(el.value);
+    case 'string_slice':
+      return el.value.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+    default:       return el.value;
+  }
+}
+function changedPaths() {
+  const paths = {};
+  document.querySelectorAll('[data-path]').forEach(el => {
+    const path = el.dataset.path;
+    const cur = currentValueOf(el);
+    if (JSON.stringify(cur) !== JSON.stringify(originalValues[path])) {
+      paths[path] = cur;
+    }
+  });
+  return paths;
+}
+async function saveFields() {
+  const paths = changedPaths();
+  const status = document.getElementById('form-status');
+  if (Object.keys(paths).length === 0) {
+    status.textContent = 'no changes';
+    status.className = 'text-xs text-slate-400';
+    return;
+  }
+  status.textContent = 'saving ' + Object.keys(paths).length + ' field(s)…';
+  status.className = 'text-xs text-slate-500';
+  const r = await fetch('/api/v1/config/fields', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({paths}),
+  });
+  if (r.ok) {
+    status.textContent = 'saved ✓';
+    status.className = 'text-xs text-emerald-600';
+    // Refresh the form and the raw textarea to reflect the new state.
+    await loadForm();
+    const fresh = await fetch('/api/v1/config').then(r => r.json());
+    document.getElementById('config-raw').value = fresh.config_raw;
+    document.getElementById('config-raw').setAttribute('data-original', fresh.config_raw);
+  } else {
+    const body = await r.text();
+    status.textContent = 'error: ' + body.slice(0, 200);
+    status.className = 'text-xs text-rose-600';
+  }
+}
+loadForm();
+
+// v0.4.1: line-based diff preview before save. Pure JS LCS so an
+// operator can see exactly what bytes change before clicking Save —
+// no surprise overwrites of a hand-tweaked file.
+function lcsDiff(aLines, bLines) {
+  const n = aLines.length, m = bLines.length;
+  // Build LCS length table — O(n*m). Fine for files under ~5k lines;
+  // a config rarely crosses 200.
+  const dp = Array.from({length: n+1}, () => new Int32Array(m+1));
+  for (let i = n-1; i >= 0; i--) {
+    for (let j = m-1; j >= 0; j--) {
+      dp[i][j] = aLines[i] === bLines[j] ? dp[i+1][j+1]+1 : Math.max(dp[i+1][j], dp[i][j+1]);
+    }
+  }
+  // Walk back through the table to emit + / - / space prefixes.
+  const out = []; let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (aLines[i] === bLines[j])      { out.push(' ' + aLines[i]); i++; j++; }
+    else if (dp[i+1][j] >= dp[i][j+1]) { out.push('-' + aLines[i]); i++; }
+    else                              { out.push('+' + bLines[j]); j++; }
+  }
+  while (i < n) { out.push('-' + aLines[i++]); }
+  while (j < m) { out.push('+' + bLines[j++]); }
+  return out;
+}
+
+function updateDiff(prefix) {
+  const ta = document.getElementById(prefix + '-raw');
+  const original = ta.getAttribute('data-original') || '';
+  const current = ta.value;
+  const diff = document.getElementById(prefix + '-diff');
+  const summary = document.getElementById(prefix + '-diff-summary');
+  if (original === current) {
+    diff.classList.add('hidden');
+    summary.textContent = 'no changes';
+    summary.className = 'ml-auto text-xs text-slate-400';
+    return;
+  }
+  const lines = lcsDiff(original.split('\n'), current.split('\n'));
+  let added = 0, removed = 0;
+  const html = lines.map(l => {
+    const ch = l[0];
+    const escaped = l.slice(1).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    if (ch === '+') { added++;   return '<span style="color:#047857;background:#ecfdf5">+' + escaped + '</span>'; }
+    if (ch === '-') { removed++; return '<span style="color:#be123c;background:#fff1f2">-' + escaped + '</span>'; }
+    return '<span style="color:#64748b"> ' + escaped + '</span>';
+  }).join('\n');
+  diff.innerHTML = html;
+  diff.classList.remove('hidden');
+  summary.textContent = `+${added} / -${removed} lines`;
+  summary.className = 'ml-auto text-xs text-amber-700';
+}
 </script>
 {{end}}
