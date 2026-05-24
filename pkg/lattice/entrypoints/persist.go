@@ -25,8 +25,19 @@ func LoadEntryPoints(entryPointsDir string) ([]schema.EntryPoint, error) {
 		return out, nil
 	}
 	err := filepath.WalkDir(entryPointsDir, func(p string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil || d.IsDir() || !strings.HasSuffix(p, ".yaml") {
+		if walkErr != nil {
 			return walkErr
+		}
+		// Skip the v0.3.2 .rejected/ archive — rejected EPs are kept
+		// there for recovery but must not contribute to the graph.
+		if d.IsDir() {
+			if d.Name() == ".rejected" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(p, ".yaml") {
+			return nil
 		}
 		data, err := os.ReadFile(p)
 		if err != nil {

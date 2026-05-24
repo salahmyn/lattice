@@ -6,6 +6,7 @@ package ui
 
 import (
 	"context"
+	"crypto/subtle"
 	"embed"
 	"errors"
 	"fmt"
@@ -35,6 +36,13 @@ type Options struct {
 	// the v0.4.0 security model: localhost is open, anything else needs
 	// a pre-shared token.
 	Token string
+	// BasicAuthUser / BasicAuthPass enable HTTP Basic auth (v0.4.2).
+	// Complements --token: callers may use either or both. Either one
+	// satisfies the non-loopback security requirement; both work
+	// independently, so a reverse proxy can stick to Basic while a CLI
+	// scriptlet still uses X-Lattice-Token.
+	BasicAuthUser string
+	BasicAuthPass string
 	// GraphBuilder is the source of the in-memory KnowledgeGraph. The
 	// UI rebuilds on every request so a user edit to a manifest is
 	// reflected on the next page load — no daemon-staleness surprises.
@@ -54,6 +62,10 @@ type Server struct {
 	tplOnce sync.Once
 	tplErr  error
 	static  fs.FS
+	// events is the v0.4.2 SSE broker. Started lazily by
+	// ListenAndServe so tests that just call ServeHTTP don't spin up
+	// an fsnotify goroutine.
+	events *eventBroker
 }
 
 // New constructs a Server. Templates and static assets are loaded lazily
@@ -75,6 +87,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	if err := s.enforceTokenPolicy(); err != nil {
 		return err
 	}
+	// v0.4.2: start the SSE broker on the same lifecycle as the
+	// server. Stops cleanly when ctx is cancelled (Ctrl-C).
+	s.installEventBroker(ctx)
 	addr := fmt.Sprintf("%s:%d", s.opts.Host, s.opts.Port)
 	mux := s.routes()
 	srv := &http.Server{
@@ -107,15 +122,18 @@ func (s *Server) Addr() string {
 }
 
 // enforceTokenPolicy implements the security model from the design doc:
-// non-loopback binds must carry a pre-shared token. The token itself
-// isn't validated here — that happens in middleware — but a missing
-// token on a non-loopback host is rejected before listening.
+// non-loopback binds must carry either a pre-shared token or HTTP
+// Basic credentials. The credentials themselves aren't validated
+// here — that happens in middleware — but missing credentials on a
+// non-loopback host is rejected before listening.
 func (s *Server) enforceTokenPolicy() error {
 	if isLoopback(s.opts.Host) {
 		return nil
 	}
-	if strings.TrimSpace(s.opts.Token) == "" {
-		return fmt.Errorf("refusing to bind to non-loopback host %q without --token", s.opts.Host)
+	hasToken := strings.TrimSpace(s.opts.Token) != ""
+	hasBasic := strings.TrimSpace(s.opts.BasicAuthUser) != "" && strings.TrimSpace(s.opts.BasicAuthPass) != ""
+	if !hasToken && !hasBasic {
+		return fmt.Errorf("refusing to bind to non-loopback host %q without --token or --basic-auth user:pass", s.opts.Host)
 	}
 	return nil
 }
@@ -168,31 +186,64 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("PUT /api/v1/config", s.apiConfigPut)
 	mux.HandleFunc("GET /api/v1/config/schema", s.apiConfigSchema)
 	mux.HandleFunc("PUT /api/v1/config/fields", s.apiConfigFields)
+	mux.HandleFunc("PUT /api/v1/entry-points/{id}/decision", s.apiEPDecision)
+	mux.HandleFunc("GET /api/v1/events", s.apiEvents)
 
 	return mux
 }
 
-// withMiddleware wraps the mux with: panic recovery, token gate (when
-// non-loopback), and a tiny request log line for diagnostics.
+// withMiddleware wraps the mux with: panic recovery + auth gate. When
+// either --token or --basic-auth is configured, the gate is active;
+// the request passes if EITHER credential matches. This lets a CLI
+// scriptlet hit /api/v1/* with X-Lattice-Token while a human's
+// browser uses standard Basic auth — same deployment, two auth
+// paths, no extra config plumbing.
 func (s *Server) withMiddleware(h http.Handler) http.Handler {
+	hasToken := strings.TrimSpace(s.opts.Token) != ""
+	hasBasic := strings.TrimSpace(s.opts.BasicAuthUser) != "" && strings.TrimSpace(s.opts.BasicAuthPass) != ""
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
 				http.Error(w, fmt.Sprintf("internal error: %v", rec), http.StatusInternalServerError)
 			}
 		}()
-		if s.opts.Token != "" {
-			provided := r.Header.Get("X-Lattice-Token")
-			if provided == "" {
-				provided = r.URL.Query().Get("token") // for the initial browser load
-			}
-			if provided != s.opts.Token {
+		if hasToken || hasBasic {
+			if !s.checkAuth(r) {
+				if hasBasic {
+					w.Header().Set("WWW-Authenticate", `Basic realm="lattice"`)
+				}
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
 		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+// checkAuth returns true if the request carries valid credentials by
+// EITHER mechanism. Constant-time comparisons everywhere to make
+// timing attacks impractical.
+func (s *Server) checkAuth(r *http.Request) bool {
+	// Token: header, then ?token= for the initial browser load.
+	if s.opts.Token != "" {
+		provided := r.Header.Get("X-Lattice-Token")
+		if provided == "" {
+			provided = r.URL.Query().Get("token")
+		}
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(s.opts.Token)) == 1 {
+			return true
+		}
+	}
+	// Basic: standard Authorization header.
+	if s.opts.BasicAuthUser != "" && s.opts.BasicAuthPass != "" {
+		user, pass, ok := r.BasicAuth()
+		if ok &&
+			subtle.ConstantTimeCompare([]byte(user), []byte(s.opts.BasicAuthUser)) == 1 &&
+			subtle.ConstantTimeCompare([]byte(pass), []byte(s.opts.BasicAuthPass)) == 1 {
+			return true
+		}
+	}
+	return false
 }
 
 // graph rebuilds the KnowledgeGraph from disk on every call. Cheap on

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -17,7 +18,7 @@ import (
 // the UI on every request — so the UI never disagrees with `extract`
 // or `validate`.
 func newServeCommand(io *IO) *cobra.Command {
-	var host, token string
+	var host, token, basicAuth string
 	var port int
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -27,18 +28,28 @@ the CLI produces — a navigation-first interface for non-CLI reviewers,
 faster click-through for engineers, and a schema-aware editor for
 operators.
 
-Security: the default bind is 127.0.0.1 (loopback) with no token; any
-non-loopback host requires --token <X> and rejects requests missing
-the X-Lattice-Token header.`,
+Security: the default bind is 127.0.0.1 (loopback) and is open. Any
+non-loopback host requires EITHER --token <X> (X-Lattice-Token header)
+OR --basic-auth user:pass (standard HTTP Basic). Both can be set; the
+gate passes if either credential matches.
+
+OIDC and similar SSO flows remain out of scope; for those, put a
+reverse proxy in front and run Lattice with --host 127.0.0.1.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ws, err := openWorkspace(io)
 			if err != nil {
 				return io.fail("NO_WORKSPACE", err.Error(), nil)
 			}
+			user, pass, err := splitBasicAuth(basicAuth)
+			if err != nil {
+				return io.fail("BAD_BASIC_AUTH", err.Error(), nil)
+			}
 			srv := ui.New(ws, ui.Options{
-				Host:  host,
-				Port:  port,
-				Token: token,
+				Host:          host,
+				Port:          port,
+				Token:         token,
+				BasicAuthUser: user,
+				BasicAuthPass: pass,
 				GraphBuilder: func(ctx context.Context) (schema.KnowledgeGraph, error) {
 					return buildGraph(ctx, ws, false)
 				},
@@ -49,8 +60,9 @@ the X-Lattice-Token header.`,
 			io.printf("Lattice UI listening on %s\n", srv.Addr())
 			if token != "" {
 				io.printf("  token gate enabled — send X-Lattice-Token: %s on every request\n", token)
-			} else if host != "" && host != "127.0.0.1" && host != "localhost" && host != "::1" {
-				io.printf("  WARNING: bound to non-loopback host without --token\n")
+			}
+			if user != "" {
+				io.printf("  basic-auth gate enabled — user=%q\n", user)
 			}
 			io.printf("  press Ctrl-C to stop\n")
 
@@ -60,8 +72,28 @@ the X-Lattice-Token header.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&host, "host", "127.0.0.1", "host to bind (non-loopback requires --token)")
+	cmd.Flags().StringVar(&host, "host", "127.0.0.1", "host to bind (non-loopback requires --token or --basic-auth)")
 	cmd.Flags().IntVar(&port, "port", 7070, "port to bind")
-	cmd.Flags().StringVar(&token, "token", "", "required pre-shared token when --host is non-loopback")
+	cmd.Flags().StringVar(&token, "token", "", "pre-shared token (X-Lattice-Token header) for non-loopback bind")
+	cmd.Flags().StringVar(&basicAuth, "basic-auth", "", "HTTP Basic credentials in user:pass form (alternative to --token)")
 	return cmd
+}
+
+// splitBasicAuth parses "user:pass" into the two halves. Empty input
+// returns empty strings with no error. A missing ":" is an error so a
+// typo doesn't silently disable the gate.
+func splitBasicAuth(spec string) (user, pass string, err error) {
+	if spec == "" {
+		return "", "", nil
+	}
+	i := strings.Index(spec, ":")
+	if i < 0 {
+		return "", "", errExit
+	}
+	user = strings.TrimSpace(spec[:i])
+	pass = spec[i+1:]
+	if user == "" || pass == "" {
+		return "", "", errExit
+	}
+	return user, pass, nil
 }

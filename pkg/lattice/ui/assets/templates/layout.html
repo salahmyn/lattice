@@ -39,9 +39,42 @@
   <main class="max-w-7xl mx-auto px-6 py-8">
     {{template "body" .Body}}
   </main>
-  <footer class="max-w-7xl mx-auto px-6 py-6 text-xs text-slate-400">
-    Lattice v0.4.0 — UI consumes <a href="{{.JSONHref}}" class="hover:text-slate-700">/api/v1/*</a> wrappers over the same KnowledgeGraph the CLI prints.
+  <footer class="max-w-7xl mx-auto px-6 py-6 text-xs text-slate-400 flex items-center gap-3">
+    <span>Lattice v0.4.2 — UI consumes <a href="{{.JSONHref}}" class="hover:text-slate-700">/api/v1/*</a> wrappers over the same KnowledgeGraph the CLI prints.</span>
+    <span id="live-indicator" class="ml-auto text-slate-300" title="live updates">●</span>
   </footer>
+  <script>
+  // v0.4.2: SSE live updates. Pages re-fetch / reload when an event
+  // arrives that affects their data, so a CLI edit (or another
+  // browser tab) is visible without a manual refresh. Each page may
+  // override window.onLatticeChange to handle events with finer
+  // granularity than a full reload.
+  (function () {
+    if (!window.EventSource) return;
+    const indicator = document.getElementById('live-indicator');
+    const src = new EventSource('/api/v1/events');
+    src.addEventListener('hello', () => {
+      if (indicator) { indicator.className = 'ml-auto text-emerald-500'; indicator.title = 'live updates connected'; }
+    });
+    src.addEventListener('change', (e) => {
+      let ev;
+      try { ev = JSON.parse(e.data); } catch { return; }
+      // Default: reload on any change. Pages that want finer control
+      // assign window.onLatticeChange before this script runs.
+      if (typeof window.onLatticeChange === 'function') {
+        window.onLatticeChange(ev);
+      } else {
+        // Throttle: avoid reload-storms when a batch operation
+        // touches dozens of files.
+        clearTimeout(window.__latticeReloadTimer);
+        window.__latticeReloadTimer = setTimeout(() => window.location.reload(), 400);
+      }
+    });
+    src.addEventListener('error', () => {
+      if (indicator) { indicator.className = 'ml-auto text-rose-400'; indicator.title = 'live updates disconnected'; }
+    });
+  })();
+  </script>
 </body>
 </html>
 {{end}}

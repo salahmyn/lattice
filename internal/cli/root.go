@@ -44,6 +44,7 @@ func NewRootCommand() *cobra.Command {
 		newFeatureCommand(io),
 		newTaskCommand(io),
 		newServeCommand(io),
+		newEPCommand(io),
 	)
 
 	return root

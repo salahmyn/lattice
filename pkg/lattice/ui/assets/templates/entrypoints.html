@@ -14,25 +14,39 @@
       <tr>
         <th class="px-6 py-2 text-left font-medium">Trigger</th>
         <th class="px-6 py-2 text-left font-medium">Handler</th>
+        <th class="px-6 py-2 text-left font-medium">Status</th>
         <th class="px-6 py-2 text-left font-medium">Features reached</th>
+        <th class="px-6 py-2 text-right font-medium">Actions</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-slate-100">
       {{range $eps}}
-      <tr class="hover:bg-slate-50 cursor-pointer" onclick="window.location='/entry-points/{{.ID}}'">
-        <td class="px-6 py-2 font-mono text-xs">
+      <tr class="hover:bg-slate-50">
+        <td class="px-6 py-2 font-mono text-xs cursor-pointer" onclick="window.location='/entry-points/{{.ID}}'">
           {{if eq .Kind "http_route"}}<span class="font-semibold">{{.Trigger.Method}}</span> {{.Trigger.Path}}
           {{else if eq .Kind "cli"}}{{.Trigger.Command}}
           {{else if eq .Kind "queue"}}queue: {{.Trigger.Queue}}
           {{else if eq .Kind "cron"}}{{.Trigger.Schedule}}
           {{else}}{{.ID}}{{end}}
         </td>
-        <td class="px-6 py-2 font-mono text-xs text-slate-700 truncate max-w-md">{{shortFQN .Handler.Symbol}}</td>
+        <td class="px-6 py-2 font-mono text-xs text-slate-700 truncate max-w-md cursor-pointer" onclick="window.location='/entry-points/{{.ID}}'">{{shortFQN .Handler.Symbol}}</td>
+        <td class="px-6 py-2">
+          {{if eq (printf "%v" .Status) "production"}}<span class="px-2 py-0.5 text-xs rounded bg-emerald-50 text-emerald-700">production</span>
+          {{else if eq (printf "%v" .Status) "proposal"}}<span class="px-2 py-0.5 text-xs rounded bg-amber-50 text-amber-700">proposal</span>
+          {{else if eq (printf "%v" .Status) "deprecated"}}<span class="px-2 py-0.5 text-xs rounded bg-rose-50 text-rose-700">deprecated</span>
+          {{else}}<span class="text-xs text-slate-500">{{.Status}}</span>{{end}}
+        </td>
         <td class="px-6 py-2 text-xs">
           {{if .Flow}}
-            {{range $i, $s := .Flow}}{{if $i}}, {{end}}<a href="/features/{{$s.Feature}}" onclick="event.stopPropagation()" class="text-slate-700 hover:underline">{{$s.Feature}}</a>{{end}}
+            {{range $i, $s := .Flow}}{{if $i}}, {{end}}<a href="/features/{{$s.Feature}}" class="text-slate-700 hover:underline">{{$s.Feature}}</a>{{end}}
           {{else}}
             <span class="text-slate-400 italic">none — orphan trigger</span>
+          {{end}}
+        </td>
+        <td class="px-6 py-2 text-right whitespace-nowrap">
+          {{if eq (printf "%v" .Status) "proposal"}}
+            <button onclick="decideEP('{{.ID}}','accept')" class="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 rounded hover:bg-emerald-100">Accept</button>
+            <button onclick="decideEP('{{.ID}}','reject')" class="px-2 py-1 text-xs bg-rose-50 text-rose-700 rounded hover:bg-rose-100">Reject</button>
           {{end}}
         </td>
       </tr>
@@ -41,4 +55,16 @@
   </table>
 </section>
 {{end}}
+
+<script>
+async function decideEP(id, decision) {
+  const r = await fetch('/api/v1/entry-points/' + encodeURIComponent(id) + '/decision', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({decision}),
+  });
+  if (!r.ok) { alert('decision failed: ' + r.status + ' ' + (await r.text())); return; }
+  window.location.reload();
+}
+</script>
 {{end}}

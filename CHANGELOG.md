@@ -2,6 +2,51 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.4.2]
+
+UI live updates + HTTP Basic auth.
+
+### Added
+- **SSE live updates.** `lattice serve` watches `lattice/` (skipping
+  `.cache/` and `.rejected/`) via fsnotify and fans events out over
+  `GET /api/v1/events` as `text/event-stream`. Pages open an
+  `EventSource` on load; a default 400ms-debounced reload fires on
+  any change, or a page may override `window.onLatticeChange` to
+  refresh more surgically. A live-indicator dot in the footer turns
+  emerald on connect, rose on disconnect.
+- **HTTP Basic auth.** `lattice serve --basic-auth user:pass` adds a
+  second credential path alongside `--token`. Either credential
+  satisfies the non-loopback security requirement; both work
+  independently so a reverse-proxy-fronted deploy can use Basic
+  while CLI scriptlets keep `X-Lattice-Token`. Constant-time
+  comparison; `WWW-Authenticate: Basic` on the 401 path so browsers
+  re-prompt naturally.
+
+### Notes
+- OIDC and other SSO flows remain explicitly out of scope for v0.4.x.
+  The recommended pattern for those deployments is a reverse proxy
+  in front of `lattice serve --host 127.0.0.1`.
+
+## [0.3.2]
+
+EP review loop — `lattice ep` + UI accept/reject.
+
+### Added
+- **`lattice ep` subcommand tree:**
+  - `lattice ep list [--status proposal|production|deprecated]`
+  - `lattice ep show <id>` — full manifest plus the flow
+  - `lattice ep accept <id>` — flip `status: proposal` to `production`
+  - `lattice ep reject <id>` — move the manifest under
+    `lattice/entry-points/.rejected/<same path>.yaml`
+- **UI: accept/reject per row** on `/entry-points`. Status column +
+  Accept / Reject buttons (only shown for `proposal`-status rows).
+  Buttons PUT `/api/v1/entry-points/{id}/decision` which reuses the
+  same `Decide()` helper as the CLI — write paths are byte-identical
+  across the two surfaces.
+- **`.rejected/` archive** rather than delete. Rejection is
+  reversible: `mv .rejected/<path> <path>` and the next extract picks
+  it back up.
+
 ## [0.4.1]
 
 UI polish: schema-driven form, candidate drawer, diff preview.
