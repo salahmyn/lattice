@@ -37,6 +37,10 @@ type Manifest struct {
 	Owners  Owners `yaml:"owners"`
 
 	// --- Optional ---
+	// ImplementsBRD is the (optional) upstream BRD this feature realises.
+	// A feature has at most one parent BRD. The graph build resolves the
+	// reverse edge (BRD.implements_via) so callers can navigate both ways.
+	ImplementsBRD        string            `yaml:"implements_brd,omitempty"`
 	Value                *Value            `yaml:"value,omitempty"`
 	Capabilities         []Capability      `yaml:"capabilities,omitempty"`
 	Invariants           []Invariant       `yaml:"invariants,omitempty"`

@@ -1,0 +1,132 @@
+{{define "brd.html"}}{{template "layout" .}}{{end}}
+
+{{define "body"}}
+{{with .BRD}}
+<div class="grid gap-6 lg:grid-cols-3">
+  <section class="lg:col-span-2 bg-white rounded-lg border border-slate-200 p-6">
+    <div class="flex items-baseline gap-3">
+      <h1 class="text-2xl font-semibold text-slate-900 font-mono">{{.ID}}</h1>
+      {{if eq (printf "%v" .Status) "approved"}}<span class="badge is-approved">approved</span>
+      {{else if eq (printf "%v" .Status) "proposed"}}<span class="badge is-proposal">proposed</span>
+      {{else if eq (printf "%v" .Status) "superseded"}}<span class="badge is-deprecated">superseded</span>
+      {{else}}<span class="badge is-draft">draft</span>{{end}}
+      <span class="ml-auto text-xs text-slate-400">v{{.Version}}</span>
+    </div>
+    <h2 class="mt-2 text-lg text-slate-700">{{.Title}}</h2>
+
+    {{if .BusinessProblem}}
+    <h3 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide">Business problem</h3>
+    <p class="mt-2 text-slate-700 whitespace-pre-line">{{.BusinessProblem}}</p>
+    {{end}}
+
+    {{if .BusinessGoals}}
+    <h3 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide">Business goals ({{len .BusinessGoals}})</h3>
+    <ul class="mt-2 space-y-1 text-sm text-slate-700 list-disc list-inside">
+      {{range .BusinessGoals}}<li>{{.}}</li>{{end}}
+    </ul>
+    {{end}}
+
+    {{if .SuccessCriteria}}
+    <h3 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide">Success criteria ({{len .SuccessCriteria}})</h3>
+    <ul class="mt-2 space-y-2">
+      {{range .SuccessCriteria}}
+      <li class="border-l-2 border-slate-200 pl-4">
+        <span class="font-mono text-xs px-1 bg-slate-100 rounded">{{.ID}}</span>
+        <span class="text-sm text-slate-700 ml-2">{{.Statement}}</span>
+        {{if .MapsToInvariant}}
+          <div class="text-xs text-slate-500 mt-0.5">↳ verifies <span class="font-mono">{{.MapsToInvariant}}</span></div>
+        {{end}}
+      </li>
+      {{end}}
+    </ul>
+    {{end}}
+
+    {{if .UserScenarios}}
+    <h3 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide">User scenarios ({{len .UserScenarios}})</h3>
+    <ul class="mt-2 space-y-3">
+      {{range .UserScenarios}}
+      <li class="border-l-2 border-slate-200 pl-4">
+        <div class="flex items-baseline gap-2">
+          <span class="font-mono text-xs">{{.ID}}</span>
+          {{if .Actor}}<span class="text-xs text-slate-500">— {{.Actor}}</span>{{end}}
+        </div>
+        <p class="text-sm text-slate-700 mt-1 whitespace-pre-line">{{.Narrative}}</p>
+      </li>
+      {{end}}
+    </ul>
+    {{end}}
+
+    {{if .Constraints}}
+    <h3 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide">Constraints ({{len .Constraints}})</h3>
+    <ul class="mt-2 space-y-1 text-sm text-slate-700">
+      {{range .Constraints}}
+      <li>
+        <span class="badge is-warn">{{.Kind}}</span>
+        {{if .Ref}}<span class="font-mono text-xs ml-2">{{.Ref}}</span>{{end}}
+        {{if .Note}}<span class="text-slate-600 ml-2">— {{.Note}}</span>{{end}}
+      </li>
+      {{end}}
+    </ul>
+    {{end}}
+
+    {{if .OutOfScope}}
+    <h3 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide">Out of scope</h3>
+    <ul class="mt-2 space-y-1 text-sm text-slate-500 list-disc list-inside">
+      {{range .OutOfScope}}<li>{{.}}</li>{{end}}
+    </ul>
+    {{end}}
+  </section>
+
+  <aside class="space-y-6">
+    <section class="bg-white rounded-lg border border-slate-200 p-6">
+      <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide">Implementing features ({{len $.Features}})</h2>
+      {{if $.Features}}
+      <ul class="mt-3 space-y-1 text-sm">
+        {{range $.Features}}
+        <li><a href="/features/{{.}}" class="font-mono text-xs hover:underline">{{.}}</a></li>
+        {{end}}
+      </ul>
+      {{else}}
+      <p class="text-xs text-slate-500 mt-2">No features linked yet. Run<br>
+        <code class="font-mono text-xs">lattice brd link {{.ID}} &lt;feature-id&gt;</code>
+      </p>
+      {{end}}
+    </section>
+
+    {{if .Stakeholders.BusinessOwner}}
+    <section class="bg-white rounded-lg border border-slate-200 p-6">
+      <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide">Stakeholders</h2>
+      <dl class="mt-3 text-sm space-y-1">
+        {{if .Stakeholders.BusinessOwner}}<div><dt class="inline text-slate-500">Business:</dt> <dd class="inline font-mono text-xs">{{.Stakeholders.BusinessOwner}}</dd></div>{{end}}
+        {{if .Stakeholders.ProductOwner}}<div><dt class="inline text-slate-500">Product:</dt> <dd class="inline font-mono text-xs">{{.Stakeholders.ProductOwner}}</dd></div>{{end}}
+        {{if .Stakeholders.EngineeringOwner}}<div><dt class="inline text-slate-500">Engineering:</dt> <dd class="inline font-mono text-xs">{{.Stakeholders.EngineeringOwner}}</dd></div>{{end}}
+        {{if .Stakeholders.Legal}}<div><dt class="inline text-slate-500">Legal:</dt> <dd class="inline font-mono text-xs">{{.Stakeholders.Legal}}</dd></div>{{end}}
+      </dl>
+    </section>
+    {{end}}
+
+    {{if .Approval}}
+    <section class="bg-white rounded-lg border border-slate-200 p-6">
+      <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide">Approval</h2>
+      <p class="mt-2 text-sm">By <span class="font-mono text-xs">{{.Approval.ApprovedBy}}</span></p>
+      <p class="text-xs text-slate-500">on {{.Approval.ApprovedAt}} (v{{.Approval.ApprovedVersion}})</p>
+      {{if $.Drift}}
+      <p class="mt-2 text-xs"><span class="badge is-warn">drift</span> BRD has moved to v{{.Version}} since approval.</p>
+      {{end}}
+    </section>
+    {{end}}
+
+    {{if eq (printf "%v" .Provenance.Source) "llm_from_code"}}
+    <section class="bg-white rounded-lg border border-slate-200 p-6">
+      <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide">Provenance</h2>
+      <p class="mt-2 text-sm"><span class="badge is-warn">LLM</span> Regenerated from code</p>
+      <p class="text-xs text-slate-500">at {{.Provenance.GeneratedAt}}{{if .Provenance.Model}} · {{.Provenance.Model}}{{end}}</p>
+      <p class="text-xs text-slate-500 mt-2">Review the draft, edit as needed, then run<br>
+        <code class="font-mono">lattice brd approve {{.ID}} --by &lt;email&gt;</code>
+      </p>
+    </section>
+    {{end}}
+  </aside>
+</div>
+{{end}}
+{{end}}

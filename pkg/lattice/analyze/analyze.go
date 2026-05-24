@@ -87,6 +87,7 @@ func (a *Analyzer) blastRadius(res extract.Result, featureID string) *BlastRadiu
 		return &BlastRadius{Available: false}
 	}
 	kg := graph.Build(graph.Input{
+		BRDs:      res.BRDs,
 		Manifests: res.Manifests, Modules: res.Modules,
 		Initiatives: res.Initiatives, Tasks: res.Tasks,
 	}, graph.Options{})

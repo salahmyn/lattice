@@ -1,0 +1,54 @@
+{{define "brds.html"}}{{template "layout" .}}{{end}}
+
+{{define "body"}}
+<div class="bg-white rounded-lg border border-slate-200 overflow-hidden">
+  <div class="px-6 py-4 border-b border-slate-200 flex items-baseline justify-between">
+    <h1 class="text-lg font-semibold text-slate-900">{{.Total}} Business Requirements Documents</h1>
+    <p class="text-xs text-slate-500">The layer above features — business intent, success criteria, approvals.</p>
+  </div>
+
+  {{if eq .Total 0}}
+  <div class="px-6 py-12 text-center text-sm text-slate-500">
+    <p>No BRDs yet. Adopt the business-intent axis with:</p>
+    <pre class="mt-3 inline-block text-left">lattice brd new brd.&lt;slug&gt;
+lattice brd from-code &lt;feature-id&gt;   # brownfield: regenerate from existing code</pre>
+  </div>
+  {{else}}
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+      <tr>
+        <th class="px-6 py-2 text-left font-medium">ID</th>
+        <th class="px-6 py-2 text-left font-medium">Status</th>
+        <th class="px-6 py-2 text-left font-medium">Title</th>
+        <th class="px-6 py-2 text-right font-medium">Version</th>
+        <th class="px-6 py-2 text-right font-medium">Features</th>
+        <th class="px-6 py-2 text-left font-medium">Provenance</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {{range .BRDs}}
+      <tr class="hover:bg-slate-50 cursor-pointer" onclick="window.location='/brds/{{.B.ID}}'">
+        <td class="px-6 py-2 font-mono text-xs">{{.B.ID}}</td>
+        <td class="px-6 py-2">
+          {{if eq (printf "%v" .B.Status) "approved"}}<span class="badge is-approved">approved</span>
+          {{else if eq (printf "%v" .B.Status) "proposed"}}<span class="badge is-proposal">proposed</span>
+          {{else if eq (printf "%v" .B.Status) "superseded"}}<span class="badge is-deprecated">superseded</span>
+          {{else}}<span class="badge is-draft">draft</span>{{end}}
+        </td>
+        <td class="px-6 py-2 text-slate-700 max-w-md truncate">{{.B.Title}}</td>
+        <td class="px-6 py-2 text-right tabular-nums">v{{.B.Version}}</td>
+        <td class="px-6 py-2 text-right tabular-nums">{{.FeatureCount}}</td>
+        <td class="px-6 py-2 text-xs">
+          {{if eq (printf "%v" .B.Provenance.Source) "llm_from_code"}}
+            <span class="badge is-warn">LLM — review needed</span>
+          {{else}}
+            <span class="text-slate-500">human</span>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{end}}
+</div>
+{{end}}

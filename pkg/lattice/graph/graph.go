@@ -15,6 +15,7 @@ import (
 
 // Input is the raw material the graph builder fuses.
 type Input struct {
+	BRDs        []schema.BRD
 	Manifests   []schema.Manifest
 	Modules     []ir.Module
 	Initiatives []schema.Initiative
@@ -112,10 +113,22 @@ func Build(in Input, opts Options) schema.KnowledgeGraph {
 		initiatives = []schema.Initiative{}
 	}
 
+	// BRDs: copy as-is and sort by id so re-extracts are byte-stable.
+	// The BRD ↔ Feature reverse edge isn't materialised on the graph
+	// node itself — `brd.FeaturesByBRD(brds, features)` rebuilds it on
+	// demand. Keeping it derived means a feature edit never has to
+	// re-write the BRD on disk.
+	brds := append([]schema.BRD(nil), in.BRDs...)
+	sort.Slice(brds, func(i, j int) bool { return brds[i].ID < brds[j].ID })
+	if brds == nil {
+		brds = []schema.BRD{}
+	}
+
 	return schema.KnowledgeGraph{
 		SchemaVersion:       buildinfo.SchemaVersion,
 		GeneratedAt:         gen.UTC().Format(time.RFC3339),
 		GeneratedFromCommit: opts.Commit,
+		BRDs:                brds,
 		Features:            manifests,
 		Symbols:             symbols,
 		Tests:               tests,

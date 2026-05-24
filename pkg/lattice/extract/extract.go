@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/salahmyn/lattice/pkg/lattice/adapters"
+	"github.com/salahmyn/lattice/pkg/lattice/brd"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
@@ -20,6 +21,7 @@ import (
 
 // Result is everything extraction found.
 type Result struct {
+	BRDs        []schema.BRD
 	Manifests   []schema.Manifest
 	Initiatives []schema.Initiative
 	Tasks       []schema.Task
@@ -46,6 +48,10 @@ var skipDirs = map[string]bool{
 // concurrently through the adapter registry.
 func Extract(ctx context.Context, w *workspace.Workspace, reg *adapters.Registry, opts Options) (Result, error) {
 	var res Result
+
+	brds, bErr := brd.LoadAll(w.BRDsDir(), w.LatticeDir)
+	res.BRDs = brds
+	res.Violations = append(res.Violations, bErr...)
 
 	manifests, mErr := loadManifests(w, opts)
 	res.Manifests = manifests

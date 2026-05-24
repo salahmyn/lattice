@@ -45,6 +45,8 @@ func NewRootCommand() *cobra.Command {
 		newTaskCommand(io),
 		newServeCommand(io),
 		newEPCommand(io),
+		newBRDCommand(io),
+		newDetectCommand(io),
 	)
 
 	return root

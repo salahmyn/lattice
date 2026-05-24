@@ -68,7 +68,28 @@ const (
 	CodeHandlerMissing         = "HANDLER_MISSING"          // EP handler symbol not in IR
 	CodeDuplicateTrigger       = "DUPLICATE_TRIGGER"        // two EPs share (kind, trigger)
 	CodePhantomFlow            = "PHANTOM_FLOW"             // flow step names a non-existent feature
+
+	// BRD integrity (v0.5.0)
+	//
+	// All BRD rules are deliberately conservative — adoption is opt-in.
+	// FEATURE_NO_BRD is warning (never error); BRD_UNREFERENCED and
+	// BRD_DRIFT are info-level because a freshly-drafted BRD and a
+	// version-skew during proposal review are both legitimate states.
+	CodeBRDSchema           = "BRD_SCHEMA"            // parse / required-field error
+	CodeBRDIDFormat         = "BRD_ID_FORMAT"         // id must start with brd. and use the manifest-id grammar
+	CodeBRDIDDuplicate      = "BRD_ID_DUPLICATE"      // two BRDs share an id
+	CodeBRDPhantomFeature   = "BRD_PHANTOM_FEATURE"   // implements_via names a missing feature
+	CodeBRDUnreferenced     = "BRD_UNREFERENCED"      // BRD has no features yet (info)
+	CodeFeatureNoBRD        = "FEATURE_NO_BRD"        // feature lacks an upstream BRD (warning)
+	CodeBRDDrift            = "BRD_DRIFT"             // BRD.version != approval.approved_version (info)
+	CodeBRDUnapprovedLLM    = "BRD_UNAPPROVED_LLM"    // llm_from_code draft needs human sign-off
+	CodeFeatureBRDMissing   = "FEATURE_BRD_MISSING"   // feature.implements_brd names a missing BRD
 )
+
+// Info is the lowest violation severity — surfaced in the dashboard but
+// not fail-blocking. Used for the v0.5 BRD rules where a non-canonical
+// state is informative rather than wrong.
+const SeverityInfo Severity = "info"
 
 // Location points at a place in a file.
 type Location struct {

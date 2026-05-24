@@ -54,6 +54,7 @@ func (c *Capabilities) loadGraph(ctx context.Context) (schema.KnowledgeGraph, er
 		return schema.KnowledgeGraph{}, err
 	}
 	return graph.Build(graph.Input{
+		BRDs:        res.BRDs,
 		Manifests:   res.Manifests,
 		Modules:     res.Modules,
 		Initiatives: res.Initiatives,

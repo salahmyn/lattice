@@ -1,26 +1,163 @@
-/* Lattice UI overrides — minimal; Tailwind CDN covers the rest.
-   Kept here so the UI degrades gracefully if the CDN is unreachable
-   (e.g. air-gapped dogfood). */
+/* Lattice v0.5.0 — Crystal brand system.
+   Tokens come from the brand handoff (pkg/lattice/ui/assets/static/
+   tokens.js mirrored from the design canvas). Tailwind colours are
+   re-pointed to these values in layout.html; this file defines the
+   brand-specific atoms (wordmark, mark, lifecycle badges, primitive
+   glyphs) and overrides the few default Tailwind classes that don't
+   fit the dark-by-default Crystal direction. */
 
+:root {
+  /* Neutral ramp — built around hue 235°. */
+  --n0:  #0B0D12;   /* void */
+  --n1:  #0F1218;   /* app bg */
+  --n2:  #171C25;   /* surface 1 (panels / cards) */
+  --n3:  #1E2530;   /* surface 2 (raised cards) */
+  --n4:  #272F3D;   /* dividers / inactive borders */
+  --n5:  #3A4356;   /* muted text on dark */
+  --n6:  #8189A0;   /* secondary text */
+  --n7:  #C7CDD9;   /* primary text */
+  --n8:  #E2E6EE;   /* headings — "paper" */
+
+  /* Accent — mica violet. */
+  --mica-200: #C7BEEC;
+  --mica-300: #A899E0;
+  --mica-400: #8C7DD6;   /* ★ brand accent */
+  --mica-500: #6E5FC2;
+  --mica-600: #4E4196;
+
+  /* Severity, colour-blind-safe pairs. */
+  --ok-fg:    #6BC2A2; --ok-bg:    #0E2620;
+  --warn-fg:  #E5B66C; --warn-bg:  #26201A;
+  --info-fg:  #7FB6D0; --info-bg:  #142028;
+  --error-fg: #E07A75; --error-bg: #2A1418;
+
+  /* Lifecycle badges. */
+  --lc-proposal-fg:   #7FB6D0; --lc-proposal-bg:   #142028;
+  --lc-accepted-fg:   #C7BEEC; --lc-accepted-bg:   #1F1A2E;
+  --lc-production-fg: #6BC2A2; --lc-production-bg: #0E2620;
+  --lc-deprecated-fg: #8189A0; --lc-deprecated-bg: #1A1D24;
+  --lc-draft-fg:      #8189A0; --lc-draft-bg:      #1A1D24;
+  --lc-approved-fg:   #6BC2A2; --lc-approved-bg:   #0E2620;
+}
+
+/* Geist is the system default; tabular-nums for counts. */
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-feature-settings: "ss01", "cv01";
+  font-variant-numeric: tabular-nums;
 }
 
-code, .font-mono, pre, dd.font-mono {
-  font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+/* Cards in the v0.4 templates use bg-white. Crystal has no "white"
+   surface — re-point to n2 here rather than override in JS because
+   Tailwind doesn't expose "white" as a customisable colour. */
+.bg-white { background-color: var(--n2) !important; }
+
+/* `text-slate-900` (headings) gets `--n8`, but Tailwind's text-slate-900
+   default is mapped via config. Defensive override matches the config
+   so a stale CDN snapshot still reads correctly. */
+
+/* --- Wordmark + mark --- */
+.lattice-wordmark {
+  display: inline-flex; align-items: center; gap: 10px;
+  color: var(--n8);
+  font-family: "Geist", system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 14px;
+  text-decoration: none;
 }
+.lattice-mark {
+  display: inline-block;
+  color: var(--mica-400);
+  font-size: 18px;
+  line-height: 1;
+}
+.lattice-word { font-size: 14px; }
+.lattice-word .lattice-i {
+  /* The dot of the I picks up the mica accent. Since uppercase has no
+     tittle, we colour the whole I and tighten its width visually. */
+  color: var(--mica-400);
+}
+
+/* --- Lifecycle badges. Use .badge.is-<status> so templates can
+   adopt these incrementally; the existing px-2 py-0.5 inline classes
+   keep working too. --- */
+.badge {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  font-size: 11px; font-weight: 500; font-family: inherit;
+  letter-spacing: 0.02em;
+}
+.badge.is-proposal    { color: var(--lc-proposal-fg);   background: var(--lc-proposal-bg); }
+.badge.is-accepted    { color: var(--lc-accepted-fg);   background: var(--lc-accepted-bg); }
+.badge.is-production  { color: var(--lc-production-fg); background: var(--lc-production-bg); }
+.badge.is-deprecated  { color: var(--lc-deprecated-fg); background: var(--lc-deprecated-bg); }
+.badge.is-draft       { color: var(--lc-draft-fg);      background: var(--lc-draft-bg); }
+.badge.is-approved    { color: var(--lc-approved-fg);   background: var(--lc-approved-bg); }
+.badge.is-error       { color: var(--error-fg);         background: var(--error-bg); }
+.badge.is-warn        { color: var(--warn-fg);          background: var(--warn-bg); }
+.badge.is-info        { color: var(--info-fg);          background: var(--info-bg); }
+.badge.is-ok          { color: var(--ok-fg);            background: var(--ok-bg); }
+
+/* --- Primitive glyphs. Identity is the SHAPE; the colour is a hint.
+   Use .glyph.is-<primitive> in front of a label. --- */
+.glyph {
+  display: inline-block; margin-right: 4px;
+  font-family: "JetBrains Mono", monospace;
+}
+.glyph.is-feature    { color: var(--mica-400); }
+.glyph.is-capability { color: var(--mica-200); }
+.glyph.is-invariant  { color: var(--info-fg); }
+.glyph.is-surface    { color: var(--ok-fg); }
+.glyph.is-error      { color: var(--error-fg); }
+.glyph.is-decision   { color: var(--mica-200); }
+.glyph.is-task       { color: var(--warn-fg); }
+
+/* --- Mermaid styling that respects Crystal. The flow page imports
+   mermaid with theme: "neutral"; we tone the SVG fills here so it
+   doesn't punch a white hole through the dark layout. --- */
+.mermaid svg { background: var(--n2) !important; }
+.mermaid .nodeLabel, .mermaid .edgeLabel { color: var(--n7) !important; }
+.mermaid .node rect, .mermaid .node polygon {
+  fill: var(--n3) !important; stroke: var(--n4) !important;
+}
+.mermaid .edgePath .path { stroke: var(--mica-400) !important; }
+.mermaid .marker { fill: var(--mica-400) !important; }
 
 /* Mermaid containers can overflow on small viewports; let the user
    pan horizontally rather than collapse the layout. */
-.mermaid {
-  overflow-x: auto;
-}
+.mermaid { overflow-x: auto; }
 
-/* When Tailwind CDN fails, the page is still readable. */
-.bg-white { background: #fff; }
-.bg-slate-50 { background: #f8fafc; }
-.bg-slate-100 { background: #f1f5f9; }
-.text-slate-900 { color: #0f172a; }
-.text-slate-700 { color: #334155; }
-.text-slate-500 { color: #64748b; }
-.text-slate-400 { color: #94a3b8; }
+/* --- Code / FQN — JetBrains Mono with very subtle background tint
+   so YAML / Go FQNs read as code without being heavy. --- */
+code, pre, .font-mono {
+  font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+pre { background: var(--n0); padding: 12px; border-radius: 4px; overflow-x: auto; }
+pre, code { font-size: 12px; line-height: 1.5; }
+
+/* --- Inputs in the dark theme need explicit text colour, otherwise
+   the user-agent default is hard to read. --- */
+input, select, textarea {
+  color: var(--n7);
+  background: var(--n1);
+}
+input::placeholder, textarea::placeholder { color: var(--n5); }
+
+/* --- Anchor convention: mica underline on hover, no underline at rest
+   (Tailwind defaults handle most cases; this stays out of their way). */
+a:focus-visible { outline: 2px solid var(--mica-400); outline-offset: 2px; }
+
+/* --- Selection colour matches the brand accent. --- */
+::selection { background: var(--mica-600); color: var(--n8); }
+
+/* --- Graceful fallback when the Tailwind CDN is unreachable
+   (air-gapped dogfood). The page is still readable. --- */
+.bg-slate-50  { background: var(--n1); }
+.bg-slate-100 { background: var(--n2); }
+.bg-slate-200 { background: var(--n3); }
+.text-slate-900 { color: var(--n8); }
+.text-slate-700 { color: var(--n7); }
+.text-slate-500 { color: var(--n6); }
+.text-slate-400 { color: var(--n5); }
+.text-slate-300 { color: var(--n5); }
+.border-slate-200 { border-color: var(--n4); }

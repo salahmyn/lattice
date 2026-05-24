@@ -178,6 +178,11 @@ func (w *Workspace) ContextPath() string { return filepath.Join(w.LatticeDir, "c
 // FeaturesDir returns the directory holding feature manifests.
 func (w *Workspace) FeaturesDir() string { return filepath.Join(w.LatticeDir, "features") }
 
+// BRDsDir returns the directory holding Business Requirements Documents
+// — the v0.5.0 business-intent layer above features. Peer to FeaturesDir
+// so the on-disk layout reads top-down: brds/ → features/ → entry-points/.
+func (w *Workspace) BRDsDir() string { return filepath.Join(w.LatticeDir, "brds") }
+
 // EntryPointsDir returns the directory holding accepted entry-point
 // manifests — peer to FeaturesDir for the invocation axis.
 func (w *Workspace) EntryPointsDir() string { return filepath.Join(w.LatticeDir, "entry-points") }

@@ -9,6 +9,10 @@ type KnowledgeGraph struct {
 	GeneratedAt         string `json:"generated_at"`
 	GeneratedFromCommit string `json:"generated_from_commit"`
 
+	// BRDs is the v0.5.0 business-intent layer. Optional and empty for
+	// projects that haven't adopted the BRD axis; the validator never
+	// errors on absence (FEATURE_NO_BRD is warning-level only).
+	BRDs             []BRD                  `json:"brds,omitempty"`
 	Features         []Manifest             `json:"features"`
 	EntryPoints      []EntryPoint           `json:"entry_points,omitempty"`
 	Symbols          []GraphSymbol          `json:"symbols"`

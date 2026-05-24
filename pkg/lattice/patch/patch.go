@@ -184,6 +184,7 @@ func stripAuto(m schema.Manifest) schema.Manifest {
 
 func buildGraph(res extract.Result) schema.KnowledgeGraph {
 	return graph.Build(graph.Input{
+		BRDs:        res.BRDs,
 		Manifests:   res.Manifests,
 		Modules:     res.Modules,
 		Initiatives: res.Initiatives,

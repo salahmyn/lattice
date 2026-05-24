@@ -89,6 +89,60 @@ func ComputeVerification(features []schema.Manifest, violations []schema.Violati
 	}
 }
 
+// BRDCoverage is the share of features that point at an *approved* BRD
+// — the v0.5.0 business-intent ratio. Features with no BRD count as
+// uncovered; features attached to a draft/proposed BRD also count as
+// uncovered, because the adoption story is "business has signed off".
+type BRDCoverage struct {
+	TotalFeatures    int     `json:"total_features"`
+	CoveredFeatures  int     `json:"covered_features"`
+	Ratio            float64 `json:"ratio"`
+	TotalBRDs        int     `json:"total_brds"`
+	ApprovedBRDs     int     `json:"approved_brds"`
+}
+
+// ComputeBRD measures BRD coverage from features and BRDs. A feature
+// counts as covered when it either declares `implements_brd: <id>`
+// pointing at an approved BRD, or appears in an approved BRD's
+// `implements_via` list.
+func ComputeBRD(features []schema.Manifest, brds []schema.BRD) BRDCoverage {
+	approvedByID := map[string]bool{}
+	approvedCount := 0
+	for _, b := range brds {
+		if b.Status == schema.BRDApproved {
+			approvedByID[b.ID] = true
+			approvedCount++
+		}
+	}
+	// Build the reverse map: every feature id mentioned in an approved
+	// BRD's implements_via list counts as covered, even without the
+	// feature-side back-link.
+	implicitCovered := map[string]bool{}
+	for _, b := range brds {
+		if !approvedByID[b.ID] {
+			continue
+		}
+		for _, fid := range b.ImplementsVia {
+			implicitCovered[fid] = true
+		}
+	}
+
+	total := len(features)
+	covered := 0
+	for _, f := range features {
+		if approvedByID[f.ImplementsBRD] || implicitCovered[f.ID] {
+			covered++
+		}
+	}
+	return BRDCoverage{
+		TotalFeatures:   total,
+		CoveredFeatures: covered,
+		Ratio:           ratio(covered, total),
+		TotalBRDs:       len(brds),
+		ApprovedBRDs:    approvedCount,
+	}
+}
+
 // PackageCoverage is the discovery coverage of one source directory.
 type PackageCoverage struct {
 	Package          string  `json:"package"`

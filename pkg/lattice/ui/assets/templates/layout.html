@@ -1,19 +1,64 @@
 {{define "layout"}}
 <!doctype html>
-<html lang="en">
+<html lang="en" class="crystal">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}} — Lattice</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Serif:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // v0.5.0 Crystal brand — Tailwind class names stay; their colours
+    // and fonts come from the Lattice Brand System tokens.
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            // The slate ramp is re-pointed to Crystal's neutral ramp,
+            // so every existing bg-slate-50 / text-slate-700 reads as
+            // dark-by-default without any template rewrite.
+            slate: {
+              50:  '#0F1218', 100: '#171C25', 200: '#272F3D',
+              300: '#3A4356', 400: '#8189A0', 500: '#8189A0',
+              600: '#8189A0', 700: '#C7CDD9', 800: '#E2E6EE',
+              900: '#E2E6EE',
+            },
+            // Crystal accent — mica violet.
+            mica: {
+              50:  '#F1EEFB', 100: '#DAD2F4', 200: '#C7BEEC',
+              300: '#A899E0', 400: '#8C7DD6', 500: '#6E5FC2',
+              600: '#4E4196', 700: '#2E255E',
+            },
+            // Severity ramps from tokens.js — keep the names that
+            // existing templates use so badges flip without surgery.
+            emerald: { 50: '#0E2620', 600: '#6BC2A2', 700: '#6BC2A2' },
+            amber:   { 50: '#26201A', 600: '#E5B66C', 700: '#E5B66C' },
+            rose:    { 50: '#2A1418', 600: '#E07A75', 700: '#E07A75' },
+          },
+          fontFamily: {
+            sans: ['Geist', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'ui-monospace', '"SF Mono"', 'Menlo', 'monospace'],
+            serif: ['"IBM Plex Serif"', 'ui-serif', 'Georgia', 'serif'],
+          },
+        },
+      },
+    };
+  </script>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
-<body class="bg-slate-50 text-slate-900 antialiased">
-  <header class="bg-white border-b border-slate-200">
+<body class="bg-slate-50 text-slate-700 antialiased">
+  <header class="bg-slate-100 border-b border-slate-200">
     <div class="max-w-7xl mx-auto px-6 py-3 flex items-center gap-6">
-      <a href="/" class="font-mono font-bold text-lg text-slate-900">lattice</a>
+      <a href="/" class="lattice-wordmark" aria-label="Lattice — home">
+        <span class="lattice-mark" aria-hidden="true">⬡</span>
+        <span class="lattice-word">LATT<span class="lattice-i">I</span>CE</span>
+      </a>
       <nav class="flex items-center gap-4 text-sm">
         <a href="/" class="{{if eq .Active "overview"}}text-slate-900 font-medium{{else}}text-slate-500 hover:text-slate-900{{end}}">Overview</a>
+        <a href="/brds" class="{{if eq .Active "brds"}}text-slate-900 font-medium{{else}}text-slate-500 hover:text-slate-900{{end}}">BRDs</a>
         <a href="/features" class="{{if eq .Active "features"}}text-slate-900 font-medium{{else}}text-slate-500 hover:text-slate-900{{end}}">Features</a>
         <a href="/entry-points" class="{{if eq .Active "entry-points"}}text-slate-900 font-medium{{else}}text-slate-500 hover:text-slate-900{{end}}">Entry points</a>
         <a href="/coverage" class="{{if eq .Active "coverage"}}text-slate-900 font-medium{{else}}text-slate-500 hover:text-slate-900{{end}}">Coverage</a>
@@ -23,14 +68,14 @@
       </nav>
       <form action="/search" method="get" class="ml-auto flex items-center gap-2">
         <input type="search" name="q" placeholder="Search features, entry points, symbols…"
-               class="text-sm px-3 py-1.5 border border-slate-200 rounded-md w-72 focus:outline-none focus:border-slate-400" />
+               class="text-sm px-3 py-1.5 border border-slate-200 rounded-md w-72 bg-slate-100 text-slate-700 placeholder-slate-500 focus:outline-none focus:border-mica-400" />
         {{if .JSONHref}}<a href="{{.JSONHref}}" class="text-xs font-mono text-slate-500 hover:text-slate-900">JSON</a>{{end}}
       </form>
     </div>
     {{if .Breadcrumbs}}
-    <div class="max-w-7xl mx-auto px-6 py-2 text-xs text-slate-500 flex items-center gap-2">
+    <div class="max-w-7xl mx-auto px-6 py-2 text-xs text-slate-500 flex items-center gap-2 font-mono">
       {{range $i, $c := .Breadcrumbs}}
-        {{if $i}}<span>›</span>{{end}}
+        {{if $i}}<span class="text-slate-300">›</span>{{end}}
         {{if $c.Href}}<a href="{{$c.Href}}" class="hover:text-slate-900">{{$c.Label}}</a>{{else}}<span class="text-slate-900">{{$c.Label}}</span>{{end}}
       {{end}}
     </div>
@@ -39,39 +84,35 @@
   <main class="max-w-7xl mx-auto px-6 py-8">
     {{template "body" .Body}}
   </main>
-  <footer class="max-w-7xl mx-auto px-6 py-6 text-xs text-slate-400 flex items-center gap-3">
-    <span>Lattice v0.4.2 — UI consumes <a href="{{.JSONHref}}" class="hover:text-slate-700">/api/v1/*</a> wrappers over the same KnowledgeGraph the CLI prints.</span>
+  <footer class="max-w-7xl mx-auto px-6 py-8 text-xs text-slate-500 flex items-center gap-3">
+    <span class="lattice-mark text-mica-400" aria-hidden="true">⬡</span>
+    <span>Lattice 0.5.0 — <em class="font-serif text-slate-400">A substrate for software meaning.</em></span>
+    <a href="{{.JSONHref}}" class="ml-3 font-mono text-slate-500 hover:text-slate-900">JSON view</a>
     <span id="live-indicator" class="ml-auto text-slate-300" title="live updates">●</span>
   </footer>
   <script>
   // v0.4.2: SSE live updates. Pages re-fetch / reload when an event
   // arrives that affects their data, so a CLI edit (or another
-  // browser tab) is visible without a manual refresh. Each page may
-  // override window.onLatticeChange to handle events with finer
-  // granularity than a full reload.
+  // browser tab) is visible without a manual refresh.
   (function () {
     if (!window.EventSource) return;
     const indicator = document.getElementById('live-indicator');
     const src = new EventSource('/api/v1/events');
     src.addEventListener('hello', () => {
-      if (indicator) { indicator.className = 'ml-auto text-emerald-500'; indicator.title = 'live updates connected'; }
+      if (indicator) { indicator.className = 'ml-auto text-emerald-600'; indicator.title = 'live updates connected'; }
     });
     src.addEventListener('change', (e) => {
       let ev;
       try { ev = JSON.parse(e.data); } catch { return; }
-      // Default: reload on any change. Pages that want finer control
-      // assign window.onLatticeChange before this script runs.
       if (typeof window.onLatticeChange === 'function') {
         window.onLatticeChange(ev);
       } else {
-        // Throttle: avoid reload-storms when a batch operation
-        // touches dozens of files.
         clearTimeout(window.__latticeReloadTimer);
         window.__latticeReloadTimer = setTimeout(() => window.location.reload(), 400);
       }
     });
     src.addEventListener('error', () => {
-      if (indicator) { indicator.className = 'ml-auto text-rose-400'; indicator.title = 'live updates disconnected'; }
+      if (indicator) { indicator.className = 'ml-auto text-rose-600'; indicator.title = 'live updates disconnected'; }
     });
   })();
   </script>

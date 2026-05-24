@@ -50,6 +50,19 @@ func LoadInitiative(path string) (*Initiative, error) {
 	return &in, nil
 }
 
+// LoadBRD reads and parses a Business Requirements Document YAML file.
+func LoadBRD(path string) (*BRD, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var b BRD
+	if err := yaml.Unmarshal(data, &b); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return &b, nil
+}
+
 // LoadTask reads and parses a task YAML file.
 func LoadTask(path string) (*Task, error) {
 	data, err := os.ReadFile(path)

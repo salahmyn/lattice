@@ -16,6 +16,10 @@ type coveragePayload struct {
 	Discovery     importer.DiscoveryCoverage     `json:"discovery"`
 	Documentation importer.DocumentationCoverage `json:"documentation"`
 	Verification  importer.VerificationCoverage  `json:"verification"`
+	// BRD is the v0.5.0 4th ratio: features with an approved upstream BRD.
+	// Always present in the payload (zeroes when no BRD axis is in use)
+	// so the UI can render the card uniformly.
+	BRD importer.BRDCoverage `json:"brd"`
 }
 
 func (s *Server) apiCoverage(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +55,7 @@ func (s *Server) pageCoverage(w http.ResponseWriter, r *http.Request) {
 			"Discovery":     payload.Discovery,
 			"Documentation": payload.Documentation,
 			"Verification":  payload.Verification,
+			"BRD":           payload.BRD,
 			"Packages":      pkgs,
 		},
 	})
@@ -76,6 +81,7 @@ func (s *Server) computeCoverage(r *http.Request) (coveragePayload, error) {
 	cfg, _ := config.Load(s.ws.LatticeDir)
 	violations := validate.Validate(kg, cfg, validate.Options{ReviewMode: s.ws.Review})
 	out.Verification = importer.ComputeVerification(kg.Features, violations)
+	out.BRD = importer.ComputeBRD(kg.Features, kg.BRDs)
 	return out, nil
 }
 

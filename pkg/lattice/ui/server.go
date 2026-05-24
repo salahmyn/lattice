@@ -158,6 +158,8 @@ func (s *Server) routes() *http.ServeMux {
 	// the root path — Go 1.22 rejects an unscoped "GET /" against the
 	// "/static/" prefix handler as a conflict.
 	mux.HandleFunc("GET /{$}", s.pageOverview)
+	mux.HandleFunc("GET /brds", s.pageBRDs)
+	mux.HandleFunc("GET /brds/{id}", s.pageBRD)
 	mux.HandleFunc("GET /features", s.pageFeatures)
 	mux.HandleFunc("GET /features/{id}", s.pageFeature)
 	mux.HandleFunc("GET /entry-points", s.pageEntryPoints)
@@ -169,9 +171,12 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /import", s.pageImport)
 	mux.HandleFunc("GET /import/{id}", s.pageImportCandidate)
 	mux.HandleFunc("GET /config", s.pageConfig)
+	mux.HandleFunc("GET /onboarding", s.pageOnboarding)
 
 	// JSON API — same shapes as the CLI --json output.
 	mux.HandleFunc("GET /api/v1/overview", s.apiOverview)
+	mux.HandleFunc("GET /api/v1/brds", s.apiBRDs)
+	mux.HandleFunc("GET /api/v1/brds/{id}", s.apiBRD)
 	mux.HandleFunc("GET /api/v1/features", s.apiFeatures)
 	mux.HandleFunc("GET /api/v1/features/{id}", s.apiFeature)
 	mux.HandleFunc("GET /api/v1/entry-points", s.apiEntryPoints)
@@ -188,6 +193,8 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("PUT /api/v1/config/fields", s.apiConfigFields)
 	mux.HandleFunc("PUT /api/v1/entry-points/{id}/decision", s.apiEPDecision)
 	mux.HandleFunc("GET /api/v1/events", s.apiEvents)
+	mux.HandleFunc("GET /api/v1/onboarding", s.apiOnboardingGet)
+	mux.HandleFunc("POST /api/v1/onboarding", s.apiOnboardingPost)
 
 	return mux
 }

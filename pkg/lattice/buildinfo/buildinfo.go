@@ -3,7 +3,7 @@ package buildinfo
 
 // These are overridden via -ldflags -X at build time (see .goreleaser.yaml).
 var (
-	Version = "dev"
+	Version = "0.5.0"
 	Commit  = "none"
 	Date    = "unknown"
 )

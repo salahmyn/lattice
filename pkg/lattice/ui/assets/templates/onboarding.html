@@ -1,0 +1,204 @@
+{{define "onboarding.html"}}{{template "layout" .}}{{end}}
+
+{{define "body"}}
+<div class="grid gap-6 lg:grid-cols-4">
+  <!-- progress rail -->
+  <aside class="bg-white rounded-lg border border-slate-200 p-6">
+    <h2 class="text-xs uppercase text-slate-500 tracking-wide">Setup</h2>
+    <ol class="mt-3 space-y-2 text-sm">
+      {{range .Steps}}
+      <li class="flex items-baseline gap-2">
+        {{if eq .State "done"}}
+          <span class="text-emerald-600">✓</span>
+          <span class="text-slate-500">{{.Label}}</span>
+        {{else if eq .State "current"}}
+          <span class="lattice-mark">⬡</span>
+          <span class="text-slate-900 font-medium">{{.Label}}</span>
+        {{else}}
+          <span class="text-slate-300">○</span>
+          <span class="text-slate-400">{{.Label}}</span>
+        {{end}}
+      </li>
+      {{end}}
+    </ol>
+  </aside>
+
+  <!-- step body -->
+  <section class="lg:col-span-3 bg-white rounded-lg border border-slate-200 p-8">
+    <h1 class="text-2xl font-semibold text-slate-900">{{.StepLabel}}</h1>
+
+    {{with .State}}
+    {{if eq (printf "%v" .Step) "project_metadata"}}
+      <p class="mt-2 text-sm text-slate-500">A few details to seed the workspace. Owners default to your git email; the tone steers how LLM-generated prose reads across the system.</p>
+      <form id="step-form" class="mt-6 space-y-4">
+        <label class="block">
+          <span class="text-xs uppercase text-slate-500 tracking-wide">Title</span>
+          <input name="title" value="{{.ProjectMetadata.Title}}"
+                 class="mt-1 w-full text-sm px-3 py-2 border border-slate-200 rounded-md bg-slate-100 text-slate-900" />
+        </label>
+        <div class="grid grid-cols-2 gap-4">
+          <label class="block">
+            <span class="text-xs uppercase text-slate-500 tracking-wide">Business owner</span>
+            <input name="business_owner" value="{{.ProjectMetadata.BusinessOwner}}"
+                   class="mt-1 w-full text-sm px-3 py-2 border border-slate-200 rounded-md bg-slate-100 text-slate-900" />
+          </label>
+          <label class="block">
+            <span class="text-xs uppercase text-slate-500 tracking-wide">Engineering owner</span>
+            <input name="engineering_owner" value="{{.ProjectMetadata.EngineeringOwner}}"
+                   class="mt-1 w-full text-sm px-3 py-2 border border-slate-200 rounded-md bg-slate-100 text-slate-900" />
+          </label>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <label class="block">
+            <span class="text-xs uppercase text-slate-500 tracking-wide">Tone audience</span>
+            <select name="tone_audience" class="mt-1 w-full text-sm px-3 py-2 border border-slate-200 rounded-md bg-slate-100 text-slate-900">
+              <option value="mixed"       {{if eq .ProjectMetadata.ToneAudience "mixed"}}selected{{end}}>mixed</option>
+              <option value="business"    {{if eq .ProjectMetadata.ToneAudience "business"}}selected{{end}}>business</option>
+              <option value="product"     {{if eq .ProjectMetadata.ToneAudience "product"}}selected{{end}}>product</option>
+              <option value="engineering" {{if eq .ProjectMetadata.ToneAudience "engineering"}}selected{{end}}>engineering</option>
+            </select>
+          </label>
+          <label class="block">
+            <span class="text-xs uppercase text-slate-500 tracking-wide">Reading level</span>
+            <select name="tone_reading_level" class="mt-1 w-full text-sm px-3 py-2 border border-slate-200 rounded-md bg-slate-100 text-slate-900">
+              <option value="simple"       {{if eq .ProjectMetadata.ToneReadingLevel "simple"}}selected{{end}}>simple</option>
+              <option value="intermediate" {{if eq .ProjectMetadata.ToneReadingLevel "intermediate"}}selected{{end}}>intermediate</option>
+              <option value="expert"       {{if eq .ProjectMetadata.ToneReadingLevel "expert"}}selected{{end}}>expert</option>
+            </select>
+          </label>
+        </div>
+      </form>
+      <div class="mt-6 flex justify-end">
+        <button onclick="submitMetadata()" class="px-4 py-2 text-sm bg-mica-400 text-slate-900 rounded-md hover:bg-mica-300">
+          Save &amp; continue →
+        </button>
+      </div>
+
+    {{else if eq (printf "%v" .Step) "confirm_code_roots"}}
+      <p class="mt-2 text-sm text-slate-500">
+        Detected <span class="font-mono">{{.Detected.Language}}{{if .Detected.Framework}} / {{.Detected.Framework}}{{end}}</span>
+        with <strong>{{.Detected.Confidence}}</strong> confidence. Adjust the code roots Lattice should scan.
+      </p>
+      <ul id="roots-list" class="mt-6 space-y-2 text-sm">
+        {{range .Detected.CodeRoots}}
+        <li class="flex items-center gap-2">
+          <input type="checkbox" checked value="{{.}}" class="root-checkbox" />
+          <span class="font-mono text-xs">{{.}}</span>
+        </li>
+        {{end}}
+      </ul>
+      <div class="mt-6 flex justify-end">
+        <button onclick="submitRoots()" class="px-4 py-2 text-sm bg-mica-400 text-slate-900 rounded-md hover:bg-mica-300">
+          Continue →
+        </button>
+      </div>
+
+    {{else if eq (printf "%v" .Step) "plugin_install"}}
+      <p class="mt-2 text-sm text-slate-500">Lattice indexes your code with SCIP. These packages are needed for the detected stack.</p>
+      {{if .Detected.NeedsPackages}}
+      <ul class="mt-6 space-y-3">
+        {{range .Detected.NeedsPackages}}
+        <li class="flex items-baseline gap-3 border border-slate-200 rounded p-4">
+          <div class="flex-1">
+            <div class="font-mono text-sm">{{.Name}}</div>
+            <div class="text-xs text-slate-500 mt-0.5">{{.Reason}}</div>
+            <div class="text-xs text-slate-400 mt-0.5">via {{.Manager}}</div>
+          </div>
+          <button onclick="installPkg('{{.Name}}')" class="px-3 py-1.5 text-xs bg-mica-400 text-slate-900 rounded hover:bg-mica-300">
+            Install
+          </button>
+        </li>
+        {{end}}
+      </ul>
+      {{else}}
+      <p class="mt-6 text-sm text-slate-500">No packages required for the detected stack.</p>
+      {{end}}
+      {{if .PackagesInstalled}}
+      <p class="mt-4 text-xs text-emerald-600">Installed: {{range .PackagesInstalled}}<span class="font-mono">{{.}}</span> {{end}}</p>
+      {{end}}
+      <div class="mt-6 flex justify-end">
+        <button onclick="advance()" class="px-4 py-2 text-sm bg-mica-400 text-slate-900 rounded-md hover:bg-mica-300">
+          Skip install &amp; continue →
+        </button>
+      </div>
+
+    {{else if eq (printf "%v" .Step) "scope_action"}}
+      <p class="mt-2 text-sm text-slate-500">Pick the right entry point for the scope you chose at the CLI: <strong>{{.Scope}}</strong>.</p>
+      <div class="mt-6 grid gap-4 md:grid-cols-2">
+        {{if eq (printf "%v" .Scope) "greenfield"}}
+          <a href="/brds" class="block border border-slate-200 rounded p-6 hover:bg-slate-50">
+            <div class="lattice-mark text-2xl">⬡</div>
+            <div class="mt-2 font-medium">Draft your first BRD</div>
+            <div class="text-xs text-slate-500 mt-1">Start at the business-intent layer; features follow.</div>
+          </a>
+          <a href="/features" class="block border border-slate-200 rounded p-6 hover:bg-slate-50">
+            <div class="font-mono text-2xl text-slate-400">F</div>
+            <div class="mt-2 font-medium">Or scaffold a feature directly</div>
+            <div class="text-xs text-slate-500 mt-1">Skip the BRD layer; you can always backfill with <code>brd from-code</code>.</div>
+          </a>
+        {{else if eq (printf "%v" .Scope) "brownfield_full"}}
+          <a href="/import" class="block border border-slate-200 rounded p-6 hover:bg-slate-50">
+            <div class="lattice-mark text-2xl">⇌</div>
+            <div class="mt-2 font-medium">Run bulk import</div>
+            <div class="text-xs text-slate-500 mt-1">Cluster existing symbols into feature candidates, review on <code>/import</code>.</div>
+          </a>
+          <a href="/brds" class="block border border-slate-200 rounded p-6 hover:bg-slate-50">
+            <div class="lattice-mark text-2xl">⬡</div>
+            <div class="mt-2 font-medium">Regenerate BRDs from code</div>
+            <div class="text-xs text-slate-500 mt-1">Run <code>lattice brd from-code --all-unbrided</code> in your terminal once features land.</div>
+          </a>
+        {{else}}
+          <a href="/brds" class="block border border-slate-200 rounded p-6 hover:bg-slate-50">
+            <div class="lattice-mark text-2xl">⬡</div>
+            <div class="mt-2 font-medium">Draft your first BRD</div>
+            <div class="text-xs text-slate-500 mt-1">Going incremental — only new BRDs get tracked.</div>
+          </a>
+          <a href="/features" class="block border border-slate-200 rounded p-6 hover:bg-slate-50">
+            <div class="font-mono text-2xl text-slate-400">F</div>
+            <div class="mt-2 font-medium">Existing features (read-only)</div>
+            <div class="text-xs text-slate-500 mt-1">Browse what's already documented; add as you go.</div>
+          </a>
+        {{end}}
+      </div>
+      <div class="mt-6 flex justify-end">
+        <button onclick="finish()" class="px-4 py-2 text-sm bg-mica-400 text-slate-900 rounded-md hover:bg-mica-300">
+          Finish onboarding ✓
+        </button>
+      </div>
+    {{end}}
+    {{end}}
+  </section>
+</div>
+
+<script>
+async function post(body) {
+  const r = await fetch('/api/v1/onboarding', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) { alert(await r.text()); return; }
+  window.location.reload();
+}
+
+function submitMetadata() {
+  const f = document.getElementById('step-form');
+  post({project_metadata: {
+    title:              f.title.value,
+    business_owner:     f.business_owner.value,
+    engineering_owner:  f.engineering_owner.value,
+    tone_audience:      f.tone_audience.value,
+    tone_reading_level: f.tone_reading_level.value,
+  }, action: 'advance'});
+}
+
+function submitRoots() {
+  const roots = Array.from(document.querySelectorAll('.root-checkbox:checked')).map(c => c.value);
+  post({code_roots: roots, action: 'advance'});
+}
+
+function installPkg(name) { post({install_package: name}); }
+function advance()        { post({action: 'advance'}); }
+function finish()         { post({action: 'finish'}); }
+</script>
+{{end}}

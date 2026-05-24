@@ -2,6 +2,117 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.5.0]
+
+BRD layer, onboarding wizard, Crystal brand, auto-detect.
+
+A four-stream release that adds the missing layer above the Feature
+axis (Business Requirements Documents), a first-touch experience for
+new users (interactive `lattice init` → UI wizard), automatic project
+fingerprinting (language + framework + SCIP plugin install), and a
+full brand identity (Crystal direction from the design handoff).
+
+### Added — BRD axis (β)
+- **`pkg/lattice/schema.BRD`** — the v0.5 top-of-stack artifact.
+  One BRD points at many features (`implements_via`); one feature
+  has at most one BRD parent (`implements_brd`). Fields: id,
+  version, status, title, business_problem, business_goals,
+  stakeholders, user_scenarios, success_criteria, constraints,
+  out_of_scope, approval (with `approved_version` pinning), and
+  provenance (`human` | `llm_from_code`).
+- **`pkg/lattice/brd`** loader: tolerates a missing `brds/` dir
+  (BRD adoption is opt-in); parse failures surface as
+  `BRD_SCHEMA` violations.
+- **`lattice brd new|list|show|link|approve`** — full CLI surface.
+  `link` writes both sides of the BRD ↔ Feature relationship;
+  `approve` pins the version so a subsequent edit raises drift.
+- **`/brds` and `/brds/{id}` UI pages** with status/approval/
+  provenance side panels and a drift badge when the BRD version
+  advances past its last approval.
+- **Coverage dashboard 4th ratio** — BRD coverage = features with
+  an approved upstream BRD. Same line on `lattice coverage`.
+- **Validation rules** (all conservative — adoption is opt-in):
+  - `BRD_PHANTOM_FEATURE` (error)
+  - `FEATURE_BRD_MISSING` (error)
+  - `BRD_SCHEMA` / `BRD_ID_FORMAT` / `BRD_ID_DUPLICATE` (errors)
+  - `FEATURE_NO_BRD` (warning) — suppressed by reverse `implements_via`
+  - `BRD_UNAPPROVED_LLM` (warning)
+  - `BRD_UNREFERENCED` / `BRD_DRIFT` (info — new severity tier)
+
+### Added — `brd from-code` (γ)
+- **`lattice brd from-code <feature-id>`** and
+  **`--all-unbrided`** — LLM-regenerates a draft BRD from a feature
+  manifest plus the entry points that reach it, using the same
+  `agentic.ToneContract` that steers feature and EP prose.
+- **Hard-coded safety contract** (set by the package, never the
+  model): `status=draft`, `provenance.source=llm_from_code`,
+  `human_review_required=true`, `implements_via=[feature.id]`,
+  `constraints=[]`. The prompt forbids inventing constraints,
+  inventing stakeholders, and inventing invariant references —
+  fabricated `maps_to_invariant` is silently dropped.
+- **Owner fallback** — an LLM that returns "" for `business_owner`
+  falls back to `feature.owners.business`.
+
+### Added — Onboarding wizard (δ)
+- **Interactive `lattice init`** by default: runs `detect`, prompts
+  for scope (`greenfield` / `brownfield_full` /
+  `brownfield_incremental`), writes `lattice/onboarding.yaml`,
+  prints the URL to continue in the browser.
+- `--no-wizard` restores the v0.4-era one-shot scaffold for
+  scripts/CI; `--scope <name>` pre-answers the prompt for
+  non-interactive runs.
+- **`/onboarding` UI page** dispatches on `State.Step` and walks
+  the user through four steps: project metadata → confirm code
+  roots → install plugins → scope-specific final action.
+- **`GET/POST /api/v1/onboarding`** with server-side defence:
+  only the current step's owned fields are writable, and the
+  install endpoint refuses any package name not in
+  `detected.needs_packages` (no arbitrary subprocess from the
+  browser).
+- `Completed=true` redirects `/onboarding` to `/` — the wizard
+  self-deletes from active nav once setup is done.
+
+### Added — Auto-detect (`pkg/lattice/detect`)
+- Inspects manifest files (`composer.json`, `package.json`,
+  `requirements.txt`, `go.mod`, `Gemfile`, `Cargo.toml`,
+  `pom.xml`/`build.gradle`) plus signature paths to guess
+  language + framework with high/medium/low/none confidence.
+- Coverage: Laravel, Symfony, Django, FastAPI, Flask, Next.js,
+  NestJS, Express, Rails, Spring, Go, Rust.
+- Returns suggested code roots and the SCIP indexer packages
+  the stack needs (`sourcegraph/scip-php`, `scip-python`,
+  `@sourcegraph/scip-typescript`, etc).
+- **`lattice detect [path]`** prints the report; `--install`
+  runs the package-manager commands; `--dry-run` previews them.
+
+### Changed — Crystal brand (α)
+- **UI re-skinned to the v0.5 Crystal direction.** Cool slate
+  (#0F1218) base with mica-violet (#8C7DD6) accent; Geist sans,
+  JetBrains Mono for code/FQNs, IBM Plex Serif for long-form
+  business prose. Uppercase `LATTICE` wordmark with hex unit-cell
+  mark (`⬡`) — both in the header and footer.
+- **Tailwind config re-points the slate ramp to Crystal neutrals,
+  so existing `bg-slate-*` / `text-slate-*` classes flip
+  dark-by-default with no template rewrite.**
+- **`pkg/lattice/ui/assets/static/styles.css`** is now the brand
+  stylesheet: CSS variables for every Crystal token, `.badge.is-*`
+  lifecycle/severity classes, `.glyph.is-*` primitive classes,
+  defensive fallbacks for offline / CDN-down operation.
+
+### Fixed
+- **`coverage.html`** referenced a stale `.AttachedSymbols` field
+  on the documentation stats; corrected to `.DocumentedSymbols`.
+  (Latent template bug exposed by the v0.5 re-render.)
+
+### Architecture notes
+- `pkg/lattice/brd` and `pkg/lattice/onboarding` are deliberately
+  agnostic of `pkg/lattice/agentic` so they can be loaded by
+  `extract` without forming an import cycle. The CLI bridges
+  `agentic.Provider` into `brd.LLMProvider` with a small adapter.
+- Schema additions are backward-compatible: existing manifests
+  validate unchanged; `Manifest.ImplementsBRD` is optional and
+  defaults to empty.
+
 ## [0.4.2]
 
 UI live updates + HTTP Basic auth.

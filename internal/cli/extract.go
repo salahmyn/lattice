@@ -115,6 +115,7 @@ func buildGraph(ctx context.Context, ws *workspace.Workspace, withCodeGraph bool
 	}
 
 	kg := graph.Build(graph.Input{
+		BRDs:        res.BRDs,
 		Manifests:   res.Manifests,
 		Modules:     res.Modules,
 		Initiatives: res.Initiatives,

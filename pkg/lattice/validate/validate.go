@@ -82,6 +82,7 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 
 	v = append(v, kg.Violations...) // parse errors carried from extraction
 	v = append(v, c.checkManifests()...)
+	v = append(v, c.checkBRDs()...)
 	v = append(v, c.checkDependencies()...)
 	v = append(v, c.checkInitiativesAndTasks()...)
 

@@ -53,6 +53,7 @@ func (l *Lattice) Extract(ctx context.Context) (schema.KnowledgeGraph, error) {
 		return schema.KnowledgeGraph{}, err
 	}
 	return graph.Build(graph.Input{
+		BRDs:        res.BRDs,
 		Manifests:   res.Manifests,
 		Modules:     res.Modules,
 		Initiatives: res.Initiatives,
