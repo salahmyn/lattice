@@ -84,6 +84,17 @@ const (
 	CodeBRDDrift            = "BRD_DRIFT"             // BRD.version != approval.approved_version (info)
 	CodeBRDUnapprovedLLM    = "BRD_UNAPPROVED_LLM"    // llm_from_code draft needs human sign-off
 	CodeFeatureBRDMissing   = "FEATURE_BRD_MISSING"   // feature.implements_brd names a missing BRD
+
+	// RTM — Requirements Traceability Matrix (v0.6)
+	//
+	// These rules fire at the BRD-criterion level so the business
+	// consequence (SC-1 has no backing verification) shows up alongside
+	// the technical one (INV-1 has no enforcer, already covered by
+	// UNENFORCED_INVARIANT). Operators triaging at the BRD layer see
+	// what they need without drilling into per-feature rules.
+	CodeBRDCriterionPhantomInvariant = "BRD_CRITERION_PHANTOM_INVARIANT" // SC.maps_to_invariant misses
+	CodeBRDCriterionUnverified       = "BRD_CRITERION_UNVERIFIED"        // SC mapped but unenforced/unverified/partial
+	CodeBRDCriterionUnmapped         = "BRD_CRITERION_UNMAPPED"          // SC has no maps_to_invariant
 )
 
 // Info is the lowest violation severity — surfaced in the dashboard but

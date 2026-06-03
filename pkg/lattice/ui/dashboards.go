@@ -6,6 +6,7 @@ import (
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/importer"
+	"github.com/salahmyn/lattice/pkg/lattice/rtm"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/validate"
 )
@@ -20,6 +21,11 @@ type coveragePayload struct {
 	// Always present in the payload (zeroes when no BRD axis is in use)
 	// so the UI can render the card uniformly.
 	BRD importer.BRDCoverage `json:"brd"`
+	// RTM is the v0.6 5th ratio: BRD success_criteria that thread all
+	// the way down to a verified invariant. Drives the "BRD goals
+	// verified" card on /coverage and answers the question
+	// "is what we built what we asked for?" at a glance.
+	RTM rtm.Coverage `json:"rtm"`
 }
 
 func (s *Server) apiCoverage(w http.ResponseWriter, r *http.Request) {
@@ -56,6 +62,7 @@ func (s *Server) pageCoverage(w http.ResponseWriter, r *http.Request) {
 			"Documentation": payload.Documentation,
 			"Verification":  payload.Verification,
 			"BRD":           payload.BRD,
+			"RTM":           payload.RTM,
 			"Packages":      pkgs,
 		},
 	})
@@ -82,6 +89,9 @@ func (s *Server) computeCoverage(r *http.Request) (coveragePayload, error) {
 	violations := validate.Validate(kg, cfg, validate.Options{ReviewMode: s.ws.Review})
 	out.Verification = importer.ComputeVerification(kg.Features, violations)
 	out.BRD = importer.ComputeBRD(kg.Features, kg.BRDs)
+	out.RTM = rtm.ComputeCoverage(rtm.Build(kg, rtm.Options{
+		MutationThreshold: cfg.MutationTesting.Thresholds.Default,
+	}))
 	return out, nil
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/extract"
 	"github.com/salahmyn/lattice/pkg/lattice/importer"
+	"github.com/salahmyn/lattice/pkg/lattice/rtm"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 	"github.com/salahmyn/lattice/pkg/lattice/validate"
@@ -159,6 +160,7 @@ type coverageReport struct {
 	Documentation importer.DocumentationCoverage `json:"documentation"`
 	Verification  importer.VerificationCoverage  `json:"verification"`
 	BRD           importer.BRDCoverage           `json:"brd"`
+	RTM           rtm.Coverage                   `json:"rtm"`
 }
 
 func newCoverageCommand(io *IO) *cobra.Command {
@@ -180,17 +182,20 @@ func newCoverageCommand(io *IO) *cobra.Command {
 				Discovery:     cf.Coverage.Discovery,
 				Documentation: importer.ComputeDocumentation(cf, sess.Decisions),
 			}
-			// Verification + BRD coverage need the graph and the validation engine.
+			// Verification + BRD + RTM coverage need the graph and the validation engine.
 			if kg, gerr := buildGraph(cmd.Context(), ws, false); gerr == nil {
 				cfg, _ := config.Load(ws.LatticeDir)
 				viol := validate.Validate(kg, cfg, validate.Options{ReviewMode: ws.Review})
 				report.Verification = importer.ComputeVerification(kg.Features, viol)
 				report.BRD = importer.ComputeBRD(kg.Features, kg.BRDs)
+				report.RTM = rtm.ComputeCoverage(rtm.Build(kg, rtm.Options{
+					MutationThreshold: cfg.MutationTesting.Thresholds.Default,
+				}))
 			}
 			if io.JSON {
 				return io.printJSON(report)
 			}
-			d, doc, ver, brdc := report.Discovery, report.Documentation, report.Verification, report.BRD
+			d, doc, ver, brdc, rtmc := report.Discovery, report.Documentation, report.Verification, report.BRD, report.RTM
 			io.printf("Discovery coverage:     %.1f%%  (%d/%d production symbols clustered into candidates)\n",
 				d.Ratio*100, d.ClusteredSymbols, d.TotalSymbols)
 			io.printf("Documentation coverage: %.1f%%  (%d/%d symbols attached to an accepted feature)\n",
@@ -199,6 +204,8 @@ func newCoverageCommand(io *IO) *cobra.Command {
 				ver.Ratio*100, ver.VerifiedInvariants, ver.TotalInvariants)
 			io.printf("BRD coverage:           %.1f%%  (%d/%d features with an approved upstream BRD; %d/%d BRDs approved)\n",
 				brdc.Ratio*100, brdc.CoveredFeatures, brdc.TotalFeatures, brdc.ApprovedBRDs, brdc.TotalBRDs)
+			io.printf("BRD goal coverage:      %.1f%%  (%d/%d success criteria traced to a verified invariant)\n",
+				rtmc.Ratio*100, rtmc.VerifiedCriteria, rtmc.TotalCriteria)
 			io.printf("\nDiscovery by package:\n")
 			for _, p := range d.ByPackage {
 				io.printf("  %5.1f%%  %4d/%-4d  %s\n",

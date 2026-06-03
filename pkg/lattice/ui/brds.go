@@ -5,6 +5,8 @@ import (
 	"sort"
 
 	"github.com/salahmyn/lattice/pkg/lattice/brd"
+	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/rtm"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
@@ -64,6 +66,28 @@ func (s *Server) pageBRD(w http.ResponseWriter, r *http.Request) {
 	}
 	features := brd.FeaturesByBRD(kg.BRDs, kg.Features)[id]
 	drift := b.Approval != nil && b.Approval.ApprovedVersion > 0 && b.Version > b.Approval.ApprovedVersion
+
+	// RTM rows for *this* BRD only: lets the detail page surface the
+	// "is what we built what we asked for?" answer inline, without a
+	// click out to /rtm.
+	cfg, _ := config.Load(s.ws.LatticeDir)
+	matrix := rtm.Build(kg, rtm.Options{
+		MutationThreshold: cfg.MutationTesting.Thresholds.Default,
+	})
+	var rtmRows []rtm.Row
+	var rtmSummary *rtm.BRDSummary
+	for i := range matrix.Rows {
+		if matrix.Rows[i].BRDID == id {
+			rtmRows = append(rtmRows, matrix.Rows[i])
+		}
+	}
+	for i := range matrix.Summaries {
+		if matrix.Summaries[i].BRDID == id {
+			rtmSummary = &matrix.Summaries[i]
+			break
+		}
+	}
+
 	s.render(w, "brd.html", pageData{
 		Title:    b.ID,
 		Active:   "brds",
@@ -74,9 +98,11 @@ func (s *Server) pageBRD(w http.ResponseWriter, r *http.Request) {
 			{Label: b.ID},
 		},
 		Body: map[string]interface{}{
-			"BRD":      b,
-			"Features": features,
-			"Drift":    drift,
+			"BRD":        b,
+			"Features":   features,
+			"Drift":      drift,
+			"RTMRows":    rtmRows,
+			"RTMSummary": rtmSummary,
 		},
 	})
 }

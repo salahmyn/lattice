@@ -41,6 +41,46 @@
     </ul>
     {{end}}
 
+    {{if $.RTMRows}}
+    <h3 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide flex items-baseline justify-between">
+      <span>Verification ({{$.RTMSummary.Verified}}/{{$.RTMSummary.Total}})</span>
+      <a href="/rtm" class="text-xs font-normal text-slate-400 hover:text-slate-700 normal-case">full matrix →</a>
+    </h3>
+    <table class="mt-2 w-full text-xs">
+      <thead class="text-slate-400">
+        <tr>
+          <th class="text-left font-medium pb-1">SC</th>
+          <th class="text-left font-medium pb-1">Invariant</th>
+          <th class="text-right font-medium pb-1">Enf</th>
+          <th class="text-right font-medium pb-1">Ver</th>
+          <th class="text-left font-medium pb-1">Status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {{range $.RTMRows}}
+        <tr>
+          <td class="py-1 font-mono">{{.CriterionID}}</td>
+          <td class="py-1 font-mono">
+            {{if .FeatureID}}<a href="/features/{{.FeatureID}}" class="hover:underline">{{.MapsTo}}</a>
+            {{else if .MapsTo}}<span class="text-rose-700">{{.MapsTo}}</span>
+            {{else}}<span class="text-slate-400">—</span>{{end}}
+          </td>
+          <td class="py-1 text-right tabular-nums">{{len .Enforcers}}</td>
+          <td class="py-1 text-right tabular-nums">{{len .Verifiers}}</td>
+          <td class="py-1">
+            {{if eq (printf "%v" .Status) "verified"}}<span class="badge is-ok">verified</span>
+            {{else if eq (printf "%v" .Status) "partial"}}<span class="badge is-warn">partial</span>
+            {{else if eq (printf "%v" .Status) "unenforced"}}<span class="badge is-error">unenforced</span>
+            {{else if eq (printf "%v" .Status) "unverified"}}<span class="badge is-warn">unverified</span>
+            {{else if eq (printf "%v" .Status) "unmapped"}}<span class="badge is-info">unmapped</span>
+            {{else if eq (printf "%v" .Status) "phantom"}}<span class="badge is-error">phantom</span>{{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{end}}
+
     {{if .UserScenarios}}
     <h3 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide">User scenarios ({{len .UserScenarios}})</h3>
     <ul class="mt-2 space-y-3">
@@ -79,7 +119,10 @@
 
   <aside class="space-y-6">
     <section class="bg-white rounded-lg border border-slate-200 p-6">
-      <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide">Implementing features ({{len $.Features}})</h2>
+      <div class="flex items-baseline justify-between">
+        <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide">Implementing features ({{len $.Features}})</h2>
+        {{if $.Features}}<a href="/journeys/{{.ID}}" class="text-xs text-mica-400 hover:underline">view journey →</a>{{end}}
+      </div>
       {{if $.Features}}
       <ul class="mt-3 space-y-1 text-sm">
         {{range $.Features}}

@@ -252,4 +252,97 @@ export const tools: ToolDef[] = [
     inputSchema: {},
     toArgs: () => ({ args: ["structural-checks", "run"] }),
   },
+  // ─────────── v0.6 BRD / journey / actor / RTM surface ───────────
+  // These tools turn the meaning layer added in v0.5+v0.6 into
+  // structured answers an agent can branch on without re-reading code.
+  {
+    name: "lattice_list_brds",
+    summary: "List every Business Requirements Document.",
+    whenToCall: [
+      "User asks what business intent the system covers",
+      "Agent needs the BRD catalog before choosing scope",
+    ],
+    returns: "JSON array of {id, status, version, title, business_problem, implements_via, approval, provenance}.",
+    commonErrors: ["EXTRACT_FAILED: the repository could not be parsed"],
+    inputSchema: { status: z.string().optional() },
+    toArgs: (i) => {
+      const args = ["brd", "list"];
+      if (i.status) args.push("--status", str(i, "status"));
+      return { args };
+    },
+  },
+  {
+    name: "lattice_get_brd",
+    summary: "Full BRD detail with implementing features.",
+    whenToCall: [
+      "User asks about a specific BRD by id",
+      "Agent needs business intent context before changing a feature",
+    ],
+    returns: "JSON {brd, features} with the full BRD body + the feature ids in its scope.",
+    commonErrors: ["BRD_NOT_FOUND: brd_id is not in the corpus"],
+    inputSchema: { brd_id: z.string() },
+    toArgs: (i) => ({ args: ["brd", "show", str(i, "brd_id")] }),
+  },
+  {
+    name: "lattice_get_journey",
+    summary: "Aggregate every entry point that touches a BRD's features.",
+    whenToCall: [
+      "User asks 'show me the X flow'",
+      "Agent needs the full surface a business intent exercises before changing any single EP",
+    ],
+    returns: "JSON {brd_id, brd_title, features, entry_points, mermaid} — the same shape /journeys/{id} renders.",
+    commonErrors: ["BRD_NOT_FOUND: brd_id is not in the corpus"],
+    inputSchema: { brd_id: z.string() },
+    toArgs: (i) => ({ args: ["journey", str(i, "brd_id")] }),
+  },
+  {
+    name: "lattice_list_actors",
+    summary: "List actors declared in lattice/context.yaml with EP/feature counts.",
+    whenToCall: ["User asks who can use the system", "Agent needs actor coverage before drafting a flow"],
+    returns: "JSON array of {id, name, feature_count, ep_count}.",
+    commonErrors: ["CONTEXT_LOAD_FAILED: lattice/context.yaml is missing or malformed"],
+    inputSchema: {},
+    toArgs: () => ({ args: ["actor", "list"] }),
+  },
+  {
+    name: "lattice_get_actor_touchpoints",
+    summary: "Every entry point and feature one actor can exercise.",
+    whenToCall: [
+      "User asks 'what can a Merchant do here?'",
+      "Agent needs the full touchpoint set before drafting an actor-centric change",
+    ],
+    returns: "JSON {actor, features, entry_points, brds} with the BRDs those features implement.",
+    commonErrors: ["ACTOR_NOT_FOUND: actor_id is not declared in context.yaml"],
+    inputSchema: { actor_id: z.string() },
+    toArgs: (i) => ({ args: ["actor", "show", str(i, "actor_id")] }),
+  },
+  {
+    name: "lattice_verify_brd",
+    summary: "Walk a BRD's success_criteria to enforcers + verifiers + mutation; report per-row status.",
+    whenToCall: [
+      "User asks 'is this BRD actually verified?'",
+      "Agent needs to know which business goals lack backing tests before declaring complete",
+    ],
+    returns: "JSON {coverage, matrix} — per-row status (verified/partial/unenforced/unverified/unmapped/phantom) for one BRD.",
+    commonErrors: ["EXTRACT_FAILED: the repository could not be parsed"],
+    inputSchema: { brd_id: z.string() },
+    toArgs: (i) => ({ args: ["rtm", "--brd", str(i, "brd_id")] }),
+  },
+  {
+    name: "lattice_list_unverified_criteria",
+    summary: "List every BRD success_criterion that is NOT in verified state.",
+    whenToCall: [
+      "Agent is auditing 'what business goals don't trace to passing verification?'",
+      "Pre-merge check that no shipped BRD lost its verification chain",
+    ],
+    returns: "JSON {coverage, matrix} — only rows whose status is unmapped/unverified/unenforced/partial/phantom.",
+    commonErrors: ["EXTRACT_FAILED: the repository could not be parsed"],
+    inputSchema: { status: z.string().optional() },
+    toArgs: (i) => {
+      // Default to unmapped — the most common starting point. Caller
+      // can pass a different status filter to drill in.
+      const args = ["rtm", "--status", i.status ? str(i, "status") : "unmapped"];
+      return { args };
+    },
+  },
 ];

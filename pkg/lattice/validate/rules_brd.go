@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/salahmyn/lattice/pkg/lattice/rtm"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
@@ -191,6 +192,67 @@ func (c *corpus) checkBRDs() []schema.Violation {
 					Kind:   "edit_manifest",
 					Field:  "implements_brd",
 					Detail: "fix the reference, or create the BRD with `lattice brd new " + f.ImplementsBRD + "`",
+				},
+			})
+		}
+	}
+
+	// RTM rules (v0.6): walk every BRD success_criterion via the
+	// shared rtm package and surface the per-criterion status as a
+	// validation finding. Reusing rtm.Build means CLI / UI / MCP /
+	// validation all branch on the same status — a SC can never be
+	// "verified" in one surface and "unverified" in another.
+	matrix := rtm.Build(c.kg, rtm.Options{
+		MutationThreshold: c.cfg.MutationTesting.Thresholds.Default,
+	})
+	for _, row := range matrix.Rows {
+		// Pinpoint the BRD's own source file in the location.
+		var rowLoc *schema.Location
+		for i := range c.kg.BRDs {
+			if c.kg.BRDs[i].ID == row.BRDID {
+				rowLoc = &schema.Location{File: c.kg.BRDs[i].SourcePath}
+				break
+			}
+		}
+		switch row.Status {
+		case rtm.StatusPhantom:
+			v = append(v, schema.Violation{
+				Code: schema.CodeBRDCriterionPhantomInvariant, Severity: schema.SeverityError,
+				Message: fmt.Sprintf("BRD %q criterion %s: maps_to_invariant %q does not resolve (%s)",
+					row.BRDID, row.CriterionID, row.MapsTo, row.StatusReason),
+				Location: rowLoc,
+				NextAction: &schema.NextAction{
+					Kind:   "edit_brd",
+					Field:  "success_criteria.maps_to_invariant",
+					Detail: "either fix the ref to point at an existing invariant, or remove maps_to_invariant",
+				},
+			})
+		case rtm.StatusUnenforced, rtm.StatusUnverified, rtm.StatusPartial:
+			// Single combined rule; severity warning. We don't repeat
+			// the per-invariant UNENFORCED/UNVERIFIED here — those
+			// still fire from rules_verification. The criterion-level
+			// rule gives the operator the *business* consequence.
+			v = append(v, schema.Violation{
+				Code: schema.CodeBRDCriterionUnverified, Severity: schema.SeverityWarning,
+				Message: fmt.Sprintf("BRD %q criterion %s is %s: %s",
+					row.BRDID, row.CriterionID, row.Status, row.StatusReason),
+				Location: rowLoc,
+				NextAction: &schema.NextAction{
+					Kind:   "add_verification",
+					Ref:    row.MapsTo,
+					Detail: "back the criterion with an enforcer + test verifying " + row.MapsTo,
+				},
+			})
+		case rtm.StatusUnmapped:
+			v = append(v, schema.Violation{
+				Code: schema.CodeBRDCriterionUnmapped, Severity: schema.SeverityInfo,
+				Message: fmt.Sprintf("BRD %q criterion %s has no maps_to_invariant — verification can't be traced",
+					row.BRDID, row.CriterionID),
+				Location: rowLoc,
+				NextAction: &schema.NextAction{
+					Kind:   "edit_brd",
+					Field:  "success_criteria.maps_to_invariant",
+					Detail: "add maps_to_invariant: <feature.id>:<INV-N> to thread this criterion to verification",
 				},
 			})
 		}

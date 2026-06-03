@@ -135,6 +135,101 @@ func TestFeatureBRDMissing(t *testing.T) {
 	}
 }
 
+func TestBRDCriterionUnmappedInfo(t *testing.T) {
+	// A criterion with no maps_to_invariant — info-level only.
+	kg := schema.KnowledgeGraph{
+		BRDs: []schema.BRD{{
+			ID: "brd.x", Version: 1, Status: schema.BRDApproved,
+			Title: "x", BusinessProblem: "p",
+			ImplementsVia: []string{"checkout"},
+			SuccessCriteria: []schema.BRDCriterion{
+				{ID: "SC-1", Statement: "x"}, // no maps_to_invariant
+			},
+			Approval: &schema.BRDApproval{ApprovedBy: "x", ApprovedVersion: 1},
+		}},
+		Features: []schema.Manifest{brdManifest("checkout")},
+	}
+	got := Validate(kg, config.Default(), Options{})
+	if !codes(got)[schema.CodeBRDCriterionUnmapped] {
+		t.Error("expected BRD_CRITERION_UNMAPPED")
+	}
+	for _, v := range got {
+		if v.Code == schema.CodeBRDCriterionUnmapped && v.Severity != schema.SeverityInfo {
+			t.Errorf("BRD_CRITERION_UNMAPPED should be info, got %q", v.Severity)
+		}
+	}
+}
+
+func TestBRDCriterionPhantomInvariant(t *testing.T) {
+	kg := schema.KnowledgeGraph{
+		BRDs: []schema.BRD{{
+			ID: "brd.x", Version: 1, Status: schema.BRDApproved,
+			Title: "x", BusinessProblem: "p",
+			ImplementsVia: []string{"checkout"},
+			SuccessCriteria: []schema.BRDCriterion{
+				{ID: "SC-1", Statement: "x", MapsToInvariant: "checkout:INV-NOPE"},
+			},
+			Approval: &schema.BRDApproval{ApprovedBy: "x", ApprovedVersion: 1},
+		}},
+		Features: []schema.Manifest{brdManifest("checkout")},
+	}
+	if !codes(Validate(kg, config.Default(), Options{}))[schema.CodeBRDCriterionPhantomInvariant] {
+		t.Error("expected BRD_CRITERION_PHANTOM_INVARIANT for bad maps_to_invariant")
+	}
+}
+
+func TestBRDCriterionUnverifiedWarning(t *testing.T) {
+	// Invariant exists, but no enforcer + no verifier.
+	feat := brdManifest("checkout")
+	feat.Invariants = []schema.Invariant{{ID: "INV-1", Statement: "x"}}
+	kg := schema.KnowledgeGraph{
+		BRDs: []schema.BRD{{
+			ID: "brd.x", Version: 1, Status: schema.BRDApproved,
+			Title: "x", BusinessProblem: "p",
+			ImplementsVia: []string{"checkout"},
+			SuccessCriteria: []schema.BRDCriterion{
+				{ID: "SC-1", Statement: "x", MapsToInvariant: "checkout:INV-1"},
+			},
+			Approval: &schema.BRDApproval{ApprovedBy: "x", ApprovedVersion: 1},
+		}},
+		Features: []schema.Manifest{feat},
+	}
+	got := Validate(kg, config.Default(), Options{})
+	if !codes(got)[schema.CodeBRDCriterionUnverified] {
+		t.Error("expected BRD_CRITERION_UNVERIFIED")
+	}
+}
+
+func TestBRDCriterionVerifiedNoViolation(t *testing.T) {
+	// Full happy path: enforcer + verifier present, criterion verified.
+	feat := brdManifest("checkout")
+	feat.Invariants = []schema.Invariant{{ID: "INV-1", Statement: "x"}}
+	kg := schema.KnowledgeGraph{
+		BRDs: []schema.BRD{{
+			ID: "brd.x", Version: 1, Status: schema.BRDApproved,
+			Title: "x", BusinessProblem: "p",
+			ImplementsVia: []string{"checkout"},
+			SuccessCriteria: []schema.BRDCriterion{
+				{ID: "SC-1", Statement: "x", MapsToInvariant: "checkout:INV-1"},
+			},
+			Approval: &schema.BRDApproval{ApprovedBy: "x", ApprovedVersion: 1},
+		}},
+		Features: []schema.Manifest{feat},
+		Symbols:  []schema.GraphSymbol{{FQN: "S", Feature: "checkout", EnforcesInvariants: []string{"INV-1"}}},
+		Tests:    []schema.GraphSymbol{{FQN: "T", IsTest: true, Verifies: []string{"checkout:INV-1"}}},
+	}
+	got := codes(Validate(kg, config.Default(), Options{}))
+	for _, c := range []string{
+		schema.CodeBRDCriterionPhantomInvariant,
+		schema.CodeBRDCriterionUnverified,
+		schema.CodeBRDCriterionUnmapped,
+	} {
+		if got[c] {
+			t.Errorf("unexpected %s on a verified criterion", c)
+		}
+	}
+}
+
 func TestBRDUnreferencedInfo(t *testing.T) {
 	kg := schema.KnowledgeGraph{
 		BRDs: []schema.BRD{{

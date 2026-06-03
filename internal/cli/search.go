@@ -56,6 +56,11 @@ func newSearchCommand(io *IO) *cobra.Command {
 }
 
 // corpusEntries flattens the searchable text of the knowledge graph.
+//
+// v0.6 extends the corpus to BRDs and EntryPoints so the question
+// "find features about refunds" no longer fails on no keyword
+// overlap — business prose lives in BRDs, intent prose lives in EP
+// purposes, and both are now in the same semantic-similarity space.
 func corpusEntries(kg schema.KnowledgeGraph) []searchHit {
 	var entries []searchHit
 	for _, m := range kg.Features {
@@ -67,7 +72,82 @@ func corpusEntries(kg schema.KnowledgeGraph) []searchHit {
 			entries = append(entries, searchHit{Kind: "invariant", Ref: m.ID + ":" + inv.ID, Text: inv.Statement})
 		}
 	}
+	// BRDs: the business-intent prose layer. Title + business_problem
+	// fold into one entry so a single hit answers "what's this BRD
+	// about?"; goals/scenarios get their own entries so an agent can
+	// land on the exact criterion that matters.
+	for _, b := range kg.BRDs {
+		bodyParts := []string{b.Title, b.BusinessProblem}
+		entries = append(entries, searchHit{
+			Kind: "brd", Ref: b.ID, Text: strings.TrimSpace(strings.Join(bodyParts, " — ")),
+		})
+		for i, goal := range b.BusinessGoals {
+			entries = append(entries, searchHit{
+				Kind: "brd_goal",
+				Ref:  b.ID + ":G-" + itoa(i+1),
+				Text: goal,
+			})
+		}
+		for _, sc := range b.SuccessCriteria {
+			entries = append(entries, searchHit{
+				Kind: "brd_criterion",
+				Ref:  b.ID + ":" + sc.ID,
+				Text: sc.Statement,
+			})
+		}
+		for _, us := range b.UserScenarios {
+			ref := b.ID + ":" + us.ID
+			text := us.Narrative
+			if us.Actor != "" {
+				text = us.Actor + " — " + text
+			}
+			entries = append(entries, searchHit{
+				Kind: "user_scenario", Ref: ref, Text: text,
+			})
+		}
+	}
+	// Entry points: purpose carries the LLM-labelled intent (v0.3.1).
+	// EPs without a purpose still get an entry keyed on the trigger so
+	// lexical search can find them by route/path.
+	for _, ep := range kg.EntryPoints {
+		text := ep.Purpose
+		if text == "" {
+			text = epTriggerText(ep)
+		}
+		entries = append(entries, searchHit{
+			Kind: "entry_point", Ref: ep.ID, Text: text,
+		})
+	}
 	return entries
+}
+
+// epTriggerText returns the trigger spec as searchable prose — used
+// when an EP carries no LLM-labelled purpose yet.
+func epTriggerText(ep schema.EntryPoint) string {
+	switch ep.Kind {
+	case schema.EntryPointKindHTTP:
+		return ep.Trigger.Method + " " + ep.Trigger.Path
+	case schema.EntryPointKindCLI:
+		return "cli command " + ep.Trigger.Command
+	case schema.EntryPointKindCron:
+		return "scheduled " + ep.Trigger.Schedule
+	case schema.EntryPointKindQueue:
+		return "queue " + ep.Trigger.Queue
+	case schema.EntryPointKindEventConsumer:
+		return "event " + ep.Trigger.Event
+	}
+	return ep.ID
+}
+
+// itoa keeps the index stringification local — avoids pulling strconv
+// just for the goal-numbering footnote.
+func itoa(i int) string {
+	if i < 10 {
+		return string(rune('0' + i))
+	}
+	// Two digits is plenty for goal numbering; BRDs with 100+ goals
+	// will get truncated ids, which is the lesser evil over an extra import.
+	return string(rune('0'+i/10)) + string(rune('0'+i%10))
 }
 
 func lexicalSearch(kg schema.KnowledgeGraph, query string) []searchHit {

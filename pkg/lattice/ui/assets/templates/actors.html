@@ -1,0 +1,67 @@
+{{define "actors.html"}}{{template "layout" .}}{{end}}
+
+{{define "body"}}
+<section class="bg-white rounded-lg border border-slate-200 overflow-hidden mb-6">
+  <div class="px-6 py-4 border-b border-slate-200 flex items-baseline justify-between">
+    <h1 class="text-lg font-semibold text-slate-900">Actors ({{len .Rows}})</h1>
+    <p class="text-xs text-slate-500">Defined in <code class="font-mono">lattice/context.yaml</code>. Click an actor to see every entry point they can trigger.</p>
+  </div>
+  {{if .Rows}}
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+      <tr>
+        <th class="px-6 py-2 text-left font-medium">Actor</th>
+        <th class="px-6 py-2 text-left font-medium">Description</th>
+        <th class="px-6 py-2 text-right font-medium">Features</th>
+        <th class="px-6 py-2 text-right font-medium">Entry points</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {{range .Rows}}
+      <tr class="hover:bg-slate-50 cursor-pointer" onclick="window.location='/actors/{{.Actor.ID}}'">
+        <td class="px-6 py-2 font-mono text-xs">{{.Actor.ID}} <span class="text-slate-500">— {{.Actor.Name}}</span></td>
+        <td class="px-6 py-2 text-slate-700 max-w-lg truncate">{{.Actor.Description}}</td>
+        <td class="px-6 py-2 text-right tabular-nums">{{.FeatureCount}}</td>
+        <td class="px-6 py-2 text-right tabular-nums">{{.EPCount}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <div class="px-6 py-8 text-sm text-slate-500">
+    <p>No actors declared. Add some to <code class="font-mono">lattice/context.yaml</code>:</p>
+    <pre class="mt-3 text-xs">actors:
+  - id: merchant
+    name: Merchant
+    description: Owns a storefront, uses the admin portal.
+    uses: [checkout, accounts.api]</pre>
+  </div>
+  {{end}}
+</section>
+
+{{if .ExternalSystems}}
+<section class="bg-white rounded-lg border border-slate-200 overflow-hidden">
+  <div class="px-6 py-4 border-b border-slate-200">
+    <h2 class="text-base font-semibold text-slate-900">External systems ({{len .ExternalSystems}})</h2>
+  </div>
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+      <tr>
+        <th class="px-6 py-2 text-left font-medium">ID</th>
+        <th class="px-6 py-2 text-left font-medium">Name</th>
+        <th class="px-6 py-2 text-left font-medium">Description</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {{range .ExternalSystems}}
+      <tr>
+        <td class="px-6 py-2 font-mono text-xs">{{.ID}}</td>
+        <td class="px-6 py-2">{{.Name}}</td>
+        <td class="px-6 py-2 text-slate-500 max-w-lg truncate">{{.Description}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+{{end}}
+{{end}}

@@ -2,6 +2,78 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.6.0]
+
+Verification & Visibility. Closes the three gaps in Lattice's
+stated goals: full visibility (business + tech), retrieve interactions
+without re-reading code, and verify "what's implemented = what was
+required" at the BRD-goal level.
+
+### Added — α. Requirements Traceability Matrix (RTM)
+
+- **`pkg/lattice/rtm`** — walks each BRD success_criterion via
+  `maps_to_invariant` to the backing invariant, its enforcer symbols,
+  verifier tests, and (when present) mutation score. Per-row Status:
+  `verified` / `partial` / `unenforced` / `unverified` / `unmapped` /
+  `phantom`. Per-BRD `BRDSummary` with verification ratio + worst-status
+  roll-up. `ComputeCoverage` gives the single "% SCs verified" number.
+- **Validation rules** (shared with the dashboard via `rtm.Build`):
+  - `BRD_CRITERION_PHANTOM_INVARIANT` (error) — maps_to_invariant misses
+  - `BRD_CRITERION_UNVERIFIED` (warning) — covers unenforced/unverified/partial
+  - `BRD_CRITERION_UNMAPPED` (info) — SC declares no invariant ref
+- **`/rtm` UI page** — per-BRD summary table + full row matrix with
+  enforcer/verifier counts and status badges.
+- **`/coverage` 5th card** — "BRD goals" ratio.
+- **`/brds/{id}` inline RTM** — per-BRD verification table on the
+  detail page so the business reader sees status next to the goals.
+- **`lattice rtm`** CLI — full matrix, per-BRD summaries, `--status`,
+  `--brd`, `--summary` filters, `--json` for agents.
+- **`lattice coverage`** gains a 5th line.
+
+### Added — β. Journey + Actor views
+
+- **`/journeys/{brd-id}`** — aggregates every entry point whose flow
+  visits any feature in `brd.implements_via`. Single mermaid graph:
+  BRD anchor → in-scope features → triggers. Answers "show me the
+  X flow" with one click instead of N entry-point pages.
+- **`/actors`** + **`/actors/{id}`** — reads `context.yaml` actors,
+  resolves `actor.uses` against the feature graph (exact-id match
+  + substring fallback), surfaces every EP they can trigger and the
+  BRDs those features implement.
+- **`lattice journey <brd-id>`** — JSON output (mermaid embedded).
+- **`lattice actor list`** + **`lattice actor show <id>`** — same shape
+  as the UI/API.
+- **`pkg/lattice/views.BuildJourney`** is the canonical builder; the
+  CLI, UI, and MCP all call it so journeys can never disagree.
+- BRD detail page links to the journey from the features panel.
+- "Actors" nav entry added to the layout.
+
+### Added — γ. Agent surface (MCP) + semantic search
+
+- **7 new MCP tools** in `lattice-mcp/src/tools/index.ts`
+  (catalog: 23 → 30):
+  - `lattice_list_brds`, `lattice_get_brd`, `lattice_get_journey`
+  - `lattice_list_actors`, `lattice_get_actor_touchpoints`
+  - `lattice_verify_brd`, `lattice_list_unverified_criteria`
+- **Semantic search corpus** extended to BRDs (title +
+  business_problem), BRD goals, success criteria, user scenarios,
+  and entry-point purposes (with trigger-text fallback). Queries
+  like "developers portal" or "consent scope" now surface the
+  right artifact even when keyword overlap is zero.
+
+### Architecture notes
+
+- **No schema changes.** The RTM walks existing `maps_to_invariant`,
+  enforcer/verifier graph edges, and `MutationScores`. v0.5 BRDs
+  validate unchanged.
+- **`pkg/lattice/rtm` imports only `schema`** so `validate` can use
+  it without forming a cycle. CLI / UI / MCP / validation all branch
+  on the same `rtm.Status`.
+- The v0.6 surfaces deliberately don't ingest test pass/fail — that's
+  v0.7+ territory. The RTM shows *declared* verification (enforcer +
+  verifier exist + mutation OK). Whether the verifier passes on
+  HEAD is a separate concern.
+
 ## [0.5.0]
 
 BRD layer, onboarding wizard, Crystal brand, auto-detect.

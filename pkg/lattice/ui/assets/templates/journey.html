@@ -1,0 +1,57 @@
+{{define "journey.html"}}{{template "layout" .}}{{end}}
+
+{{define "body"}}
+<div class="grid gap-6 lg:grid-cols-4">
+  <section class="lg:col-span-3 bg-white rounded-lg border border-slate-200 p-6">
+    <div class="flex items-baseline justify-between">
+      <h1 class="text-lg font-semibold text-slate-900 font-mono">{{.BRDID}}</h1>
+      <a href="/brds/{{.BRDID}}" class="text-xs text-slate-500 hover:text-slate-900">← back to BRD</a>
+    </div>
+    {{if .BRDTitle}}<p class="mt-1 text-sm text-slate-500">{{.BRDTitle}}</p>{{end}}
+
+    <h2 class="mt-6 text-sm font-medium text-slate-500 uppercase tracking-wide">Journey graph</h2>
+    {{if .EntryPoints}}
+    <div class="mermaid mt-3 text-sm">
+{{.Mermaid}}
+    </div>
+    {{else}}
+    <p class="mt-3 text-sm text-slate-500">No entry points reach this BRD's features yet — run <code class="font-mono">lattice import scan</code> + <code class="font-mono">lattice extract</code> to populate the flow graph.</p>
+    {{end}}
+  </section>
+
+  <aside class="space-y-6">
+    <section class="bg-white rounded-lg border border-slate-200 p-6">
+      <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide">In-scope features ({{len .Features}})</h2>
+      <ul class="mt-3 space-y-1 text-sm">
+        {{range .Features}}
+        <li><a href="/features/{{.}}" class="font-mono text-xs hover:underline">{{.}}</a></li>
+        {{end}}
+      </ul>
+    </section>
+
+    <section class="bg-white rounded-lg border border-slate-200 p-6">
+      <h2 class="text-sm font-medium text-slate-500 uppercase tracking-wide">Entry points on this journey ({{len .EntryPoints}})</h2>
+      <ul class="mt-3 space-y-2 text-sm">
+        {{range .EntryPoints}}
+        <li>
+          <a href="/entry-points/{{.ID}}" class="block hover:bg-slate-50 -mx-2 px-2 py-1 rounded">
+            <div class="font-mono text-xs text-slate-500">{{.Kind}}</div>
+            <div class="text-slate-900">
+              {{if eq .Kind "http_route"}}{{.Trigger.Method}} {{.Trigger.Path}}
+              {{else if eq .Kind "cli"}}{{.Trigger.Command}}
+              {{else if eq .Kind "cron"}}cron {{.Trigger.Schedule}}
+              {{else if eq .Kind "queue"}}queue: {{.Trigger.Queue}}
+              {{else}}{{.ID}}{{end}}
+            </div>
+          </a>
+        </li>
+        {{end}}
+      </ul>
+    </section>
+  </aside>
+</div>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", flowchart: { curve: "linear" } });
+</script>
+{{end}}

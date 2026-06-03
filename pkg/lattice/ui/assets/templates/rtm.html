@@ -1,0 +1,93 @@
+{{define "rtm.html"}}{{template "layout" .}}{{end}}
+
+{{define "body"}}
+<div class="grid gap-6 lg:grid-cols-4 mb-6">
+  <section class="lg:col-span-1 bg-white rounded-lg border border-slate-200 p-6">
+    <div class="text-xs uppercase text-slate-500 tracking-wide">BRD goal coverage</div>
+    <div class="mt-2 text-4xl font-semibold tabular-nums {{if lt .Coverage.Ratio 0.5}}text-rose-700{{else if lt .Coverage.Ratio 0.9}}text-amber-700{{else}}text-emerald-700{{end}}">{{percent .Coverage.Ratio}}%</div>
+    <div class="mt-1 text-xs text-slate-500">{{.Coverage.VerifiedCriteria}} / {{.Coverage.TotalCriteria}} success criteria threaded to a verified invariant</div>
+  </section>
+  <section class="lg:col-span-3 bg-white rounded-lg border border-slate-200 p-6">
+    <h2 class="text-xs uppercase text-slate-500 tracking-wide">Per-BRD verification</h2>
+    {{if .Matrix.Summaries}}
+    <table class="mt-3 w-full text-xs">
+      <thead class="text-slate-500">
+        <tr>
+          <th class="text-left pb-2 font-medium">BRD</th>
+          <th class="text-right pb-2 font-medium">Verified</th>
+          <th class="text-right pb-2 font-medium">Partial</th>
+          <th class="text-right pb-2 font-medium">Unmapped</th>
+          <th class="text-right pb-2 font-medium">Unenforced</th>
+          <th class="text-right pb-2 font-medium">Unverified</th>
+          <th class="text-right pb-2 font-medium">Phantom</th>
+          <th class="text-right pb-2 font-medium w-24">Rate</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {{range .Matrix.Summaries}}
+        <tr>
+          <td class="py-2 font-mono"><a href="/brds/{{.BRDID}}" class="hover:underline">{{.BRDID}}</a></td>
+          <td class="py-2 text-right tabular-nums">{{.Verified}}</td>
+          <td class="py-2 text-right tabular-nums">{{.Partial}}</td>
+          <td class="py-2 text-right tabular-nums">{{.Unmapped}}</td>
+          <td class="py-2 text-right tabular-nums">{{.Unenforced}}</td>
+          <td class="py-2 text-right tabular-nums">{{.Unverified}}</td>
+          <td class="py-2 text-right tabular-nums">{{.Phantom}}</td>
+          <td class="py-2 text-right tabular-nums {{if lt .VerificationRate 0.5}}text-rose-700{{else if lt .VerificationRate 0.9}}text-amber-700{{else}}text-emerald-700{{end}}">{{percent .VerificationRate}}%</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="mt-3 text-sm text-slate-500">No BRDs have success criteria yet. Add some via <code class="font-mono">lattice brd new</code> or <code class="font-mono">lattice brd from-code</code>.</p>
+    {{end}}
+  </section>
+</div>
+
+<section class="bg-white rounded-lg border border-slate-200 overflow-hidden">
+  <div class="px-6 py-4 border-b border-slate-200 flex items-baseline justify-between">
+    <h2 class="text-lg font-semibold text-slate-900">Traceability matrix</h2>
+    <p class="text-xs text-slate-500">One row per success criterion — the walk from business intent to code-level verification.</p>
+  </div>
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+      <tr>
+        <th class="px-4 py-2 text-left font-medium">BRD</th>
+        <th class="px-4 py-2 text-left font-medium">SC</th>
+        <th class="px-4 py-2 text-left font-medium">Statement</th>
+        <th class="px-4 py-2 text-left font-medium">Invariant</th>
+        <th class="px-4 py-2 text-right font-medium">Enf</th>
+        <th class="px-4 py-2 text-right font-medium">Ver</th>
+        <th class="px-4 py-2 text-left font-medium">Status</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {{range .Matrix.Rows}}
+      <tr>
+        <td class="px-4 py-2 font-mono text-xs"><a href="/brds/{{.BRDID}}" class="hover:underline">{{.BRDID}}</a></td>
+        <td class="px-4 py-2 font-mono text-xs">{{.CriterionID}}</td>
+        <td class="px-4 py-2 text-slate-700 max-w-sm">{{.Statement}}</td>
+        <td class="px-4 py-2 font-mono text-xs">
+          {{if .FeatureID}}<a href="/features/{{.FeatureID}}" class="hover:underline">{{.MapsTo}}</a>
+          {{else if .MapsTo}}<span class="text-rose-700">{{.MapsTo}}</span>
+          {{else}}<span class="text-slate-400">—</span>{{end}}
+        </td>
+        <td class="px-4 py-2 text-right tabular-nums">{{len .Enforcers}}</td>
+        <td class="px-4 py-2 text-right tabular-nums">{{len .Verifiers}}</td>
+        <td class="px-4 py-2">
+          {{if eq (printf "%v" .Status) "verified"}}<span class="badge is-ok">verified</span>
+          {{else if eq (printf "%v" .Status) "partial"}}<span class="badge is-warn">partial</span>
+          {{else if eq (printf "%v" .Status) "unenforced"}}<span class="badge is-error">unenforced</span>
+          {{else if eq (printf "%v" .Status) "unverified"}}<span class="badge is-warn">unverified</span>
+          {{else if eq (printf "%v" .Status) "unmapped"}}<span class="badge is-info">unmapped</span>
+          {{else if eq (printf "%v" .Status) "phantom"}}<span class="badge is-error">phantom</span>{{end}}
+          {{if .StatusReason}}<div class="text-xs text-slate-500 mt-0.5">{{.StatusReason}}</div>{{end}}
+        </td>
+      </tr>
+      {{else}}
+      <tr><td colspan="7" class="px-6 py-6 text-center text-sm text-slate-500">No criteria yet — add success_criteria to a BRD.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+{{end}}
