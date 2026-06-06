@@ -146,7 +146,7 @@ func Build(in Input, opts Options) schema.KnowledgeGraph {
 
 // resolveModule lifts a module's file-scope annotations to graph form.
 func resolveModule(mod *ir.Module) schema.GraphModule {
-	gm := schema.GraphModule{File: mod.File, Language: mod.Language}
+	gm := schema.GraphModule{File: mod.File, Language: mod.Language, LineCount: mod.LineCount}
 	enf := newStrSet()
 	dep := newStrSet()
 	for _, a := range mod.ModuleAnnotations {

@@ -75,6 +75,11 @@ type Surface struct {
 type Module struct {
 	File              string       `json:"file"`
 	Language          string       `json:"language"`
+	// LineCount is the source-file length. Populated by the extractor
+	// (counted from the raw bytes), not by each adapter — gives the
+	// v0.7 AMA FILE_LINE_CAP rule a value without touching every
+	// adapter implementation.
+	LineCount         int          `json:"line_count,omitempty"`
 	ModuleAnnotations []Annotation `json:"module_annotations,omitempty"`
 	Symbols           []Symbol     `json:"symbols,omitempty"`
 	Surfaces          []Surface    `json:"surfaces,omitempty"`

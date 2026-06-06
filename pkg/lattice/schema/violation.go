@@ -95,6 +95,20 @@ const (
 	CodeBRDCriterionPhantomInvariant = "BRD_CRITERION_PHANTOM_INVARIANT" // SC.maps_to_invariant misses
 	CodeBRDCriterionUnverified       = "BRD_CRITERION_UNVERIFIED"        // SC mapped but unenforced/unverified/partial
 	CodeBRDCriterionUnmapped         = "BRD_CRITERION_UNMAPPED"          // SC has no maps_to_invariant
+
+	// AMA enforcement (v0.7)
+	//
+	// All five default to warning. CROSS_FEATURE_IMPORT and
+	// MIXED_COMMAND_QUERY escalate to error / surface respectively
+	// when `architecture.ama_mode: true` is set. The other three
+	// stay warning in both modes — they're code-hygiene signals,
+	// not contract violations.
+	CodeCrossFeatureImport  = "CROSS_FEATURE_IMPORT"   // feature A's symbol imports feature B internals
+	CodeFeatureNotColocated = "FEATURE_NOT_COLOCATED"  // feature's symbols span multiple top-level dirs
+	CodeFileLineCap         = "FILE_LINE_CAP"          // source file longer than architecture.file_line_cap
+	CodeMethodLineCap       = "METHOD_LINE_CAP"        // method/function longer than architecture.method_line_cap
+	CodeMixedCommandQuery   = "MIXED_COMMAND_QUERY"    // capability is `mixed` (or symbol mixes intents)
+	CodeFeatureSpecTooLarge = "FEATURE_SPEC_TOO_LARGE" // .ai-spec.md render > 500 words → decomposition signal
 )
 
 // Info is the lowest violation severity — surfaced in the dashboard but

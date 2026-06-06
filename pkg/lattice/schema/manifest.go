@@ -77,12 +77,35 @@ type Value struct {
 	Business string `yaml:"business,omitempty"`
 }
 
+// CapabilityKind narrows whether a capability writes state, reads it,
+// or does both. Introduced in v0.7 for AMA support — CQRS separation
+// is one of the architecture's load-bearing rules. Empty / "mixed" is
+// the legacy default so existing manifests don't trip.
+type CapabilityKind string
+
+const (
+	CapabilityCommand CapabilityKind = "command"
+	CapabilityQuery   CapabilityKind = "query"
+	CapabilityMixed   CapabilityKind = "mixed"
+)
+
 // Capability is a named behavior of a feature with prose rules.
 type Capability struct {
-	ID              string   `yaml:"id"`
-	Summary         string   `yaml:"summary"`
-	Rules           []string `yaml:"rules"`
-	CounterExamples []string `yaml:"counter_examples,omitempty"`
+	ID              string         `yaml:"id"`
+	Kind            CapabilityKind `yaml:"kind,omitempty"` // v0.7 — command | query | mixed
+	Summary         string         `yaml:"summary"`
+	Rules           []string       `yaml:"rules"`
+	CounterExamples []string       `yaml:"counter_examples,omitempty"`
+}
+
+// EffectiveKind returns the capability's classification with the
+// backward-compat default. A blank Kind reads as `mixed`, which
+// the AMA MIXED_COMMAND_QUERY rule flags when ama_mode is on.
+func (c Capability) EffectiveKind() CapabilityKind {
+	if c.Kind == "" {
+		return CapabilityMixed
+	}
+	return c.Kind
 }
 
 // VerifiableBy enumerates how an invariant may be verified.

@@ -2,6 +2,84 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.7.0]
+
+AMA support. Opt-in enforcement of the AI-Agentic Modular
+Architecture: vertical slices, no cross-feature imports, file
+and method line caps, CQRS separation, and a ≤500-word
+`.ai-spec.md` per feature. Brownfield projects are unaffected
+unless they explicitly turn `ama_mode` on.
+
+### Added — α. Five built-in structural checks
+
+- **`CROSS_FEATURE_IMPORT`** (warning / error in `ama_mode`) —
+  feature A's symbols depend on feature B. Dedupes per
+  (src, dst, file) so one cross-import row per edge, not per
+  symbol.
+- **`FEATURE_NOT_COLOCATED`** (warning) — feature's
+  implementations span more than one top-level directory.
+- **`FILE_LINE_CAP`** (warning) — source file exceeds the
+  configured cap (default 150).
+- **`METHOD_LINE_CAP`** (warning) — function/method footprint
+  (approximated by start-line distance to next symbol in the
+  same file) exceeds the configured cap (default 25).
+- **`MIXED_COMMAND_QUERY`** (warning, `ama_mode` only) —
+  capability is `mixed`. Silent outside AMA mode where `mixed`
+  is the legacy default.
+
+Schema additions (backward-compatible):
+- `Capability.Kind: command | query | mixed` — defaults to `mixed`.
+- `ir.Module.LineCount` + `GraphModule.LineCount` — counted from
+  raw source by the extractor; adapters need no change.
+- `config.Architecture` — `{ ama_mode, file_line_cap,
+  method_line_cap }` with AMA-spec defaults.
+
+### Added — β. `lattice feature spec` (.ai-spec.md emitter)
+
+- **`pkg/lattice/featurespec`** — `Render(m)` produces the AMA
+  spec §3 markdown: Title, Purpose, Inputs, Outputs, System
+  Side Effects, Invariants, Errors, Capabilities. Empty
+  sections are omitted; long fields collapse to single-line
+  bullets; output is byte-stable + alpha-sorted across re-runs.
+- **`lattice feature spec <id>`** — prints to stdout by default;
+  `--out <path>` writes to a file (typically the feature folder
+  alongside the code).
+- **`FEATURE_SPEC_TOO_LARGE`** (info) — fires when the
+  rendered spec exceeds the AMA 500-word ceiling. Decomposition
+  signal, not a contract violation.
+- Capability kind annotates the spec as `[command]` / `[query]`
+  when set; `mixed` (legacy default) stays unannotated.
+
+### Added — γ. `--architecture ama` scaffold
+
+- **`lattice init --architecture ama`** scaffolds:
+  - `src/Core/Contracts/README.md`, `src/Core/SharedUtils/README.md`,
+    `src/Features/README.md` — code-side READMEs that describe
+    the AMA rules in place, so an AI agent reading the tree
+    learns the architecture without external docs.
+  - `lattice/architecture/ama.md` — full cheat-sheet covering
+    the four pillars and the five enforced rules.
+  - `lattice/config.yaml` — appends an `architecture` block
+    with `ama_mode: true` and the AMA-spec defaults.
+- The interactive wizard offers the architecture choice when the
+  operator picks the greenfield scope; brownfield is never
+  auto-converted (Strangler Fig only — documented in the proposal).
+- Never clobbers: existing files (including the `architecture:`
+  block itself) are left untouched.
+
+### Architecture notes
+
+- AMA enforcement is fully opt-in. With `ama_mode: false` (the
+  default), `CROSS_FEATURE_IMPORT` downgrades to warning,
+  `MIXED_COMMAND_QUERY` stays silent, and the three line-cap
+  rules fire as warnings only when files genuinely exceed the
+  caps — a hygiene signal, not a contract violation.
+- `pkg/lattice/featurespec` imports only `schema` so `validate`
+  can reuse it for `FEATURE_SPEC_TOO_LARGE` without forming a
+  cycle.
+- No breaking changes. Existing v0.6 manifests, BRDs, and the
+  full RTM walk all validate unchanged on the v0.7 binary.
+
 ## [0.6.0]
 
 Verification & Visibility. Closes the three gaps in Lattice's

@@ -64,6 +64,7 @@ type SuppressedInvariant struct {
 type GraphModule struct {
 	File               string   `json:"file"`
 	Language           string   `json:"language"`
+	LineCount          int      `json:"line_count,omitempty"` // v0.7 — for FILE_LINE_CAP
 	Feature            string   `json:"feature,omitempty"`
 	EnforcesInvariants []string `json:"enforces_invariants,omitempty"`
 	DependsOnFeatures  []string `json:"depends_on_features,omitempty"`

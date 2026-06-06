@@ -14,7 +14,7 @@ func newFeatureCommand(io *IO) *cobra.Command {
 		Use:   "feature",
 		Short: "Inspect features",
 	}
-	cmd.AddCommand(newFeatureListCommand(io), newFeatureShowCommand(io))
+	cmd.AddCommand(newFeatureListCommand(io), newFeatureShowCommand(io), newFeatureSpecCommand(io))
 	return cmd
 }
 

@@ -28,7 +28,7 @@ type initResult struct {
 
 func newInitCommand(io *IO) *cobra.Command {
 	var standalone, noWizard bool
-	var scopeFlag string
+	var scopeFlag, archFlag string
 	cmd := &cobra.Command{
 		Use:   "init [path]",
 		Short: "Scaffold a Lattice workspace (with interactive wizard)",
@@ -58,6 +58,22 @@ pre-answer the scope question in non-interactive runs (CI).`,
 				return io.fail("INIT_FAILED", err.Error(), nil)
 			}
 
+			// v0.7 — AMA architecture template. Opt-in: only fires
+			// when the operator passes --architecture ama, and we
+			// refuse on a workspace that was already initialized
+			// (no clobbering existing config / src trees).
+			if archFlag != "" && !res.AlreadyInit {
+				if archFlag != "ama" {
+					return io.fail("UNKNOWN_ARCHITECTURE",
+						"architecture "+archFlag+" not supported (currently only: ama)", nil)
+				}
+				added, ferr := scaffoldAMA(path, res.LatticeDir)
+				if ferr != nil {
+					return io.fail("AMA_SCAFFOLD_FAILED", ferr.Error(), nil)
+				}
+				res.Created = append(res.Created, added...)
+			}
+
 			if !noWizard && !res.AlreadyInit {
 				det := detect.Detect(path)
 				res.Detected = &det
@@ -65,6 +81,16 @@ pre-answer the scope question in non-interactive runs (CI).`,
 				scope := onboarding.Scope(scopeFlag)
 				if scope == "" && isTerminal() {
 					scope = promptScope(io, det)
+				}
+				// v0.7 — for greenfield, prompt for architecture
+				// when not pre-answered. Brownfield never auto-converts
+				// (the design doc is explicit), so we only ask greenfield.
+				if archFlag == "" && scope == onboarding.ScopeGreenfield && isTerminal() {
+					if promptArchitecture(io) {
+						if added, ferr := scaffoldAMA(path, res.LatticeDir); ferr == nil {
+							res.Created = append(res.Created, added...)
+						}
+					}
 				}
 				state := onboarding.FromDetection(det, scope)
 				// Default tone matches the v0.2.1 importer's default
@@ -112,7 +138,79 @@ pre-answer the scope question in non-interactive runs (CI).`,
 	cmd.Flags().BoolVar(&noWizard, "no-wizard", false, "skip the v0.5 onboarding wizard (just scaffold files)")
 	cmd.Flags().StringVar(&scopeFlag, "scope", "",
 		"pre-answer the wizard's scope question (greenfield|brownfield_full|brownfield_incremental)")
+	cmd.Flags().StringVar(&archFlag, "architecture", "",
+		"opt into a project architecture (currently: ama — AI-Agentic Modular Architecture)")
 	return cmd
+}
+
+// scaffoldAMA writes the v0.7 AMA folder layout and architecture
+// metadata: src/Core/Contracts/ + src/Features/ skeletons, an
+// `architecture/ama.md` cheat-sheet, and an `architecture` block
+// appended to lattice/config.yaml flipping ama_mode on.
+//
+// Safe by construction: never overwrites an existing file. If the
+// operator has already started writing code into src/, the
+// skeleton READMEs are skipped and only the lattice/-side bits
+// are added.
+func scaffoldAMA(root, latticeDir string) ([]string, error) {
+	var created []string
+
+	// Code-side skeletons. These are README placeholders that
+	// describe the AMA invariants; they're harmless to commit and
+	// give an AI agent the AMA rules without re-reading docs.
+	codeFiles := map[string]string{
+		filepath.Join(root, "src", "Core", "Contracts", "README.md"):  amaCoreContractsREADME,
+		filepath.Join(root, "src", "Core", "SharedUtils", "README.md"): amaCoreSharedUtilsREADME,
+		filepath.Join(root, "src", "Features", "README.md"):           amaFeaturesREADME,
+	}
+	for full, content := range codeFiles {
+		if _, err := os.Stat(full); err == nil {
+			continue // never clobber
+		}
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return created, err
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			return created, err
+		}
+		rel, _ := filepath.Rel(root, full)
+		created = append(created, rel)
+	}
+
+	// Lattice-side architecture doc.
+	archDir := filepath.Join(latticeDir, "architecture")
+	if err := os.MkdirAll(archDir, 0o755); err != nil {
+		return created, err
+	}
+	archDoc := filepath.Join(archDir, "ama.md")
+	if _, err := os.Stat(archDoc); err != nil {
+		if err := os.WriteFile(archDoc, []byte(amaArchitectureMD), 0o644); err != nil {
+			return created, err
+		}
+		rel, _ := filepath.Rel(root, archDoc)
+		created = append(created, rel)
+	}
+
+	// Append the architecture block to config.yaml so the v0.7
+	// structural checks fire as errors. We append rather than
+	// rewriting the whole file — keeps the config edit a
+	// single discoverable diff if the operator already changed
+	// other settings.
+	cfgPath := filepath.Join(latticeDir, "config.yaml")
+	cfgBytes, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return created, err
+	}
+	if !strings.Contains(string(cfgBytes), "\narchitecture:") {
+		merged := strings.TrimRight(string(cfgBytes), "\n") + "\n\n" + amaConfigBlock
+		if err := os.WriteFile(cfgPath, []byte(merged), 0o644); err != nil {
+			return created, err
+		}
+		// We're modifying config.yaml in place, not creating it;
+		// reflect that in the listing for honest output.
+		created = append(created, "lattice/config.yaml (architecture block appended)")
+	}
+	return created, nil
 }
 
 // promptScope asks the user which scope they want. Defaults to
@@ -140,6 +238,25 @@ func promptScope(io *IO, d detect.Detection) onboarding.Scope {
 		return onboarding.ScopeBrownfieldIncremental
 	}
 	return def
+}
+
+// promptArchitecture asks the operator whether to scaffold the AMA
+// folder layout + enforcement. Defaults to no — AMA is opinionated
+// and shouldn't surprise someone who just typed `lattice init`.
+// Returns true only on an explicit "y"/"yes"/"ama".
+func promptArchitecture(io *IO) bool {
+	io.printf("\nArchitecture (greenfield only):\n")
+	io.printf("  1. none  — scaffold no opinion about how code is laid out\n")
+	io.printf("  2. ama   — AI-Agentic Modular Architecture (vertical slices,\n")
+	io.printf("             ≤500-word .ai-spec.md per feature, line caps enforced)\n")
+	io.printf("> default [none]: ")
+	reader := bufio.NewReader(os.Stdin)
+	line, _ := reader.ReadString('\n')
+	switch strings.TrimSpace(strings.ToLower(line)) {
+	case "2", "ama":
+		return true
+	}
+	return false
 }
 
 // isTerminal reports whether stdin is attached to a tty. Used to skip
@@ -328,4 +445,112 @@ const defaultContextYAML = `# C4 Level-1 (System Context): the people and extern
 
 const defaultGitignore = `# Lattice runtime cache
 lattice/.cache/
+`
+
+// --- v0.7 AMA scaffold templates ---------------------------------
+//
+// These are committed-to-the-tree skeletons rather than runtime
+// generators so an operator (or an AI agent) can read them with
+// no Lattice knowledge. AMA's whole point is "the codebase tells
+// you the rules"; the READMEs follow that ethos.
+
+const amaCoreContractsREADME = `# Core/Contracts
+
+Public, system-wide interfaces. Anything a Feature needs to refer
+to outside its own folder lives here as a typed contract.
+
+**AMA rule:** Features can only depend on ` + "`Core/*`" + ` — never on
+each other directly. Cross-feature communication runs through the
+event mediator.
+`
+
+const amaCoreSharedUtilsREADME = `# Core/SharedUtils
+
+Low-level primitives: date formatting, math helpers, string
+utilities. No business logic. No I/O.
+
+**AMA rule:** Pure functions only. If you find yourself reaching
+for a database, an HTTP client, or framework magic in here, the
+code belongs in a Feature instead.
+`
+
+const amaFeaturesREADME = `# Features
+
+One folder per business capability — the **vertical slice**.
+
+Each feature folder is self-contained. An AI agent can load
+exactly one Features/X/ directory and have 100% of the context
+it needs to act on X.
+
+## Required files per feature
+
+	Features/CapturePayment/
+	├── .ai-spec.md          # ≤500 words — generated by ` + "`lattice feature spec`" + `
+	├── RequestDTO.<ext>     # Input contract (strict primitives or sub-DTOs)
+	├── IntentHandler.<ext>  # Single entrypoint, ≤80 lines, no inline SQL
+	├── DomainLogic.<ext>    # Pure functions only
+	└── Component.test.<ext> # Tests with mocked buses
+
+## Architectural invariants (enforced by ` + "`lattice validate`" + `)
+
+- ` + "`CROSS_FEATURE_IMPORT`" + ` — feature A's symbols cannot import
+  anything from feature B's namespace.
+- ` + "`FEATURE_NOT_COLOCATED`" + ` — all of a feature's code must live
+  under one top-level directory.
+- ` + "`FILE_LINE_CAP`" + ` (default 150) and ` + "`METHOD_LINE_CAP`" + ` (default
+  25) — fight scope creep at lint time.
+- ` + "`MIXED_COMMAND_QUERY`" + ` — every capability must classify itself
+  as ` + "`command`" + ` (state writer) or ` + "`query`" + ` (state reader).
+`
+
+const amaArchitectureMD = `# AMA — AI-Agentic Modular Architecture
+
+This project is configured for AMA: an opinionated, structurally
+enforced design philosophy that treats the **AI Agent as the
+primary consumer of the codebase**.
+
+## Why
+
+Traditional architectures assume a human (or a 1M-token LLM context)
+can hold the whole graph in mind. AMA inverts that: every feature
+is self-contained and ≤500 words of spec, so an ultra-small fast
+agent can act on one slice in isolation.
+
+## The four pillars
+
+1. **Vertical Slices over Layered Horizons.** A folder per business
+   capability holds *everything* needed to fulfil it.
+2. **Isolated Micro-Scopes.** Each feature is a microservice in shape
+   (explicit boundary, no shared mutable state) but compiles into one
+   binary — no network overhead.
+3. **Deterministic Data Contracts.** Inputs and outputs are immutable
+   DTOs or primitives. No ORM entities crossing feature boundaries.
+4. **Asynchronous, Decoupled Orchestration.** Features publish events;
+   they never call each other directly.
+
+## The five Lattice-enforced rules
+
+| Code | Severity | What it catches |
+|---|---|---|
+| ` + "`CROSS_FEATURE_IMPORT`" + ` | error (ama_mode) | Direct cross-feature reference |
+| ` + "`FEATURE_NOT_COLOCATED`" + ` | warning | Feature's code spans >1 top-level dir |
+| ` + "`FILE_LINE_CAP`" + ` | warning | File > ` + "`config.architecture.file_line_cap`" + ` |
+| ` + "`METHOD_LINE_CAP`" + ` | warning | Method > ` + "`config.architecture.method_line_cap`" + ` |
+| ` + "`MIXED_COMMAND_QUERY`" + ` | warning (ama_mode) | Capability is ` + "`mixed`" + ` — pick command or query |
+
+Run ` + "`lattice validate`" + ` to see them. Run ` + "`lattice feature spec <id>`" + `
+to render the ` + "`.ai-spec.md`" + ` for one feature.
+
+## The greenfield invariant
+
+All new business requirements live under ` + "`src/Features/`" + ` as
+autonomous vertical slices. ` + "`src/Core/`" + ` is for system-wide
+contracts only — never business logic.
+`
+
+const amaConfigBlock = `# v0.7 — AMA architecture enforcement (lattice init --architecture ama)
+architecture:
+  ama_mode: true             # escalate CROSS_FEATURE_IMPORT to error, fire MIXED_COMMAND_QUERY
+  file_line_cap: 150         # AMA spec §5
+  method_line_cap: 25        # AMA spec §5
 `

@@ -28,6 +28,48 @@ type Config struct {
 	Decomposition   Decomposition   `yaml:"decomposition"`
 	Knowledge       Knowledge       `yaml:"knowledge"`
 	Import          Import          `yaml:"import"`
+	Architecture    Architecture    `yaml:"architecture,omitempty"` // v0.7 — AMA support
+}
+
+// Architecture configures v0.7's AMA enforcement layer. The whole
+// block is opt-in: with AMAMode=false (the default) the structural
+// checks still run but fire as warnings, and CROSS_FEATURE_IMPORT
+// downgrades from error to warning. Existing brownfield projects
+// see no behavior change unless the operator turns AMAMode on.
+type Architecture struct {
+	// AMAMode flips the enforcement to error-severity for
+	// CROSS_FEATURE_IMPORT and tightens MIXED_COMMAND_QUERY (which
+	// otherwise stays silent — a "mixed" capability is the legacy
+	// default and shouldn't pollute the validation noise floor).
+	AMAMode bool `yaml:"ama_mode,omitempty"`
+
+	// FileLineCap is the maximum source-file length in lines before
+	// FILE_LINE_CAP fires. Default 150 (AMA spec §5).
+	FileLineCap int `yaml:"file_line_cap,omitempty"`
+
+	// MethodLineCap is the maximum method/function length in lines
+	// before METHOD_LINE_CAP fires. Default 25 (AMA spec §5).
+	// Detection is approximate — we use the distance to the next
+	// symbol's start line as the method's footprint, which is enough
+	// to catch sprawling functions without an adapter-side AST end
+	// position.
+	MethodLineCap int `yaml:"method_line_cap,omitempty"`
+}
+
+// EffectiveFileLineCap returns the configured cap or the AMA default.
+func (a Architecture) EffectiveFileLineCap() int {
+	if a.FileLineCap > 0 {
+		return a.FileLineCap
+	}
+	return 150
+}
+
+// EffectiveMethodLineCap returns the configured cap or the AMA default.
+func (a Architecture) EffectiveMethodLineCap() int {
+	if a.MethodLineCap > 0 {
+		return a.MethodLineCap
+	}
+	return 25
 }
 
 // Import configures brownfield adoption (`lattice import`).

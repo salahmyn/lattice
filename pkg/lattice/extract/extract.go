@@ -242,6 +242,11 @@ func parseSources(ctx context.Context, w *workspace.Workspace, reg *adapters.Reg
 				return
 			}
 			mod, perr := ad.Parse(ctx, f.rel, src)
+			// LineCount feeds the v0.7 AMA FILE_LINE_CAP rule. Adapters
+			// don't need to compute it — counting newlines on the raw
+			// bytes here keeps every adapter uniform. A file that ends
+			// without a trailing newline still counts its last line.
+			mod.LineCount = countLines(src)
 			if perr != nil {
 				v := &schema.Violation{
 					Code: schema.CodeAdapterParseError, Severity: schema.SeverityError,
@@ -283,6 +288,26 @@ func availableRootCount(w *workspace.Workspace) int {
 		if r.Available {
 			n++
 		}
+	}
+	return n
+}
+
+// countLines returns the line count of a source file. A file ending
+// in a newline counts the lines before that newline (no phantom empty
+// line); an empty file is zero. Used to feed ir.Module.LineCount for
+// the v0.7 AMA FILE_LINE_CAP rule.
+func countLines(src []byte) int {
+	if len(src) == 0 {
+		return 0
+	}
+	n := 0
+	for _, b := range src {
+		if b == '\n' {
+			n++
+		}
+	}
+	if src[len(src)-1] != '\n' {
+		n++
 	}
 	return n
 }
