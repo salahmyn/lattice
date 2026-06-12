@@ -26,7 +26,6 @@ first-class, queryable, version-controlled substrate that lives **alongside
 source code and is kept in sync mechanically**.
 
 This repository is the **core engine**: one static Go binary, `lattice`.
-The MCP server ships separately as [`@salahmyn/mcp-server`](lattice-mcp/).
 
 Supported languages for extraction: **Python, TypeScript/JavaScript, PHP 8.0+**.
 
