@@ -18,6 +18,7 @@ func NewRootCommand() *cobra.Command {
 
 	root.PersistentFlags().StringVar(&io.Repo, "repo", ".", "target repository path")
 	root.PersistentFlags().BoolVar(&io.JSON, "json", false, "emit machine-readable JSON output")
+	root.PersistentFlags().StringVar(&io.Actor, "actor", "", "agent identity for leases and the ledger (or set LATTICE_ACTOR)")
 
 	root.AddCommand(
 		newVersionCommand(io),
@@ -50,6 +51,11 @@ func NewRootCommand() *cobra.Command {
 		newRTMCommand(io),
 		newJourneyCommand(io),
 		newActorCommand(io),
+		newResultsCommand(io),
+		newLeaseCommand(io),
+		newLedgerCommand(io),
+		newNextCommand(io),
+		newRunsCleanCommand(io),
 	)
 
 	return root

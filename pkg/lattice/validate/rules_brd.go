@@ -204,6 +204,7 @@ func (c *corpus) checkBRDs() []schema.Violation {
 	// "verified" in one surface and "unverified" in another.
 	matrix := rtm.Build(c.kg, rtm.Options{
 		MutationThreshold: c.cfg.MutationTesting.Thresholds.Default,
+		ResultOf:          c.opts.ResultOf,
 	})
 	for _, row := range matrix.Rows {
 		// Pinpoint the BRD's own source file in the location.
@@ -225,6 +226,20 @@ func (c *corpus) checkBRDs() []schema.Violation {
 					Kind:   "edit_brd",
 					Field:  "success_criteria.maps_to_invariant",
 					Detail: "either fix the ref to point at an existing invariant, or remove maps_to_invariant",
+				},
+			})
+		case rtm.StatusFailing:
+			// γ — an ingested test result for the criterion's verifier is
+			// red. Distinct from "no test": the test we have is failing.
+			v = append(v, schema.Violation{
+				Code: schema.CodeVerifierFailing, Severity: schema.SeverityWarning,
+				Message: fmt.Sprintf("BRD %q criterion %s: %s",
+					row.BRDID, row.CriterionID, row.StatusReason),
+				Location: rowLoc,
+				NextAction: &schema.NextAction{
+					Kind:   "fix_test",
+					Ref:    row.MapsTo,
+					Detail: "the verifier is failing on the generated commit — fix the code or the test, then re-ingest results",
 				},
 			})
 		case rtm.StatusUnenforced, rtm.StatusUnverified, rtm.StatusPartial:

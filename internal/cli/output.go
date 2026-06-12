@@ -12,10 +12,20 @@ import (
 
 // IO carries the global flags and output streams shared by every command.
 type IO struct {
-	Repo string // target repository path
-	JSON bool   // emit machine-readable JSON
-	Out  io.Writer
-	Err  io.Writer
+	Repo  string // target repository path
+	JSON  bool   // emit machine-readable JSON
+	Actor string // --actor: the agent identity for leases/ledger (v0.8)
+	Out   io.Writer
+	Err   io.Writer
+}
+
+// actor resolves the agent identity from --actor, falling back to the
+// LATTICE_ACTOR environment variable. Empty when neither is set.
+func (io *IO) actor() string {
+	if io.Actor != "" {
+		return io.Actor
+	}
+	return os.Getenv("LATTICE_ACTOR")
 }
 
 // printJSON writes v as indented JSON to Out.

@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/rtm"
 )
 
@@ -35,15 +36,19 @@ score (if available). Reports a per-row status:
 The same rows back the BRD_CRITERION_* validation rules and the
 5th Coverage card on the UI, so all three surfaces agree.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			kg, _, err := graphFor(io, cmd, false)
+			kg, ws, err := graphFor(io, cmd, false)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
-			cfg, _ := config.Load(io.Repo)
+			cfg, _ := config.Load(ws.LatticeDir)
+			set := results.Load(ws.LatticeDir)
 			matrix := rtm.Build(kg, rtm.Options{
 				MutationThreshold: cfg.MutationTesting.Thresholds.Default,
+				ResultOf:          resultOfFrom(set),
 			})
 			coverage := rtm.ComputeCoverage(matrix)
+			journey := rtm.ComputeJourneyCoverage(matrix)
+			attestation := cfg.Autonomy.AttestationLevel()
 
 			// Apply filters in-place — we rebuild slices so JSON output
 			// reflects only what the operator asked for.
@@ -61,32 +66,48 @@ The same rows back the BRD_CRITERION_* validation rules and the
 
 			if io.JSON {
 				return io.printJSON(map[string]interface{}{
-					"coverage":  coverage,
-					"matrix":    matrix,
+					"attestation":      attestation,
+					"coverage":         coverage,
+					"journey_coverage": journey,
+					"matrix":           matrix,
 				})
 			}
 
 			if summaryOnly || len(matrix.Rows) == 0 {
-				renderRTMSummary(io, coverage, matrix)
+				renderRTMSummary(io, attestation, coverage, journey, matrix)
 				if len(matrix.Rows) == 0 && filterStatus == "" && filterBRD == "" {
 					io.printf("\n(no BRDs have success_criteria yet — `lattice brd new` or `lattice brd from-code`)\n")
 				}
 				return nil
 			}
 
-			renderRTMSummary(io, coverage, matrix)
+			renderRTMSummary(io, attestation, coverage, journey, matrix)
 			io.printf("\n")
-			io.printf("%-32s %-6s %-10s %-25s %-8s %-8s\n",
+			io.printf("%-32s %-6s %-12s %-25s %-8s %-8s\n",
 				"BRD", "SC", "status", "invariant", "enforcer", "verifier")
-			io.printf("%s\n", strRepeat("-", 92))
+			io.printf("%s\n", strRepeat("-", 96))
 			for _, r := range matrix.Rows {
 				ref := r.MapsTo
 				if ref == "" {
 					ref = "(unmapped)"
 				}
-				io.printf("%-32s %-6s %-10s %-25s %-8d %-8d\n",
+				io.printf("%-32s %-6s %-12s %-25s %-8d %-8d\n",
 					truncate(r.BRDID, 32), r.CriterionID, string(r.Status),
 					truncate(ref, 25), len(r.Enforcers), len(r.Verifiers))
+			}
+			// Scenario rows (v0.8 α) beneath the criteria — what the user does.
+			if len(matrix.Scenarios) > 0 {
+				io.printf("\n%-32s %-6s %-12s %-8s %-s\n",
+					"BRD", "US", "status", "reaches", "verifiers")
+				io.printf("%s\n", strRepeat("-", 96))
+				for _, s := range matrix.Scenarios {
+					reach := "—"
+					if s.TouchesEntryPoint {
+						reach = "ep"
+					}
+					io.printf("%-32s %-6s %-12s %-8s %d\n",
+						truncate(s.BRDID, 32), s.ScenarioID, string(s.Status), reach, len(s.Verifiers))
+				}
 			}
 			return nil
 		},
@@ -98,35 +119,31 @@ The same rows back the BRD_CRITERION_* validation rules and the
 	return cmd
 }
 
-// renderRTMSummary prints the top-level coverage line plus the
-// per-BRD verification ratios. Always emitted; the row table is the
-// expandable detail below it.
-func renderRTMSummary(io *IO, c rtm.Coverage, m rtm.Matrix) {
+// renderRTMSummary prints the attestation header, the top-level
+// coverage line, and the per-BRD verification ratios. Always emitted;
+// the row table is the expandable detail below it. An RTM without an
+// attestation header is invalid — claims must never exceed who actually
+// ran the checks.
+func renderRTMSummary(io *IO, attestation string, c rtm.Coverage, j rtm.JourneyCoverage, m rtm.Matrix) {
+	if attestation == "self" {
+		io.printf("attestation: self — SELF-ATTESTED RUN, governance simulated\n")
+	} else {
+		io.printf("attestation: %s\n", attestation)
+	}
 	io.printf("BRD verification coverage: %.1f%%  (%d/%d criteria verified)\n",
 		c.Ratio*100, c.VerifiedCriteria, c.TotalCriteria)
+	if j.TotalScenarios > 0 {
+		io.printf("journey coverage:          %.1f%%  (%d/%d scenarios reach a declared entry point; %d demonstrated)\n",
+			j.Ratio*100, j.ReachedScenarios, j.TotalScenarios, j.Demonstrated)
+	}
 	if len(m.Summaries) == 0 {
 		return
 	}
 	io.printf("\nPer-BRD:\n")
 	for _, s := range m.Summaries {
-		io.printf("  %-32s  %5.1f%%  v:%d p:%d u-enf:%d u-ver:%d unmap:%d phantom:%d  worst=%s\n",
+		io.printf("  %-32s  %5.1f%%  dem:%d v:%d p:%d fail:%d u-enf:%d u-ver:%d unmap:%d phantom:%d  worst=%s\n",
 			truncate(s.BRDID, 32), s.VerificationRate*100,
-			s.Verified, s.Partial, s.Unenforced, s.Unverified, s.Unmapped, s.Phantom,
+			s.Demonstrated, s.Verified, s.Partial, s.Failing, s.Unenforced, s.Unverified, s.Unmapped, s.Phantom,
 			string(s.WorstStatus))
 	}
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n-1] + "…"
-}
-
-func strRepeat(s string, n int) string {
-	out := make([]byte, 0, n*len(s))
-	for i := 0; i < n; i++ {
-		out = append(out, s...)
-	}
-	return string(out)
 }

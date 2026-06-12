@@ -68,10 +68,14 @@ func (c *corpus) checkAnnotations() []schema.Violation {
 			}
 		}
 
-		// verifies refs resolve to either an invariant or a capability.
+		// verifies refs resolve to an invariant, a capability, or — for a
+		// `@verifies brd.<id>:US-N` / `:SC-N` tag (v0.8 α) — a BRD scenario
+		// or success criterion. The last form is how a journey test
+		// declares which scenario it demonstrates; it reuses the same
+		// Test.Verifies edge, so it must not read as an orphan annotation.
 		for _, ref := range s.Verifies {
 			f, item := resolveRef(ref, s.Feature)
-			if c.hasInvariant(f, item) || c.hasCapability(f, item) {
+			if c.hasInvariant(f, item) || c.hasCapability(f, item) || c.hasBRDUnit(f, item) {
 				continue
 			}
 			code := schema.CodeOrphanAnnotationCapability
@@ -144,4 +148,28 @@ func (c *corpus) hasCapability(feature, id string) bool {
 func (c *corpus) hasInvariant(feature, id string) bool {
 	invs, ok := c.invs[feature]
 	return ok && invs[id]
+}
+
+// hasBRDUnit reports whether brdID names a BRD that declares a
+// user_scenario or success_criterion with the given id (v0.8 α). This
+// lets a journey test `@verifies brd.<id>:US-N` resolve without tripping
+// the orphan-annotation rule.
+func (c *corpus) hasBRDUnit(brdID, id string) bool {
+	for i := range c.kg.BRDs {
+		b := &c.kg.BRDs[i]
+		if b.ID != brdID {
+			continue
+		}
+		for _, us := range b.UserScenarios {
+			if us.ID == id {
+				return true
+			}
+		}
+		for _, sc := range b.SuccessCriteria {
+			if sc.ID == id {
+				return true
+			}
+		}
+	}
+	return false
 }

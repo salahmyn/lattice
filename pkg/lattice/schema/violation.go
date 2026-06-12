@@ -109,6 +109,34 @@ const (
 	CodeMethodLineCap       = "METHOD_LINE_CAP"        // method/function longer than architecture.method_line_cap
 	CodeMixedCommandQuery   = "MIXED_COMMAND_QUERY"    // capability is `mixed` (or symbol mixes intents)
 	CodeFeatureSpecTooLarge = "FEATURE_SPEC_TOO_LARGE" // .ai-spec.md render > 500 words → decomposition signal
+
+	// v0.8 — agent-steerable knowledge graph.
+	//
+	// α/β close demonstration; δ closes meaning fidelity; the §5/§6 rules
+	// keep a multi-agent fleet honest. All default to info/warning so a
+	// v0.7 workspace upgrades without its validate exit code changing.
+
+	// α — executable scenario verifiers (peer to BRD_CRITERION_*).
+	CodeBRDScenarioUnverified = "BRD_SCENARIO_UNVERIFIED" // scenario verified_by names nothing on the graph
+	CodeBRDScenarioUnmapped   = "BRD_SCENARIO_UNMAPPED"   // scenario declares no verified_by
+
+	// β — entry-point journey coverage.
+	CodeFeatureUnreached    = "FEATURE_UNREACHED"     // production feature on no entry-point flow
+	CodeScenarioNoEntryPoint = "SCENARIO_NO_ENTRYPOINT" // scenario verified only at pure-logic altitude
+
+	// γ — demonstration (ingested test results).
+	CodeVerifierFailing = "VERIFIER_FAILING" // an ingested result for a @verifies test is red
+
+	// δ — meaning fidelity (does the wired link mean what was asked?).
+	CodeCriterionInvariantNarrower = "CRITERION_INVARIANT_NARROWER" // invariant does not entail its criterion (assisted)
+	CodeInvariantUnfalsifiable     = "INVARIANT_UNFALSIFIABLE"      // enforcer has no reachable violating path
+	CodeInvariantMutantSurvived    = "INVARIANT_MUTANT_SURVIVED"    // a mutant of the enforcer survived the suite
+	CodeEnforcerNotGuard           = "ENFORCER_NOT_GUARD"           // @enforces symbol carries the tag but guards nothing
+
+	// §5/§6 — fleet coordination + attribution.
+	CodeLeaseScopeOverlap        = "LEASE_SCOPE_OVERLAP"        // two live leases claim overlapping paths
+	CodeConcurrentSurfaceConflict = "CONCURRENT_SURFACE_CONFLICT" // leased working sets diverge a shared contract surface
+	CodeUnattributedChange       = "UNATTRIBUTED_CHANGE"        // a transition with no actor under require_actor
 )
 
 // Info is the lowest violation severity — surfaced in the dashboard but

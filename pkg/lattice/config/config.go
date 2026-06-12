@@ -29,6 +29,155 @@ type Config struct {
 	Knowledge       Knowledge       `yaml:"knowledge"`
 	Import          Import          `yaml:"import"`
 	Architecture    Architecture    `yaml:"architecture,omitempty"` // v0.7 — AMA support
+	Autonomy        Autonomy        `yaml:"autonomy,omitempty"`     // v0.8 — agent steering
+	Runtime         Runtime         `yaml:"runtime,omitempty"`      // v0.8 — V0 runs-clean gate
+}
+
+// Runtime (v0.8) describes how to install, build, boot, and probe the
+// application for the V0 runs-clean gate ("gate zero"): nothing in a
+// workspace is demonstrated while the app fails to install, build,
+// boot, and answer its smoke probes from a clean state. The whole block
+// is opt-in; `lattice runs-clean` errors when it is absent.
+type Runtime struct {
+	// CleanInstall restores dependencies from the lockfile in a fresh
+	// state, e.g. "npm ci" or "go mod download". Catches dependencies
+	// used in code but never declared/locked.
+	CleanInstall string `yaml:"clean_install,omitempty"`
+	// Build compiles the application, e.g. "npm run build" or "go build ./...".
+	Build string `yaml:"build,omitempty"`
+	// Boot starts the application and is expected to stay up, e.g. "npm start".
+	// Empty means the project has no long-running process — the boot and
+	// probe steps are skipped.
+	Boot string `yaml:"boot,omitempty"`
+	// BootWaitMS is how long to wait after Boot before probing (default 5000).
+	BootWaitMS int `yaml:"boot_wait_ms,omitempty"`
+	// Probes are smoke checks against the booted app: a health endpoint
+	// plus one probe per shipped entry point.
+	Probes []Probe `yaml:"probes,omitempty"`
+}
+
+// Probe is one HTTP smoke check run against the booted application.
+type Probe struct {
+	URL          string `yaml:"url"`
+	Method       string `yaml:"method,omitempty"`        // default GET
+	ExpectStatus int    `yaml:"expect_status,omitempty"` // default any 2xx
+}
+
+// Configured reports whether a runtime block is present at all.
+func (r Runtime) Configured() bool {
+	return r.CleanInstall != "" || r.Build != "" || r.Boot != ""
+}
+
+// Autonomy (v0.8) configures how far an autonomous agent may advance a
+// unit up the truth-level ladder before a human is required. The whole
+// block is opt-in: an absent block means default_mode "" — "human
+// approves everything", which is exactly the v0.7 behaviour.
+//
+// Modes are policy over the truth-levels; they do not change what is
+// true, only who may sign off on a transition. Independent of mode, the
+// validator continues to enforce Lattice's safety floor (LLM-BRD
+// approval, regulatory/legal/financial constraints) — no mode lowers it.
+type Autonomy struct {
+	// DefaultMode names the active policy: "gated" | "autonomous" |
+	// "tiered". Empty means fully human-gated (v0.7 behaviour).
+	DefaultMode string `yaml:"default_mode,omitempty"`
+
+	// RequireActor makes an unattributed transition a validation warning
+	// (UNATTRIBUTED_CHANGE) — every lease and ledger entry must name an
+	// --actor.
+	RequireActor bool `yaml:"require_actor,omitempty"`
+
+	// Modes holds the per-mode policy. When empty, BuiltinModes() supplies
+	// the three standard profiles so a workspace need only set DefaultMode.
+	Modes map[string]AutonomyMode `yaml:"modes,omitempty"`
+
+	// Attestation records the independence level of check runs:
+	//   self     — the authoring agent ran its own checks; reports carry
+	//              the SELF-ATTESTED banner and prove nothing adversarially
+	//   isolated — distinct actors did the work and an orchestrator (not
+	//              the author) ran the checks; human gates were real humans
+	//   bound    — checks run in CI on push and approvals are signed
+	//              commits/PR reviews from distinct credentials
+	// It is reported on the RTM header; claims must never exceed it.
+	// Empty means "self".
+	Attestation string `yaml:"attestation,omitempty"`
+}
+
+// AttestationLevel returns the configured attestation, defaulting to
+// "self" — the honest floor when nothing was declared.
+func (a Autonomy) AttestationLevel() string {
+	switch a.Attestation {
+	case "isolated", "bound":
+		return a.Attestation
+	default:
+		return "self"
+	}
+}
+
+// AutonomyMode is one named policy profile.
+type AutonomyMode struct {
+	// AgentMayAdvance lists the truth-levels an agent may move a unit to
+	// without a human: any of "declared", "wired", "demonstrated",
+	// "correctly-meant".
+	AgentMayAdvance []string `yaml:"agent_may_advance,omitempty"`
+	// HumanGate lists transition classes that always require a human:
+	// "correctly-meant", "brd_approval".
+	HumanGate []string `yaml:"human_gate,omitempty"`
+	// AutoMergeAt, when set, names the truth-level at which a unit's change
+	// auto-merges (tiered mode).
+	AutoMergeAt string `yaml:"auto_merge_at,omitempty"`
+}
+
+// BuiltinModes returns the three standard profiles. A workspace that sets
+// only default_mode inherits these; an explicit modes: block overrides
+// the matching entry.
+func BuiltinModes() map[string]AutonomyMode {
+	return map[string]AutonomyMode{
+		"autonomous": {
+			AgentMayAdvance: []string{"declared", "wired", "demonstrated", "correctly-meant"},
+		},
+		"gated": {
+			AgentMayAdvance: []string{"declared", "wired", "demonstrated"},
+			HumanGate:       []string{"correctly-meant", "brd_approval"},
+		},
+		"tiered": {
+			AgentMayAdvance: []string{"declared", "wired"},
+			AutoMergeAt:     "demonstrated",
+			HumanGate:       []string{"correctly-meant"},
+		},
+	}
+}
+
+// Mode resolves the active mode profile, falling back to the builtin of
+// the same name. The second result is false when no mode is active
+// (DefaultMode empty) — the human-approves-everything default.
+func (a Autonomy) Mode() (AutonomyMode, bool) {
+	if a.DefaultMode == "" {
+		return AutonomyMode{}, false
+	}
+	if m, ok := a.Modes[a.DefaultMode]; ok {
+		return m, true
+	}
+	if m, ok := BuiltinModes()[a.DefaultMode]; ok {
+		return m, true
+	}
+	return AutonomyMode{}, false
+}
+
+// MayAdvanceMeaning reports whether the active mode lets an agent advance
+// a unit to "correctly-meant" without a human. The safety floor (§7)
+// applies on top regardless.
+func (a Autonomy) MayAdvanceMeaning() bool {
+	m, ok := a.Mode()
+	if !ok {
+		return false
+	}
+	for _, lvl := range m.AgentMayAdvance {
+		if lvl == "correctly-meant" {
+			return true
+		}
+	}
+	return false
 }
 
 // Architecture configures v0.7's AMA enforcement layer. The whole
@@ -206,7 +355,7 @@ func Default() Config {
 		Agentic: Agentic{LLM: LLM{
 			Enabled:   false,
 			Provider:  "anthropic",
-			Model:     "claude-sonnet-4-7",
+			Model:     "claude-sonnet-4-6",
 			APIKeyEnv: "ANTHROPIC_API_KEY",
 			Timeout:   "30s",
 			MaxTokens: 2000,

@@ -183,7 +183,7 @@ func renderDoctor(io *IO, report doctorReport) {
 		if report.LLMProbe.OK {
 			io.printf("  [ok] reply in %dms (%d tokens): %s\n",
 				report.LLMProbe.ElapsedMS, report.LLMProbe.Tokens,
-				truncateString(report.LLMProbe.Reply, 80))
+				truncate(report.LLMProbe.Reply, 80))
 		} else {
 			io.printf("  [x ] %s\n", report.LLMProbe.Error)
 			if report.LLMProbe.Suggestion != "" {
@@ -191,11 +191,4 @@ func renderDoctor(io *IO, report doctorReport) {
 			}
 		}
 	}
-}
-
-func truncateString(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }

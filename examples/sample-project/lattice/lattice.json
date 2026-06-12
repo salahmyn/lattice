@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "generated_at": "2026-05-22T11:31:49Z",
-  "generated_from_commit": "18f4e8874b0fed0a7b98deda380044ac654d56ce",
+  "generated_at": "2026-06-10T15:36:24Z",
+  "generated_from_commit": "1aa9013e5e518786d42872946d59502f238a0a2f",
   "features": [
     {
       "ID": "billing",
@@ -13,10 +13,12 @@
         "Engineering": "billing-eng",
         "OnCall": ""
       },
+      "ImplementsBRD": "",
       "Value": null,
       "Capabilities": [
         {
           "ID": "invoice_generation",
+          "Kind": "",
           "Summary": "Produce an invoice for a completed order.",
           "Rules": [
             "Every line item on an invoice corresponds to a charged amount."
@@ -84,6 +86,7 @@
         "Engineering": "checkout-eng",
         "OnCall": ""
       },
+      "ImplementsBRD": "",
       "Value": null,
       "Capabilities": null,
       "Invariants": null,
@@ -113,6 +116,7 @@
         "Engineering": "checkout-eng",
         "OnCall": "checkout-oncall"
       },
+      "ImplementsBRD": "",
       "Value": {
         "Customer": "Customers get their money back quickly and without friction.",
         "Business": "Fewer support tickets and higher post-purchase trust."
@@ -120,6 +124,7 @@
       "Capabilities": [
         {
           "ID": "self_service_refund",
+          "Kind": "",
           "Summary": "A customer can refund their own completed order.",
           "Rules": [
             "The refund amount must never exceed the original charge.",
@@ -230,6 +235,7 @@
         "Engineering": "wallet-eng",
         "OnCall": ""
       },
+      "ImplementsBRD": "",
       "Value": {
         "Customer": "Customers can hold a balance and spend it instantly.",
         "Business": ""
@@ -237,6 +243,7 @@
       "Capabilities": [
         {
           "ID": "wallet_credit",
+          "Kind": "",
           "Summary": "Add funds to a customer's wallet balance.",
           "Rules": [
             "A credit amount must be positive."
@@ -464,6 +471,7 @@
     {
       "file": "src/billing/Invoice.php",
       "language": "php",
+      "line_count": 24,
       "symbol_fqns": [
         "App\\Billing\\Invoice",
         "App\\Billing\\Invoice::total"
@@ -472,6 +480,7 @@
     {
       "file": "src/checkout/refund.py",
       "language": "python",
+      "line_count": 19,
       "symbol_fqns": [
         "src.checkout.refund.mark_refunded",
         "src.checkout.refund.validate_amount"
@@ -480,6 +489,7 @@
     {
       "file": "src/wallet/credit.ts",
       "language": "typescript",
+      "line_count": 17,
       "feature": "wallet",
       "symbol_fqns": [
         "src.wallet.credit.creditWallet"
@@ -488,6 +498,7 @@
     {
       "file": "tests/InvoiceTest.php",
       "language": "php",
+      "line_count": 17,
       "symbol_fqns": [
         "App\\Tests\\InvoiceTest",
         "App\\Tests\\InvoiceTest::testTotalEqualsSumOfLineItems"
@@ -496,6 +507,7 @@
     {
       "file": "tests/credit.test.ts",
       "language": "typescript",
+      "line_count": 11,
       "symbol_fqns": [
         "tests.credit.test.testWalletBalanceNeverNegative"
       ]
@@ -503,6 +515,7 @@
     {
       "file": "tests/test_refund.py",
       "language": "python",
+      "line_count": 17,
       "symbol_fqns": [
         "tests.test_refund.test_refund_is_not_repeatable",
         "tests.test_refund.test_refund_never_exceeds_charge"
@@ -511,6 +524,7 @@
     {
       "file": "tools/check_money.py",
       "language": "python",
+      "line_count": 27,
       "symbol_fqns": [
         "tools.check_money.main"
       ]
@@ -690,5 +704,62 @@
       "typescript": ".cache/scip/typescript.scip"
     }
   },
-  "violations": null
+  "violations": [
+    {
+      "code": "FEATURE_NO_BRD",
+      "severity": "warning",
+      "message": "feature \"billing\" has no upstream BRD",
+      "feature_id": "billing",
+      "location": {
+        "file": "features/billing.yaml"
+      },
+      "next_action": {
+        "kind": "edit_manifest",
+        "field": "implements_brd",
+        "detail": "draft a BRD via `lattice brd new brd.billing` then `lattice brd link <brd-id> billing`"
+      }
+    },
+    {
+      "code": "FEATURE_NO_BRD",
+      "severity": "warning",
+      "message": "feature \"checkout\" has no upstream BRD",
+      "feature_id": "checkout",
+      "location": {
+        "file": "features/checkout.yaml"
+      },
+      "next_action": {
+        "kind": "edit_manifest",
+        "field": "implements_brd",
+        "detail": "draft a BRD via `lattice brd new brd.checkout` then `lattice brd link <brd-id> checkout`"
+      }
+    },
+    {
+      "code": "FEATURE_NO_BRD",
+      "severity": "warning",
+      "message": "feature \"checkout.refund\" has no upstream BRD",
+      "feature_id": "checkout.refund",
+      "location": {
+        "file": "features/checkout/refund.yaml"
+      },
+      "next_action": {
+        "kind": "edit_manifest",
+        "field": "implements_brd",
+        "detail": "draft a BRD via `lattice brd new brd.checkout.refund` then `lattice brd link <brd-id> checkout.refund`"
+      }
+    },
+    {
+      "code": "FEATURE_NO_BRD",
+      "severity": "warning",
+      "message": "feature \"wallet\" has no upstream BRD",
+      "feature_id": "wallet",
+      "location": {
+        "file": "features/wallet.yaml"
+      },
+      "next_action": {
+        "kind": "edit_manifest",
+        "field": "implements_brd",
+        "detail": "draft a BRD via `lattice brd new brd.wallet` then `lattice brd link <brd-id> wallet`"
+      }
+    }
+  ]
 }

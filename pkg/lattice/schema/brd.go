@@ -101,6 +101,15 @@ type UserScenario struct {
 	ID        string `yaml:"id"`
 	Actor     string `yaml:"actor,omitempty"`
 	Narrative string `yaml:"narrative"`
+
+	// VerifiedBy lists the units that demonstrate this scenario (v0.8 α):
+	// each entry is either a verifier test FQN (the test carries a
+	// `@verifies brd.<id>:US-N` tag) or a declared entry-point id. A
+	// scenario with no VerifiedBy is BRD_SCENARIO_UNMAPPED (info); one
+	// whose entries name nothing on the graph is BRD_SCENARIO_UNVERIFIED
+	// (warning). When at least one entry resolves to an entry point the
+	// scenario counts toward journey coverage.
+	VerifiedBy []string `yaml:"verified_by,omitempty"`
 }
 
 // BRDCriterion is one measurable success criterion. It may reference a

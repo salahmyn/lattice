@@ -344,7 +344,8 @@ func scaffold(root string, mode workspace.Mode) (initResult, error) {
 	if err := skills.ExportAll(filepath.Join(latticeDir, "skills")); err != nil {
 		return res, err
 	}
-	res.Created = append(res.Created, "lattice/skills/lattice/ (8 shipped skills)")
+	res.Created = append(res.Created,
+		fmt.Sprintf("lattice/skills/lattice/ (%d shipped skills)", len(skills.List())))
 	return res, nil
 }
 
@@ -354,7 +355,7 @@ agentic:
   llm:
     enabled: false           # set true to enable LLM-backed capabilities
     provider: anthropic      # anthropic | openai | ollama
-    model: claude-sonnet-4-7
+    model: claude-sonnet-4-6
     api_key_env: ANTHROPIC_API_KEY
     base_url: ""
     timeout: 30s
@@ -388,6 +389,23 @@ knowledge:
     enabled: false              # split lattice.json into per-group shards
     strategy: by_feature_group  # by_feature_group | by_size
     max_features_per_shard: 200
+
+# v0.8 — agent steering (opt-in; absent = human approves everything).
+# autonomy:
+#   default_mode: gated         # gated | autonomous | tiered
+#   require_actor: true         # unattributed transitions become warnings
+#   attestation: self           # self | isolated | bound — who ran the checks;
+#                               # reported on the RTM header, never exceeded by claims
+
+# v0.8 — V0 runs-clean gate ("gate zero", lattice runs-clean). Nothing is
+# demonstrated while the app fails to install, build, boot, and answer.
+# runtime:
+#   clean_install: "npm ci"
+#   build: "npm run build"
+#   boot: "npm start"
+#   boot_wait_ms: 5000
+#   probes:
+#     - { url: "http://localhost:3000/health", expect_status: 200 }
 `
 
 const defaultAdaptersYAML = `# Language adapter activation.

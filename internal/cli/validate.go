@@ -3,10 +3,13 @@ package cli
 import (
 	"sort"
 	"strconv"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/lease"
+	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/validate"
 )
@@ -39,7 +42,17 @@ func newValidateCommand(io *IO) *cobra.Command {
 			}
 			cfg, _ := config.Load(ws.LatticeDir)
 
-			violations := validate.Validate(kg, cfg, validate.Options{ReviewMode: ws.Review})
+			// v0.8 — fold ingested results (γ) and active leases (§5) into
+			// the run so validation agrees with rtm/coverage and flags
+			// concurrent-edit collisions.
+			set := results.Load(ws.LatticeDir)
+			activeLeases, _ := lease.Active(ws.LatticeDir, time.Now())
+
+			violations := validate.Validate(kg, cfg, validate.Options{
+				ReviewMode: ws.Review,
+				ResultOf:   resultOfFrom(set),
+				Leases:     activeLeases,
+			})
 			kg.Violations = violations
 			_, _ = writeGraph(ws, cfg, kg)
 

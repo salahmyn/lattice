@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/lease"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
@@ -21,6 +22,7 @@ const maxSubfeatureDepth = 4
 type corpus struct {
 	kg       schema.KnowledgeGraph
 	cfg      config.Config
+	opts     Options
 	features map[string]*schema.Manifest
 	caps     map[string]map[string]bool // feature -> capability ids
 	invs     map[string]map[string]bool // feature -> invariant ids
@@ -29,9 +31,9 @@ type corpus struct {
 	streams  map[string]map[string]bool // initiative -> stream ids
 }
 
-func newCorpus(kg schema.KnowledgeGraph, cfg config.Config) *corpus {
+func newCorpus(kg schema.KnowledgeGraph, cfg config.Config, opts Options) *corpus {
 	c := &corpus{
-		kg: kg, cfg: cfg,
+		kg: kg, cfg: cfg, opts: opts,
 		features: map[string]*schema.Manifest{},
 		caps:     map[string]map[string]bool{},
 		invs:     map[string]map[string]bool{},
@@ -72,19 +74,32 @@ type Options struct {
 	// (annotation and verification integrity) are skipped — used when an
 	// operator has access to the lattice/ directory but not the code.
 	ReviewMode bool
+
+	// ResultOf reports the ingested pass/fail of a verifier test (v0.8 γ),
+	// wired by the CLI to results.Set.Lookup so the same demonstration
+	// evidence drives validation, RTM display, and coverage. nil means no
+	// results ingested — validation behaves as v0.7.
+	ResultOf func(testFQN string) (passed bool, known bool)
+
+	// Leases are the active work-claim leases (v0.8 §5). When two leases
+	// held by different actors claim overlapping scopes, LEASE_SCOPE_OVERLAP
+	// fires. Empty in a single-agent run.
+	Leases []lease.Lease
 }
 
 // Validate runs all rules and returns the complete, sorted violation set,
 // including any extraction violations already present on the graph.
 func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schema.Violation {
-	c := newCorpus(kg, cfg)
+	c := newCorpus(kg, cfg, opts)
 	var v []schema.Violation
 
 	v = append(v, kg.Violations...) // parse errors carried from extraction
 	v = append(v, c.checkManifests()...)
 	v = append(v, c.checkBRDs()...)
+	v = append(v, c.checkScenarios()...)  // v0.8 α/β — scenario + reach
 	v = append(v, c.checkDependencies()...)
 	v = append(v, c.checkInitiativesAndTasks()...)
+	v = append(v, c.checkLeases()...) // v0.8 §5 — fleet coordination
 
 	if !opts.ReviewMode {
 		v = append(v, c.checkAnnotations()...)
@@ -92,7 +107,8 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 		v = append(v, c.checkSurfaces()...)
 		v = append(v, c.checkErrors()...)
 		v = append(v, checkEntryPoints(kg)...)
-		v = append(v, c.checkAMA()...) // v0.7 — AMA structural checks
+		v = append(v, c.checkAMA()...)     // v0.7 — AMA structural checks
+		v = append(v, c.checkMeaning()...) // v0.8 δ — meaning fidelity
 	}
 
 	sortViolations(v)

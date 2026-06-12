@@ -9,6 +9,7 @@ from src.checkout.refund import validate_amount, mark_refunded
 def test_refund_never_exceeds_charge():
     assert validate_amount("order-1", 5, 10) is True
     assert validate_amount("order-1", 20, 10) is False
+    assert validate_amount("order-1", 0, 10) is False
 
 
 @verifies("checkout.refund:INV-2")

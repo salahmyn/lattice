@@ -35,6 +35,11 @@ const (
 	// `verifies`. Equivalent to v0.1 UNVERIFIED.
 	StatusUnverified Status = "unverified"
 
+	// StatusFailing — a verifier exists AND an ingested test result for
+	// it is red (v0.8 γ). The most actionable bad state: not "no test"
+	// but "the test we have is failing on this commit."
+	StatusFailing Status = "failing"
+
 	// StatusUnmapped — SC has no `maps_to_invariant` at all. Common
 	// during BRD drafting; info-level, not a failure.
 	StatusUnmapped Status = "unmapped"
@@ -44,8 +49,15 @@ const (
 	StatusPartial Status = "partial"
 
 	// StatusVerified — invariant exists, enforcer + verifier both
-	// present, mutation OK (or unknown). The happy path.
+	// present, mutation OK (or unknown). This is the v0.8 DECLARED
+	// rung: the verifier *exists*, but its pass/fail has not been
+	// ingested for the current commit.
 	StatusVerified Status = "verified"
+
+	// StatusDemonstrated — everything StatusVerified requires, plus an
+	// ingested test result showing the verifier *passed* on the
+	// generated commit (v0.8 γ). The top of the ladder.
+	StatusDemonstrated Status = "demonstrated"
 )
 
 // Severity returns 0 for the worst status and increases for healthier
@@ -56,14 +68,18 @@ func (s Status) Severity() int {
 		return 0
 	case StatusUnenforced:
 		return 1
-	case StatusUnverified:
+	case StatusFailing:
 		return 2
-	case StatusUnmapped:
+	case StatusUnverified:
 		return 3
-	case StatusPartial:
+	case StatusUnmapped:
 		return 4
-	case StatusVerified:
+	case StatusPartial:
 		return 5
+	case StatusVerified:
+		return 6
+	case StatusDemonstrated:
+		return 7
 	}
 	return 0
 }
@@ -94,21 +110,47 @@ type BRDSummary struct {
 	BRDID            string  `json:"brd_id"`
 	BRDTitle         string  `json:"brd_title,omitempty"`
 	Total            int     `json:"total"`
+	Demonstrated     int     `json:"demonstrated"`
 	Verified         int     `json:"verified"`
 	Partial          int     `json:"partial"`
+	Failing          int     `json:"failing"`
 	Unmapped         int     `json:"unmapped"`
 	Unverified       int     `json:"unverified"`
 	Unenforced       int     `json:"unenforced"`
 	Phantom          int     `json:"phantom"`
-	VerificationRate float64 `json:"verification_rate"` // verified / total
+	VerificationRate float64 `json:"verification_rate"` // (verified+demonstrated) / total
 	WorstStatus      Status  `json:"worst_status"`
+
+	// Scenario roll-up (v0.8 α): user_scenarios are walked alongside
+	// success_criteria so a BRD's headline counts what a user *does*,
+	// not just what an invariant asserts.
+	ScenarioTotal        int `json:"scenario_total"`
+	ScenarioDemonstrated int `json:"scenario_demonstrated"`
+}
+
+// ScenarioRow is one walked BRD user_scenario (v0.8 α). A scenario is a
+// verifiable unit peer to a success_criterion: it is DEMONSTRATED when a
+// tagged verifier test passed, VERIFIED when such a test exists,
+// UNVERIFIED when its verified_by resolves to nothing, and UNMAPPED when
+// it claims no verifier at all.
+type ScenarioRow struct {
+	BRDID             string   `json:"brd_id"`
+	BRDTitle          string   `json:"brd_title,omitempty"`
+	ScenarioID        string   `json:"scenario_id"`
+	Actor             string   `json:"actor,omitempty"`
+	Verifiers         []string `json:"verifiers,omitempty"`    // resolved test FQNs
+	EntryPoints       []string `json:"entry_points,omitempty"` // resolved EP ids
+	TouchesEntryPoint bool     `json:"touches_entry_point"`
+	Status            Status   `json:"status"`
+	StatusReason      string   `json:"status_reason,omitempty"`
 }
 
 // Matrix is the full traceability output: every row + per-BRD
 // summaries. Ordering is deterministic so re-runs are byte-stable.
 type Matrix struct {
-	Rows      []Row        `json:"rows"`
-	Summaries []BRDSummary `json:"summaries"`
+	Rows      []Row         `json:"rows"`
+	Scenarios []ScenarioRow `json:"scenarios"`
+	Summaries []BRDSummary  `json:"summaries"`
 }
 
 // Options tunes computation. MutationThreshold below sets the cutoff
@@ -116,6 +158,14 @@ type Matrix struct {
 // configured threshold drives validation and RTM display.
 type Options struct {
 	MutationThreshold float64
+
+	// ResultOf reports the ingested pass/fail of a verifier test, keyed
+	// by its FQN (v0.8 γ). known is false when no result was ingested
+	// for that test — the RTM then behaves exactly as v0.7 (verifier
+	// existence ⇒ StatusVerified). Wired by the caller to
+	// results.Set.Lookup so rtm stays dependency-light (it imports only
+	// schema). nil ResultOf means "no results ingested."
+	ResultOf func(testFQN string) (passed bool, known bool)
 }
 
 // invKey identifies an invariant uniquely across the graph by its
@@ -147,12 +197,22 @@ func Build(kg schema.KnowledgeGraph, opts Options) Matrix {
 			enforcers[k] = append(enforcers[k], sym.FQN)
 		}
 	}
+	// testFQNs lets a scenario's explicit verified_by entry be classified
+	// as a test reference (vs an entry-point reference).
+	testFQNs := map[string]bool{}
 	for _, t := range kg.Tests {
+		testFQNs[t.FQN] = true
 		for _, ref := range t.Verifies {
 			feature, inv := resolveRef(ref, t.Feature)
 			k := invKey{feature, inv}
 			verifiers[k] = append(verifiers[k], t.FQN)
 		}
+	}
+	// epIDs lets a scenario's verified_by entry be classified as a
+	// declared entry point — the journey-coverage signal (v0.8 β).
+	epIDs := map[string]bool{}
+	for _, ep := range kg.EntryPoints {
+		epIDs[ep.ID] = true
 	}
 	// Mutation scores live on the Manifest as a map keyed by
 	// invariant id; lift to invKey for uniform lookup.
@@ -165,6 +225,7 @@ func Build(kg schema.KnowledgeGraph, opts Options) Matrix {
 	}
 
 	var rows []Row
+	var scenarios []ScenarioRow
 	summaries := map[string]*BRDSummary{}
 
 	for _, b := range kg.BRDs {
@@ -184,10 +245,14 @@ func Build(kg schema.KnowledgeGraph, opts Options) Matrix {
 
 			sum.Total++
 			switch row.Status {
+			case StatusDemonstrated:
+				sum.Demonstrated++
 			case StatusVerified:
 				sum.Verified++
 			case StatusPartial:
 				sum.Partial++
+			case StatusFailing:
+				sum.Failing++
 			case StatusUnmapped:
 				sum.Unmapped++
 			case StatusUnverified:
@@ -198,13 +263,23 @@ func Build(kg schema.KnowledgeGraph, opts Options) Matrix {
 				sum.Phantom++
 			}
 		}
+
+		// Scenario walk (v0.8 α): user_scenarios are verifiable units too.
+		for _, us := range b.UserScenarios {
+			sr := classifyScenario(b, us, verifiers, testFQNs, epIDs, opts)
+			scenarios = append(scenarios, sr)
+			sum.ScenarioTotal++
+			if sr.Status == StatusDemonstrated {
+				sum.ScenarioDemonstrated++
+			}
+		}
 	}
 
 	// Finalize summaries: ratio + worst-status roll-up.
 	summaryList := make([]BRDSummary, 0, len(summaries))
 	for _, s := range summaries {
 		if s.Total > 0 {
-			s.VerificationRate = round4(float64(s.Verified) / float64(s.Total))
+			s.VerificationRate = round4(float64(s.Verified+s.Demonstrated) / float64(s.Total))
 		}
 		s.WorstStatus = worstFor(s)
 		summaryList = append(summaryList, *s)
@@ -220,11 +295,116 @@ func Build(kg schema.KnowledgeGraph, opts Options) Matrix {
 	sort.Slice(summaryList, func(i, j int) bool {
 		return summaryList[i].BRDID < summaryList[j].BRDID
 	})
+	sort.Slice(scenarios, func(i, j int) bool {
+		if scenarios[i].BRDID != scenarios[j].BRDID {
+			return scenarios[i].BRDID < scenarios[j].BRDID
+		}
+		return scenarios[i].ScenarioID < scenarios[j].ScenarioID
+	})
 
 	if rows == nil {
 		rows = []Row{}
 	}
-	return Matrix{Rows: rows, Summaries: summaryList}
+	if scenarios == nil {
+		scenarios = []ScenarioRow{}
+	}
+	return Matrix{Rows: rows, Scenarios: scenarios, Summaries: summaryList}
+}
+
+// classifyScenario computes a scenario's truth-level (v0.8 α). Verifiers
+// resolve two ways: explicit verified_by test FQNs, and tests tagged
+// `@verifies brd.<id>:US-N` (which already land in the shared verifiers
+// map under invKey{brd.id, scenario.id}). An entry-point id in verified_by
+// flags the scenario as reachable through a real trigger — the
+// journey-coverage signal.
+func classifyScenario(
+	b schema.BRD,
+	us schema.UserScenario,
+	verifiers map[invKey][]string,
+	testFQNs, epIDs map[string]bool,
+	opts Options,
+) ScenarioRow {
+	sr := ScenarioRow{
+		BRDID:      b.ID,
+		BRDTitle:   b.Title,
+		ScenarioID: us.ID,
+		Actor:      us.Actor,
+	}
+
+	// Reverse verifiers: tests that tagged @verifies brd.<id>:US-N.
+	seen := map[string]bool{}
+	for _, fqn := range verifiers[invKey{b.ID, us.ID}] {
+		if !seen[fqn] {
+			seen[fqn] = true
+			sr.Verifiers = append(sr.Verifiers, fqn)
+		}
+	}
+	// Explicit verified_by entries: test FQN → verifier; EP id → reach.
+	for _, ref := range us.VerifiedBy {
+		switch {
+		case epIDs[ref]:
+			sr.EntryPoints = append(sr.EntryPoints, ref)
+			sr.TouchesEntryPoint = true
+		case testFQNs[ref]:
+			if !seen[ref] {
+				seen[ref] = true
+				sr.Verifiers = append(sr.Verifiers, ref)
+			}
+		default:
+			// Unresolved entry — recorded as a verifier candidate so the
+			// status falls to unverified rather than silently vanishing.
+			if !seen[ref] {
+				seen[ref] = true
+				sr.Verifiers = append(sr.Verifiers, ref)
+			}
+		}
+	}
+
+	if len(us.VerifiedBy) == 0 && len(sr.Verifiers) == 0 {
+		sr.Status = StatusUnmapped
+		sr.StatusReason = "scenario declares no verified_by"
+		return sr
+	}
+
+	// Resolve pass/fail across the verifier tests.
+	anyKnown, anyFail, allKnownPass := false, false, true
+	resolvable := false
+	for _, fqn := range sr.Verifiers {
+		if !testFQNs[fqn] {
+			continue // an unresolved ref or an EP — not a runnable test
+		}
+		resolvable = true
+		if opts.ResultOf != nil {
+			if passed, known := opts.ResultOf(fqn); known {
+				anyKnown = true
+				if !passed {
+					anyFail = true
+				}
+			} else {
+				allKnownPass = false
+			}
+		} else {
+			allKnownPass = false
+		}
+	}
+
+	if !resolvable {
+		sr.Status = StatusUnverified
+		sr.StatusReason = "verified_by names no test on the graph"
+		return sr
+	}
+	switch {
+	case anyFail:
+		sr.Status = StatusFailing
+		sr.StatusReason = "an ingested result for a verifier is red"
+	case anyKnown && allKnownPass:
+		sr.Status = StatusDemonstrated
+		sr.StatusReason = "verifier passed on the generated commit"
+	default:
+		sr.Status = StatusVerified
+		sr.StatusReason = "verifier exists; pass/fail not ingested"
+	}
+	return sr
 }
 
 // classify computes the row's Status + supporting fields. Pulled out
@@ -297,7 +477,46 @@ func classify(
 			return
 		}
 	}
+
+	// v0.8 γ — fold in ingested test results. A red verifier downgrades to
+	// StatusFailing; an all-green (and at least one known) verifier set
+	// upgrades to StatusDemonstrated. With no results ingested
+	// (ResultOf nil or unknown) the status stays StatusVerified — exactly
+	// the v0.7 "declared" rung.
+	if status, reason, decided := resultStatus(row.Verifiers, opts.ResultOf); decided {
+		row.Status = status
+		row.StatusReason = reason
+		return
+	}
 	row.Status = StatusVerified
+}
+
+// resultStatus folds ingested results over a verifier set. decided is
+// false when no result moves the needle (keep StatusVerified).
+func resultStatus(verifiers []string, resultOf func(string) (bool, bool)) (Status, string, bool) {
+	if resultOf == nil {
+		return "", "", false
+	}
+	anyKnown, anyFail, allPass := false, false, true
+	for _, fqn := range verifiers {
+		passed, known := resultOf(fqn)
+		if !known {
+			allPass = false
+			continue
+		}
+		anyKnown = true
+		if !passed {
+			anyFail = true
+		}
+	}
+	switch {
+	case anyFail:
+		return StatusFailing, "an ingested result for a verifier is red", true
+	case anyKnown && allPass:
+		return StatusDemonstrated, "verifier passed on the generated commit", true
+	default:
+		return "", "", false
+	}
 }
 
 // hasStructuralOrMutationOnly reports whether the invariant declares
@@ -326,16 +545,22 @@ func worstFor(s *BRDSummary) Status {
 	if s.Unenforced > 0 {
 		return StatusUnenforced
 	}
+	if s.Failing > 0 {
+		return StatusFailing
+	}
 	if s.Unverified > 0 {
 		return StatusUnverified
 	}
 	if s.Partial > 0 {
 		return StatusPartial
 	}
-	if s.Unmapped > 0 && s.Verified == 0 {
+	if s.Unmapped > 0 && s.Verified == 0 && s.Demonstrated == 0 {
 		return StatusUnmapped
 	}
-	return StatusVerified
+	if s.Verified > 0 {
+		return StatusVerified
+	}
+	return StatusDemonstrated
 }
 
 // splitInvariantRef parses `<feature.id>:<INV-N>`. Returns (feature,
@@ -375,11 +600,13 @@ type Coverage struct {
 	Ratio            float64 `json:"ratio"`
 }
 
-// ComputeCoverage rolls the whole matrix into one number.
+// ComputeCoverage rolls the whole matrix into one number. Both VERIFIED
+// (declared) and DEMONSTRATED criteria count as covered, so the v0.6
+// headline never regresses when v0.8 splits the rung.
 func ComputeCoverage(m Matrix) Coverage {
 	c := Coverage{TotalCriteria: len(m.Rows)}
 	for _, r := range m.Rows {
-		if r.Status == StatusVerified {
+		if r.Status == StatusVerified || r.Status == StatusDemonstrated {
 			c.VerifiedCriteria++
 		}
 	}
@@ -387,4 +614,32 @@ func ComputeCoverage(m Matrix) Coverage {
 		c.Ratio = round4(float64(c.VerifiedCriteria) / float64(c.TotalCriteria))
 	}
 	return c
+}
+
+// JourneyCoverage is the v0.8 β 6th Coverage card: the fraction of BRD
+// user_scenarios whose verifier exercises a declared entry point. It is a
+// far more honest headline than criterion coverage — it counts what a
+// user can actually reach, not what an invariant asserts.
+type JourneyCoverage struct {
+	TotalScenarios   int     `json:"total_scenarios"`
+	ReachedScenarios int     `json:"reached_scenarios"` // touch a declared entry point
+	Demonstrated     int     `json:"demonstrated"`      // reached AND verifier passed
+	Ratio            float64 `json:"ratio"`             // reached / total
+}
+
+// ComputeJourneyCoverage rolls the scenario rows into the journey number.
+func ComputeJourneyCoverage(m Matrix) JourneyCoverage {
+	jc := JourneyCoverage{TotalScenarios: len(m.Scenarios)}
+	for _, s := range m.Scenarios {
+		if s.TouchesEntryPoint {
+			jc.ReachedScenarios++
+			if s.Status == StatusDemonstrated {
+				jc.Demonstrated++
+			}
+		}
+	}
+	if jc.TotalScenarios > 0 {
+		jc.Ratio = round4(float64(jc.ReachedScenarios) / float64(jc.TotalScenarios))
+	}
+	return jc
 }

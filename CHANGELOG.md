@@ -2,6 +2,108 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.8.0]
+
+The agent-steerable knowledge graph. v0.6 let Lattice say "this is
+wired"; v0.8 lets it say "this is correctly meant **and** was
+demonstrated" — and turns that honest graph into the substrate a fleet
+of autonomous agents steers by. Opt-in and additive end to end: a v0.7
+workspace upgrades with only new info/warning rows and an unchanged
+`validate` exit code.
+
+### Added — α. Executable scenario verifiers
+
+- **`UserScenario.verified_by`** (schema, optional) — a BRD
+  `user_scenario` becomes a verifiable unit peer to a
+  `success_criterion`, listing verifier test FQNs and/or declared
+  entry-point ids.
+- RTM now walks scenarios (`Matrix.Scenarios`) alongside criteria; a
+  test tagged `@verifies brd.<id>:US-N` resolves through the existing
+  `Test.Verifies` edge — no new extraction path.
+- **`BRD_SCENARIO_UNMAPPED`** (info), **`BRD_SCENARIO_UNVERIFIED`**
+  (warning).
+
+### Added — β. Entry-point journey coverage
+
+- 6th coverage number — **journey coverage** = scenarios whose verifier
+  reaches a declared entry point / total. Surfaced on `lattice rtm` and
+  `lattice next`.
+- **`FEATURE_UNREACHED`** (info) — production feature on no entry-point
+  flow. **`SCENARIO_NO_ENTRYPOINT`** (info) — scenario verified only at
+  pure-logic altitude.
+
+### Added — γ. Demonstration (ingested test results)
+
+- **`pkg/lattice/results`** + **`lattice results ingest <junit.xml>`** —
+  parses junit/pytest/phpunit XML into `lattice/.cache/results/`.
+- New top status **`demonstrated`** (verifier *passed* on the generated
+  commit) above today's **`verified`** (= declared, the test merely
+  *exists*); **`failing`** when an ingested result is red. Mutation
+  testing continues to gate `partial` exactly as before — γ composes
+  with it, it does not re-implement it. **`VERIFIER_FAILING`** (warning).
+
+### Added — δ. Meaning fidelity
+
+- **`ENFORCER_NOT_GUARD`** (info) — `@enforces` symbol carries the tag
+  but is not a guard (function/method with a reject path).
+- **`INVARIANT_UNFALSIFIABLE`** (info) and **`INVARIANT_MUTANT_SURVIVED`**
+  (warning) — an invariant with no demonstrated violating path.
+- **`CRITERION_INVARIANT_NARROWER`** (info, assisted) — the invariant
+  does not entail its criterion. LLM-backed only when
+  `agentic.llm.enabled`; a deterministic no-op otherwise, and skipped
+  entirely for regulatory/legal/financial BRDs.
+
+### Added — steering layer (§4–§7)
+
+- **`lattice next`** — ranks the highest-value next actions by weakest
+  link (furthest from demonstrated/correctly-meant), withholds units
+  under another actor's lease, and points at the goal skill.
+- **`pkg/lattice/lease`** + **`lattice lease acquire|release|list`** —
+  file-and-git-backed work claims under `lattice/.leases/`, TTL expiry,
+  cross-actor scope-overlap detection. **`LEASE_SCOPE_OVERLAP`** (info);
+  **`CONCURRENT_SURFACE_CONFLICT`** code reserved.
+- **`pkg/lattice/ledger`** + **`lattice ledger [rebuild]`** — append-only
+  attribution ledger under `lattice/.ledger/`, every truth-level
+  transition stamped with actor, evidence, and autonomy mode.
+  **`UNATTRIBUTED_CHANGE`** (warning) under `require_actor`.
+- **`--actor` / `LATTICE_ACTOR`** — the agent identity on every lease and
+  ledger entry.
+- **`config.Autonomy`** — `default_mode` (`gated|autonomous|tiered`),
+  `require_actor`, per-mode `agent_may_advance`/`human_gate`. A floor no
+  mode lowers: LLM-BRD approval and regulatory/legal/financial
+  constraints stay human-only.
+- Goal-aware `relevant_skills`: a task that verifies a BRD scenario or
+  criterion surfaces `achieving-goals-with-lattice` and
+  `verifying-meaning` first.
+
+### Added — governance (gate zero & attestation)
+
+- **`lattice runs-clean`** (alias `lattice v0`) + **`pkg/lattice/runsclean`**
+  — the V0 "gate zero": clean install → build → boot → HTTP smoke
+  probes, driven by a new opt-in `runtime:` config block. A green test
+  suite atop an app that won't start is a critical finding, not
+  progress; nothing is demonstrated while V0 fails (exit 1).
+- **`autonomy.attestation`** (`self | isolated | bound`) — records who
+  ran the checks. Reported on the `lattice rtm` header (and JSON);
+  `self` prints the honest banner `SELF-ATTESTED RUN, governance
+  simulated`. Claims must never exceed the attestation level.
+
+### Changed
+
+- Module moved to **`github.com/salahmyn/lattice`** (and the MCP server
+  to `@salahmyn/mcp-server`) for publication.
+- Dependencies refreshed: cobra 1.10, fsnotify 1.10, scip 0.6.1
+  (newest release under the canonical module path); Go 1.24.
+
+### Architecture notes
+
+- `rtm` stays dependency-light (imports only `schema`); results are fed
+  in via an `Options.ResultOf` callback wired by the CLI to
+  `results.Set.Lookup`, so validation, RTM, and coverage share one
+  demonstration source.
+- `.cache/results/`, `.leases/`, `.ledger/` are git-tracked, regenerable
+  directories — deleting them loses no source of truth.
+
 ## [0.7.0]
 
 AMA support. Opt-in enforcement of the AI-Agentic Modular

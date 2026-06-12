@@ -25,3 +25,21 @@ func graphFor(io *IO, cmd *cobra.Command, withCodeGraph bool) (schema.KnowledgeG
 	}
 	return kg, ws, nil
 }
+
+// truncate shortens s to at most n display columns, marking the cut
+// with an ellipsis. Shared by every fixed-width table renderer.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
+}
+
+// strRepeat repeats s n times (table divider lines).
+func strRepeat(s string, n int) string {
+	out := make([]byte, 0, n*len(s))
+	for i := 0; i < n; i++ {
+		out = append(out, s...)
+	}
+	return string(out)
+}

@@ -105,10 +105,24 @@ func BuildAgentContext(ws *workspace.Workspace, kg schema.KnowledgeGraph, taskID
 			ID: task.ID, Title: task.Title, Initiative: task.Initiative,
 			Stream: task.Stream, Verifies: task.Verifies,
 		}
+		goalWork := false
 		for _, ref := range task.Verifies {
 			if i := strings.LastIndex(ref, ":"); i > 0 {
 				featureSet[ref[:i]] = true
 			}
+			// v0.8 §12 — when the task verifies a BRD scenario (US-N) or
+			// success criterion (SC-N), it is goal work: point the agent at
+			// the goal skills first so it advances toward demonstrated +
+			// correctly-meant rather than just satisfying the flow.
+			if strings.HasPrefix(ref, "brd.") || strings.Contains(ref, ":US-") || strings.Contains(ref, ":SC-") {
+				goalWork = true
+			}
+		}
+		if goalWork {
+			ac.RelevantSkills = append([]string{
+				"lattice/achieving-goals-with-lattice",
+				"lattice/verifying-meaning",
+			}, ac.RelevantSkills...)
 		}
 		ac.Contracts = contractsForInitiative(ws, kg, task.Initiative)
 	}
