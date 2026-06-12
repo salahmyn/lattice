@@ -103,6 +103,17 @@ type Row struct {
 	HasMutation   bool    `json:"has_mutation,omitempty"`
 	Status        Status  `json:"status"`
 	StatusReason  string  `json:"status_reason,omitempty"`
+
+	// Tier is the pinned criticality of the criterion (v0.8.1):
+	// 1 default, 2 auth/permissions/data-loss, 3 money/regulatory.
+	Tier int `json:"tier,omitempty"`
+	// DirectWire marks a criterion wired directly to enforcers and
+	// verifiers without a restatement invariant.
+	DirectWire bool `json:"direct_wire,omitempty"`
+	// Flagged + Flags carry open meaning flags. A flag rides alongside
+	// the computed status — it is never hidden behind a green row.
+	Flagged bool     `json:"flagged,omitempty"`
+	Flags   []string `json:"flags,omitempty"`
 }
 
 // BRDSummary rolls up every Row for one BRD into a verification ratio.
@@ -120,6 +131,9 @@ type BRDSummary struct {
 	Phantom          int     `json:"phantom"`
 	VerificationRate float64 `json:"verification_rate"` // (verified+demonstrated) / total
 	WorstStatus      Status  `json:"worst_status"`
+	// Flagged counts rows with open meaning flags (v0.8.1) — kept as
+	// its own number because a flag overlays any status.
+	Flagged int `json:"flagged,omitempty"`
 
 	// Scenario roll-up (v0.8 α): user_scenarios are walked alongside
 	// success_criteria so a BRD's headline counts what a user *does*,
@@ -143,6 +157,11 @@ type ScenarioRow struct {
 	TouchesEntryPoint bool     `json:"touches_entry_point"`
 	Status            Status   `json:"status"`
 	StatusReason      string   `json:"status_reason,omitempty"`
+
+	// Flagged + Flags — open meaning flags on the scenario (v0.8.1),
+	// reported alongside the computed status.
+	Flagged bool     `json:"flagged,omitempty"`
+	Flags   []string `json:"flags,omitempty"`
 }
 
 // Matrix is the full traceability output: every row + per-BRD
@@ -166,6 +185,18 @@ type Options struct {
 	// results.Set.Lookup so rtm stays dependency-light (it imports only
 	// schema). nil ResultOf means "no results ingested."
 	ResultOf func(testFQN string) (passed bool, known bool)
+
+	// FlagsOf returns the open meaning-flag reasons for a unit
+	// ("brd.id/SC-1", "brd.id/US-1") — v0.8.1. A flagged row keeps its
+	// computed status AND carries the flag: demonstrated-but-flagged
+	// reports both, never one hidden behind the other. Wired by the
+	// caller to the flags store; nil means no flag store.
+	FlagsOf func(unit string) []string
+
+	// ProfileLite caps the ladder at verified — the lite profile's
+	// honest ceiling is "wired"; a lite workspace never reports
+	// demonstrated until the full profile (architect pass) is adopted.
+	ProfileLite bool
 }
 
 // invKey identifies an invariant uniquely across the graph by its
@@ -239,10 +270,16 @@ func Build(kg schema.KnowledgeGraph, opts Options) Matrix {
 				CriterionID: sc.ID,
 				Statement:   sc.Statement,
 				MapsTo:      sc.MapsToInvariant,
+				Tier:        sc.EffectiveTier(),
 			}
 			classify(&row, sc, featByID, enforcers, verifiers, mutation, mutationOK, opts)
+			applyOverlays(&row.Status, &row.StatusReason, &row.Flagged, &row.Flags,
+				b.ID+"/"+sc.ID, opts)
 			rows = append(rows, row)
 
+			if row.Flagged {
+				sum.Flagged++
+			}
 			sum.Total++
 			switch row.Status {
 			case StatusDemonstrated:
@@ -267,6 +304,8 @@ func Build(kg schema.KnowledgeGraph, opts Options) Matrix {
 		// Scenario walk (v0.8 α): user_scenarios are verifiable units too.
 		for _, us := range b.UserScenarios {
 			sr := classifyScenario(b, us, verifiers, testFQNs, epIDs, opts)
+			applyOverlays(&sr.Status, &sr.StatusReason, &sr.Flagged, &sr.Flags,
+				b.ID+"/"+us.ID, opts)
 			scenarios = append(scenarios, sr)
 			sum.ScenarioTotal++
 			if sr.Status == StatusDemonstrated {
@@ -418,6 +457,32 @@ func classify(
 	mutationOK map[invKey]bool,
 	opts Options,
 ) {
+	// direct_wire (v0.8.1): the criterion IS its own invariant — its
+	// enforcers/verifiers attach directly, no restatement invariant
+	// minted. Same ladder from here: unenforced → unverified →
+	// verified → demonstrated.
+	if sc.DirectWire {
+		row.DirectWire = true
+		row.Enforcers = sc.EnforcedBy
+		row.Verifiers = sc.VerifiedBy
+		switch {
+		case len(row.Enforcers) == 0:
+			row.Status = StatusUnenforced
+			row.StatusReason = "direct-wired criterion lists no enforced_by"
+		case len(row.Verifiers) == 0:
+			row.Status = StatusUnverified
+			row.StatusReason = "direct-wired criterion lists no verified_by"
+		default:
+			if status, reason, decided := resultStatus(row.Verifiers, opts.ResultOf); decided {
+				row.Status = status
+				row.StatusReason = reason
+			} else {
+				row.Status = StatusVerified
+			}
+		}
+		return
+	}
+
 	if strings.TrimSpace(sc.MapsToInvariant) == "" {
 		row.Status = StatusUnmapped
 		row.StatusReason = "success criterion has no `maps_to_invariant`"
@@ -489,6 +554,23 @@ func classify(
 		return
 	}
 	row.Status = StatusVerified
+}
+
+// applyOverlays folds the v0.8.1 cross-cutting state onto a computed
+// status: the lite-profile ceiling (demonstrated caps to verified —
+// lite's honest top is "wired") and open meaning flags (attached
+// alongside the status, never replacing it).
+func applyOverlays(status *Status, reason *string, flagged *bool, flagList *[]string, unit string, opts Options) {
+	if opts.ProfileLite && *status == StatusDemonstrated {
+		*status = StatusVerified
+		*reason = "lite profile: ceiling is wired — adopt the full profile to claim demonstrated"
+	}
+	if opts.FlagsOf != nil {
+		if fl := opts.FlagsOf(unit); len(fl) > 0 {
+			*flagged = true
+			*flagList = fl
+		}
+	}
 }
 
 // resultStatus folds ingested results over a verifier set. decided is

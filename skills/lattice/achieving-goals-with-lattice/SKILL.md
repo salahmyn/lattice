@@ -64,7 +64,13 @@ success criterion means, and the RTM row reads `demonstrated`. Before claiming
 it, run `lattice runs-clean` — the app must install, build, boot, and answer
 its probes after your slice, not only at project end — and ingest your test
 run (`lattice results ingest`) so the graph sees the green, not your word for
-it. A task is done when the *meaning* is proven, not when the *flow* is
-satisfied.
+it. `lattice demonstrate` composes the whole sign-off and ledgers it. A task
+is done when the *meaning* is proven, not when the *flow* is satisfied.
+
+Two hard rules close the loop honestly: a row with an open flag
+(`demonstrated⚑`) is NOT done — a human clears flags, not you; and changing a
+grounded requirement (including deleting its tests) goes through
+`lattice cr` — deletion is legal only against an approved retirement item,
+and `lattice sweep` checks exactly that.
 
 Related: [[verifying-meaning]], [[authoring-manifests]], [[diagnosing-violations]].

@@ -20,6 +20,14 @@ const (
 
 // Config is the top-level lattice/config.yaml model.
 type Config struct {
+	// Profile selects the framework depth (v0.8.1): "standard" (default,
+	// everything) or "lite" — BRDs + @feature annotations + link/grounding
+	// rules + V0 only, with the RTM capped at verified ("wired"). Lite is
+	// the immediate-payoff subset for prototypes; the upgrade path is the
+	// architect pass over the already-grounded BRDs. Use lite rather than
+	// skipping the framework.
+	Profile string `yaml:"profile,omitempty"`
+
 	Agentic         Agentic         `yaml:"agentic"`
 	MutationTesting MutationTesting `yaml:"mutation_testing"`
 	Analysis        Analysis        `yaml:"analysis"`
@@ -68,6 +76,9 @@ func (r Runtime) Configured() bool {
 	return r.CleanInstall != "" || r.Build != "" || r.Boot != ""
 }
 
+// IsLite reports whether the workspace runs the lite profile.
+func (c Config) IsLite() bool { return c.Profile == "lite" }
+
 // Autonomy (v0.8) configures how far an autonomous agent may advance a
 // unit up the truth-level ladder before a human is required. The whole
 // block is opt-in: an absent block means default_mode "" — "human
@@ -101,6 +112,69 @@ type Autonomy struct {
 	// It is reported on the RTM header; claims must never exceed it.
 	// Empty means "self".
 	Attestation string `yaml:"attestation,omitempty"`
+
+	// Mandates are human-pinned delegations (v0.8.1). At attestation
+	// "bound" this block lives outside agent-writable paths (branch
+	// protection); agents never create, widen, renew, or transfer them.
+	Mandates []Mandate `yaml:"mandates,omitempty"`
+}
+
+// Mandate pre-authorizes an agent to act for a human seat within hard
+// bounds (v0.8.1). Mandates are human-pinned config — agents never
+// create, widen, renew, or transfer them, including their own. The
+// non-delegable floor is hard-coded regardless of any mandate:
+// narrowing-class CRs, tier-2+ radii, Decision supersessions, and
+// mandate creation itself always require a human.
+type Mandate struct {
+	ID string `yaml:"id"`
+	// Grants names the gate class the mandate covers. Today: "cr_decide"
+	// (approve wording-class CRs).
+	Grants string `yaml:"grants"`
+	// Classes restricts which revision classes the mandate covers.
+	// Defaults to ["wording"]; "narrowing" is rejected even if listed.
+	Classes []string `yaml:"classes,omitempty"`
+	// TierMax is the highest impact tier the mandate covers (default 1).
+	TierMax int `yaml:"tier_max,omitempty"`
+	// Expires is an ISO date after which the mandate is void.
+	Expires string `yaml:"expires,omitempty"`
+}
+
+// Covers reports whether the mandate covers a gate of the given class
+// and tier on the given date. Narrowings are never delegable.
+func (m Mandate) Covers(grants, class string, tier int, today string) bool {
+	if m.Grants != grants || class == "narrowing" {
+		return false
+	}
+	if m.Expires != "" && today > m.Expires {
+		return false
+	}
+	max := m.TierMax
+	if max == 0 {
+		max = 1
+	}
+	if tier > max {
+		return false
+	}
+	classes := m.Classes
+	if len(classes) == 0 {
+		classes = []string{"wording"}
+	}
+	for _, c := range classes {
+		if c == class {
+			return true
+		}
+	}
+	return false
+}
+
+// FindMandate resolves a mandate by id.
+func (a Autonomy) FindMandate(id string) (Mandate, bool) {
+	for _, m := range a.Mandates {
+		if m.ID == id {
+			return m, true
+		}
+	}
+	return Mandate{}, false
 }
 
 // AttestationLevel returns the configured attestation, defaulting to

@@ -35,3 +35,15 @@ common failures are:
 
 Fix by re-attaching the annotation to the new symbol, not by editing the
 manifest.
+
+## After the refactor merges (v0.8.1)
+
+- Run `lattice backprop` — it classifies the change against grounded intent.
+  A pure refactor should come back **"no doc impact"** (a ledgered outcome,
+  not silence). If it lists affected criteria, the change wasn't a pure
+  refactor: route it to the amendment gate or a CR.
+- Never drop a verifier test during a refactor. `lattice sweep` compares the
+  verifier inventory against its baseline; a disappeared verifier without an
+  approved CR retirement item is `TEST_RETIRED_ILLEGALLY`. Moving a test is
+  fine — re-run `lattice sweep --update-baseline` once validate is clean and
+  the moved test is re-linked.

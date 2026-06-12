@@ -137,6 +137,17 @@ const (
 	CodeLeaseScopeOverlap        = "LEASE_SCOPE_OVERLAP"        // two live leases claim overlapping paths
 	CodeConcurrentSurfaceConflict = "CONCURRENT_SURFACE_CONFLICT" // leased working sets diverge a shared contract surface
 	CodeUnattributedChange       = "UNATTRIBUTED_CHANGE"        // a transition with no actor under require_actor
+
+	// v0.8.1 — lifecycle governance.
+	//
+	// V8 author separation, tier-gated mutation evidence, the
+	// forbidden-move sweep, and open meaning flags. All info/warning —
+	// they report honesty problems, they do not block builds.
+	CodeAuthorNotSeparated   = "AUTHOR_NOT_SEPARATED"   // same actor wired AND demonstrated a unit, no independent pass (V8)
+	CodeMutationRequiredTier = "MUTATION_REQUIRED_TIER" // tier-2+ criterion chain lacks mutation evidence (V10 gate)
+	CodeTestRetiredIllegally = "TEST_RETIRED_ILLEGALLY" // verifier disappeared without a CR retirement item (sweep)
+	CodeRevisionSchema       = "REVISION_SCHEMA"        // CR file parse / required-field error
+	CodeCriterionFlagged     = "CRITERION_FLAGGED"      // open meaning/demotion flag — reported alongside green, never hidden
 )
 
 // Info is the lowest violation severity — surfaced in the dashboard but

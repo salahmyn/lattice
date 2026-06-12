@@ -25,25 +25,51 @@ import (
 // file is the ledger location relative to the lattice/ directory.
 const file = ".ledger/ledger.jsonl"
 
-// Entry is one recorded transition.
+// Event kinds (v0.8.1). The ledger is the SINGLE event stream — every
+// kind of lifecycle event lands here rather than in parallel logs; any
+// per-feature or per-gate view is derived from it.
+const (
+	EventTransition = "transition" // a unit moved on the truth-level ladder
+	EventCheckRun   = "check-run"  // a check suite executed (validate, runs-clean, demonstrate)
+	EventGate       = "gate"       // a human gate decision (approve, clear)
+	EventCR         = "cr"         // a change-request lifecycle event
+	EventFlag       = "flag"       // a meaning flag raised or cleared
+	EventSignOff    = "sign-off"   // a demonstration sign-off
+)
+
+// Entry is one recorded event. For EventTransition, Transition carries
+// the "<from>→<to>" ladder move; other kinds use Evidence for their
+// payload and may leave Transition empty.
 type Entry struct {
-	// At is an RFC3339 timestamp; Commit pins the commit the transition
+	// At is an RFC3339 timestamp; Commit pins the commit the event
 	// was observed on (the graph's generated_from_commit).
 	At     string `json:"at,omitempty"`
 	Commit string `json:"commit,omitempty"`
-	// Actor is the agent identity responsible for the transition.
+	// Event is the kind of entry (see Event* constants). Empty means
+	// EventTransition — the pre-v0.8.1 wire format remains valid.
+	Event string `json:"event,omitempty"`
+	// Actor is the identity responsible for the event.
 	Actor string `json:"actor,omitempty"`
-	// Unit is the truth-bearing unit: "brd.x:SC-1", "brd.x:US-1", or a
-	// "feature:INV-N" invariant ref.
+	// Unit is the truth-bearing unit: "brd.x:SC-1", "brd.x:US-1", a
+	// "feature:INV-N" invariant ref, or "workspace" for suite-level events.
 	Unit string `json:"unit"`
 	// Transition is "<from>→<to>" across the truth-level ladder, e.g.
 	// "unverified→demonstrated" or "verified→regressed".
-	Transition string `json:"transition"`
-	// Evidence references what backs the transition: a test FQN, a
-	// validation code, an entry-point id.
+	Transition string `json:"transition,omitempty"`
+	// Evidence references what backs the event: a test FQN, a
+	// validation code, an entry-point id, or a one-line summary.
 	Evidence string `json:"evidence,omitempty"`
-	// Mode is the autonomy mode the transition was made under.
+	// Mode is the autonomy mode the event was made under.
 	Mode string `json:"mode,omitempty"`
+}
+
+// Kind returns the event kind, defaulting historical entries to
+// EventTransition.
+func (e Entry) Kind() string {
+	if e.Event == "" {
+		return EventTransition
+	}
+	return e.Event
 }
 
 // From returns the pre-transition level (the part before "→"). Empty when

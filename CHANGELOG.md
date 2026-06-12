@@ -2,6 +2,99 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.8.1]
+
+Lifecycle governance. v0.8.0 made the graph honest about *what* is
+true; v0.8.1 makes it honest about *who established it, at what
+criticality, and what happens when grounded intent changes*. Everything
+is opt-in and additive; new rules are info/warning only.
+
+### Added — tiers & direct wiring
+
+- **`BRDCriterion.tier`** (`1|2|3`) — pinned criticality: 1 default,
+  2 auth/permissions/data-loss, 3 money/regulatory. Surfaced as the `T`
+  column on `lattice rtm`; tier 2+ gates mutation evidence
+  (**`MUTATION_REQUIRED_TIER`**, warning) and is never delegable in CR
+  decisions.
+- **`direct_wire: true`** — a criterion that already IS an enforceable
+  sentence carries `enforced_by`/`verified_by` directly; checks treat it
+  as its own invariant. Cuts 1:1 restatement-invariant padding.
+
+### Added — flagged state (stale green never rides)
+
+- **`pkg/lattice/flags`** + **`lattice flag raise|list|clear`** — open
+  meaning flags on units, stored under `lattice/.flags/`. A flag rides
+  ALONGSIDE the computed RTM status (`demonstrated⚑`), is raised by
+  anyone, and is cleared only by a human (`--by`, agent actors
+  refused). **`CRITERION_FLAGGED`** (info) keeps `validate` from
+  reading clean while a meaning question is open.
+
+### Added — change-request flow (CR-1…CR-5)
+
+- **`schema.Revision`** + **`pkg/lattice/revision`** —
+  `lattice/revisions/CR-<n>.yaml`: targets, verbatim previous text,
+  computed impact, decision, demotions, work/retirement items.
+- **`lattice cr propose|price|decide|reconverge|list|show`** — grounded
+  artifacts are never edited in place. `price` computes the forward
+  blast radius (criterion → invariants → enforcers → verifiers →
+  scenarios → entry points, plus in-flight lease conflicts) and
+  classes the change (`wording|widening|narrowing|contradiction`,
+  strictest wins). `decide` is the human gate: approval applies the
+  text (re-grounding), **demotes** every touched criterion to flagged,
+  and spawns work items (widening) or **retirement items** (narrowing —
+  the only thing that makes a test deletion legal). Contradictions are
+  blocked until `--supersedes-decision` retires the conflicting
+  Decision. `reconverge` closes the loop once every demotion is
+  human-cleared. **`REVISION_SCHEMA`** (error) on malformed CR files.
+- **`autonomy.mandates`** — human-pinned delegations with class list,
+  tier ceiling, and expiry. An agent may decide only wording-class CRs
+  under a covering mandate; narrowings and tier-2+ radii are
+  hard-coded non-delegable.
+
+### Added — back-propagation & the forbidden-move sweep
+
+- **`lattice backprop [--since <ref>] [--flag]`** — after a merge, maps
+  changed files → enforcer symbols → invariants → grounded criteria.
+  No grounded impact → a ledgered "no doc impact". Impact → the
+  affected criteria are listed (and optionally flagged) for the human
+  amendment gate; the requirement never silently follows the code.
+- **`pkg/lattice/sweep`** + **`lattice sweep [--update-baseline]`** — a
+  verifier present at the recorded baseline that disappears without an
+  approved CR retirement item is **`TEST_RETIRED_ILLEGALLY`** (warning,
+  exit 1).
+
+### Added — composed demonstration & V8
+
+- **`lattice demonstrate [--brd <id>]`** — the QAE sign-off ritual in
+  gate order: V0 runs-clean → V4 (every verifier *passed on ingested
+  results*, existence is not evidence) → V5 (every scenario reaches a
+  declared entry point AND is demonstrated) → V10 (tier-2+ mutation
+  evidence) → sweep. Findings are the work list; open flags are
+  reported alongside and routed to humans, never cleared by the
+  sign-off. Green runs ledger a named `sign-off` event.
+- **`AUTHOR_NOT_SEPARATED`** (info) — V8 from the ledger: a unit whose
+  every attributed transition (including the move to demonstrated)
+  names one actor is self-verified and needs an independent pass.
+
+### Added — single event stream & lite profile
+
+- Ledger **event vocabulary** (`transition|check-run|gate|cr|flag|sign-off`)
+  — `validate`, `runs-clean`, `results ingest`, `backprop`, `sweep`,
+  the CR flow, and `demonstrate` all append evidence lines; views are
+  derived from the one stream, never from parallel logs. Pre-v0.8.1
+  ledger files remain valid (kind defaults to `transition`).
+- **`profile: lite`** — the immediate-payoff subset: links, grounding,
+  annotations, leases, governance; deep families deferred and the RTM
+  honestly capped at `verified` (lite's ceiling is *wired*;
+  `demonstrate` refuses to sign off). The upgrade path is the architect
+  pass over the already-grounded BRDs.
+
+### Deferred
+
+- **V11 `observed`** (runtime assertions against staging/production
+  traffic) remains deferred — it needs a monitor integration story, not
+  a schema field.
+
 ## [0.8.0]
 
 The agent-steerable knowledge graph. v0.6 let Lattice say "this is

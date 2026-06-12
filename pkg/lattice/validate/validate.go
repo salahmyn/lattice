@@ -9,6 +9,7 @@ import (
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/lease"
+	"github.com/salahmyn/lattice/pkg/lattice/ledger"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
@@ -85,6 +86,18 @@ type Options struct {
 	// held by different actors claim overlapping scopes, LEASE_SCOPE_OVERLAP
 	// fires. Empty in a single-agent run.
 	Leases []lease.Lease
+
+	// LedgerEntries feed the V8 author-separation check (v0.8.1): a unit
+	// whose every attributed ledger transition carries the same actor —
+	// including the move to demonstrated — is self-verified
+	// (AUTHOR_NOT_SEPARATED, info). nil skips the check.
+	LedgerEntries []ledger.Entry
+
+	// FlagsOf returns the open meaning-flag reasons for a unit (v0.8.1).
+	// Every open flag surfaces as CRITERION_FLAGGED (info) so a validate
+	// run never reads clean while a meaning question is open. nil means
+	// no flag store.
+	FlagsOf func(unit string) []string
 }
 
 // Validate runs all rules and returns the complete, sorted violation set,
@@ -99,16 +112,23 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 	v = append(v, c.checkScenarios()...)  // v0.8 α/β — scenario + reach
 	v = append(v, c.checkDependencies()...)
 	v = append(v, c.checkInitiativesAndTasks()...)
-	v = append(v, c.checkLeases()...) // v0.8 §5 — fleet coordination
+	v = append(v, c.checkLeases()...)     // v0.8 §5 — fleet coordination
+	v = append(v, c.checkGovernance()...) // v0.8.1 — V8, tier gates, open flags
 
 	if !opts.ReviewMode {
 		v = append(v, c.checkAnnotations()...)
-		v = append(v, c.checkVerification()...)
-		v = append(v, c.checkSurfaces()...)
-		v = append(v, c.checkErrors()...)
-		v = append(v, checkEntryPoints(kg)...)
-		v = append(v, c.checkAMA()...)     // v0.7 — AMA structural checks
-		v = append(v, c.checkMeaning()...) // v0.8 δ — meaning fidelity
+		// The lite profile (v0.8.1) keeps the immediate-payoff subset —
+		// links, grounding, @feature annotations, leases, governance —
+		// and defers the deep families until the architect pass upgrades
+		// the workspace. Its RTM ceiling is "wired"; validation matches.
+		if !cfg.IsLite() {
+			v = append(v, c.checkVerification()...)
+			v = append(v, c.checkSurfaces()...)
+			v = append(v, c.checkErrors()...)
+			v = append(v, checkEntryPoints(kg)...)
+			v = append(v, c.checkAMA()...)     // v0.7 — AMA structural checks
+			v = append(v, c.checkMeaning()...) // v0.8 δ — meaning fidelity
+		}
 	}
 
 	sortViolations(v)

@@ -15,6 +15,10 @@ an initiative.
    code, the verifying tests, related decisions, and the skills to load.
 2. You do **not** need to re-analyze the repository — the bundle is sufficient
    to act.
+3. In a multi-agent workspace (v0.8): identify yourself (`--actor` or
+   `LATTICE_ACTOR`) and claim the unit before editing —
+   `lattice lease acquire <unit>`; release on handoff. `lattice next` ranks
+   the weakest links when you have no assignment.
 
 ## Task status
 

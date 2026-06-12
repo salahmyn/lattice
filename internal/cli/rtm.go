@@ -1,12 +1,33 @@
 package cli
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/flags"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/rtm"
 )
+
+// flagReasons adapts the open-flag map to rtm.Options.FlagsOf.
+func flagReasons(open map[string][]flags.Flag) func(string) []string {
+	if len(open) == 0 {
+		return nil
+	}
+	return func(unit string) []string {
+		fl := open[unit]
+		if len(fl) == 0 {
+			return nil
+		}
+		reasons := make([]string, len(fl))
+		for i, f := range fl {
+			reasons[i] = f.Reason
+		}
+		return reasons
+	}
+}
 
 // newRTMCommand exposes the v0.6 Requirements Traceability Matrix:
 // for each BRD success_criterion, walk down to the backing invariant,
@@ -42,9 +63,12 @@ The same rows back the BRD_CRITERION_* validation rules and the
 			}
 			cfg, _ := config.Load(ws.LatticeDir)
 			set := results.Load(ws.LatticeDir)
+			openFlags := flags.OpenByUnit(ws.LatticeDir)
 			matrix := rtm.Build(kg, rtm.Options{
 				MutationThreshold: cfg.MutationTesting.Thresholds.Default,
 				ResultOf:          resultOfFrom(set),
+				FlagsOf:           flagReasons(openFlags),
+				ProfileLite:       cfg.IsLite(),
 			})
 			coverage := rtm.ComputeCoverage(matrix)
 			journey := rtm.ComputeJourneyCoverage(matrix)
@@ -83,17 +107,28 @@ The same rows back the BRD_CRITERION_* validation rules and the
 
 			renderRTMSummary(io, attestation, coverage, journey, matrix)
 			io.printf("\n")
-			io.printf("%-32s %-6s %-12s %-25s %-8s %-8s\n",
-				"BRD", "SC", "status", "invariant", "enforcer", "verifier")
+			io.printf("%-32s %-6s %-2s %-12s %-25s %-8s %-8s\n",
+				"BRD", "SC", "T", "status", "invariant", "enforcer", "verifier")
 			io.printf("%s\n", strRepeat("-", 96))
 			for _, r := range matrix.Rows {
 				ref := r.MapsTo
 				if ref == "" {
 					ref = "(unmapped)"
 				}
-				io.printf("%-32s %-6s %-12s %-25s %-8d %-8d\n",
-					truncate(r.BRDID, 32), r.CriterionID, string(r.Status),
+				if r.DirectWire {
+					ref = "(direct-wired)"
+				}
+				status := string(r.Status)
+				if r.Flagged {
+					// A flag rides alongside the status — both, always.
+					status += "⚑"
+				}
+				io.printf("%-32s %-6s %-2d %-12s %-25s %-8d %-8d\n",
+					truncate(r.BRDID, 32), r.CriterionID, r.Tier, status,
 					truncate(ref, 25), len(r.Enforcers), len(r.Verifiers))
+				for _, fl := range r.Flags {
+					io.printf("    ⚑ %s\n", fl)
+				}
 			}
 			// Scenario rows (v0.8 α) beneath the criteria — what the user does.
 			if len(matrix.Scenarios) > 0 {
@@ -141,9 +176,13 @@ func renderRTMSummary(io *IO, attestation string, c rtm.Coverage, j rtm.JourneyC
 	}
 	io.printf("\nPer-BRD:\n")
 	for _, s := range m.Summaries {
-		io.printf("  %-32s  %5.1f%%  dem:%d v:%d p:%d fail:%d u-enf:%d u-ver:%d unmap:%d phantom:%d  worst=%s\n",
+		flagged := ""
+		if s.Flagged > 0 {
+			flagged = fmt.Sprintf("  ⚑%d", s.Flagged)
+		}
+		io.printf("  %-32s  %5.1f%%  dem:%d v:%d p:%d fail:%d u-enf:%d u-ver:%d unmap:%d phantom:%d  worst=%s%s\n",
 			truncate(s.BRDID, 32), s.VerificationRate*100,
 			s.Demonstrated, s.Verified, s.Partial, s.Failing, s.Unenforced, s.Unverified, s.Unmapped, s.Phantom,
-			string(s.WorstStatus))
+			string(s.WorstStatus), flagged)
 	}
 }

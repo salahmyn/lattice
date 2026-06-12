@@ -390,12 +390,21 @@ knowledge:
     strategy: by_feature_group  # by_feature_group | by_size
     max_features_per_shard: 200
 
+# v0.8.1 — framework depth. "lite" keeps links/grounding/annotations only
+# and honestly caps the RTM at verified (ceiling: wired). Default: standard.
+# profile: standard             # standard | lite
+
 # v0.8 — agent steering (opt-in; absent = human approves everything).
 # autonomy:
 #   default_mode: gated         # gated | autonomous | tiered
 #   require_actor: true         # unattributed transitions become warnings
 #   attestation: self           # self | isolated | bound — who ran the checks;
 #                               # reported on the RTM header, never exceeded by claims
+#   mandates:                   # human-pinned delegations (agents never edit these)
+#     - id: M-1
+#       grants: cr_decide       # may approve wording-class CRs…
+#       tier_max: 1             # …at tier 1 only; narrowings never delegable
+#       expires: "2026-12-31"
 
 # v0.8 — V0 runs-clean gate ("gate zero", lattice runs-clean). Nothing is
 # demonstrated while the app fails to install, build, boot, and answer.

@@ -119,6 +119,29 @@ type BRDCriterion struct {
 	ID               string `yaml:"id"`
 	Statement        string `yaml:"statement"`
 	MapsToInvariant  string `yaml:"maps_to_invariant,omitempty"`
+
+	// Tier is the pinned criticality (v0.8.1): 1 default; 2 for
+	// auth/permissions/data-loss/cross-tenant; 3 for money movement and
+	// regulatory. Proposed mechanically, pinned by a human, changed only
+	// through the CR flow. Tier 2+ requires mutation evidence
+	// (MUTATION_REQUIRED_TIER) and is never delegable in CR decisions.
+	Tier int `yaml:"tier,omitempty"`
+
+	// DirectWire (v0.8.1) marks a criterion that already IS an
+	// enforceable single sentence: enforcers and verifiers attach
+	// directly here instead of minting a 1:1 restatement invariant.
+	// Checks treat the criterion as its own invariant.
+	DirectWire bool     `yaml:"direct_wire,omitempty"`
+	EnforcedBy []string `yaml:"enforced_by,omitempty"`
+	VerifiedBy []string `yaml:"verified_by,omitempty"`
+}
+
+// EffectiveTier returns the pinned tier, defaulting to 1.
+func (c BRDCriterion) EffectiveTier() int {
+	if c.Tier >= 1 && c.Tier <= 3 {
+		return c.Tier
+	}
+	return 1
 }
 
 // BRDConstraintKind narrows the constraint taxonomy enough that the UI

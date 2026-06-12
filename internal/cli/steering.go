@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -12,7 +13,30 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/ledger"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/rtm"
+	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
+
+// appendLedgerEvent best-effort appends a non-transition event to the
+// ledger (v0.8.1 — the ledger is the single event stream: check runs,
+// gates, CR events, flags, and sign-offs all land here rather than in
+// parallel logs). Failures warn but never fail the command that did
+// the real work.
+func appendLedgerEvent(io *IO, ws *workspace.Workspace, event, unit, evidence string) {
+	actor := io.actor()
+	if actor == "" {
+		actor = "unattributed"
+	}
+	err := ledger.Record(ws.LatticeDir, ledger.Entry{
+		At:       time.Now().UTC().Format(time.RFC3339),
+		Event:    event,
+		Actor:    actor,
+		Unit:     unit,
+		Evidence: evidence,
+	})
+	if err != nil {
+		io.printf("warning: ledger append failed: %v\n", err)
+	}
+}
 
 // resultOfFrom adapts an ingested result Set to the (passed, known) shape
 // rtm/validate expect. A skipped test reads as unknown — it is no
@@ -58,6 +82,9 @@ func newResultsIngestCommand(io *IO) *cobra.Command {
 				return io.fail("INGEST_FAILED", err.Error(), nil)
 			}
 			pass, fail, skip := tallyResults(set)
+			appendLedgerEvent(io, ws, ledger.EventCheckRun, "workspace",
+				fmt.Sprintf("results ingest: %d pass, %d fail, %d skip @ %s",
+					pass, fail, skip, shortCommit(set.Commit)))
 			if io.JSON {
 				return io.printJSON(map[string]interface{}{
 					"commit": set.Commit, "total": len(set.Results),
@@ -249,8 +276,12 @@ func newLedgerCommand(io *IO) *cobra.Command {
 				return nil
 			}
 			for _, e := range entries {
+				detail := e.Transition
+				if e.Kind() != ledger.EventTransition {
+					detail = "[" + e.Kind() + "]"
+				}
 				io.printf("%-10s %-22s %-26s %-22s %s\n",
-					shortCommit(e.Commit), truncate(e.Actor, 22), e.Unit, e.Transition, e.Evidence)
+					shortCommit(e.Commit), truncate(e.Actor, 22), e.Unit, detail, e.Evidence)
 			}
 			return nil
 		},

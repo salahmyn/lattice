@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/ledger"
 	"github.com/salahmyn/lattice/pkg/lattice/runsclean"
 )
 
@@ -52,6 +53,11 @@ any failing step; configure the block in lattice/config.yaml:
 			}
 
 			rep := runsclean.Run(cmd.Context(), io.Repo, cfg.Runtime)
+			verdict := "pass"
+			if !rep.Pass {
+				verdict = "fail"
+			}
+			appendLedgerEvent(io, ws, ledger.EventCheckRun, "workspace", "runs-clean (V0): "+verdict)
 			if io.JSON {
 				if err := io.printJSON(rep); err != nil {
 					return err

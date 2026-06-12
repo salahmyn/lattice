@@ -56,6 +56,11 @@ func NewRootCommand() *cobra.Command {
 		newLedgerCommand(io),
 		newNextCommand(io),
 		newRunsCleanCommand(io),
+		newFlagCommand(io),
+		newCRCommand(io),
+		newBackpropCommand(io),
+		newSweepCommand(io),
+		newDemonstrateCommand(io),
 	)
 
 	return root

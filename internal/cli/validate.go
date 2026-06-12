@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"time"
@@ -8,7 +9,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/flags"
 	"github.com/salahmyn/lattice/pkg/lattice/lease"
+	"github.com/salahmyn/lattice/pkg/lattice/ledger"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/validate"
@@ -44,14 +47,18 @@ func newValidateCommand(io *IO) *cobra.Command {
 
 			// v0.8 — fold ingested results (γ) and active leases (§5) into
 			// the run so validation agrees with rtm/coverage and flags
-			// concurrent-edit collisions.
+			// concurrent-edit collisions. v0.8.1 adds the ledger (V8
+			// author separation) and open meaning flags.
 			set := results.Load(ws.LatticeDir)
 			activeLeases, _ := lease.Active(ws.LatticeDir, time.Now())
+			entries, _ := ledger.Load(ws.LatticeDir)
 
 			violations := validate.Validate(kg, cfg, validate.Options{
-				ReviewMode: ws.Review,
-				ResultOf:   resultOfFrom(set),
-				Leases:     activeLeases,
+				ReviewMode:    ws.Review,
+				ResultOf:      resultOfFrom(set),
+				Leases:        activeLeases,
+				LedgerEntries: entries,
+				FlagsOf:       flagReasons(flags.OpenByUnit(ws.LatticeDir)),
 			})
 			kg.Violations = violations
 			_, _ = writeGraph(ws, cfg, kg)
@@ -65,6 +72,11 @@ func newValidateCommand(io *IO) *cobra.Command {
 				}
 			}
 			report.OK = report.Errors == 0
+
+			// Ledger the check run — script-free claims are not evidence;
+			// the ledger line is.
+			appendLedgerEvent(io, ws, ledger.EventCheckRun, "workspace",
+				fmt.Sprintf("validate: %d error(s), %d warning(s)", report.Errors, report.Warnings))
 
 			if io.JSON {
 				_ = io.printJSON(report)

@@ -27,7 +27,17 @@ full, imply the criterion?**
   set. Never weaken the SC to match a convenient invariant.
 - **A success_criterion with no `maps_to_invariant`, or a `user_scenario`
   with no `verified_by`, is unmeant until you link it** — orientation, not an
-  error, but the next thing to do.
+  error, but the next thing to do. (Exception: a criterion that already IS an
+  enforceable sentence may be `direct_wire: true` with its own
+  `enforced_by`/`verified_by` — don't mint a restatement invariant.)
+- **When you suspect a mismatch, raise a flag, don't fix silently:**
+  `lattice flag raise <unit> --reason "<one line>"`. The flag rides alongside
+  the status (`demonstrated⚑`) until a HUMAN clears it — you cannot clear
+  your own meaning questions.
+- **Never weaken a grounded criterion to match the code.** Changing grounded
+  intent goes through the CR flow (`lattice cr propose|price|decide`) —
+  approval demotes the touched criteria and, for narrowings, issues the
+  retirement items that make test removal legal.
 
 ## 2. Is the invariant falsifiable here?
 
@@ -71,6 +81,10 @@ the application — treat it as a critical finding, not a footnote.
   reporting anything demonstrated: clean install → build → boot → smoke
   probes, from the workspace's `runtime:` config block.
 - Nothing is `demonstrated` while V0 fails, no matter how green the suite is.
+- For the full sign-off, run `lattice demonstrate`: V0 + verifiers-passed +
+  journeys-through-entry-points + tier-2+ mutation evidence + the
+  forbidden-move sweep, executed now and ledgered. Its findings are your
+  work list, in gate order.
 
 ## Honesty about who checked
 

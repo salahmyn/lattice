@@ -63,6 +63,19 @@ func LoadBRD(path string) (*BRD, error) {
 	return &b, nil
 }
 
+// LoadRevision reads and parses a change-request (CR) YAML file.
+func LoadRevision(path string) (*Revision, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var r Revision
+	if err := yaml.Unmarshal(data, &r); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return &r, nil
+}
+
 // LoadTask reads and parses a task YAML file.
 func LoadTask(path string) (*Task, error) {
 	data, err := os.ReadFile(path)

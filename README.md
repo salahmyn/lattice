@@ -5,7 +5,7 @@
 <p align="center"><em>A substrate for software meaning.</em></p>
 
 <p align="center">
-  <a href="CHANGELOG.md"><img alt="version" src="https://img.shields.io/badge/version-0.8.0-8C7DD6?style=flat-square&labelColor=0F1218"></a>
+  <a href="CHANGELOG.md"><img alt="version" src="https://img.shields.io/badge/version-0.8.1-8C7DD6?style=flat-square&labelColor=0F1218"></a>
   <img alt="go" src="https://img.shields.io/badge/go-1.24+-0F1218?style=flat-square">
   <img alt="status" src="https://img.shields.io/badge/status-alpha-E5B66C?style=flat-square&labelColor=0F1218">
   <img alt="license" src="https://img.shields.io/badge/license-Apache--2.0-C7BEEC?style=flat-square&labelColor=0F1218">
@@ -121,6 +121,11 @@ A complete, validating three-language example lives in
 | `lattice lease acquire\|release\|list` | Claim work units in a multi-agent fleet (v0.8) |
 | `lattice ledger [rebuild]` | Append-only attribution ledger of truth-level transitions (v0.8) |
 | `lattice runs-clean` (alias `v0`) | Gate zero: clean install → build → boot → smoke probes (v0.8) |
+| `lattice flag raise\|list\|clear` | Meaning flags — ride alongside green, humans clear (v0.8.1) |
+| `lattice cr propose\|price\|decide\|reconverge` | Change requests against grounded intent, with demotions (v0.8.1) |
+| `lattice backprop [--since <ref>]` | Code→docs scan: which grounded criteria a change touched (v0.8.1) |
+| `lattice sweep` | Forbidden-move sweep: no verifier disappears without a CR (v0.8.1) |
+| `lattice demonstrate` | QAE sign-off: V0+V4+V5+V10+sweep, executed now, ledgered (v0.8.1) |
 
 Every command supports `--json` for machine-readable output; `--actor`
 (or `LATTICE_ACTOR`) names the agent identity on leases and ledger entries.
@@ -183,23 +188,36 @@ server are peers over the same JSON contract. Languages live only in adapters
 parser. Entry points and BRDs are pluggable axes built on top of the same
 extraction pass.
 
-## What's new in 0.8.0
+## What's new in 0.8.x
 
-The agent-steerable knowledge graph. Every requirement chain now reports
-one of four truth-levels — `declared → wired → correctly-meant →
-demonstrated` — and the graph becomes the substrate a fleet of
-autonomous agents steers by:
+The agent-steerable knowledge graph (0.8.0) plus lifecycle governance
+(0.8.1). Every requirement chain reports one of four truth-levels —
+`declared → wired → correctly-meant → demonstrated` — and the graph
+becomes the substrate a fleet of autonomous agents steers by, honestly:
 
 - **Demonstration** — `lattice results ingest` feeds real test outcomes
-  into the RTM; *demonstrated* means the verifier passed, not that it exists.
-- **Meaning fidelity** — new rules catch tag-not-guard enforcers,
-  unfalsifiable invariants, and invariants narrower than their criteria.
+  into the RTM; *demonstrated* means the verifier passed, not that it
+  exists. `lattice demonstrate` composes the full QAE sign-off
+  (V0+V4+V5+V10+sweep) and ledgers it.
+- **Meaning fidelity** — rules catch tag-not-guard enforcers,
+  unfalsifiable invariants, and invariants narrower than their criteria;
+  open **meaning flags** ride alongside green rows (`demonstrated⚑`)
+  until a human clears them.
+- **Change control** — grounded intent changes only through
+  `lattice cr` (propose → price → decide → reconverge): the blast radius
+  is priced before commitment, approval demotes touched criteria (stale
+  green never rides), and test deletion is legal only against a CR
+  retirement item (`lattice sweep` enforces it). `lattice backprop`
+  scans merged code changes back onto the requirements.
 - **Steering** — `lattice next` (weakest-link ranking), `lattice lease`
-  (work claims), `lattice ledger` (attributed truth-level transitions),
-  `--actor` identity, and opt-in `autonomy:` modes with a human-only floor.
+  (work claims), `lattice ledger` (the single attributed event stream),
+  `--actor` identity, tiers (criticality 1–3), opt-in `autonomy:` modes
+  and human-pinned mandates with a hard non-delegable floor.
 - **Governance** — `lattice runs-clean` ("gate zero": the app must
-  install, build, boot, and answer before anything is demonstrated) and
-  an honest attestation header (`self | isolated | bound`) on every RTM.
+  install, build, boot, and answer before anything is demonstrated), an
+  honest attestation header (`self | isolated | bound`) on every RTM,
+  V8 author-separation, and a `lite` profile whose ceiling is honestly
+  capped at *wired*.
 
 Full release notes: [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -207,4 +225,4 @@ Full release notes: [`CHANGELOG.md`](CHANGELOG.md).
 
 Apache-2.0 (intended).
 
-<p align="center"><sub>⬡ &nbsp;Lattice 0.8.0 — <em>a substrate for software meaning.</em></sub></p>
+<p align="center"><sub>⬡ &nbsp;Lattice 0.8.1 — <em>a substrate for software meaning.</em></sub></p>

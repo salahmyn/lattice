@@ -8,6 +8,13 @@ description: The proposal lifecycle and how to read the conflict analyzer's outp
 A proposal is a manifest with `status: proposal`, kept under a
 `proposals/` directory so it is not part of the live corpus.
 
+**Scope note (v0.8.1):** proposals change the *feature/architecture* layer.
+Changing **grounded business intent** — an approved BRD's criteria, scope,
+tiers, or a recorded decision — is a different flow: `lattice cr
+propose|price|decide` (see [[verifying-meaning]]). If your proposal would
+make a grounded criterion false or narrower, open a CR first; the feature
+proposal then implements whatever the CR approves.
+
 ## Lifecycle
 
 1. Draft the proposal manifest (or use `lattice agent draft-proposal`).
