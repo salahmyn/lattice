@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 452 100" width="452" height="100" role="img" aria-label="Lattice">
+  <!-- mark: regular hexagonal unit cell, circumradius 32 on a 100-unit grid -->
+  <polygon points="50,18 77.71,34 77.71,66 50,82 22.29,66 22.29,34" fill="none" stroke="#E2E6EE" stroke-width="5" stroke-linejoin="miter"/>
+  <circle cx="50" cy="18" r="5" fill="#E2E6EE"/>
+  <circle cx="77.71" cy="34" r="5" fill="#E2E6EE"/>
+  <circle cx="77.71" cy="66" r="5" fill="#E2E6EE"/>
+  <circle cx="50" cy="82" r="5" fill="#E2E6EE"/>
+  <circle cx="22.29" cy="66" r="5" fill="#E2E6EE"/>
+  <circle cx="22.29" cy="34" r="5" fill="#E2E6EE"/>
+  <circle cx="50" cy="50" r="7" fill="#8C7DD6"/>
+  <!-- wordmark: uppercase, medium weight, tracked 0.18em, cap midline on hex center -->
+  <text x="132" y="69" font-family="Geist, 'Geist Sans', ui-sans-serif, system-ui, 'Helvetica Neue', Arial, sans-serif" font-size="56" font-weight="500" letter-spacing="0.18em" fill="#E2E6EE" textLength="300" lengthAdjust="spacingAndGlyphs">LATTICE</text>
+</svg>

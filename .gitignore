@@ -16,3 +16,8 @@ lattice/.cache/
 .DS_Store
 .idea/
 .vscode/
+.commandcode/
+docs/
+lattice-ui-design-spec.md
+.claude/workflows/
+.claude/skills/preflight/

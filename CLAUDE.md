@@ -7,20 +7,13 @@ business intent. Module: `github.com/salahmyn/lattice`. Source lives under
 
 ## Environment
 
-Verify the toolchain before any build/lint/deploy chain — drift here has
-repeatedly blocked work mid-task. The fastest path is to run the `/preflight`
-skill, which checks all of the below.
+Verify the toolchain before any build/lint chain — drift here has
+repeatedly blocked work mid-task.
 
-- **Node.js**: must be `>= 18`. Node 17 silently breaks Expo CLI, lint
-  validation, and npx-based MCP servers. If `node -v` reports 17.x, stop and
-  upgrade (e.g. `nvm install --lts && nvm use --lts`) before running anything
-  Node-dependent.
-- **iOS builds** (when working on the Expo/mobile side): `xcode-select -p` must
-  point at `Xcode.app` (e.g. `/Applications/Xcode.app/Contents/Developer`), not
-  `CommandLineTools`. CocoaPods must be installed (`pod --version`). If a build
-  fails with derived-data module-map errors, clear DerivedData and re-pod
-  before chasing code.
-- **Go**: `go version` should be `>= 1.24` (matches `go.mod`).
+- **Go**: `go version` should be `>= 1.24` (matches `go.mod`). A C toolchain
+  is required for the tree-sitter bindings.
+- **Node.js** (only for `lattice-mcp/` and npx-based MCP servers): must be
+  `>= 18`. Node 17 silently breaks npx-based MCP servers and lint validation.
 
 ## Lattice Conventions
 

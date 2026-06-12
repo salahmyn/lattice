@@ -2,7 +2,7 @@
   "name": "@salahmyn/mcp-server",
   "version": "1.0.0",
   "description": "MCP server for Lattice — wraps the lattice CLI and exposes it to MCP hosts.",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "lattice-mcp": "dist/index.js"
