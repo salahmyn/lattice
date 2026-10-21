@@ -27,17 +27,23 @@ type Judgment struct {
 
 // JudgmentEntry is one row; which fields matter depends on the judgment type.
 type JudgmentEntry struct {
-	ID          string   `yaml:"id,omitempty"`          // system, external, group, label
-	Title       string   `yaml:"title,omitempty"`       // system, external, group, label
-	Kind        string   `yaml:"kind,omitempty"`        // block kind (system, external, group) or edge kind
-	Parent      string   `yaml:"parent,omitempty"`      // system, external, group
-	Technology  string   `yaml:"technology,omitempty"`  // system, external, group
-	Description string   `yaml:"description,omitempty"` // system, external, group
-	Members     []string `yaml:"members,omitempty"`     // group: blocks moved under it
-	From        string   `yaml:"from,omitempty"`        // edge
-	To          string   `yaml:"to,omitempty"`          // edge
-	Label       string   `yaml:"label,omitempty"`       // edge
-	Prefix      string   `yaml:"prefix,omitempty"`      // alias: a prefix that turns a short id into a full one
+	ID           string   `yaml:"id,omitempty"`            // system, external, group, label
+	Title        string   `yaml:"title,omitempty"`         // system, external, group, label
+	Kind         string   `yaml:"kind,omitempty"`          // block kind (system, external, group) or edge kind
+	Parent       string   `yaml:"parent,omitempty"`        // system, external, group
+	Technology   string   `yaml:"technology,omitempty"`    // system, external, group
+	Description  string   `yaml:"description,omitempty"`   // system, external, group
+	Members      []string `yaml:"members,omitempty"`       // group: blocks moved under it
+	From         string   `yaml:"from,omitempty"`          // edge
+	To           string   `yaml:"to,omitempty"`            // edge
+	Label        string   `yaml:"label,omitempty"`         // edge
+	Exclude      []string `yaml:"exclude,omitempty"`       // edge: ids or patterns left out of a pattern end
+	Blocks       string   `yaml:"blocks,omitempty"`        // edge (config, events): only blocks whose id matches this pattern
+	ConfigKind   string   `yaml:"config_kind,omitempty"`   // edge: from -> every block whose `when` reads a config of this kind
+	ConfigSource string   `yaml:"config_source,omitempty"` // edge: from -> every block whose config_source has this type
+	Scopes       []string `yaml:"scopes,omitempty"`        // edge with config_source: allowed scopes ("" = none)
+	Events       []string `yaml:"events,omitempty"`        // edge: event names or patterns; from -> emitter, or emitter -> to
+	Prefix       string   `yaml:"prefix,omitempty"`        // alias: a prefix that turns a short id into a full one
 }
 
 var judgmentTypes = map[string]bool{"system": true, "external": true, "edge": true, "group": true, "label": true, "alias": true}
@@ -180,16 +186,36 @@ func (g *graph) applyGroup(j Judgment) {
 	}
 }
 
-// applyEdge adds edges a catalogue cannot show.
+// applyEdge adds edges a catalogue cannot show. An end may be an id pattern.
+// Config entries are rule edges (rules.go); event entries are applied by
+// applyEvents across all edge judgments, so they are skipped here.
 func (g *graph) applyEdge(j Judgment) {
+	prov := judgmentProvenance(j)
 	for _, e := range j.Entries {
-		e.From, e.To = g.resolve(e.From), g.resolve(e.To)
-		for _, id := range []string{e.From, e.To} {
-			if g.blocks[id] == nil {
-				g.warnf("judgment %s: edge end %q is not a block", j.ID, id)
+		switch {
+		case len(e.Events) > 0:
+			continue
+		case e.ConfigKind != "" || e.ConfigSource != "":
+			g.applyConfig(j, e)
+			continue
+		}
+		froms, tos := g.expand(e.From, e.Exclude), g.expand(e.To, e.Exclude)
+		for _, end := range []struct {
+			raw string
+			ids []string
+		}{{e.From, froms}, {e.To, tos}} {
+			switch {
+			case len(end.ids) == 0:
+				g.warnf("judgment %s: %q matches no block", j.ID, end.raw)
+			case len(end.ids) == 1 && g.blocks[end.ids[0]] == nil:
+				g.warnf("judgment %s: edge end %q is not a block", j.ID, end.raw)
 			}
 		}
-		g.edge(e.From, e.To, e.Kind, e.Label, nil, judgmentProvenance(j))
+		for _, f := range froms {
+			for _, t := range tos {
+				g.edge(f, t, e.Kind, e.Label, nil, prov)
+			}
+		}
 	}
 }
 
