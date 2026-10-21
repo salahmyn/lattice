@@ -121,6 +121,7 @@ func Build(in Inputs) Result {
 	if missing > 0 {
 		g.warnf("%d fulfills references name no block", missing)
 	}
+	g.sources = ims
 
 	g.addFeatures(in.Features, in.EntryPoints)
 	g.aliases = byType["alias"]
@@ -142,6 +143,8 @@ type graph struct {
 	warns  []string
 	// aliases are the alias judgments; group, edge and label ids resolve through them
 	aliases []Judgment
+	// sources are the imported catalogues, kept for rule edges (rules.go)
+	sources []imported
 }
 
 func (g *graph) warnf(format string, args ...any) {

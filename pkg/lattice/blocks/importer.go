@@ -19,18 +19,22 @@ type SourceInfo struct {
 // imported is one source's catalogues as blocks. Edges stay keyed by catalogue
 // id until Build has every source's keys.
 type imported struct {
-	blocks map[string]*schema.Block
-	keys   map[string]string // catalogue node id -> block id (an area root maps to its area block)
-	nodes  map[string]CatNode
-	prov   map[string]schema.Provenance // catalogue node id -> provenance
-	calls  [][2]string                  // catalogue ids: a parent in another area calls the child
+	blocks      map[string]*schema.Block
+	keys        map[string]string // catalogue node id -> block id (an area root maps to its area block)
+	nodes       map[string]CatNode
+	prov        map[string]schema.Provenance // catalogue node id -> provenance
+	calls       [][2]string                  // catalogue ids: a parent in another area calls the child
+	configKinds map[string]string            // config id -> kind, from this source's catalogue `configs`
 }
 
 func importSource(cats []*Catalogue, src SourceInfo) imported {
 	im := imported{blocks: map[string]*schema.Block{}, keys: map[string]string{}, nodes: map[string]CatNode{},
-		prov: map[string]schema.Provenance{}}
+		prov: map[string]schema.Provenance{}, configKinds: map[string]string{}}
 	area := map[string]string{} // catalogue node id -> area
 	for _, c := range cats {
+		for _, cfg := range c.Configs {
+			im.configKinds[cfg.ID] = cfg.Kind
+		}
 		prov := schema.Provenance{Kind: schema.ProvenanceAdapter, Source: sourceRef(src, c.Path)}
 		akey := src.Prefix + ":" + c.Area
 		title := c.Title

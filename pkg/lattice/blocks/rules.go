@@ -59,5 +59,51 @@ func excluded(id string, exclude []string) bool {
 	return false
 }
 
-// stub replaced in Task 2
-func (g *graph) applyConfig(Judgment, JudgmentEntry) {}
+var (
+	clauseSplit = regexp.MustCompile(`\s+(?:and|or)\s+`)
+	operatorCut = regexp.MustCompile(`\s*(?:!=|<=|>=|=|<|>|\s)\s*`)
+)
+
+// configRefs returns the config ids a block's `when` clauses read.
+func configRefs(when []string) []string {
+	var out []string
+	for _, clause := range when {
+		for _, part := range clauseSplit.Split(clause, -1) {
+			if cid := operatorCut.Split(strings.TrimSpace(part), 2)[0]; cid != "" {
+				out = append(out, cid)
+			}
+		}
+	}
+	return out
+}
+
+// applyConfig adds a config rule's edges: from the producer to every catalogue
+// block that reads a config of ConfigKind, or whose config_source has type
+// ConfigSource and an allowed scope.
+func (g *graph) applyConfig(j Judgment, e JudgmentEntry) {
+	from := g.resolve(e.From)
+	if g.blocks[from] == nil {
+		g.warnf("judgment %s: edge end %q is not a block", j.ID, e.From)
+		return
+	}
+	only, prov := compileID(e.Blocks), judgmentProvenance(j)
+	for _, im := range g.sources {
+		for _, id := range sortedKeys(im.nodes) {
+			n, key := im.nodes[id], im.keys[id]
+			if only != nil && !only.MatchString(key) {
+				continue
+			}
+			if e.ConfigKind != "" {
+				for _, cid := range configRefs(n.When) {
+					if im.configKinds[cid] == e.ConfigKind {
+						g.edge(from, key, e.Kind, cid, nil, prov)
+					}
+				}
+			}
+			if cs := n.ConfigSource; e.ConfigSource != "" && cs != nil && cs.Type == e.ConfigSource &&
+				(len(e.Scopes) == 0 || contains(e.Scopes, cs.Scope)) {
+				g.edge(from, key, e.Kind, e.Label, nil, prov)
+			}
+		}
+	}
+}

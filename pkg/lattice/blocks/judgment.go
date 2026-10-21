@@ -95,7 +95,14 @@ func (j Judgment) check() error {
 		var need map[string]string
 		switch j.Type {
 		case "edge":
-			need = map[string]string{"from": e.From, "to": e.To, "kind": e.Kind}
+			switch {
+			case len(e.Events) > 0:
+				need = map[string]string{"kind": e.Kind}
+			case e.ConfigKind != "" || e.ConfigSource != "":
+				need = map[string]string{"kind": e.Kind, "from": e.From}
+			default:
+				need = map[string]string{"from": e.From, "to": e.To, "kind": e.Kind}
+			}
 		case "label":
 			need = map[string]string{"id": e.ID, "title": e.Title}
 		case "alias":

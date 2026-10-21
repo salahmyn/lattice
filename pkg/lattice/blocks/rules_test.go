@@ -50,3 +50,63 @@ func TestEdgeJudgmentPatterns(t *testing.T) {
 		t.Errorf("warnings = %v", r.Warnings)
 	}
 }
+
+func configInputs() Inputs {
+	fe := &Catalogue{Area: "a", Path: "a.json",
+		Configs: []CatConfig{{ID: "store.currency", Kind: "storeSetting"}, {ID: "device.ios", Kind: "device"}},
+		Nodes: []CatNode{
+			{ID: "a", Kind: "screen", Title: "A"},
+			{ID: "a.x", Parent: "a", Kind: "decision", Title: "X", When: []string{"store.currency = SAR and device.ios", "unknown.flag"}},
+		}}
+	be := &Catalogue{Area: "b", Path: "b.json", Nodes: []CatNode{
+		{ID: "b", Kind: "service", Title: "B"},
+		{ID: "b.y", Parent: "b", Kind: "config", Title: "Y", ConfigSource: &CatConfigSource{Type: "db", Scope: "store"}},
+		{ID: "b.z", Parent: "b", Kind: "config", Title: "Z", ConfigSource: &CatConfigSource{Type: "db", Scope: "global"}},
+		{ID: "b.w", Parent: "b", Kind: "config", Title: "W", ConfigSource: &CatConfigSource{Type: "db"}},
+	}}
+	return Inputs{
+		Judgments: []Judgment{
+			{ID: "land", Type: "system", Entries: []JudgmentEntry{{ID: "dashboard", Title: "Dashboard"}, {ID: "shopper", Title: "Shopper", Kind: "actor"}}},
+			{ID: "cfg", Type: "edge", Entries: []JudgmentEntry{
+				{Kind: "config", From: "dashboard", ConfigKind: "storeSetting", Blocks: "fe:**"},
+				{Kind: "config", From: "shopper", ConfigKind: "device", Blocks: "fe:**"},
+				{Kind: "config", From: "shopper", ConfigKind: "device", Blocks: "be:**"},
+				{Kind: "config", From: "dashboard", ConfigSource: "db", Scopes: []string{"", "store"}, Label: "store setting", Blocks: "be:**"},
+			}},
+		},
+		Sources: []SourceInput{
+			{Info: SourceInfo{ID: "web", Prefix: "fe"}, Catalogues: []*Catalogue{fe}},
+			{Info: SourceInfo{ID: "api", Prefix: "be"}, Catalogues: []*Catalogue{be}},
+		},
+	}
+}
+
+func TestConfigEdges(t *testing.T) {
+	e := edgeSet(Build(configInputs()))
+	want := map[string][]string{
+		"dashboard -config-> fe:a.x": {"store.currency"},
+		"shopper -config-> fe:a.x":   {"device.ios"},
+		"dashboard -config-> be:b.y": {"store setting"},
+		"dashboard -config-> be:b.w": {"store setting"},
+	}
+	for k, labels := range want {
+		got, ok := e[k]
+		if !ok || len(got) != 1 || got[0] != labels[0] {
+			t.Errorf("%s = %v want %v", k, got, labels)
+		}
+	}
+	if _, ok := e["dashboard -config-> be:b.z"]; ok {
+		t.Error("a global-scope config must not get a store-setting edge")
+	}
+	if len(e) != len(want) {
+		t.Errorf("edges = %v", e)
+	}
+}
+
+func TestConfigRefs(t *testing.T) {
+	got := configRefs([]string{"a.b = 1 and c.d", "e.f != x or g.h>=2", "  i.j  "})
+	want := []string{"a.b", "c.d", "e.f", "g.h", "i.j"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("configRefs = %v want %v", got, want)
+	}
+}
