@@ -73,8 +73,8 @@ type Surface struct {
 
 // Module is the IR for a single source file.
 type Module struct {
-	File     string `json:"file"`
-	Language string `json:"language"`
+	File              string       `json:"file"`
+	Language          string       `json:"language"`
 	// LineCount is the source-file length. Populated by the extractor
 	// (counted from the raw bytes), not by each adapter — gives the
 	// v0.7 AMA FILE_LINE_CAP rule a value without touching every

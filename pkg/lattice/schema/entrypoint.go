@@ -6,15 +6,15 @@ package schema
 // the call graph. Together they form the second axis of the knowledge
 // graph: features describe meaning, entry points describe invocation.
 type EntryPoint struct {
-	ID      string     `yaml:"id" json:"id"`
-	Version int        `yaml:"version" json:"version"`
-	Status  Status     `yaml:"status" json:"status"` // proposal | production | deprecated
-	Kind    string     `yaml:"kind" json:"kind"`     // see EntryPointKind* constants
-	Purpose string     `yaml:"purpose,omitempty" json:"purpose,omitempty"`
-	Owners  Owners     `yaml:"owners,omitempty" json:"owners,omitempty"`
-	Trigger Trigger    `yaml:"trigger" json:"trigger"`
-	Handler Handler    `yaml:"handler" json:"handler"`
-	Flow    []FlowStep `yaml:"flow,omitempty" json:"flow,omitempty"`
+	ID      string       `yaml:"id" json:"id"`
+	Version int          `yaml:"version" json:"version"`
+	Status  Status       `yaml:"status" json:"status"` // proposal | production | deprecated
+	Kind    string       `yaml:"kind" json:"kind"`     // see EntryPointKind* constants
+	Purpose string       `yaml:"purpose,omitempty" json:"purpose,omitempty"`
+	Owners  Owners       `yaml:"owners,omitempty" json:"owners,omitempty"`
+	Trigger Trigger      `yaml:"trigger" json:"trigger"`
+	Handler Handler      `yaml:"handler" json:"handler"`
+	Flow    []FlowStep   `yaml:"flow,omitempty" json:"flow,omitempty"`
 	// SideEffects is what this entry point causes the system to do
 	// (writes, network calls, queue publishes). Populated by the flow
 	// tracer.
@@ -66,8 +66,8 @@ type Handler struct {
 // tracer emits one per distinct feature it visits, with capability link
 // when discernible.
 type FlowStep struct {
-	Feature    string `yaml:"feature" json:"feature"`
-	Capability string `yaml:"capability,omitempty" json:"capability,omitempty"`
+	Feature    string   `yaml:"feature" json:"feature"`
+	Capability string   `yaml:"capability,omitempty" json:"capability,omitempty"`
 	// ViaSymbols is the chain of non-annotated symbols traversed between
 	// the previous step (or the handler) and this feature — debugging
 	// breadcrumb, not for end-user views.
@@ -78,6 +78,6 @@ type FlowStep struct {
 // flow tracer recognises common patterns (Eloquent persistence, Guzzle
 // HTTP, dispatch()) and emits one of these per touched site.
 type SideEffect struct {
-	Kind   string `yaml:"kind" json:"kind"` // db_write | http_call | queue_publish | event_emit | file_write
+	Kind   string `yaml:"kind" json:"kind"`     // db_write | http_call | queue_publish | event_emit | file_write
 	Target string `yaml:"target,omitempty" json:"target,omitempty"`
 }

@@ -49,12 +49,12 @@ type BRD struct {
 	BusinessProblem string    `yaml:"business_problem"`
 
 	// --- Body ---
-	BusinessGoals   []string        `yaml:"business_goals,omitempty"`
-	Stakeholders    BRDStakeholders `yaml:"stakeholders,omitempty"`
-	UserScenarios   []UserScenario  `yaml:"user_scenarios,omitempty"`
-	SuccessCriteria []BRDCriterion  `yaml:"success_criteria,omitempty"`
-	Constraints     []BRDConstraint `yaml:"constraints,omitempty"`
-	OutOfScope      []string        `yaml:"out_of_scope,omitempty"`
+	BusinessGoals   []string         `yaml:"business_goals,omitempty"`
+	Stakeholders    BRDStakeholders  `yaml:"stakeholders,omitempty"`
+	UserScenarios   []UserScenario   `yaml:"user_scenarios,omitempty"`
+	SuccessCriteria []BRDCriterion   `yaml:"success_criteria,omitempty"`
+	Constraints     []BRDConstraint  `yaml:"constraints,omitempty"`
+	OutOfScope      []string         `yaml:"out_of_scope,omitempty"`
 
 	// ImplementsVia is the forward link to the Feature axis. Empty for a
 	// freshly-drafted BRD; populated as features land. The validator
@@ -116,9 +116,9 @@ type UserScenario struct {
 // feature invariant via `maps_to_invariant: feature.id:INV-N`, which the
 // graph builder uses to build the BRD → Invariant bridge.
 type BRDCriterion struct {
-	ID              string `yaml:"id"`
-	Statement       string `yaml:"statement"`
-	MapsToInvariant string `yaml:"maps_to_invariant,omitempty"`
+	ID               string `yaml:"id"`
+	Statement        string `yaml:"statement"`
+	MapsToInvariant  string `yaml:"maps_to_invariant,omitempty"`
 
 	// Tier is the pinned criticality (v0.8.1): 1 default; 2 for
 	// auth/permissions/data-loss/cross-tenant; 3 for money movement and
@@ -169,7 +169,7 @@ type BRDConstraint struct {
 // BRD_DRIFT so downstream features can flag a stale parent.
 type BRDApproval struct {
 	ApprovedBy      string `yaml:"approved_by"`
-	ApprovedAt      string `yaml:"approved_at"` // ISO datetime
+	ApprovedAt      string `yaml:"approved_at"`     // ISO datetime
 	ApprovedVersion int    `yaml:"approved_version"`
 }
 
