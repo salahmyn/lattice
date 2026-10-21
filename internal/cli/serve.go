@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
+	"github.com/salahmyn/lattice/pkg/lattice/store"
 	"github.com/salahmyn/lattice/pkg/lattice/ui"
 )
 
@@ -44,7 +45,13 @@ reverse proxy in front and run Lattice with --host 127.0.0.1.`,
 			if err != nil {
 				return io.fail("BAD_BASIC_AUTH", err.Error(), nil)
 			}
+			st, err := store.Open(cmd.Context(), ws)
+			if err != nil {
+				return io.fail("STORE_OPEN", err.Error(), nil)
+			}
+			defer st.Close()
 			srv := ui.New(ws, ui.Options{
+				Store:         st,
 				Host:          host,
 				Port:          port,
 				Token:         token,
@@ -57,7 +64,7 @@ reverse proxy in front and run Lattice with --host 127.0.0.1.`,
 			ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()
 
-			io.printf("Lattice UI listening on %s\n", srv.Addr())
+			io.printf("Lattice UI listening on %s (block map: %s/map)\n", srv.Addr(), srv.Addr())
 			if token != "" {
 				io.printf("  token gate enabled — send X-Lattice-Token: %s on every request\n", token)
 			}

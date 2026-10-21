@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
+	"github.com/salahmyn/lattice/pkg/lattice/store"
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
@@ -48,6 +49,9 @@ type Options struct {
 	// reflected on the next page load — no daemon-staleness surprises.
 	// In tests this can be swapped for a fixture.
 	GraphBuilder func(ctx context.Context) (schema.KnowledgeGraph, error)
+	// Store serves the block graph behind /map and /api/graph, /api/search
+	// and /api/relations/{id}. Nil leaves those answering 503.
+	Store store.Store
 }
 
 // Server is the HTTP entry point. It is safe for concurrent use.
@@ -66,6 +70,8 @@ type Server struct {
 	// ListenAndServe so tests that just call ServeHTTP don't spin up
 	// an fsnotify goroutine.
 	events *eventBroker
+	// storeMu serializes store calls: the Postgres store holds one connection.
+	storeMu sync.Mutex
 }
 
 // New constructs a Server. Templates and static assets are loaded lazily
@@ -176,6 +182,10 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /import/{id}", s.pageImportCandidate)
 	mux.HandleFunc("GET /config", s.pageConfig)
 	mux.HandleFunc("GET /onboarding", s.pageOnboarding)
+	mux.HandleFunc("GET /map", s.pageMap)
+	mux.HandleFunc("GET /api/graph", s.apiGraph)
+	mux.HandleFunc("GET /api/search", s.apiBlockSearch)
+	mux.HandleFunc("GET /api/relations/{id}", s.apiRelations)
 
 	// JSON API — same shapes as the CLI --json output.
 	mux.HandleFunc("GET /api/v1/overview", s.apiOverview)
