@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,10 +10,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/salahmyn/lattice/pkg/lattice/blocks"
-	"github.com/salahmyn/lattice/pkg/lattice/buildinfo"
 	"github.com/salahmyn/lattice/pkg/lattice/entrypoints"
-	"github.com/salahmyn/lattice/pkg/lattice/graph"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
+	"github.com/salahmyn/lattice/pkg/lattice/store"
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
@@ -23,7 +22,7 @@ func newRefreshCommand(io *IO) *cobra.Command {
 		Short: "Rebuild the block graph from the workspace's sources and judgments",
 		Long: "Reads every source declared in workspace.yaml (catalogue/v1 files from a git clone at a ref, or " +
 			"from a directory), the judgment records, and the feature manifests, then writes the block graph " +
-			"into lattice.json. The rest of lattice.json is kept.",
+			"into the workspace store: lattice.json in files mode (the rest of it is kept), the database in postgres mode.",
 		RunE: func(_ *cobra.Command, _ []string) error { return runRefresh(io) },
 	}
 }
@@ -40,17 +39,33 @@ type refreshReport struct {
 }
 
 func runRefresh(io *IO) error {
+	ctx := context.Background()
 	ws, err := workspace.Open(io.Repo)
 	if err != nil {
 		return io.fail("NO_WORKSPACE", err.Error(), "run `lattice init`")
 	}
-	// shortcut: refresh writes an unsharded lattice.json; add sharded writes when a block workspace needs them
-	if _, err := os.Stat(ws.GraphShardDir()); err == nil {
-		return io.fail("GRAPH_SHARDED", "refresh does not write sharded graphs yet", nil)
+	if ws.Storage.Backend == "files" {
+		// shortcut: refresh writes an unsharded lattice.json; add sharded writes when a block workspace needs them
+		if _, err := os.Stat(ws.GraphShardDir()); err == nil {
+			return io.fail("GRAPH_SHARDED", "refresh does not write sharded graphs yet", nil)
+		}
 	}
-	js, err := blocks.LoadJudgments(ws.JudgmentsDir())
+	st, err := store.Open(ctx, ws)
 	if err != nil {
-		return io.fail("JUDGMENT_INVALID", err.Error(), nil)
+		return io.fail("STORE_OPEN", err.Error(), nil)
+	}
+	defer st.Close()
+	recs, err := st.List(ctx, "judgment")
+	if err != nil {
+		return io.fail("STORE_READ", err.Error(), nil)
+	}
+	var js []blocks.Judgment
+	for _, r := range recs {
+		j, err := blocks.ParseJudgment(r.Body, "judgment "+r.ID)
+		if err != nil {
+			return io.fail("JUDGMENT_INVALID", err.Error(), nil)
+		}
+		js = append(js, j)
 	}
 	in := blocks.Inputs{Judgments: js}
 	var report refreshReport
@@ -137,17 +152,14 @@ func runRefresh(io *IO) error {
 
 	res := blocks.Build(in)
 
-	kg := schema.KnowledgeGraph{SchemaVersion: buildinfo.SchemaVersion}
-	if data, err := os.ReadFile(ws.GraphPath()); err == nil {
-		if err := json.Unmarshal(data, &kg); err != nil {
-			return io.fail("GRAPH_READ", fmt.Sprintf("%s: %v", ws.GraphPath(), err), nil)
-		}
-	} else if !os.IsNotExist(err) {
+	old, err := st.Graph(ctx)
+	if err != nil {
 		return io.fail("GRAPH_READ", err.Error(), nil)
 	}
-	diff := blocks.DiffGraphs(kg, schema.KnowledgeGraph{Blocks: res.Blocks, BlockEdges: res.Edges, Sources: res.Sources, Flows: res.Flows})
-	kg.Blocks, kg.BlockEdges, kg.Sources, kg.Flows = res.Blocks, res.Edges, res.Sources, res.Flows
-	if err := graph.Write(ws.GraphPath(), kg); err != nil {
+	diff := blocks.DiffGraphs(
+		schema.KnowledgeGraph{Blocks: old.Blocks, BlockEdges: old.Edges, Sources: old.Sources, Flows: old.Flows},
+		schema.KnowledgeGraph{Blocks: res.Blocks, BlockEdges: res.Edges, Sources: res.Sources, Flows: res.Flows})
+	if err := st.ReplaceGraph(ctx, store.Graph{Blocks: res.Blocks, Edges: res.Edges, Sources: res.Sources, Flows: res.Flows}); err != nil {
 		return io.fail("GRAPH_WRITE", err.Error(), nil)
 	}
 
@@ -162,7 +174,7 @@ func runRefresh(io *IO) error {
 		return io.printJSON(report)
 	}
 	io.printf("%s\n", report.Summary)
-	io.printf("wrote %s: %d blocks, %d edges\n", ws.GraphPath(), len(res.Blocks), len(res.Edges))
+	io.printf("wrote %s: %d blocks, %d edges\n", st.Where(), len(res.Blocks), len(res.Edges))
 	kinds := make([]string, 0, len(report.Edges))
 	for k := range report.Edges {
 		kinds = append(kinds, k)
