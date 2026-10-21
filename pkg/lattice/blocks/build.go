@@ -46,7 +46,7 @@ func Build(in Inputs) Result {
 		g.applyNodes(j, "external")
 	}
 
-	keys, nodes, provs := map[string]string{}, map[string]CatNode{}, map[string]schema.Provenance{}
+	var ims []imported
 	var stamps []schema.SourceStamp
 	for _, s := range in.Sources {
 		if s.Info.System != "" && g.blocks[s.Info.System] == nil {
@@ -60,11 +60,11 @@ func Build(in Inputs) Result {
 				}
 			}
 		}
+		ims = append(ims, im)
 		for k, b := range im.blocks {
 			g.blocks[k] = b
 		}
 		for _, id := range sortedKeys(im.nodes) {
-			keys[id], nodes[id], provs[id] = im.keys[id], im.nodes[id], im.prov[id]
 			for _, x := range im.nodes[id].Next {
 				to, ok := im.keys[x.To]
 				if !ok {
@@ -75,7 +75,11 @@ func Build(in Inputs) Result {
 				if x.Loop {
 					label = strings.TrimSpace("↺ " + label)
 				}
-				g.edge(im.keys[id], to, "flow", label, x.When, im.prov[id])
+				var when []string // one entry per next, so "a ∧ b" stays distinct from "c"
+				if len(x.When) > 0 {
+					when = []string{strings.Join(x.When, " ∧ ")}
+				}
+				g.edge(im.keys[id], to, "flow", label, when, im.prov[id])
 			}
 		}
 		for _, c := range im.calls {
@@ -86,18 +90,32 @@ func Build(in Inputs) Result {
 
 	// a server block that fulfills a client block is the far end of that client's request
 	missing := 0
-	for _, id := range sortedKeys(nodes) {
-		for _, t := range nodes[id].Fulfills {
-			from, ok := keys[t]
-			if !ok {
-				missing++
-				continue
+	for i, im := range ims {
+		for _, id := range sortedKeys(im.nodes) {
+			for _, t := range im.nodes[id].Fulfills {
+				var hits []string // sources other than this one that declare t
+				var from string
+				for j, o := range ims {
+					if k, ok := o.keys[t]; ok && j != i {
+						hits = append(hits, in.Sources[j].Info.ID)
+						from = k
+					}
+				}
+				switch len(hits) {
+				case 0:
+					missing++
+					continue
+				case 1:
+				default:
+					g.warnf("%s: fulfills %q is in several sources (%s); skipped", id, t, strings.Join(hits, ", "))
+					continue
+				}
+				label := g.blocks[im.keys[id]].Attrs["http"]
+				if label == "" {
+					label = g.blocks[from].Attrs["api"]
+				}
+				g.edge(from, im.keys[id], "api", label, nil, im.prov[id])
 			}
-			label := g.blocks[keys[id]].Attrs["http"]
-			if label == "" {
-				label = g.blocks[from].Attrs["api"]
-			}
-			g.edge(from, keys[id], "api", label, nil, provs[id])
 		}
 	}
 	if missing > 0 {
