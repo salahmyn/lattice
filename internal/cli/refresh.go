@@ -61,9 +61,9 @@ func runRefresh(io *IO) error {
 		case s.Clone != "":
 			clone := ws.ResolvePath(s.Clone)
 			if _, err := os.Stat(clone); err != nil {
-				report.Warnings = append(report.Warnings, fmt.Sprintf("source %s: clone %s not found; skipped", s.ID, clone))
-				in.Sources = append(in.Sources, blocks.SourceInput{Stamp: stamp})
-				continue
+				// stop rather than skip: a skipped source would drop its blocks from lattice.json
+				return io.fail("SOURCE_MISSING", fmt.Sprintf("source %s: clone %s not found; nothing written", s.ID, clone),
+					"clone the repository there, or fix `clone:` in workspace.yaml")
 			}
 			files, stamp.Commit, stamp.CommitDate, err = blocks.ReadGit(clone, s.Ref, s.Catalogue)
 		case s.Path != "":
@@ -88,8 +88,10 @@ func runRefresh(io *IO) error {
 	if in.Features, err = loadFeatureManifests(ws.FeaturesDir()); err != nil {
 		return io.fail("FEATURE_READ", err.Error(), nil)
 	}
-	if eps, err := entrypoints.LoadEntryPoints(ws.EntryPointsDir()); err == nil {
-		in.EntryPoints = eps
+	if _, err := os.Stat(ws.EntryPointsDir()); err == nil {
+		if in.EntryPoints, err = entrypoints.LoadEntryPoints(ws.EntryPointsDir()); err != nil {
+			return io.fail("ENTRY_POINT_READ", err.Error(), nil)
+		}
 	}
 
 	res := blocks.Build(in)
