@@ -21,6 +21,7 @@ type Initiative struct {
 	Type   string           `yaml:"type"` // always "initiative"
 	Status InitiativeStatus `yaml:"status"`
 	Title  string           `yaml:"title,omitempty"`
+	Author string           `yaml:"author,omitempty"` // who wrote a store-record initiative
 
 	// Pins are the commits a proposal was analysed at; Map says how it is drawn
 	// over the block graph. Both are set on initiatives kept as store records.
