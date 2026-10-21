@@ -50,6 +50,7 @@ func TestParseRejectsBadCatalogue(t *testing.T) {
 		"no kind":       `{"area":"a","nodes":[{"id":"x"}]}`,
 		"no id":         `{"area":"a","nodes":[{"kind":"screen"}]}`,
 		"appears twice": `{"area":"a","nodes":[{"id":"x","kind":"screen"},{"id":"x","kind":"screen"}]}`,
+		"needs both":    `{"area":"a","node":[]}`,
 		"empty area":    `{"area":"","nodes":[]}`,
 	}
 	for want, body := range cases {

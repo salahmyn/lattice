@@ -82,8 +82,11 @@ func Parse(f File) (c *Catalogue, ok bool, err error) {
 		}
 		return nil, false, fmt.Errorf("%s: not JSON: %w", f.Path, err)
 	}
-	if probe["area"] == nil || probe["nodes"] == nil {
+	if probe["area"] == nil && probe["nodes"] == nil {
 		return nil, false, nil
+	}
+	if probe["area"] == nil || probe["nodes"] == nil { // one key without the other is a broken catalogue, not another file
+		return nil, false, fmt.Errorf("%s: catalogue/v1: needs both area and nodes", f.Path)
 	}
 	c = &Catalogue{Path: f.Path}
 	if err := json.Unmarshal(f.Data, c); err != nil {
