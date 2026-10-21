@@ -60,7 +60,10 @@ type Source struct {
 	Catalogue       string            `yaml:"catalogue,omitempty"` // glob of catalogue/v1 files inside the clone or Path
 	Prefix          string            `yaml:"prefix,omitempty"`    // block id namespace, e.g. "fe"
 	Tier            string            `yaml:"tier,omitempty"`
-	System          string            `yaml:"system,omitempty"` // the system block that owns this source's areas
+	System          string            `yaml:"system,omitempty"`  // the system block that owns this source's areas
+	Release         string            `yaml:"release,omitempty"` // release/v1 file (adapter output): the live release, for freshness
+	Stamp           string            `yaml:"stamp,omitempty"`   // snapshot stamp file, for a source read from a directory
+	Flows           string            `yaml:"flows,omitempty"`   // flows/v1 file (adapter output): simulated walks over this source
 	GroupByEndpoint *EndpointGrouping `yaml:"group_by_endpoint,omitempty"`
 }
 

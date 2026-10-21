@@ -34,6 +34,9 @@ type refreshReport struct {
 	Sources  []schema.SourceStamp `json:"sources"`
 	Skipped  []string             `json:"skipped,omitempty"`
 	Warnings []string             `json:"warnings,omitempty"`
+	Summary  string               `json:"summary"`
+	Diff     blocks.Diff          `json:"diff"`
+	Flows    int                  `json:"flows"`
 }
 
 func runRefresh(io *IO) error {
@@ -55,7 +58,7 @@ func runRefresh(io *IO) error {
 		if s.Catalogue == "" {
 			continue
 		}
-		stamp := schema.SourceStamp{ID: s.ID, Repo: s.Repo, Ref: s.Ref}
+		stamp := schema.SourceStamp{ID: s.ID, Repo: s.Repo, Ref: s.Ref, System: s.System}
 		var files []blocks.File
 		switch {
 		case s.Clone != "":
@@ -66,8 +69,27 @@ func runRefresh(io *IO) error {
 					"clone the repository there, or fix `clone:` in workspace.yaml")
 			}
 			files, stamp.Commit, stamp.CommitDate, err = blocks.ReadGit(clone, s.Ref, s.Catalogue)
+			if err == nil {
+				var rel *schema.Release
+				if rel, err = readRelease(ws, s, &report); err != nil {
+					return io.fail("RELEASE_INVALID", fmt.Sprintf("source %s: %v", s.ID, err), nil)
+				}
+				stamp.State, stamp.Behind, stamp.Ahead = blocks.Freshness(clone, stamp.Commit, rel)
+				stamp.Release = rel
+			}
 		case s.Path != "":
 			files, err = blocks.ReadDir(ws.ResolvePath(s.Path), s.Catalogue)
+			if err == nil && s.Stamp != "" {
+				var data []byte
+				if data, err = os.ReadFile(ws.ResolvePath(s.Stamp)); err == nil {
+					var snap schema.SourceStamp
+					if snap, err = blocks.ParseSnapshot(data); err != nil {
+						return io.fail("STAMP_INVALID", fmt.Sprintf("source %s: %v", s.ID, err), nil)
+					}
+					stamp.Repo, stamp.Branch, stamp.Commit, stamp.CommitDate, stamp.State =
+						snap.Repo, snap.Branch, snap.Commit, snap.CommitDate, snap.State
+				}
+			}
 		default:
 			err = fmt.Errorf("needs clone or path")
 		}
@@ -88,9 +110,19 @@ func runRefresh(io *IO) error {
 		if o := s.GroupByEndpoint; o != nil {
 			eg = &blocks.EndpointGrouping{SkipAreas: o.SkipAreas, SkipSegments: o.SkipSegments, PathPrefixes: o.PathPrefixes}
 		}
+		var walks []blocks.Walk
+		if s.Flows != "" {
+			data, err := os.ReadFile(ws.ResolvePath(s.Flows))
+			if err != nil {
+				return io.fail("FLOWS_READ", fmt.Sprintf("source %s: %v", s.ID, err), nil)
+			}
+			if walks, err = blocks.ParseWalks(data); err != nil {
+				return io.fail("FLOWS_INVALID", fmt.Sprintf("source %s: %s: %v", s.ID, s.Flows, err), nil)
+			}
+		}
 		in.Sources = append(in.Sources, blocks.SourceInput{
 			Info:       blocks.SourceInfo{ID: s.ID, Prefix: s.Prefix, Tier: s.Tier, System: s.System, Commit: stamp.Commit, Endpoints: eg},
-			Catalogues: cats, Stamp: stamp})
+			Catalogues: cats, Stamp: stamp, Walks: walks})
 	}
 	if in.Features, err = loadFeatureManifests(ws.FeaturesDir()); err != nil {
 		return io.fail("FEATURE_READ", err.Error(), nil)
@@ -111,12 +143,14 @@ func runRefresh(io *IO) error {
 	} else if !os.IsNotExist(err) {
 		return io.fail("GRAPH_READ", err.Error(), nil)
 	}
-	kg.Blocks, kg.BlockEdges, kg.Sources = res.Blocks, res.Edges, res.Sources
+	diff := blocks.DiffGraphs(kg, schema.KnowledgeGraph{Blocks: res.Blocks, BlockEdges: res.Edges, Sources: res.Sources, Flows: res.Flows})
+	kg.Blocks, kg.BlockEdges, kg.Sources, kg.Flows = res.Blocks, res.Edges, res.Sources, res.Flows
 	if err := graph.Write(ws.GraphPath(), kg); err != nil {
 		return io.fail("GRAPH_WRITE", err.Error(), nil)
 	}
 
 	report.Blocks, report.Sources = len(res.Blocks), res.Sources
+	report.Summary, report.Diff, report.Flows = diff.Summary(), diff, len(res.Flows)
 	report.Edges = map[string]int{}
 	for _, e := range res.Edges {
 		report.Edges[e.Kind]++
@@ -125,6 +159,7 @@ func runRefresh(io *IO) error {
 	if io.JSON {
 		return io.printJSON(report)
 	}
+	io.printf("%s\n", report.Summary)
 	io.printf("wrote %s: %d blocks, %d edges\n", ws.GraphPath(), len(res.Blocks), len(res.Edges))
 	kinds := make([]string, 0, len(report.Edges))
 	for k := range report.Edges {
@@ -134,12 +169,13 @@ func runRefresh(io *IO) error {
 	for _, k := range kinds {
 		io.printf("  %-14s %d\n", k, report.Edges[k])
 	}
+	io.printf("  flows          %d\n", len(res.Flows))
 	for _, s := range res.Sources {
 		c := s.Commit
 		if len(c) > 7 {
 			c = c[:7]
 		}
-		io.printf("  source %s @ %s %s\n", s.ID, c, s.CommitDate)
+		io.printf("  source %s @ %s %s %s\n", s.ID, c, s.CommitDate, s.State)
 	}
 	for _, p := range report.Skipped {
 		io.printf("  skipped (not catalogue/v1): %s\n", p)
@@ -165,4 +201,25 @@ func loadFeatureManifests(dir string) ([]schema.Manifest, error) {
 		out = append(out, *m)
 	}
 	return out, nil
+}
+
+// readRelease reads a source's release/v1 file. No release configured, or a
+// missing file, is no release (a warning for the missing file); a bad file is an error.
+func readRelease(ws *workspace.Workspace, s workspace.Source, report *refreshReport) (*schema.Release, error) {
+	if s.Release == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(ws.ResolvePath(s.Release))
+	if os.IsNotExist(err) {
+		report.Warnings = append(report.Warnings, fmt.Sprintf("source %s: release file %s not found; freshness is no_release", s.ID, s.Release))
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	r, err := blocks.ParseRelease(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", s.Release, err)
+	}
+	return &r, nil
 }
