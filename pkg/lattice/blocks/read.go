@@ -69,6 +69,10 @@ func ReadGit(clone, ref, glob string) ([]File, string, string, error) {
 
 // ReadDir reads the files matching glob under dir, in path order.
 func ReadDir(dir, glob string) ([]File, error) {
+	// doublestar returns nil,nil for a missing dir, which would silently drop the source's blocks
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return nil, fmt.Errorf("source path %s is missing or not a directory", dir)
+	}
 	names, err := doublestar.Glob(os.DirFS(dir), glob)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", dir, err)

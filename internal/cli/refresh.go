@@ -78,6 +78,9 @@ func runRefresh(io *IO) error {
 		if err != nil {
 			return io.fail("CATALOGUE_INVALID", fmt.Sprintf("source %s: %v", s.ID, err), nil)
 		}
+		if len(cats) == 0 {
+			return io.fail("SOURCE_EMPTY", fmt.Sprintf("source %s: no catalogue/v1 files match %s; nothing written", s.ID, s.Catalogue), nil)
+		}
 		for _, p := range skipped {
 			report.Skipped = append(report.Skipped, s.ID+":"+p)
 		}

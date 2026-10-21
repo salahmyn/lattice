@@ -69,3 +69,9 @@ func TestReadDir(t *testing.T) {
 		t.Fatalf("files = %v", files)
 	}
 }
+
+func TestReadDirMissingDirIsAnError(t *testing.T) {
+	if _, err := ReadDir(filepath.Join(t.TempDir(), "nope"), "**/*.json"); err == nil {
+		t.Fatal("want error for a missing dir")
+	}
+}
