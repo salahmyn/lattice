@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"regexp"
 	"sort"
 	"strings"
@@ -36,6 +37,12 @@ func ParseWalks(data []byte) ([]Walk, error) {
 	var ws []Walk
 	if err := dec.Decode(&ws); err != nil {
 		return nil, fmt.Errorf("flows/v1: %w", err)
+	}
+	if ws == nil {
+		return nil, fmt.Errorf("flows/v1: want a JSON array of walks")
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, fmt.Errorf("flows/v1: unexpected data after the walks")
 	}
 	seen := map[string]bool{}
 	for i, w := range ws {

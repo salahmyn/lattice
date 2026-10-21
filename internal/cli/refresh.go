@@ -86,8 +86,10 @@ func runRefresh(io *IO) error {
 					if snap, err = blocks.ParseSnapshot(data); err != nil {
 						return io.fail("STAMP_INVALID", fmt.Sprintf("source %s: %v", s.ID, err), nil)
 					}
-					stamp.Repo, stamp.Branch, stamp.Commit, stamp.CommitDate, stamp.State =
-						snap.Repo, snap.Branch, snap.Commit, snap.CommitDate, snap.State
+					if snap.Repo != "" {
+						stamp.Repo = snap.Repo
+					}
+					stamp.Branch, stamp.Commit, stamp.CommitDate, stamp.State = snap.Branch, snap.Commit, snap.CommitDate, snap.State
 				}
 			}
 		default:

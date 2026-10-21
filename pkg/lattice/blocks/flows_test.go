@@ -8,7 +8,7 @@ func TestParseWalks(t *testing.T) {
 		t.Fatalf("walks = %+v, %v", ws, err)
 	}
 	for _, bad := range []string{`{}`, `[{"steps":[]}]`, `[{"id":"w","steps":[{"label":"x"}]}]`,
-		`[{"id":"w","steps":[]},{"id":"w","steps":[]}]`, `[{"id":"w","steps":[],"extra":1}]`} {
+		`[{"id":"w","steps":[]},{"id":"w","steps":[]}]`, `[{"id":"w","steps":[],"extra":1}]`, `null`, `[] [1]`} {
 		if _, err := ParseWalks([]byte(bad)); err == nil {
 			t.Errorf("%s: want an error", bad)
 		}
@@ -27,9 +27,10 @@ func TestWalkFlows(t *testing.T) {
 			{ID: "cart.items"},
 		}},
 		{ID: "look", Stop: "ask", Steps: []WalkStep{{ID: "cart.items"}}},
+		{ID: "done", Stop: "end", Steps: []WalkStep{{ID: "cart.items"}}},
 	}
 	r := Build(in)
-	if len(r.Flows) != 2 {
+	if len(r.Flows) != 3 || r.Flows[2].End != "ends" {
 		t.Fatalf("flows = %+v", r.Flows)
 	}
 	f := r.Flows[0]

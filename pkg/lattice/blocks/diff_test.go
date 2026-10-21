@@ -28,6 +28,11 @@ func TestDiffGraphs(t *testing.T) {
 	if len(d.BlocksAdded) != 1 || d.BlocksAdded[0] != "d" || d.BlocksRemoved[0] != "b" || d.BlocksChanged[0] != "a" {
 		t.Errorf("diff = %+v", d)
 	}
+	moved := cur
+	moved.Blocks = []schema.Block{{ID: "a", Title: "A2", Provenance: schema.Provenance{Source: "web@9999999"}}, {ID: "c"}, {ID: "d"}}
+	if d := DiffGraphs(cur, moved); len(d.BlocksChanged) != 0 {
+		t.Errorf("a provenance-only change counted: %v", d.BlocksChanged)
+	}
 	if got := DiffGraphs(cur, cur).Summary(); got != "api @ 2222222 (snapshot), web @ 3333333 (ahead 2); no changes" {
 		t.Errorf("same graph = %q", got)
 	}

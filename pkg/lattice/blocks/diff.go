@@ -27,6 +27,9 @@ type Diff struct {
 // DiffGraphs compares the block graph of old with that of cur.
 func DiffGraphs(old, cur schema.KnowledgeGraph) Diff {
 	var d Diff
+	// provenance names the commit read, so it is left out: a new commit alone is not a change
+	old.Blocks, old.BlockEdges = withoutProvenance(old.Blocks, old.BlockEdges)
+	cur.Blocks, cur.BlockEdges = withoutProvenance(cur.Blocks, cur.BlockEdges)
 	blockID := func(b schema.Block) string { return b.ID }
 	d.BlocksAdded, d.BlocksRemoved, d.BlocksChanged = compare(index(old.Blocks, blockID), index(cur.Blocks, blockID))
 	edgeKey := func(e schema.BlockEdge) string { return e.From + " -" + e.Kind + "-> " + e.To }
@@ -119,4 +122,15 @@ func compare[T any](old, cur map[string]T) (added, removed, changed []string) {
 		}
 	}
 	return added, removed, changed
+}
+
+func withoutProvenance(bs []schema.Block, es []schema.BlockEdge) ([]schema.Block, []schema.BlockEdge) {
+	bs, es = append([]schema.Block(nil), bs...), append([]schema.BlockEdge(nil), es...)
+	for i := range bs {
+		bs[i].Provenance = schema.Provenance{}
+	}
+	for i := range es {
+		es[i].Provenance = schema.Provenance{}
+	}
+	return bs, es
 }
