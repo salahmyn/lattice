@@ -1,0 +1,8 @@
+{"area": "orders", "title": "Orders", "summary": "Order endpoints.",
+ "nodes": [
+  {"id": "orders", "parent": null, "kind": "service", "title": "Orders"},
+  {"id": "orders.create", "parent": "orders", "kind": "route", "title": "Create order",
+   "http": {"method": "POST", "path": "/checkout"}, "fulfills": ["cart.checkout"]},
+  {"id": "orders.create.save", "parent": "orders.create", "kind": "model", "title": "Save order",
+   "config_source": {"type": "db", "ref": "settings.orders", "scope": "store"}}
+ ]}
