@@ -148,3 +148,24 @@ func TestAliasResolvesShortIDsInLabelAndEdge(t *testing.T) {
 		t.Errorf("edge via alias missing: %v", edgeSet(r))
 	}
 }
+
+func TestParseJudgmentAndIDOrder(t *testing.T) {
+	j, err := ParseJudgment([]byte("id: b\ntype: label\nentries: [{id: x, title: X}]\n"), "record b")
+	if err != nil || j.ID != "b" || j.Path != "record b" {
+		t.Fatalf("judgment = %+v, %v", j, err)
+	}
+	if _, err := ParseJudgment([]byte("id: b\ntype: label\nentries: [{id: x}]\n"), "record b"); err == nil || !strings.Contains(err.Error(), "record b") {
+		t.Errorf("err = %v; want the label in it", err)
+	}
+	dir := t.TempDir()
+	for name, body := range map[string]string{"1.yaml": "id: zeta\ntype: label\nentries: [{id: x, title: X}]\n",
+		"2.yaml": "id: alpha\ntype: label\nentries: [{id: x, title: Y}]\n"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	js, err := LoadJudgments(dir)
+	if err != nil || len(js) != 2 || js[0].ID != "alpha" {
+		t.Errorf("judgments = %+v, %v; want id order", js, err)
+	}
+}

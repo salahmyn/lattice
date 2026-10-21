@@ -16,7 +16,7 @@ import (
 // Judgment is a decision a person made about the map, kept as data: which
 // systems exist, how externals group, which edges a catalogue cannot show,
 // display names, and id conventions. Every element it produces carries
-// provenance "judgment".
+// provenance "judgment". Judgments of a type apply in id order.
 type Judgment struct {
 	ID        string          `yaml:"id"`
 	Type      string          `yaml:"type"` // system | external | edge | group | label | alias
@@ -64,30 +64,43 @@ func LoadJudgments(dir string) ([]Judgment, error) {
 		if err != nil {
 			return nil, err
 		}
-		var j Judgment
-		dec := yaml.NewDecoder(bytes.NewReader(data))
-		dec.KnownFields(true) // hand-written files: a misspelt key must not pass silently
-		if err := dec.Decode(&j); err != nil {
-			return nil, fmt.Errorf("%s: %w", p, err)
+		j, err := ParseJudgment(data, p)
+		if err != nil {
+			return nil, err
 		}
-		switch {
-		case j.ID == "":
-			return nil, fmt.Errorf("%s: judgment has no id", p)
-		case !judgmentTypes[j.Type]:
-			return nil, fmt.Errorf("%s: judgment %s has unknown type %q (system, external, edge, group, label, alias)", p, j.ID, j.Type)
-		case len(j.Entries) == 0:
-			return nil, fmt.Errorf("%s: judgment %s has no entries", p, j.ID)
-		case seen[j.ID] != "":
+		if seen[j.ID] != "" {
 			return nil, fmt.Errorf("%s: judgment id %s is also used in %s", p, j.ID, seen[j.ID])
 		}
-		if err := j.check(); err != nil {
-			return nil, fmt.Errorf("%s: judgment %s: %w", p, j.ID, err)
-		}
 		seen[j.ID] = p
-		j.Path = p
 		out = append(out, j)
 	}
+	// judgments of one type apply in id order, whatever stores them
+	sort.Slice(out, func(a, b int) bool { return out[a].ID < out[b].ID })
 	return out, nil
+}
+
+// ParseJudgment reads one judgment record strictly. label names it in errors:
+// a file path, or a store record.
+func ParseJudgment(data []byte, label string) (Judgment, error) {
+	var j Judgment
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true) // hand-written records: a misspelt key must not pass silently
+	if err := dec.Decode(&j); err != nil {
+		return Judgment{}, fmt.Errorf("%s: %w", label, err)
+	}
+	switch {
+	case j.ID == "":
+		return Judgment{}, fmt.Errorf("%s: judgment has no id", label)
+	case !judgmentTypes[j.Type]:
+		return Judgment{}, fmt.Errorf("%s: judgment %s has unknown type %q (system, external, edge, group, label, alias)", label, j.ID, j.Type)
+	case len(j.Entries) == 0:
+		return Judgment{}, fmt.Errorf("%s: judgment %s has no entries", label, j.ID)
+	}
+	if err := j.check(); err != nil {
+		return Judgment{}, fmt.Errorf("%s: judgment %s: %w", label, j.ID, err)
+	}
+	j.Path = label
+	return j, nil
 }
 
 // check enforces the fields each judgment type needs.
