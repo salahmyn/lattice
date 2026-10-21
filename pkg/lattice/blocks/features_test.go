@@ -1,6 +1,7 @@
 package blocks
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
@@ -34,5 +35,21 @@ func TestFeaturesBecomeBlocks(t *testing.T) {
 	}
 	if l := e["ep:post-refund -flow-> feat:refund"]; len(l) != 1 || l[0] != "issue" {
 		t.Errorf("flow edge = %v", l)
+	}
+}
+
+func TestFeaturesWarnOnMissingTargets(t *testing.T) {
+	r := Build(Inputs{
+		Features:    []schema.Manifest{{ID: "refund", DependsOn: []string{"ordrs"}}},
+		EntryPoints: []schema.EntryPoint{{ID: "cli", Kind: schema.EntryPointKindCLI, Trigger: schema.Trigger{Command: "refund"}, Flow: []schema.FlowStep{{Feature: "gone"}}}},
+	})
+	w := strings.Join(r.Warnings, "\n")
+	for _, want := range []string{`depends_on "ordrs"`, `flow step "gone"`} {
+		if !strings.Contains(w, want) {
+			t.Errorf("warnings missing %s: %v", want, r.Warnings)
+		}
+	}
+	if blockMap(r)["ep:cli"].Title != "refund" {
+		t.Errorf("cli trigger title = %q", blockMap(r)["ep:cli"].Title)
 	}
 }
