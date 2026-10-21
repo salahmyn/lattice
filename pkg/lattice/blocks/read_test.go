@@ -29,6 +29,9 @@ func TestReadGitReadsTheRefNotTheWorkingTree(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(repo, "docs", "flows", "é.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	run(t, repo, "git", "add", ".")
 	run(t, repo, "git", "commit", "-q", "-m", "one")
 	// an uncommitted edit must not be read
@@ -40,7 +43,7 @@ func TestReadGitReadsTheRefNotTheWorkingTree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 1 || files[0].Path != "docs/flows/a.json" || string(files[0].Data) != `{"v":1}` {
+	if len(files) != 2 || files[0].Path != "docs/flows/a.json" || string(files[0].Data) != `{"v":1}` || files[1].Path != "docs/flows/é.json" {
 		t.Fatalf("files = %+v", files)
 	}
 	if len(commit) != 40 || date == "" {
@@ -48,6 +51,12 @@ func TestReadGitReadsTheRefNotTheWorkingTree(t *testing.T) {
 	}
 	if _, _, _, err := ReadGit(repo, "no-such-ref", "*.json"); err == nil {
 		t.Error("unknown ref should fail")
+	}
+	if _, _, _, err := ReadGit(repo, "HEAD", "docs/["); err == nil {
+		t.Error("invalid glob should fail")
+	}
+	if _, _, _, err := ReadGit(repo, "-x", "*.json"); err == nil {
+		t.Error("option-like ref should fail")
 	}
 }
 

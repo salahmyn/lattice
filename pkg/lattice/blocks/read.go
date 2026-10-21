@@ -18,10 +18,20 @@ func ReadGit(clone, ref, glob string) ([]File, string, string, error) {
 	if ref == "" {
 		ref = "HEAD"
 	}
+	if strings.HasPrefix(ref, "-") {
+		return nil, "", "", fmt.Errorf("invalid ref %q", ref)
+	}
+	if !doublestar.ValidatePattern(glob) {
+		return nil, "", "", fmt.Errorf("invalid glob %q", glob)
+	}
 	git := func(args ...string) ([]byte, error) {
 		out, err := exec.Command("git", append([]string{"-C", clone}, args...)...).Output()
 		if err != nil {
-			return nil, fmt.Errorf("git %s in %s: %w", strings.Join(args, " "), clone, err)
+			msg := ""
+			if ee, ok := err.(*exec.ExitError); ok {
+				msg = ": " + strings.TrimSpace(string(ee.Stderr))
+			}
+			return nil, fmt.Errorf("git %s in %s: %w%s", strings.Join(args, " "), clone, err, msg)
 		}
 		return out, nil
 	}
@@ -36,12 +46,15 @@ func ReadGit(clone, ref, glob string) ([]File, string, string, error) {
 	}
 	date := strings.TrimSpace(string(out))
 	// shortcut: lists the whole tree; fine for catalogue repos, slow on huge monorepos (use a pathspec then)
-	out, err = git("ls-tree", "-r", "--name-only", commit)
+	out, err = git("ls-tree", "-r", "-z", "--name-only", commit)
 	if err != nil {
 		return nil, "", "", err
 	}
 	var files []File
-	for _, name := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for _, name := range strings.Split(string(out), "\x00") {
+		if name == "" {
+			continue
+		}
 		if ok, _ := doublestar.Match(glob, name); !ok {
 			continue
 		}
