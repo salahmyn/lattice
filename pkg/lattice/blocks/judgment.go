@@ -1,0 +1,159 @@
+package blocks
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/salahmyn/lattice/pkg/lattice/schema"
+)
+
+// Judgment is a decision a person made about the map, kept as data: which
+// systems exist, how externals group, which edges a catalogue cannot show,
+// display names, and id conventions. Every element it produces carries
+// provenance "judgment".
+type Judgment struct {
+	ID        string          `yaml:"id"`
+	Type      string          `yaml:"type"` // system | external | edge | group | label | alias
+	Rationale string          `yaml:"rationale,omitempty"`
+	Author    string          `yaml:"author,omitempty"`
+	Entries   []JudgmentEntry `yaml:"entries"`
+	Path      string          `yaml:"-"`
+}
+
+// JudgmentEntry is one row; which fields matter depends on the judgment type.
+type JudgmentEntry struct {
+	ID          string   `yaml:"id,omitempty"`          // system, external, group, label
+	Title       string   `yaml:"title,omitempty"`       // system, external, group, label
+	Kind        string   `yaml:"kind,omitempty"`        // block kind (system, external, group) or edge kind
+	Parent      string   `yaml:"parent,omitempty"`      // system, external, group
+	Technology  string   `yaml:"technology,omitempty"`  // system, external, group
+	Description string   `yaml:"description,omitempty"` // system, external, group
+	Members     []string `yaml:"members,omitempty"`     // group: blocks moved under it
+	From        string   `yaml:"from,omitempty"`        // edge
+	To          string   `yaml:"to,omitempty"`          // edge
+	Label       string   `yaml:"label,omitempty"`       // edge
+	Prefix      string   `yaml:"prefix,omitempty"`      // alias: a prefix that turns a short id into a full one
+}
+
+var judgmentTypes = map[string]bool{"system": true, "external": true, "edge": true, "group": true, "label": true, "alias": true}
+
+// LoadJudgments reads every *.yaml judgment in dir, in file-name order. A
+// missing directory means no judgments.
+func LoadJudgments(dir string) ([]Judgment, error) {
+	paths, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(paths)
+	var out []Judgment
+	seen := map[string]string{}
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return nil, err
+		}
+		var j Judgment
+		if err := yaml.Unmarshal(data, &j); err != nil {
+			return nil, fmt.Errorf("%s: %w", p, err)
+		}
+		switch {
+		case j.ID == "":
+			return nil, fmt.Errorf("%s: judgment has no id", p)
+		case !judgmentTypes[j.Type]:
+			return nil, fmt.Errorf("%s: judgment %s has unknown type %q (system, external, edge, group, label, alias)", p, j.ID, j.Type)
+		case len(j.Entries) == 0:
+			return nil, fmt.Errorf("%s: judgment %s has no entries", p, j.ID)
+		case seen[j.ID] != "":
+			return nil, fmt.Errorf("%s: judgment id %s is also used in %s", p, j.ID, seen[j.ID])
+		}
+		seen[j.ID] = p
+		j.Path = p
+		out = append(out, j)
+	}
+	return out, nil
+}
+
+// ResolveID maps an id to a known block id: the id itself when known, else the
+// first alias prefix that makes it known.
+func ResolveID(id string, js []Judgment, known func(string) bool) (string, bool) {
+	if known(id) {
+		return id, true
+	}
+	for _, j := range js {
+		if j.Type != "alias" {
+			continue
+		}
+		for _, e := range j.Entries {
+			if known(e.Prefix + id) {
+				return e.Prefix + id, true
+			}
+		}
+	}
+	return "", false
+}
+
+func judgmentProvenance(j Judgment) schema.Provenance {
+	return schema.Provenance{Kind: schema.ProvenanceJudgment, Source: "judgment:" + j.ID}
+}
+
+// applyNodes adds the blocks a system, external or group judgment declares.
+func (g *graph) applyNodes(j Judgment, defaultKind string) {
+	for _, e := range j.Entries {
+		kind := e.Kind
+		if kind == "" {
+			kind = defaultKind
+		}
+		var attrs map[string]string
+		if e.Technology != "" {
+			attrs = map[string]string{"technology": e.Technology}
+		}
+		if e.Parent != "" && g.blocks[e.Parent] == nil {
+			g.warnf("judgment %s: %s parent %q is not a block", j.ID, e.ID, e.Parent)
+		}
+		g.blocks[e.ID] = &schema.Block{ID: e.ID, Kind: kind, Parent: e.Parent, Title: e.Title,
+			Description: e.Description, Truth: schema.TruthDeclared, Provenance: judgmentProvenance(j), Attrs: attrs}
+	}
+}
+
+// applyGroup adds group blocks and moves their members under them.
+func (g *graph) applyGroup(j Judgment) {
+	g.applyNodes(j, "group")
+	for _, e := range j.Entries {
+		for _, m := range e.Members {
+			b := g.blocks[m]
+			if b == nil || m == e.ID {
+				g.warnf("judgment %s: group %s member %q is not a block", j.ID, e.ID, m)
+				continue
+			}
+			b.Parent = e.ID
+		}
+	}
+}
+
+// applyEdge adds edges a catalogue cannot show.
+func (g *graph) applyEdge(j Judgment) {
+	for _, e := range j.Entries {
+		for _, id := range []string{e.From, e.To} {
+			if g.blocks[id] == nil {
+				g.warnf("judgment %s: edge end %q is not a block", j.ID, id)
+			}
+		}
+		g.edge(e.From, e.To, e.Kind, e.Label, nil, judgmentProvenance(j))
+	}
+}
+
+// applyLabel renames blocks.
+func (g *graph) applyLabel(j Judgment) {
+	for _, e := range j.Entries {
+		b := g.blocks[e.ID]
+		if b == nil {
+			g.warnf("judgment %s: label target %q is not a block", j.ID, e.ID)
+			continue
+		}
+		b.Title = e.Title
+	}
+}

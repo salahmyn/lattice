@@ -221,19 +221,5 @@ func contains(xs []string, x string) bool {
 	return false
 }
 
-// stubs replaced in Tasks 6 and 7
-type Judgment struct {
-	ID, Type string
-	Entries  []JudgmentEntry
-}
-type JudgmentEntry struct{ ID, Title string }
-
-func (g *graph) applyNodes(j Judgment, defaultKind string) {
-	for _, e := range j.Entries {
-		g.blocks[e.ID] = &schema.Block{ID: e.ID, Kind: defaultKind, Title: e.Title, Truth: schema.TruthDeclared}
-	}
-}
-func (g *graph) applyGroup(Judgment)                                {}
-func (g *graph) applyEdge(Judgment)                                 {}
-func (g *graph) applyLabel(Judgment)                                {}
+// stub replaced in Task 7
 func (g *graph) addFeatures([]schema.Manifest, []schema.EntryPoint) {}
