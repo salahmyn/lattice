@@ -123,6 +123,7 @@ func Build(in Inputs) Result {
 	}
 
 	g.addFeatures(in.Features, in.EntryPoints)
+	g.aliases = byType["alias"]
 	for _, j := range byType["group"] {
 		g.applyGroup(j)
 	}
@@ -139,6 +140,8 @@ type graph struct {
 	blocks map[string]*schema.Block
 	edges  map[[3]string]*schema.BlockEdge
 	warns  []string
+	// aliases are the alias judgments; group, edge and label ids resolve through them
+	aliases []Judgment
 }
 
 func (g *graph) warnf(format string, args ...any) {

@@ -130,3 +130,19 @@ func TestGroupReparentsCatalogueBlockAndWarnsOnCollision(t *testing.T) {
 		}
 	}
 }
+
+func TestAliasResolvesShortIDsInLabelAndEdge(t *testing.T) {
+	in := shopInputs(t)
+	in.Judgments = append(in.Judgments,
+		Judgment{ID: "ids", Type: "alias", Entries: []JudgmentEntry{{Prefix: "fe:"}}},
+		Judgment{ID: "names", Type: "label", Entries: []JudgmentEntry{{ID: "cart.items", Title: "Line items"}}},
+		Judgment{ID: "calls", Type: "edge", Entries: []JudgmentEntry{{From: "be:orders.create", To: "cart", Kind: "server_api"}}},
+	)
+	r := Build(in)
+	if got := blockMap(r)["fe:cart.items"].Title; got != "Line items" {
+		t.Errorf("label via alias: title = %q", got)
+	}
+	if _, ok := edgeSet(r)["be:orders.create -server_api-> fe:cart"]; !ok {
+		t.Errorf("edge via alias missing: %v", edgeSet(r))
+	}
+}

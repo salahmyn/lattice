@@ -151,11 +151,21 @@ func (g *graph) applyNodes(j Judgment, defaultKind string) {
 	}
 }
 
+// resolve maps a possibly short id to a block id through the alias judgments;
+// an unresolved id is returned unchanged so callers keep their warnings.
+func (g *graph) resolve(id string) string {
+	if r, ok := ResolveID(id, g.aliases, func(x string) bool { return g.blocks[x] != nil }); ok {
+		return r
+	}
+	return id
+}
+
 // applyGroup adds group blocks and moves their members under them.
 func (g *graph) applyGroup(j Judgment) {
 	g.applyNodes(j, "group")
 	for _, e := range j.Entries {
 		for _, m := range e.Members {
+			m = g.resolve(m)
 			b := g.blocks[m]
 			if m == e.ID {
 				g.warnf("judgment %s: group %s lists itself as a member", j.ID, e.ID)
@@ -173,6 +183,7 @@ func (g *graph) applyGroup(j Judgment) {
 // applyEdge adds edges a catalogue cannot show.
 func (g *graph) applyEdge(j Judgment) {
 	for _, e := range j.Entries {
+		e.From, e.To = g.resolve(e.From), g.resolve(e.To)
 		for _, id := range []string{e.From, e.To} {
 			if g.blocks[id] == nil {
 				g.warnf("judgment %s: edge end %q is not a block", j.ID, id)
@@ -185,7 +196,7 @@ func (g *graph) applyEdge(j Judgment) {
 // applyLabel renames blocks.
 func (g *graph) applyLabel(j Judgment) {
 	for _, e := range j.Entries {
-		b := g.blocks[e.ID]
+		b := g.blocks[g.resolve(e.ID)]
 		if b == nil {
 			g.warnf("judgment %s: label target %q is not a block", j.ID, e.ID)
 			continue
