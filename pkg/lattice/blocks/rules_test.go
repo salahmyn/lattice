@@ -110,3 +110,36 @@ func TestConfigRefs(t *testing.T) {
 		t.Errorf("configRefs = %v want %v", got, want)
 	}
 }
+
+func TestEventEdges(t *testing.T) {
+	fe := &Catalogue{Area: "a", Path: "a.json", Nodes: []CatNode{
+		{ID: "a", Kind: "screen", Title: "A"},
+		{ID: "a.n", Parent: "a", Kind: "action", Title: "N",
+			Events: []string{"mobile::loc.resolved", "mobile::reload", "checkout::address.changed", "internal"}},
+	}}
+	r := Build(Inputs{
+		Judgments: []Judgment{
+			{ID: "land", Type: "system", Entries: []JudgmentEntry{{ID: "mobile_app", Title: "App"}, {ID: "storefront", Title: "Store"}}},
+			{ID: "ev", Type: "edge", Entries: []JudgmentEntry{
+				{Kind: "native_bridge", From: "mobile_app", Events: []string{"mobile::loc.resolved"}},
+				{Kind: "native_bridge", To: "mobile_app", Events: []string{"mobile::*"}},
+				{Kind: "storefront_event", To: "storefront", Events: []string{"*::*"}, Blocks: "fe:**"},
+			}},
+		},
+		Sources: []SourceInput{{Info: SourceInfo{ID: "web", Prefix: "fe"}, Catalogues: []*Catalogue{fe}}},
+	})
+	e := edgeSet(r)
+	want := map[string][]string{
+		"mobile_app -native_bridge-> fe:a.n":    {"mobile::loc.resolved"},
+		"fe:a.n -native_bridge-> mobile_app":    {"mobile::reload"},
+		"fe:a.n -storefront_event-> storefront": {"checkout::address.changed"},
+	}
+	if len(e) != len(want) {
+		t.Fatalf("edges = %v want %v", e, want)
+	}
+	for k, l := range want {
+		if got := e[k]; len(got) != 1 || got[0] != l[0] {
+			t.Errorf("%s = %v want %v (first matching rule wins)", k, got, l)
+		}
+	}
+}

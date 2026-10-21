@@ -42,16 +42,18 @@ entries:
 
 func TestLoadJudgmentsRejects(t *testing.T) {
 	cases := map[string]string{
-		"no id":                "type: system\nentries: [{id: a}]\n",
-		"unknown type":         "id: x\ntype: colour\nentries: [{id: a}]\n",
-		"no entries":           "id: x\ntype: system\n",
-		"memebers":             "id: x\ntype: group\nentries: [{id: a, memebers: [b]}]\n",
-		"entry 0 needs id":     "id: x\ntype: group\nentries: [{title: a}]\n",
-		"entry 1 needs from":   "id: x\ntype: edge\nentries: [{from: a, to: b, kind: k}, {to: b, kind: k}]\n",
-		"entry 0 needs to":     "id: x\ntype: edge\nentries: [{from: a, kind: k}]\n",
-		"entry 0 needs kind":   "id: x\ntype: edge\nentries: [{from: a, to: b}]\n",
-		"entry 0 needs title":  "id: x\ntype: label\nentries: [{id: a}]\n",
-		"entry 0 needs prefix": "id: x\ntype: alias\nentries: [{id: a}]\n",
+		"exactly one of from and to": "id: x\ntype: edge\nentries: [{kind: k, from: a, to: b, events: [e]}]\n",
+		"bad event pattern":          "id: x\ntype: edge\nentries: [{kind: k, to: b, events: [\"[\"]}]\n",
+		"no id":                      "type: system\nentries: [{id: a}]\n",
+		"unknown type":               "id: x\ntype: colour\nentries: [{id: a}]\n",
+		"no entries":                 "id: x\ntype: system\n",
+		"memebers":                   "id: x\ntype: group\nentries: [{id: a, memebers: [b]}]\n",
+		"entry 0 needs id":           "id: x\ntype: group\nentries: [{title: a}]\n",
+		"entry 1 needs from":         "id: x\ntype: edge\nentries: [{from: a, to: b, kind: k}, {to: b, kind: k}]\n",
+		"entry 0 needs to":           "id: x\ntype: edge\nentries: [{from: a, kind: k}]\n",
+		"entry 0 needs kind":         "id: x\ntype: edge\nentries: [{from: a, to: b}]\n",
+		"entry 0 needs title":        "id: x\ntype: label\nentries: [{id: a}]\n",
+		"entry 0 needs prefix":       "id: x\ntype: alias\nentries: [{id: a}]\n",
 	}
 	for want, body := range cases {
 		dir := t.TempDir()

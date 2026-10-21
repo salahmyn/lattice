@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 
@@ -98,6 +99,14 @@ func (j Judgment) check() error {
 			switch {
 			case len(e.Events) > 0:
 				need = map[string]string{"kind": e.Kind}
+				if (e.From == "") == (e.To == "") {
+					return fmt.Errorf("entry %d needs exactly one of from and to", i)
+				}
+				for _, p := range e.Events {
+					if _, err := path.Match(p, ""); err != nil {
+						return fmt.Errorf("entry %d: bad event pattern %q", i, p)
+					}
+				}
 			case e.ConfigKind != "" || e.ConfigSource != "":
 				need = map[string]string{"kind": e.Kind, "from": e.From}
 			default:

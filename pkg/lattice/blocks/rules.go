@@ -1,6 +1,7 @@
 package blocks
 
 import (
+	"path"
 	"regexp"
 	"strings"
 )
@@ -106,4 +107,63 @@ func (g *graph) applyConfig(j Judgment, e JudgmentEntry) {
 			}
 		}
 	}
+}
+
+// applyEvents adds event edges from every edge judgment's event entries. For each
+// (block, event) the first matching entry decides where the event goes.
+func (g *graph) applyEvents(js []Judgment) {
+	type rule struct {
+		j    Judgment
+		e    JudgmentEntry
+		end  string // resolved from or to
+		only *regexp.Regexp
+	}
+	var rules []rule
+	for _, j := range js {
+		for _, e := range j.Entries {
+			if len(e.Events) == 0 {
+				continue
+			}
+			end := e.From
+			if end == "" {
+				end = e.To
+			}
+			end = g.resolve(end)
+			if g.blocks[end] == nil {
+				g.warnf("judgment %s: edge end %q is not a block", j.ID, end)
+				continue
+			}
+			rules = append(rules, rule{j: j, e: e, end: end, only: compileID(e.Blocks)})
+		}
+	}
+	if len(rules) == 0 {
+		return
+	}
+	for _, im := range g.sources {
+		for _, id := range sortedKeys(im.nodes) {
+			key := im.keys[id]
+			for _, ev := range im.nodes[id].Events {
+				for _, r := range rules {
+					if (r.only != nil && !r.only.MatchString(key)) || !matchEvent(r.e.Events, ev) {
+						continue
+					}
+					if r.e.From != "" {
+						g.edge(r.end, key, r.e.Kind, ev, nil, judgmentProvenance(r.j))
+					} else {
+						g.edge(key, r.end, r.e.Kind, ev, nil, judgmentProvenance(r.j))
+					}
+					break
+				}
+			}
+		}
+	}
+}
+
+func matchEvent(patterns []string, ev string) bool {
+	for _, p := range patterns {
+		if ok, _ := path.Match(p, ev); ok {
+			return true
+		}
+	}
+	return false
 }

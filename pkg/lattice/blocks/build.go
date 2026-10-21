@@ -131,6 +131,7 @@ func Build(in Inputs) Result {
 	for _, j := range byType["edge"] {
 		g.applyEdge(j)
 	}
+	g.applyEvents(byType["edge"])
 	for _, j := range byType["label"] {
 		g.applyLabel(j)
 	}
