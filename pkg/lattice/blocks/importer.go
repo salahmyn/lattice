@@ -15,6 +15,8 @@ type SourceInfo struct {
 	System    string            // the system block that owns this source's areas
 	Commit    string            // commit the catalogues were read at; empty for a directory
 	Endpoints *EndpointGrouping // when set, group areas by endpoint (endpoints.go)
+	// RoutePrefixes are stripped from normalized route paths before matching request paths (proposal.go)
+	RoutePrefixes []string
 }
 
 // imported is one source's catalogues as blocks. Edges stay keyed by catalogue

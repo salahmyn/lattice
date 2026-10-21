@@ -22,6 +22,7 @@ type Inputs struct {
 	Judgments   []Judgment
 	Features    []schema.Manifest
 	EntryPoints []schema.EntryPoint
+	Proposals   []Proposal // initiatives drawn over the graph, with their evidence
 }
 
 // Result is the block graph plus warnings worth showing a person.
@@ -144,6 +145,7 @@ func Build(in Inputs) Result {
 	for _, j := range byType["label"] {
 		g.applyLabel(j)
 	}
+	g.attachProposals(in.Proposals, in.Sources)
 	var flows []schema.Flow
 	for i, s := range in.Sources {
 		flows = append(flows, g.walkFlows(ims[i], s.Walks)...)
