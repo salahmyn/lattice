@@ -39,6 +39,7 @@ h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: .01em; }
 input, select, button { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
 input[type=search] { width: 240px; max-width: 60vw; }
 main { flex: 1; display: grid; grid-template-columns: 320px 1fr 380px; min-height: 0; }
+main:has(#pane.diag) { grid-template-columns: 260px 1fr 320px; }
 section { min-height: 0; overflow: auto; }
 #tree { background: var(--panel); border-right: 1px solid var(--line); padding: 6px 0; }
 #detail { background: var(--panel); border-left: 1px solid var(--line); padding: 14px 16px; }
@@ -86,6 +87,30 @@ td.key { color: var(--muted); width: 32%; font: 11.5px var(--mono); }
 .sk.api, .sk.reply { color: var(--accent); } .sk.loop { color: var(--warn); }
 .legend { display: flex; flex-wrap: wrap; gap: 10px; padding: 8px 12px; color: var(--muted); font-size: 12px; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
+#pane.diag { padding: 0; overflow: hidden; position: relative; }
+.dbar { position: absolute; left: 0; right: 0; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 12px; background: color-mix(in srgb, var(--bg) 88%, transparent); border-bottom: 1px solid var(--line); font-size: 12px; }
+.dbar .crumbs { margin: 0; }
+.dbar button { padding: 2px 8px; cursor: pointer; }
+.dbar label { display: inline-flex; gap: 3px; align-items: center; color: var(--muted); cursor: pointer; }
+.dbar details.kinds { position: relative; }
+.dbar details.kinds summary { cursor: pointer; color: var(--muted); }
+.dbar details.kinds > div { position: absolute; top: 22px; left: 0; z-index: 3; display: grid; gap: 4px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 16px rgb(0 0 0 / .12); white-space: nowrap; }
+.dbar .play { color: var(--ink); font-weight: 600; }
+#dsvg { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+#dsvg.drag { cursor: grabbing; }
+.bx rect.c { fill: var(--soft); stroke: var(--line); }
+.bx text.ct { font: 600 12px var(--sans); fill: var(--muted); }
+.bx rect.l { fill: var(--panel); stroke: var(--line); }
+.bx rect.l.out { fill: var(--bg); stroke-dasharray: 4 3; }
+.bx { cursor: pointer; }
+.bx:hover rect.l, .bx:hover rect.c { stroke: var(--accent); }
+.bx.sel rect.l, .bx.sel rect.c { stroke: var(--accent); stroke-width: 2; }
+.bx.cur rect.l, .bx.cur rect.c { stroke: var(--warn); stroke-width: 2.5; }
+.bx.seen rect.l { fill: var(--accent-soft); }
+.bx .tg { fill: var(--muted); font: 11px var(--mono); }
+path.e { fill: none; stroke: var(--muted); stroke-opacity: .45; stroke-width: 1.2; }
+path.e.hot { stroke: var(--accent); stroke-opacity: 1; stroke-width: 2; }
+path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
 @media (max-width: 900px) {
   main { grid-template-columns: 1fr; grid-auto-rows: minmax(260px, auto); overflow: auto; }
   #tree, #detail { border: 0; border-bottom: 1px solid var(--line); max-height: 45vh; }
@@ -107,7 +132,8 @@ td.key { color: var(--muted); width: 32%; font: 11.5px var(--mono); }
   <section id="tree" aria-label="Blocks"></section>
   <section class="center">
     <div class="tabs" role="tablist">
-      <button class="on" data-tab="rel" role="tab">Relations</button>
+      <button class="on" data-tab="diag" role="tab">Diagram</button>
+      <button data-tab="rel" role="tab">Relations</button>
       <button data-tab="flows" role="tab">Flows</button>
     </div>
     <div class="legend" id="legend" hidden></div>
@@ -115,6 +141,7 @@ td.key { color: var(--muted); width: 32%; font: 11.5px var(--mono); }
   </section>
   <section id="detail" aria-label="Block details"></section>
 </main>
+<script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"></script>
 <script id="graph" type="application/json">/*__GRAPH__*/</script>
 <script>
 (async function () {
@@ -140,7 +167,7 @@ td.key { color: var(--muted); width: 32%; font: 11.5px var(--mono); }
     (inE.get(e.to) || inE.set(e.to, []).get(e.to)).push(e);
   }
   const inits = blocks.filter(b => b.initiative && b.id === "init:" + b.initiative);
-  const S = { sel: "", init: "", tab: "rel", flow: flows.length ? flows[0].id : "", open: new Set([""]) };
+  const S = { sel: "", init: "", tab: "diag", flow: flows.length ? flows[0].id : "", open: new Set([""]) };
   const rank = {}; // verdict -> rank in the selected initiative's class order
 
   function title(id) { const b = byId.get(id); return b ? (b.title || b.id) : id; }
@@ -163,7 +190,7 @@ td.key { color: var(--muted); width: 32%; font: 11.5px var(--mono); }
     for (const k in rank) delete rank[k];
     const sys = byId.get("init:" + S.init);
     (sys?.attrs?.verdicts || "").split(" · ").forEach((p, i) => { if (p) rank[p.split(" ")[0]] = i; });
-    renderLegend(); renderTree(); renderPane(); renderDetail();
+    D.key = ""; renderLegend(); renderTree(); renderPane(); renderDetail();
   };
 
   function renderLegend() {
@@ -218,7 +245,7 @@ td.key { color: var(--muted); width: 32%; font: 11.5px var(--mono); }
     if (!byId.has(id)) return;
     S.sel = id;
     for (let p = byId.get(id).parent; p && byId.has(p); p = byId.get(p).parent) S.open.add(p);
-    renderTree(); renderPane(); renderDetail();
+    renderTree(); S.tab === "diag" ? reveal(id) : renderPane(); renderDetail();
     const r = treeEl.querySelector(".row.sel");
     if (r && !qEl.value) r.scrollIntoView({ block: "nearest" });
   }
@@ -233,12 +260,20 @@ td.key { color: var(--muted); width: 32%; font: 11.5px var(--mono); }
   };
   const pane = document.getElementById("pane");
   pane.onclick = e => {
+    if (S.tab === "diag") return; // the diagram handles its own clicks
     const c = e.target.closest("[data-id]");
     if (c) { select(c.dataset.id); return; }
     const f = e.target.closest("[data-flow]");
-    if (f) { S.flow = f.dataset.flow; renderPane(); }
+    if (f) { S.flow = f.dataset.flow; renderPane(); return; }
+    const pl = e.target.closest("[data-play]");
+    if (pl) startPlay(pl.dataset.play);
   };
-  function renderPane() { S.tab === "flows" ? renderFlows() : renderRelations(); }
+  function renderPane() {
+    pane.classList.toggle("diag", S.tab === "diag");
+    if (S.tab === "diag") return renderDiagram();
+    D.drawn = false;
+    S.tab === "flows" ? renderFlows() : renderRelations();
+  }
 
   function renderRelations() {
     if (!S.sel) { pane.innerHTML = `<p class="empty">Pick a block on the left to see what it connects to.</p>`; return; }
@@ -281,7 +316,7 @@ td.key { color: var(--muted); width: 32%; font: 11.5px var(--mono); }
     const f = flows.find(x => x.id === S.flow) || flows[0];
     pane.innerHTML = `<div class="flows"><div class="flist">` + flows.map(x =>
       `<div class="row${x.id === f.id ? " sel" : ""}" data-flow="${esc(x.id)}"><span class="t">${esc(x.title || x.id)}</span><span class="n">${x.steps.length} · ${esc(x.end)}</span></div>`).join("") +
-      `</div><div><h2>${esc(f.title || f.id)}</h2><p class="crumbs">${f.steps.length} steps · ${esc(f.end)}</p>` +
+      `</div><div><h2>${esc(f.title || f.id)}</h2><p class="crumbs">${f.steps.length} steps · ${esc(f.end)} · <a class="link" data-play="${esc(f.id)}">play on the diagram</a></p>` +
       (Object.keys(f.facts || {}).length ? `<details class="crumbs"><summary>${Object.keys(f.facts).length} facts this walk assumed</summary>` +
         Object.entries(f.facts).map(([k, v]) => `<div><span class="id">${esc(k)}</span> ${esc(v)}</div>`).join("") + `</details>` : "") + `<ol class="steps">` +
       f.steps.map(s => `<li><span class="sk ${esc(s.kind)}">${esc(s.kind)}</span><span><a class="link" data-id="${esc(s.to)}">${esc(title(s.to))}</a>` +
@@ -289,9 +324,310 @@ td.key { color: var(--muted); width: 32%; font: 11.5px var(--mono); }
       `</ol></div></div>`;
   }
 
+  // ---- diagram: boxes for the root's children, opened in place or drilled into; block edges are lifted to the
+  // nearest box on screen and merged per (from, to, kind)
+  const D = { root: "", exp: new Set(), off: new Set(), key: "", nodes: null, rep: null, boxes: new Map(), es: [], size: null, tf: { k: 1, x: 0, y: 0 }, drawn: false, run: 0, note: "", outside: false };
+  const P = { flow: null, i: 0, timer: 0 }; // flow playback
+  const edgeKinds = [...new Set(edges.map(e => e.kind))].sort();
+  function anc(id) { const out = []; for (let p = byId.get(id)?.parent; p && byId.has(p); p = byId.get(p).parent) out.push(p); return out; }
+  function kidsV(id) { return (kids.get(id) || []).filter(visible); }
+
+  function project() {
+    const nodes = new Map();
+    const add = (id, parent) => {
+      const open = D.exp.has(id) && kidsV(id).length > 0;
+      nodes.set(id, { id, parent, open, title: title(id), kind: byId.get(id).kind });
+      if (open) for (const c of kidsV(id)) add(c, id);
+    };
+    for (const c of kidsV(D.root)) add(c, "");
+    const rootChain = D.root ? [D.root, ...anc(D.root)] : [];
+    const rep = id => {
+      if (!visible(id)) return null;
+      const chain = [id, ...anc(id)];
+      for (const a of chain) if (nodes.has(a)) return a;
+      for (const x of chain) { // outside the root: the ancestor that sits beside the root's line
+        const p = byId.get(x).parent || "";
+        if (p === "" || rootChain.includes(p)) return rootChain.includes(x) ? null : "out:" + x;
+      }
+      return null;
+    };
+    const nests = (a, b) => { for (let n = nodes.get(b); n && n.parent; n = nodes.get(n.parent)) if (n.parent === a) return true; return false; };
+    const agg = new Map();
+    D.hidden = 0;
+    for (const e of edges) {
+      if (D.off.has(e.kind)) continue;
+      const a = rep(e.from), b = rep(e.to);
+      if (!a || !b || a === b || nests(a, b) || nests(b, a)) continue;
+      if (!D.outside && (a.startsWith("out:") || b.startsWith("out:"))) { D.hidden++; continue; }
+      for (const x of [a, b]) if (x.startsWith("out:") && !nodes.has(x)) // outside the root: a dashed box beside the others
+        nodes.set(x, { id: x, parent: "", open: false, title: title(x.slice(4)), kind: byId.get(x.slice(4)).kind });
+      const k = a + "\u0000" + b; // one line per pair of boxes; its kinds show on hover
+      const g = agg.get(k) || agg.set(k, { from: a, to: b, kinds: {}, n: 0 }).get(k);
+      g.kinds[e.kind] = (g.kinds[e.kind] || 0) + 1;
+      g.n++;
+    }
+    return { nodes, es: [...agg.values()], rep };
+  }
+
+  function rollup(nodes) { // verdict counts of the judged blocks inside each box
+    const r = new Map();
+    if (!S.init) return r;
+    for (const b of blocks) {
+      const o = ov(b);
+      if (!o) continue;
+      for (const x of [b.id, ...anc(b.id)]) if (nodes.has(x)) { const m = r.get(x) || r.set(x, {}).get(x); m[o.verdict] = (m[o.verdict] || 0) + 1; }
+    }
+    return r;
+  }
+
+  const LW = 210, lh = () => S.init ? 70 : 54; // a third line holds verdict counts when a proposal is on
+  async function layout(pr) {
+    const elkNode = id => {
+      const n = pr.nodes.get(id);
+      if (!n.open) return { id, width: LW, height: lh() };
+      return { id, layoutOptions: { "elk.padding": "[top=34,left=12,bottom=12,right=12]" },
+        children: [...pr.nodes.values()].filter(c => c.parent === id).map(c => elkNode(c.id)) };
+    };
+    const top = [...pr.nodes.values()].filter(n => n.parent === "").map(n => elkNode(n.id));
+    const boxes = new Map();
+    D.note = window.ELK ? "" : "layout library not loaded (offline?): simple grid";
+    if (window.ELK) {
+      try {
+        const res = await new ELK().layout({ id: "root", children: top,
+          layoutOptions: { "elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN",
+            "elk.layered.spacing.nodeNodeBetweenLayers": "60", "elk.spacing.nodeNode": "18", "elk.spacing.componentComponent": "40",
+            "elk.edgeRouting": "SPLINES", "elk.layered.mergeEdges": "true" },
+          edges: pr.es.map((e, i) => ({ id: "e" + i, sources: [e.from], targets: [e.to] })) });
+        const walk = (n, ox, oy) => { for (const c of n.children || []) { boxes.set(c.id, { x: ox + c.x, y: oy + c.y, w: c.width, h: c.height }); walk(c, ox + c.x, oy + c.y); } };
+        walk(res, 0, 0);
+        const pts = new Map();
+        for (const e of res.edges || []) {
+          const o = e.container && e.container !== "root" ? boxes.get(e.container) : null;
+          const ox = o ? o.x : 0, oy = o ? o.y : 0, sec = (e.sections || [])[0];
+          if (sec) pts.set(e.id, [sec.startPoint, ...(sec.bendPoints || []), sec.endPoint].map(q => ({ x: q.x + ox, y: q.y + oy })));
+        }
+        return { boxes, pts, w: res.width, h: res.height };
+      } catch (err) { D.note = "layout failed (" + err + "): simple grid"; boxes.clear(); }
+    }
+    let i = 0; // no ELK (an offline file): a grid of the boxes that are not open, straight edges
+    const leaves = [...pr.nodes.values()].filter(n => !n.open), cols = Math.max(1, Math.ceil(Math.sqrt(leaves.length * 2)));
+    for (const n of leaves) { boxes.set(n.id, { x: (i % cols) * (LW + 40), y: Math.floor(i / cols) * (lh() + 40), w: LW, h: lh() }); i++; }
+    return { boxes, pts: new Map(), w: cols * (LW + 40), h: Math.ceil(leaves.length / cols) * (lh() + 40) };
+  }
+
+  async function renderDiagram() {
+    const key = [D.root, [...D.exp].sort().join(","), [...D.off].sort().join(","), S.init, D.outside].join("|");
+    if (key === D.key && D.drawn) { bar(); marks(); return; }
+    D.key = key;
+    const run = ++D.run;
+    const pr = project();
+    pane.innerHTML = `<div class="dbar" id="dbar"></div><svg id="dsvg" role="img" aria-label="Block diagram"><g id="vp"></g></svg>`;
+    D.drawn = true;
+    bar();
+    const lay = await layout(pr);
+    if (run !== D.run) return; // a newer layout started meanwhile
+    D.nodes = pr.nodes; D.rep = pr.rep; D.boxes = lay.boxes; D.es = pr.es; D.size = lay;
+    const roll = rollup(pr.nodes);
+    const depth = id => { let d = 0; for (let n = pr.nodes.get(id); n && n.parent; n = pr.nodes.get(n.parent)) d++; return d; };
+    const open = [...pr.nodes.values()].filter(n => n.open).sort((a, b) => depth(a.id) - depth(b.id));
+    const leaf = [...pr.nodes.values()].filter(n => !n.open);
+    let h = "";
+    for (const n of open) {
+      const b = lay.boxes.get(n.id); if (!b) continue;
+      h += `<g class="bx" data-box="${esc(n.id)}"><rect class="c" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="10"/>` +
+        `<text class="ct" x="${b.x + 12}" y="${b.y + 21}">▾ ${esc(n.title)}</text>` + rollSvg(roll.get(n.id), b.x + b.w - 12, b.y + 21) + `</g>`;
+    }
+    pr.es.forEach((e, i) => {
+      const p = lay.pts.get("e" + i) || straight(lay.boxes.get(e.from), lay.boxes.get(e.to));
+      if (!p) return;
+      h += `<path class="e" data-e="${i}" d="${curve(p)}"><title>${esc(title(e.from.replace(/^out:/, "")))} → ${esc(title(e.to.replace(/^out:/, "")))}: ${Object.entries(e.kinds).map(([k, n]) => esc(k) + (n > 1 ? " ×" + n : "")).join(", ")}</title></path>`;
+    });
+    for (const n of leaf) {
+      const b = lay.boxes.get(n.id); if (!b) continue;
+      const real = n.id.startsWith("out:") ? n.id.slice(4) : n.id, blk = byId.get(real), o = ov(blk), inner = kidsV(real).length;
+      const chars = Math.floor((b.w - 20) / 7);
+      h += `<g class="bx" data-box="${esc(n.id)}"><title>${esc(real)}${inner ? " · double-click to open" : ""}</title><rect class="l${n.id.startsWith("out:") ? " out" : ""}" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="8"/>` +
+        (o ? `<rect x="${b.x}" y="${b.y}" width="5" height="${b.h}" rx="2" style="fill:${vcolor(o.verdict)}"/>` : "") +
+        `<text x="${b.x + 12}" y="${b.y + 21}">${esc(n.title.length > chars ? n.title.slice(0, chars - 1) + "…" : n.title)}</text>` +
+        `<text class="tg" x="${b.x + 12}" y="${b.y + 40}">${esc(n.kind)}${blk.truth === "wired" ? " · wired" : ""}${inner && !n.id.startsWith("out:") ? " · ▸ " + inner : ""}</text>` +
+        rollSvg(roll.get(n.id), b.x + 12, b.y + 59, true) + `</g>`;
+    }
+    document.getElementById("vp").innerHTML = h;
+    bar();
+    wire();
+    fit();
+    if (P.flow) showStep(true);
+    marks();
+  }
+
+  function curve(p) { // ELK spline sections: start, (control, control, end)*; anything else as a polyline
+    if (p.length >= 4 && (p.length - 1) % 3 === 0)
+      return `M${p[0].x},${p[0].y}` + p.slice(1).map((q, j) => (j % 3 === 0 ? " C" : " ") + q.x + "," + q.y).join("");
+    return p.map((q, j) => (j ? "L" : "M") + q.x + "," + q.y).join(" ");
+  }
+  function straight(a, b) { return a && b ? [{ x: a.x + a.w, y: a.y + a.h / 2 }, { x: b.x, y: b.y + b.h / 2 }] : null; }
+  function rollSvg(m, x, y, fromLeft) { // verdict dots with counts, most severe first; right-aligned at x unless fromLeft
+    if (!m) return "";
+    const ks = Object.keys(m).sort((a, b) => (rank[a] ?? 9) - (rank[b] ?? 9));
+    const w = k => String(m[k]).length * 6.6 + 18;
+    let cx = fromLeft ? x : x - ks.reduce((t, k) => t + w(k), 0), out = "";
+    for (const k of ks) {
+      out += `<circle cx="${cx + 4}" cy="${y - 4}" r="4" style="fill:${vcolor(k)}"/><text class="tg" x="${cx + 11}" y="${y}">${m[k]}</text>`;
+      cx += w(k);
+    }
+    return out;
+  }
+
+  function bar() {
+    const el = document.getElementById("dbar");
+    if (!el) return;
+    const crumbs = [`<a data-root="">All</a>`];
+    if (D.root) for (const a of [...anc(D.root)].reverse().concat(D.root)) crumbs.push(`<a data-root="${esc(a)}">${esc(title(a))}</a>`);
+    let h = `<span class="crumbs">${crumbs.join(" › ")}</span><button data-act="fit">Fit</button>` +
+      (D.exp.size ? `<button data-act="collapse">Collapse all</button>` : "") +
+      `<details class="kinds"><summary>Edges${D.off.size ? ` (${edgeKinds.length - D.off.size} of ${edgeKinds.length})` : ""}</summary><div>` +
+      edgeKinds.map(k => `<label><input type="checkbox" data-kind="${esc(k)}"${D.off.has(k) ? "" : " checked"}>${esc(k)}</label>`).join("") + `</div></details>` +
+      (D.root ? `<label><input type="checkbox" data-act="outside"${D.outside ? " checked" : ""}>outside${D.hidden && !D.outside ? ` (${D.hidden} links hidden)` : ""}</label>` : "") +
+      (D.note ? `<span class="n">${esc(D.note)}</span>` : "");
+    if (P.flow) {
+      const st = P.flow.steps[P.i];
+      h += `<span class="play">${esc(P.flow.title || P.flow.id)} · step ${P.i + 1}/${P.flow.steps.length}: ${esc(st.kind)} ${esc(title(st.to))}${st.label ? " · " + esc(st.label) : ""}</span>` +
+        `<button data-act="prev" aria-label="Previous step">◀</button><button data-act="next" aria-label="Next step">▶</button>` +
+        `<button data-act="auto">${P.timer ? "Pause" : "Play"}</button><button data-act="stop" aria-label="Stop the flow">✕</button>`;
+    }
+    el.innerHTML = h;
+  }
+
+  function marks() {
+    const vp = document.getElementById("vp");
+    if (!vp || !D.nodes) return;
+    const selBox = S.sel ? D.rep(S.sel) : null;
+    const walk = new Set(), seen = new Set();
+    let cur = null;
+    if (P.flow) {
+      for (let j = 0; j <= P.i; j++) { const r = D.rep(P.flow.steps[j].to); if (r) seen.add(r); }
+      cur = D.rep(P.flow.steps[P.i].to);
+      const prev = P.i > 0 ? D.rep(P.flow.steps[P.i - 1].to) : null;
+      D.es.forEach((e, i) => { if (prev && ((e.from === prev && e.to === cur) || (e.from === cur && e.to === prev))) walk.add(i); });
+    }
+    vp.querySelectorAll(".bx").forEach(g => {
+      const id = g.dataset.box;
+      g.classList.toggle("sel", id === selBox);
+      g.classList.toggle("cur", id === cur);
+      g.classList.toggle("seen", seen.has(id) && id !== cur);
+    });
+    vp.querySelectorAll("path.e").forEach(p => {
+      const e = D.es[+p.dataset.e];
+      p.classList.toggle("hot", !!selBox && (e.from === selBox || e.to === selBox));
+      p.classList.toggle("walk", walk.has(+p.dataset.e));
+    });
+  }
+
+  function applyTf() { const vp = document.getElementById("vp"); if (vp) vp.setAttribute("transform", `translate(${D.tf.x},${D.tf.y}) scale(${D.tf.k})`); }
+  function fit() {
+    const svg = document.getElementById("dsvg"); if (!svg || !D.size) return;
+    const r = svg.getBoundingClientRect(), top = (document.getElementById("dbar")?.offsetHeight || 0) + 10;
+    const k = Math.min((r.width - 40) / (D.size.w || 1), (r.height - top - 20) / (D.size.h || 1), 1.2);
+    D.tf = { k, x: (r.width - D.size.w * k) / 2, y: top + Math.max(0, (r.height - top - D.size.h * k) / 2) };
+    applyTf();
+  }
+  function centerOn(id) { // pan (and zoom in if the boxes are tiny) so a box is in view
+    const b = D.boxes.get(id), svg = document.getElementById("dsvg"); if (!b || !svg) return;
+    const r = svg.getBoundingClientRect();
+    if (D.tf.k < 0.6) { const k = 0.8; D.tf.x = r.width / 2 - (b.x + b.w / 2) * k; D.tf.y = r.height / 2 - (b.y + b.h / 2) * k; D.tf.k = k; applyTf(); return; }
+    const sx = D.tf.x + (b.x + b.w / 2) * D.tf.k, sy = D.tf.y + (b.y + b.h / 2) * D.tf.k;
+    if (sx < 40 || sy < 70 || sx > r.width - 40 || sy > r.height - 40) { D.tf.x += r.width / 2 - sx; D.tf.y += r.height / 2 - sy; applyTf(); }
+  }
+
+  function wire() {
+    const svg = document.getElementById("dsvg");
+    let drag = null;
+    svg.onpointerdown = e => { drag = { x: e.clientX, y: e.clientY, tx: D.tf.x, ty: D.tf.y, moved: false }; };
+    svg.onpointermove = e => {
+      if (!drag) return;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+      if (!drag.moved) { drag.moved = true; svg.setPointerCapture(e.pointerId); svg.classList.add("drag"); }
+      D.tf.x = drag.tx + dx; D.tf.y = drag.ty + dy; applyTf();
+    };
+    svg.onpointerup = e => {
+      const was = drag; drag = null; svg.classList.remove("drag");
+      if (!was || was.moved) return;
+      const g = e.target.closest(".bx");
+      if (!g) return;
+      const id = g.dataset.box, real = id.startsWith("out:") ? id.slice(4) : id;
+      if (D.nodes.get(id)?.open && e.target.closest("text.ct")) { D.exp.delete(id); renderDiagram(); return; } // fold
+      S.sel = real; renderTree(); renderDetail(); marks();
+    };
+    svg.ondblclick = e => { // open a box in place; for a box outside the root, move the root to its parent
+      const g = e.target.closest(".bx");
+      if (!g) return;
+      const id = g.dataset.box, real = id.startsWith("out:") ? id.slice(4) : id;
+      if (id.startsWith("out:")) { D.root = byId.get(real).parent || ""; D.exp = new Set([real]); }
+      else if (kidsV(real).length && !D.nodes.get(id)?.open) D.exp.add(real);
+      else return;
+      renderDiagram();
+    };
+    svg.onwheel = e => {
+      e.preventDefault();
+      const r = svg.getBoundingClientRect(), cx = e.clientX - r.left, cy = e.clientY - r.top;
+      const k = Math.max(0.05, Math.min(3, D.tf.k * Math.exp(-e.deltaY * 0.0015)));
+      D.tf.x = cx - (cx - D.tf.x) * (k / D.tf.k); D.tf.y = cy - (cy - D.tf.y) * (k / D.tf.k); D.tf.k = k; applyTf();
+    };
+    const el = document.getElementById("dbar");
+    el.onclick = e => {
+      const r = e.target.closest("[data-root]");
+      if (r) { D.root = r.dataset.root; D.exp = new Set(); renderDiagram(); return; }
+      const a = e.target.closest("button[data-act]")?.dataset.act;
+      if (a === "fit") fit();
+      if (a === "collapse") { D.exp.clear(); renderDiagram(); }
+      if (a === "prev" && P.i > 0) { P.i--; showStep(true); }
+      if (a === "next") nextStep();
+      if (a === "auto") { if (P.timer) { clearInterval(P.timer); P.timer = 0; } else P.timer = setInterval(nextStep, 1400); bar(); }
+      if (a === "stop") stopPlay();
+    };
+    el.onchange = e => {
+      if (e.target.dataset.act === "outside") { D.outside = e.target.checked; renderDiagram(); return; }
+      const k = e.target.dataset.kind;
+      if (k) { e.target.checked ? D.off.delete(k) : D.off.add(k); renderDiagram(); }
+    };
+  }
+
+  async function reveal(id) { // show a block picked elsewhere: open its ancestors under the root, or move the root up
+    if (D.root && id !== D.root && !anc(id).includes(D.root)) D.root = "";
+    for (const a of anc(id)) if (a !== D.root && !anc(D.root || "").includes(a)) D.exp.add(a);
+    await renderDiagram();
+    marks();
+    const r = D.rep && D.rep(id);
+    if (r) centerOn(r);
+  }
+
+  function startPlay(id) {
+    P.flow = flows.find(f => f.id === id); P.i = 0;
+    S.tab = "diag";
+    document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x.dataset.tab === "diag"));
+    renderPane();
+  }
+  function nextStep() { if (P.flow && P.i < P.flow.steps.length - 1) { P.i++; showStep(true); } else if (P.timer) { clearInterval(P.timer); P.timer = 0; bar(); } }
+  function showStep(move) {
+    if (!P.flow) return;
+    bar(); marks();
+    const r = D.rep && D.rep(P.flow.steps[P.i].to);
+    if (move && r) centerOn(r);
+  }
+  function stopPlay() { if (P.timer) clearInterval(P.timer); P.flow = null; P.timer = 0; bar(); marks(); }
+
   // ---- detail
   const detail = document.getElementById("detail");
-  detail.onclick = e => { const a = e.target.closest("[data-id]"); if (a) select(a.dataset.id); };
+  detail.onclick = e => {
+    const f = e.target.closest("[data-focus]");
+    if (f) { // drill in: the block's inside becomes the whole diagram
+      D.root = f.dataset.focus; D.exp = new Set(); S.tab = "diag";
+      document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x.dataset.tab === "diag"));
+      renderPane(); return;
+    }
+    const a = e.target.closest("[data-id]"); if (a) select(a.dataset.id);
+  };
   function renderDetail() {
     const b = byId.get(S.sel);
     if (!b) { detail.innerHTML = `<p class="empty">${blocks.length ? "No block selected." : "The graph is empty."}</p>`; return; }
@@ -300,6 +636,7 @@ td.key { color: var(--muted); width: 32%; font: 11.5px var(--mono); }
     const chips = [b.kind, b.tier, b.system && "system " + b.system, b.truth, b.initiative && "proposal " + b.initiative].filter(Boolean)
       .map(c => `<span class="chip">${esc(c)}</span>`).join("");
     let h = `<h2>${esc(b.title || b.id)}</h2><div class="id">${esc(b.id)}</div>` +
+      (kidsV(b.id).length ? `<div class="crumbs"><a class="link" data-focus="${esc(b.id)}">focus in the diagram</a></div>` : "") +
       (crumbs.length ? `<div class="crumbs">${crumbs.join(" › ")}</div>` : "") + `<div class="chips">${chips}</div>` +
       (b.description ? `<p>${esc(b.description)}</p>` : "");
     const o = ov(b);
@@ -319,8 +656,6 @@ td.key { color: var(--muted); width: 32%; font: 11.5px var(--mono); }
   }
 
   renderTree(); renderPane(); renderDetail();
-  const first = (kids.get("") || []).find(visible);
-  if (first) { S.open.add(first); select(first); }
   window.addEventListener("resize", () => { if (S.tab === "rel") renderRelations(); });
 })();
 </script>
