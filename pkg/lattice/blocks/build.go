@@ -22,7 +22,8 @@ type Inputs struct {
 	Judgments   []Judgment
 	Features    []schema.Manifest
 	EntryPoints []schema.EntryPoint
-	Proposals   []Proposal // initiatives drawn over the graph, with their evidence
+	Proposals   []Proposal     // initiatives drawn over the graph, with their evidence
+	Verified    []Verification // routes the code registers, to mark route blocks wired
 }
 
 // Result is the block graph plus warnings worth showing a person.
@@ -132,6 +133,7 @@ func Build(in Inputs) Result {
 		g.warnf("%d fulfills references name no block", missing)
 	}
 	g.sources = ims
+	g.verifyRoutes(in.Verified, in.Sources)
 
 	g.addFeatures(in.Features, in.EntryPoints)
 	g.aliases = byType["alias"]
