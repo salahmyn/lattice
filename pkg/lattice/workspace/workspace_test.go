@@ -116,3 +116,29 @@ func TestJudgmentsDirDefault(t *testing.T) {
 		t.Errorf("JudgmentsDir = %s want %s", got, want)
 	}
 }
+
+func TestStorage(t *testing.T) {
+	root := t.TempDir()
+	writeLatticeDir(t, filepath.Join(root, "lattice"), "mode: standalone\n")
+	w, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Storage.Backend != "files" || w.Storage.Postgres.DSNEnv != "LATTICE_PG_DSN" || w.Storage.Postgres.Schema != "lattice" {
+		t.Errorf("default storage = %+v", w.Storage)
+	}
+
+	root = t.TempDir()
+	writeLatticeDir(t, filepath.Join(root, "lattice"), "mode: standalone\nstorage: {backend: postgres, postgres: {dsn_env: SHOP_PG, schema: shop_map}}\n")
+	if w, err = Open(root); err != nil || w.Storage.Backend != "postgres" || w.Storage.Postgres.DSNEnv != "SHOP_PG" || w.Storage.Postgres.Schema != "shop_map" {
+		t.Errorf("storage = %+v, %v", w.Storage, err)
+	}
+
+	for _, bad := range []string{"storage: {backend: s3}\n", "storage: {backend: postgres, postgres: {schema: \"x; drop\"}}\n"} {
+		root = t.TempDir()
+		writeLatticeDir(t, filepath.Join(root, "lattice"), bad)
+		if _, err := Open(root); err == nil {
+			t.Errorf("%q: want an error", bad)
+		}
+	}
+}

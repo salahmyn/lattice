@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -74,12 +75,50 @@ type EndpointGrouping struct {
 	PathPrefixes map[string]string `yaml:"path_prefixes,omitempty"`
 }
 
+// Storage says where authored records and the block graph live (spec §6).
+type Storage struct {
+	Backend  string          `yaml:"backend,omitempty"` // files (default) | postgres
+	Postgres PostgresStorage `yaml:"postgres,omitempty"`
+}
+
+// PostgresStorage locates the database. The connection string is read from an
+// environment variable so it never sits in the workspace repo.
+type PostgresStorage struct {
+	DSNEnv string `yaml:"dsn_env,omitempty"` // default LATTICE_PG_DSN
+	Schema string `yaml:"schema,omitempty"`  // default lattice; a bare SQL identifier
+}
+
+var sqlIdent = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
+
+func (s *Storage) defaults() {
+	if s.Backend == "" {
+		s.Backend = "files"
+	}
+	if s.Postgres.DSNEnv == "" {
+		s.Postgres.DSNEnv = "LATTICE_PG_DSN"
+	}
+	if s.Postgres.Schema == "" {
+		s.Postgres.Schema = "lattice"
+	}
+}
+
+func (s Storage) check() error {
+	if s.Backend != "files" && s.Backend != "postgres" {
+		return fmt.Errorf("storage backend %q is not files or postgres", s.Backend)
+	}
+	if !sqlIdent.MatchString(s.Postgres.Schema) {
+		return fmt.Errorf("storage postgres schema %q is not a lower-case SQL identifier", s.Postgres.Schema)
+	}
+	return nil
+}
+
 // file is the on-disk workspace.yaml model.
 type file struct {
 	Mode      Mode       `yaml:"mode"`
 	CodeRoots []CodeRoot `yaml:"code_roots,omitempty"`
 	Sources   []Source   `yaml:"sources,omitempty"`
 	Judgments string     `yaml:"judgments,omitempty"`
+	Storage   Storage    `yaml:"storage,omitempty"`
 }
 
 // Workspace is the resolved view of a project's Lattice setup.
@@ -95,6 +134,8 @@ type Workspace struct {
 	Sources []Source
 	// judgments is the judgments directory as declared, resolved by ResolvePath.
 	judgments string
+	// Storage is where records and the block graph live; defaults to files.
+	Storage Storage
 }
 
 // Open resolves the workspace starting from startPath.
@@ -120,6 +161,10 @@ func Open(startPath string) (*Workspace, error) {
 	w := &Workspace{LatticeDir: latticeDir, Mode: ModeEmbedded}
 	if err := w.loadWorkspaceFile(); err != nil {
 		return nil, err
+	}
+	w.Storage.defaults()
+	if err := w.Storage.check(); err != nil {
+		return nil, fmt.Errorf("%s: %w", filepath.Join(latticeDir, "workspace.yaml"), err)
 	}
 	w.resolveCodeRoots()
 	return w, nil
@@ -151,6 +196,7 @@ func (w *Workspace) loadWorkspaceFile() error {
 	w.CodeRoots = f.CodeRoots
 	w.Sources = f.Sources
 	w.judgments = f.Judgments
+	w.Storage = f.Storage
 	return nil
 }
 
