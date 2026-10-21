@@ -31,8 +31,7 @@ import (
 //   - Route::resource('name', Controller::class)
 //
 // Routes registered via closures are skipped (no static handler symbol).
-// Group prefixes/middleware are honoured one level deep — sufficient for
-// the v0.3.0-α target and the common Laravel structure.
+// Nested groups and their prefixes are followed (scan.go).
 type HTTPDetector struct{}
 
 func init() { entrypoints.Register(HTTPDetector{}) }
@@ -98,10 +97,10 @@ func collectRouteFiles(ws *workspace.Workspace) []routeFile {
 			continue
 		}
 		patterns := []string{
-			filepath.Join(root.Abs, "..", "routes", "*.php"),       // standard Laravel
-			filepath.Join(root.Abs, "routes", "*.php"),             // root is repo
+			filepath.Join(root.Abs, "..", "routes", "*.php"), // standard Laravel
+			filepath.Join(root.Abs, "routes", "*.php"),       // root is repo
 			filepath.Join(root.Abs, "..", "Modules", "*", "Routes", "*.php"),
-			filepath.Join(root.Abs, "*", "Routes", "*.php"),        // Modules itself is the root
+			filepath.Join(root.Abs, "*", "Routes", "*.php"), // Modules itself is the root
 			filepath.Join(root.Abs, "..", "modules", "*", "Routes", "*.php"),
 		}
 		for _, p := range patterns {
@@ -143,14 +142,6 @@ type handlerRef struct {
 	fqn        string // fully-qualified when known up-front (string form)
 }
 
-// routeCall matches the call site of every supported Laravel route verb.
-// We capture method, the first arg (path), and the second arg (handler).
-var routeCall = regexp.MustCompile(
-	`Route::(get|post|put|patch|delete|options|any|match|resource|apiResource)\s*\(\s*` +
-		`['"]([^'"]+)['"]\s*,\s*` +
-		`([^)]+)\)`,
-)
-
 // stringHandler captures the "Class@method" string form.
 var stringHandler = regexp.MustCompile(`['"]([A-Za-z_\\][A-Za-z0-9_\\]*)@([A-Za-z_][A-Za-z0-9_]*)['"]`)
 
@@ -172,42 +163,10 @@ var resourceMethods = []struct{ verb, action string }{
 
 func scanRoutes(body string, uses map[string]string) []httpRoute {
 	var out []httpRoute
-	for _, m := range routeCall.FindAllStringSubmatch(body, -1) {
-		verb, path, handlerArg := strings.ToUpper(m[1]), m[2], m[3]
-		switch strings.ToUpper(m[1]) {
-		case "RESOURCE", "APIRESOURCE":
-			if cm := classOnly.FindStringSubmatch(handlerArg); cm != nil {
-				class := resolveClass(cm[1], uses)
-				methods := resourceMethods
-				if strings.ToUpper(m[1]) == "APIRESOURCE" {
-					// apiResource omits create/edit (form views).
-					methods = []struct{ verb, action string }{
-						{"GET", "index"}, {"POST", "store"}, {"GET", "show"},
-						{"PUT", "update"}, {"DELETE", "destroy"},
-					}
-				}
-				for _, rm := range methods {
-					out = append(out, httpRoute{
-						method:  rm.verb,
-						path:    resourcePath(path, rm.action),
-						handler: handlerRef{shortClass: cm[1], method: rm.action, fqn: class + "::" + rm.action},
-					})
-				}
-			}
-			continue
+	for _, r := range scanFile(body, uses, "") {
+		if r.handler.fqn != "" { // closures have no static handler symbol
+			out = append(out, r.httpRoute)
 		}
-		var h handlerRef
-		if sm := stringHandler.FindStringSubmatch(handlerArg); sm != nil {
-			fqn := strings.ReplaceAll(sm[1], "\\\\", "\\")
-			h = handlerRef{fqn: fqn + "::" + sm[2], method: sm[2]}
-		} else if am := arrayHandler.FindStringSubmatch(handlerArg); am != nil {
-			class := resolveClass(am[1], uses)
-			h = handlerRef{shortClass: am[1], method: am[2], fqn: class + "::" + am[2]}
-		} else {
-			// Closure or other; no static handler symbol.
-			continue
-		}
-		out = append(out, httpRoute{method: verb, path: path, handler: h})
 	}
 	return out
 }
@@ -215,9 +174,13 @@ func scanRoutes(body string, uses map[string]string) []httpRoute {
 // resourcePath turns the resource name ('users') and an action into the
 // actual route path Laravel mounts ('users', 'users/{user}', etc).
 func resourcePath(name, action string) string {
-	singular := name
+	name = strings.Trim(name, "/")
+	singular := name[strings.LastIndex(name, "/")+1:]
 	if strings.HasSuffix(singular, "s") {
 		singular = strings.TrimSuffix(singular, "s")
+	}
+	if singular == "" {
+		singular = "id"
 	}
 	switch action {
 	case "index", "store":
