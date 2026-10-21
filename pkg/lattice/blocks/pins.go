@@ -32,11 +32,17 @@ func CheckPin(p schema.Pin, clone string) schema.PinCheck {
 	}
 	c := schema.PinCheck{CommitDate: git("log", "-1", "--format=%cI", commit), State: "at the pin"}
 	if p.Ref != "" {
-		c.Tip = git("rev-parse", "--verify", "--quiet", p.Ref+"^{commit}")
+		if c.Tip = git("rev-parse", "--verify", "--quiet", p.Ref+"^{commit}"); c.Tip == "" {
+			c.State = p.Ref + " missing"
+		}
 	}
 	if c.Tip != "" && c.Tip != commit {
-		c.Moved, _ = strconv.Atoi(git("rev-list", "--count", commit+".."+c.Tip))
-		c.State = fmt.Sprintf("%s moved %s past the pin", p.Ref, plural(c.Moved, "commit"))
+		if _, err := runGit(clone, "merge-base", "--is-ancestor", commit, c.Tip); err != nil {
+			c.State = p.Ref + " no longer contains the pin"
+		} else {
+			c.Moved, _ = strconv.Atoi(git("rev-list", "--count", commit+".."+c.Tip))
+			c.State = fmt.Sprintf("%s moved %s past the pin", p.Ref, plural(c.Moved, "commit"))
+		}
 	}
 	c.Pushed = git("branch", "-r", "--contains", commit) != ""
 	return c

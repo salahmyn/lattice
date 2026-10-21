@@ -29,6 +29,8 @@ func TestParseEvidence(t *testing.T) {
 		"repeated class":   strings.Replace(goodEvidence, `{"id": "NEW"`, `{"id": "GAP"`, 1),
 		"no source":        strings.Replace(goodEvidence, `"source": "web",`, ``, 1),
 		"gap without code": strings.Replace(goodEvidence, `"code": "G-TAX", `, ``, 1),
+		"repeated gap":     strings.Replace(goodEvidence, `{"code": "G-TAX", "cites": ["cart.total"]}`, `{"code": "G-TAX"}, {"code": "G-TAX"}`, 1),
+		"repeated tag":     strings.Replace(goodEvidence, `[{"tag": "cart-box"}]`, `[{"tag": "cart-box"}, {"tag": "cart-box"}]`, 1),
 	}
 	for name, src := range bad {
 		if _, err := ParseEvidence([]byte(src)); err == nil {

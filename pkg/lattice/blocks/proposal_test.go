@@ -123,6 +123,15 @@ func TestBuildProposalReplacesAndIsDeterministic(t *testing.T) {
 	}
 }
 
+func TestBuildWarnsOnUnknownEvidenceSource(t *testing.T) {
+	in := proposalInputs(t)
+	in.Proposals[0].Evidence.Source = "nope"
+	r := Build(in)
+	if !strings.Contains(strings.Join(r.Warnings, "\n"), `source "nope" is not a workspace source`) {
+		t.Errorf("warnings = %v", r.Warnings)
+	}
+}
+
 func TestBuildWarnsOnEvidenceWithoutInitiative(t *testing.T) {
 	in := proposalInputs(t)
 	in.Proposals = []Proposal{{Evidence: in.Proposals[0].Evidence}}

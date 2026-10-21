@@ -17,22 +17,33 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
+// quietStore opens the workspace store without reporting, for commands that
+// can do without it.
+func quietStore(io *IO) (store.Store, *workspace.Workspace, error) {
+	ws, err := workspace.Open(io.Repo)
+	if err != nil {
+		return nil, nil, err
+	}
+	st, err := store.Open(context.Background(), ws)
+	return st, ws, err
+}
+
 // initiativeRecords returns the initiatives kept as store records.
 func initiativeRecords(io *IO) ([]schema.Initiative, error) {
-	st, err := openStore(io)
+	st, _, err := quietStore(io)
 	if err != nil {
 		return nil, err
 	}
 	defer st.Close()
 	recs, err := st.List(context.Background(), "initiative")
 	if err != nil {
-		return nil, io.fail("STORE_READ", err.Error(), nil)
+		return nil, err
 	}
 	var out []schema.Initiative
 	for _, r := range recs {
 		in, err := blocks.ParseInitiative(r.Body, "initiative "+r.ID)
 		if err != nil {
-			return nil, io.fail("INITIATIVE_INVALID", err.Error(), nil)
+			return nil, err
 		}
 		out = append(out, in)
 	}
@@ -168,6 +179,9 @@ func newInitiativeStatusCommand(io *IO) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if io.JSON {
+				return io.printJSON(r)
+			}
 			io.printf("initiative %s is %s (version %s)\n", r.ID, status, r.Version)
 			return nil
 		},
@@ -210,13 +224,9 @@ func setTopLevel(body []byte, key, value string) ([]byte, error) {
 // checked against their clones, and the roll-ups refresh drew on its system
 // block. It reports false when there is no such record.
 func showInitiativeRecord(io *IO, id string) (bool, error) {
-	ws, err := workspace.Open(io.Repo)
+	st, ws, err := quietStore(io)
 	if err != nil {
-		return false, nil
-	}
-	st, err := openStore(io)
-	if err != nil {
-		return true, err
+		return false, nil // no store: show reports the file initiatives' outcome
 	}
 	defer st.Close()
 	ctx := context.Background()

@@ -102,6 +102,9 @@ func (g *graph) attachProposal(p Proposal, keys map[string]map[string]string, ro
 		if len(attrs) == 0 {
 			attrs = nil
 		}
+		if g.blocks[id] != nil {
+			g.warnf("initiative %s: block %s is already defined; the proposal's block replaces it", in.ID, id)
+		}
 		b := &schema.Block{ID: id, Kind: kind, Parent: parent, Title: title, Description: desc,
 			Truth: schema.TruthDeclared, Provenance: pv, Attrs: attrs, Initiative: in.ID}
 		g.blocks[id] = b
@@ -126,6 +129,9 @@ func (g *graph) attachProposal(p Proposal, keys map[string]map[string]string, ro
 		map[string]string{"technology": strings.TrimSpace("proposed · " + pkg.Name + " " + pkg.Version),
 			"status": string(in.Status), "decision": m.Decision, "flag": m.Flag}, human)
 
+	if p.Evidence != nil && keys[ev.Source] == nil {
+		g.warnf("evidence %s: source %q is not a workspace source; its ids resolve through aliases only", in.ID, ev.Source)
+	}
 	resolve := func(id string) (string, bool) {
 		if k, ok := keys[ev.Source][id]; ok {
 			return k, true

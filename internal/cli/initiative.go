@@ -36,7 +36,7 @@ func newInitiativeListCommand(io *IO) *cobra.Command {
 			}
 			recs, err := initiativeRecords(io)
 			if err != nil {
-				return err
+				io.errorf("warning: initiative records not listed: %v\n", err)
 			}
 			all := kg.Initiatives
 			for _, in := range recs {

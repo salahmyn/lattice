@@ -125,10 +125,12 @@ func ParseEvidence(data []byte) (Evidence, error) {
 			return Evidence{}, fmt.Errorf("evidence/v1: verdict %d: needs a block and a declared class (got %q)", i, v.Class)
 		}
 	}
+	codes := map[string]bool{}
 	for i, g := range ev.Gaps {
-		if g.Code == "" {
-			return Evidence{}, fmt.Errorf("evidence/v1: gap %d has no code", i)
+		if g.Code == "" || codes[g.Code] {
+			return Evidence{}, fmt.Errorf("evidence/v1: gap %d: code %q is empty or repeated", i, g.Code)
 		}
+		codes[g.Code] = true
 	}
 	for i, p := range ev.Payload {
 		if p.Endpoint == "" || p.Severity == "" {
@@ -136,15 +138,18 @@ func ParseEvidence(data []byte) (Evidence, error) {
 		}
 	}
 	if p := ev.Package; p != nil {
+		tags, concerns := map[string]bool{}, map[string]bool{}
 		for i, c := range p.Components {
-			if c.Tag == "" {
-				return Evidence{}, fmt.Errorf("evidence/v1: package component %d has no tag", i)
+			if c.Tag == "" || tags[c.Tag] {
+				return Evidence{}, fmt.Errorf("evidence/v1: package component %d: tag %q is empty or repeated", i, c.Tag)
 			}
+			tags[c.Tag] = true
 		}
 		for i, m := range p.Modules {
-			if m.Concern == "" {
-				return Evidence{}, fmt.Errorf("evidence/v1: package modules %d have no concern", i)
+			if m.Concern == "" || concerns[m.Concern] {
+				return Evidence{}, fmt.Errorf("evidence/v1: package modules %d: concern %q is empty or repeated", i, m.Concern)
 			}
+			concerns[m.Concern] = true
 		}
 	}
 	return ev, nil
