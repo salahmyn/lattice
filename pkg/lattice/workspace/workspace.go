@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -48,10 +49,26 @@ type CodeRoot struct {
 	Available bool   `yaml:"-"`
 }
 
+// Source is one input of a block-graph workspace (v0.9): catalogue files read
+// from a git clone at a ref, or from a directory.
+type Source struct {
+	ID        string `yaml:"id"`
+	Repo      string `yaml:"repo,omitempty"`      // e.g. "org/name", for stamps and links
+	Clone     string `yaml:"clone,omitempty"`     // local clone, read at Ref through git
+	Ref       string `yaml:"ref,omitempty"`       // branch, tag or commit; default HEAD
+	Path      string `yaml:"path,omitempty"`      // a directory, when the source is not a clone
+	Catalogue string `yaml:"catalogue,omitempty"` // glob of catalogue/v1 files inside the clone or Path
+	Prefix    string `yaml:"prefix,omitempty"`    // block id namespace, e.g. "fe"
+	Tier      string `yaml:"tier,omitempty"`
+	System    string `yaml:"system,omitempty"` // the system block that owns this source's areas
+}
+
 // file is the on-disk workspace.yaml model.
 type file struct {
 	Mode      Mode       `yaml:"mode"`
 	CodeRoots []CodeRoot `yaml:"code_roots,omitempty"`
+	Sources   []Source   `yaml:"sources,omitempty"`
+	Judgments string     `yaml:"judgments,omitempty"`
 }
 
 // Workspace is the resolved view of a project's Lattice setup.
@@ -63,6 +80,10 @@ type Workspace struct {
 	// Review is true when no code root is accessible, so only manifest-level
 	// operations are possible (the PM/QA review case).
 	Review bool
+	// Sources are the block-graph inputs declared in workspace.yaml.
+	Sources []Source
+	// judgments is the judgments directory as declared (relative to LatticeDir).
+	judgments string
 }
 
 // Open resolves the workspace starting from startPath.
@@ -117,6 +138,8 @@ func (w *Workspace) loadWorkspaceFile() error {
 		w.Mode = f.Mode
 	}
 	w.CodeRoots = f.CodeRoots
+	w.Sources = f.Sources
+	w.judgments = f.Judgments
 	return nil
 }
 
@@ -159,6 +182,32 @@ func (w *Workspace) resolveCodeRoots() {
 }
 
 // --- path accessors: everything Lattice maintains lives under LatticeDir ---
+
+// JudgmentsDir returns the directory holding judgment records (default judgments/).
+func (w *Workspace) JudgmentsDir() string {
+	if w.judgments != "" {
+		return w.ResolvePath(w.judgments)
+	}
+	return filepath.Join(w.LatticeDir, "judgments")
+}
+
+// ResolvePath resolves a path from workspace.yaml: "~/" is the home directory,
+// and relative paths use the same anchor as code roots.
+func (w *Workspace) ResolvePath(p string) string {
+	if strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			p = filepath.Join(home, p[2:])
+		}
+	}
+	if filepath.IsAbs(p) {
+		return filepath.Clean(p)
+	}
+	anchor := filepath.Dir(w.LatticeDir)
+	if w.Mode == ModeStandalone {
+		anchor = w.LatticeDir
+	}
+	return filepath.Join(anchor, p)
+}
 
 // ConfigPath returns the path to config.yaml.
 func (w *Workspace) ConfigPath() string { return filepath.Join(w.LatticeDir, "config.yaml") }

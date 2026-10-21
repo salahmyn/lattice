@@ -66,3 +66,52 @@ func TestOpenNotInitialized(t *testing.T) {
 		t.Error("expected an error opening a directory with no lattice/")
 	}
 }
+
+func TestSourcesAndJudgments(t *testing.T) {
+	root := t.TempDir()
+	writeLatticeDir(t, filepath.Join(root, "lattice"), `mode: standalone
+judgments: rules
+sources:
+  - id: web
+    repo: example/web
+    clone: ~/src/web
+    ref: origin/main
+    catalogue: docs/flows/*.json
+    prefix: fe
+    tier: frontend
+    system: shop
+  - id: api
+    path: ../data/api
+    catalogue: "*.json"
+    prefix: be
+`)
+	w, err := Open(root)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if len(w.Sources) != 2 || w.Sources[0].ID != "web" || w.Sources[0].System != "shop" || w.Sources[1].Path != "../data/api" {
+		t.Fatalf("sources = %+v", w.Sources)
+	}
+	if got, want := w.JudgmentsDir(), filepath.Join(w.LatticeDir, "rules"); got != want {
+		t.Errorf("JudgmentsDir = %s want %s", got, want)
+	}
+	if got, want := w.ResolvePath("../data/api"), filepath.Join(root, "data", "api"); got != want {
+		t.Errorf("ResolvePath relative = %s want %s", got, want)
+	}
+	home, _ := os.UserHomeDir()
+	if got, want := w.ResolvePath("~/src/web"), filepath.Join(home, "src", "web"); got != want {
+		t.Errorf("ResolvePath home = %s want %s", got, want)
+	}
+}
+
+func TestJudgmentsDirDefault(t *testing.T) {
+	root := t.TempDir()
+	writeLatticeDir(t, filepath.Join(root, "lattice"), "")
+	w, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := w.JudgmentsDir(), filepath.Join(w.LatticeDir, "judgments"); got != want {
+		t.Errorf("JudgmentsDir = %s want %s", got, want)
+	}
+}
