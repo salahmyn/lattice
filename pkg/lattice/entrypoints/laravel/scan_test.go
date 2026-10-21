@@ -3,7 +3,9 @@ package laravel
 import (
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
+	"time"
 )
 
 const shopRoutes = `<?php
@@ -79,4 +81,62 @@ func cut(r string) (string, string, bool) {
 		}
 	}
 	return r, "", false
+}
+
+func TestScanRoutesReviewCases(t *testing.T) {
+	keys := func(src string) []string {
+		var out []string
+		for _, r := range ScanRoutes(src, "") {
+			out = append(out, r.Method+" "+r.Path+" "+r.Handler)
+		}
+		sort.Strings(out)
+		return out
+	}
+	cases := map[string]struct {
+		src  string
+		want []string
+	}{
+		"arrow fn and where args are not routes": {`<?php
+Route::get('/a', fn ($r) => $r->get('x'));
+Route::get('/ok', [A::class, 'b'])->where('id', $req->get('z'));`, []string{"GET /a ", "GET /ok A::b"}},
+		"fluent prefix before the verb": {`<?php
+Route::middleware('auth')->prefix('m')->get('/x', 'X@y');`, []string{"GET /m/x X::y"}},
+		"comments inside arguments": {`<?php
+Route::get('/a', // was [Old::class, 'x']
+  [New::class, 'y']);
+Route::get(/* v1 */ '/b', 'B@c');`, []string{"GET /a New::y", "GET /b B::c"}},
+		"resource options array": {`<?php
+Route::resource('photos', P::class, ['only' => ['index']]);`, []string{"GET /photos P::index"}},
+		"self-mounting closure stops": {`<?php
+$f = function () use (&$f) { Route::get('x', 'X@y'); Route::prefix('a')->group($f); Route::prefix('b')->group($f); };
+Route::group([], $f);`, nil},
+		"reassigned variable": {`<?php
+$r = function () { Route::get('x', 'X@x'); };
+Route::prefix('a')->group($r);
+$r = function () { Route::get('y', 'Y@y'); };
+Route::prefix('b')->group($r);`, []string{"GET /a/x X::x", "GET /b/y Y::y"}},
+		"attribute is not a comment": {`<?php
+#[Deprecated] Route::get('/attr', 'A@b');`, []string{"GET /attr A::b"}},
+		"macro body is not registered": {`<?php
+Route::macro('shop', function () { Route::get('inside', 'I@i'); });`, nil},
+	}
+	for name, c := range cases {
+		got := keys(c.src)
+		if name == "self-mounting closure stops" {
+			if len(got) > 50 {
+				t.Errorf("%s: %d routes", name, len(got))
+			}
+			continue
+		}
+		if !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: got %q want %q", name, got, c.want)
+		}
+	}
+	// an unclosed call per line must not scan to the end of the file each time
+	big := "<?php\n" + strings.Repeat("Route::get('/x', [A::class, 'b';\n", 20000)
+	start := time.Now()
+	ScanRoutes(big, "")
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("unclosed calls took %s", d)
+	}
 }

@@ -2,10 +2,13 @@ package blocks
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
+
+var optionalVar = regexp.MustCompile(`/?\{[^}]*\?\}`)
 
 // CodeRoute is a route the code registers, found by extraction.
 type CodeRoute struct {
@@ -38,12 +41,17 @@ func (g *graph) verifyRoutes(vs []Verification, srcs []SourceInput) {
 		}
 		code := map[string]map[string]CodeRoute{} // path -> method -> first route
 		for _, r := range v.Routes {
-			p := normRoute(r.Path, nil)
-			if code[p] == nil {
-				code[p] = map[string]CodeRoute{}
+			paths := []string{normRoute(r.Path, nil)}
+			if req := optionalVar.ReplaceAllString(r.Path, ""); req != r.Path { // /a/{x?} also answers /a
+				paths = append(paths, normRoute(req, nil))
 			}
-			if _, ok := code[p][strings.ToUpper(r.Method)]; !ok {
-				code[p][strings.ToUpper(r.Method)] = r
+			for _, p := range paths {
+				if code[p] == nil {
+					code[p] = map[string]CodeRoute{}
+				}
+				if _, ok := code[p][strings.ToUpper(r.Method)]; !ok {
+					code[p][strings.ToUpper(r.Method)] = r
+				}
 			}
 		}
 		for _, k := range sortedKeys(g.sources[i].blocks) {
@@ -71,6 +79,9 @@ func matchRoute(byMethod map[string]CodeRoute, methods []string) (CodeRoute, boo
 			}
 		}
 		if r, ok := byMethod[m]; ok {
+			return r, true
+		}
+		if r, ok := byMethod["GET"]; ok && m == "HEAD" { // Laravel answers HEAD on every GET route
 			return r, true
 		}
 	}

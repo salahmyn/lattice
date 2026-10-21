@@ -25,10 +25,11 @@ func normRoute(p string, prefixes []string) string {
 	if i := strings.IndexByte(p, ' '); i >= 0 {
 		p = p[i+1:]
 	}
+	p = routeVar.ReplaceAllString(p, "{}") // before the query cut: {x?} is a variable, not a query
 	if i := strings.IndexByte(p, '?'); i >= 0 {
 		p = p[:i]
 	}
-	p = strings.Trim(routeVar.ReplaceAllString(p, "{}"), "/")
+	p = strings.Trim(p, "/")
 	for _, x := range prefixes {
 		if strings.HasPrefix(p, x) {
 			return p[len(x):]

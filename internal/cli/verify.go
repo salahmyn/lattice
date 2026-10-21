@@ -17,6 +17,9 @@ import (
 func readLaravelRoutes(ws *workspace.Workspace, s workspace.Source) (blocks.Verification, string, error) {
 	v := blocks.Verification{Source: s.ID, Target: s.Verifies,
 		Stamp: schema.SourceStamp{ID: s.ID, Repo: s.Repo, Ref: s.Ref, System: s.System}}
+	if s.Catalogue != "" {
+		return v, "SOURCE_READ", fmt.Errorf("source %s: use either catalogue or laravel_routes, not both", s.ID)
+	}
 	if s.Verifies == "" {
 		return v, "SOURCE_READ", fmt.Errorf("source %s: laravel_routes needs verifies: <catalogue source>", s.ID)
 	}

@@ -30,3 +30,18 @@ func TestBuildMarksVerifiedRoutesWired(t *testing.T) {
 		t.Errorf("warnings = %v", r.Warnings)
 	}
 }
+
+func TestVerifyOptionalParamsAndHead(t *testing.T) {
+	src := inlineSrc("api", "be", "backend",
+		CatNode{ID: "opt", Parent: "root", Kind: "route", HTTP: &CatHTTP{Method: "POST", Path: "/hooks/pay/{store}"}},
+		CatNode{ID: "bare", Parent: "root", Kind: "route", HTTP: &CatHTTP{Method: "POST", Path: "/hooks/pay"}},
+		CatNode{ID: "head", Parent: "root", Kind: "route", HTTP: &CatHTTP{Method: "HEAD", Path: "/ping"}})
+	r := Build(Inputs{Sources: []SourceInput{src}, Verified: []Verification{{Source: "code", Target: "api", Routes: []CodeRoute{
+		{Method: "POST", Path: "/hooks/pay/{store?}", File: "r.php", Line: 1},
+		{Method: "GET", Path: "/ping", File: "r.php", Line: 2}}}}})
+	for _, id := range []string{"be:opt", "be:bare", "be:head"} {
+		if b := blockMap(r)[id]; b.Truth != "wired" {
+			t.Errorf("%s not wired: %+v", id, b.Attrs)
+		}
+	}
+}

@@ -38,6 +38,8 @@ type body struct {
 	prefix     string // group bodies
 	site       int
 	name       string // variable closures
+	assign     int    // where the variable is assigned; its mounts are the ones before its next assignment
+	dead       bool   // a Route::macro definition: registers nothing until the macro is called
 }
 
 type mountSite struct {
@@ -67,6 +69,8 @@ var (
 	invokable   = regexp.MustCompile(`^\s*['"]([A-Za-z_\\][A-Za-z0-9_\\]*)['"]\s*$`)
 	classInvoke = regexp.MustCompile(`^\s*([A-Za-z_\\][A-Za-z0-9_\\]*)::class\s*$`)
 	onlyCall    = regexp.MustCompile(`->(only|except)\s*\(([^)]*)\)`)
+	onlyOption  = regexp.MustCompile(`['"](only|except)['"]\s*=>\s*\[([^\]]*)\]`)
+	macroDef    = regexp.MustCompile(`Route::macro\s*\(`)
 )
 
 func scanFile(src string, uses map[string]string, mount string) []scanned {
@@ -75,16 +79,26 @@ func scanFile(src string, uses map[string]string, mount string) []scanned {
 	f.findBodies()
 	var out []scanned
 	seen := map[string]bool{}
+	line, counted := 1, 0 // matches come in file order: count newlines once
 	for _, m := range verbCall.FindAllStringSubmatchIndex(f.src, -1) {
 		at, open := m[0], m[1]-1
-		if f.src[m[2]:m[3]] == "->" && !strings.Contains(f.src[f.stmt[at]:at], "Route::") {
-			continue // ->get( on something that is not a route chain
+		line += strings.Count(src[counted:at], "\n")
+		counted = at
+		chain := f.src[f.stmt[at]:at]
+		if f.src[m[2]:m[3]] == "->" && (!strings.Contains(chain, "Route::") || openDepth(chain) > 0) {
+			continue // ->get( on something that is not a route chain, or inside another call's arguments
+		}
+		fluent := ""
+		if f.src[m[2]:m[3]] == "->" { // Route::middleware(..)->prefix('m')->get(..)
+			for _, p := range prefixCall.FindAllStringSubmatch(chain, -1) {
+				fluent = joinRel(fluent, p[2])
+			}
 		}
 		end := matchClose(f.src, open)
 		if end < 0 {
 			continue
 		}
-		verb, args := strings.ToUpper(f.src[m[4]:m[5]]), src[open+1:end]
+		verb, args := strings.ToUpper(f.src[m[4]:m[5]]), f.src[open+1:end] // comments blanked, strings kept
 		var verbs []string
 		if verb == "MATCH" {
 			vl := verbList.FindStringSubmatchIndex(args)
@@ -101,7 +115,6 @@ func scanFile(src string, uses map[string]string, mount string) []scanned {
 			continue // a path built at run time
 		}
 		path, rest := args[ps[4]:ps[5]], args[ps[1]:]
-		line := 1 + strings.Count(src[:at], "\n")
 		var routes []httpRoute
 		switch verb {
 		case "RESOURCE", "APIRESOURCE":
@@ -115,9 +128,9 @@ func scanFile(src string, uses map[string]string, mount string) []scanned {
 				routes = append(routes, httpRoute{method: v, path: path, handler: h})
 			}
 		}
-		for _, ctx := range f.contexts(at, 0) {
+		for _, ctx := range f.contexts(at, map[int]bool{}) {
 			for _, r := range routes {
-				r.path = joinPath(append(append([]string{mount}, ctx...), r.path)...)
+				r.path = joinPath(append(append([]string{mount}, ctx...), fluent, r.path)...)
 				k := r.method + " " + r.path + " " + r.handler.fqn
 				if !seen[k] {
 					seen[k] = true
@@ -163,13 +176,17 @@ func (f *fileScan) statements() {
 			stack = append(stack, frame{s[i], -1})
 		case '}', ')', ']':
 			closedBrace := s[i] == '}'
-			if len(stack) > 1 {
-				stack = stack[:len(stack)-1]
+			if top := stack[len(stack)-1].ch; len(stack) > 1 && (top == '{') == closedBrace {
+				stack = stack[:len(stack)-1] // a stray closer of the other kind is ignored
 			}
 			if closedBrace && stack[len(stack)-1].ch == '{' {
 				stack[len(stack)-1].stmt = i + 1 // a block ended: the next statement starts here
 			}
 		case ';':
+			// a statement ends here, so ( and [ still open in it were never closed (a cut or broken file)
+			for len(stack) > 1 && stack[len(stack)-1].ch != '{' {
+				stack = stack[:len(stack)-1]
+			}
 			if stack[len(stack)-1].ch == '{' {
 				stack[len(stack)-1].stmt = i + 1
 			}
@@ -242,7 +259,12 @@ func (f *fileScan) findBodies() {
 	}
 	for _, m := range varClosure.FindAllStringSubmatchIndex(s, -1) {
 		if b, ok := closureBody(s, m[2]-1); ok {
-			f.bodies = append(f.bodies, body{start: b[0], end: b[1], name: s[m[2]:m[3]]})
+			f.bodies = append(f.bodies, body{start: b[0], end: b[1], name: s[m[2]:m[3]], assign: m[0]})
+		}
+	}
+	for _, m := range macroDef.FindAllStringIndex(s, -1) {
+		if b, ok := closureBody(s, m[1]); ok {
+			f.bodies = append(f.bodies, body{start: b[0], end: b[1], dead: true})
 		}
 	}
 	for _, m := range macroMount.FindAllStringSubmatchIndex(s, -1) {
@@ -254,10 +276,7 @@ func (f *fileScan) findBodies() {
 
 // contexts lists the group prefixes, outermost first, of every way the code
 // at offset o is registered.
-func (f *fileScan) contexts(o, depth int) [][]string {
-	if depth > 16 {
-		return nil
-	}
+func (f *fileScan) contexts(o int, path map[int]bool) [][]string {
 	var in *body
 	for i := range f.bodies {
 		b := &f.bodies[i]
@@ -268,6 +287,11 @@ func (f *fileScan) contexts(o, depth int) [][]string {
 	if in == nil {
 		return [][]string{nil}
 	}
+	if in.dead || path[in.start] || len(path) > 16 { // a macro body, or a closure that mounts itself
+		return nil
+	}
+	path[in.start] = true
+	defer delete(path, in.start)
 	type via struct {
 		prefix string
 		site   int
@@ -276,13 +300,21 @@ func (f *fileScan) contexts(o, depth int) [][]string {
 	if in.group {
 		sites = []via{{in.prefix, in.site}}
 	} else {
+		next := len(f.src)
+		for _, b := range f.bodies {
+			if b.name == in.name && b.assign > in.assign && b.assign < next {
+				next = b.assign
+			}
+		}
 		for _, m := range f.mounts[in.name] {
-			sites = append(sites, via{m.prefix, m.site})
+			if m.site > in.assign && m.site < next {
+				sites = append(sites, via{m.prefix, m.site})
+			}
 		}
 	}
 	var out [][]string
 	for _, v := range sites {
-		for _, ctx := range f.contexts(v.site, depth+1) {
+		for _, ctx := range f.contexts(v.site, path) {
 			out = append(out, append(append([]string{}, ctx...), v.prefix))
 		}
 	}
@@ -346,7 +378,7 @@ func resourceRoutes(verb, name, arg, tail string, uses map[string]string) []http
 	}
 	keep := map[string]bool{}
 	mode := ""
-	for _, oc := range onlyCall.FindAllStringSubmatch(tail, -1) {
+	for _, oc := range append(onlyCall.FindAllStringSubmatch(tail, -1), onlyOption.FindAllStringSubmatch(arg, -1)...) {
 		mode = oc[1]
 		for _, q := range quoted.FindAllStringSubmatch(oc[2], -1) {
 			keep[q[1]] = true
@@ -395,20 +427,48 @@ func stringEnd(s string, i int) int {
 // matchClose returns the offset of the bracket closing the one at open,
 // skipping strings; -1 when it is not closed.
 func matchClose(s string, open int) int {
-	depth := 0
+	depth, braces := 0, 0
 	for j := open; j < len(s); j++ {
 		switch s[j] {
 		case '\'', '"':
 			j = stringEnd(s, j)
-		case '(', '[', '{':
+		case '{':
+			braces++
 			depth++
-		case ')', ']', '}':
+		case '(', '[':
+			depth++
+		case '}':
+			braces--
 			if depth--; depth == 0 {
 				return j
+			}
+		case ')', ']':
+			if depth--; depth == 0 {
+				return j
+			}
+		case ';':
+			if braces == 0 { // a statement ended inside an unclosed ( or [: the file is cut or not PHP we read
+				return -1
 			}
 		}
 	}
 	return -1
+}
+
+// openDepth counts the ( and [ left open in s, outside strings.
+func openDepth(s string) int {
+	d := 0
+	for j := 0; j < len(s); j++ {
+		switch s[j] {
+		case '\'', '"':
+			j = stringEnd(s, j)
+		case '(', '[':
+			d++
+		case ')', ']':
+			d--
+		}
+	}
+	return d
 }
 
 // blankComments replaces PHP comments with spaces, keeping newlines and
@@ -419,7 +479,7 @@ func blankComments(src string) string {
 		switch {
 		case b[i] == '\'' || b[i] == '"':
 			i = stringEnd(src, i)
-		case b[i] == '#' || (b[i] == '/' && i+1 < len(b) && b[i+1] == '/'):
+		case (b[i] == '#' && !(i+1 < len(b) && b[i+1] == '[')) || (b[i] == '/' && i+1 < len(b) && b[i+1] == '/'):
 			for ; i < len(b) && b[i] != '\n'; i++ {
 				b[i] = ' '
 			}
