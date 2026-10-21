@@ -13,6 +13,7 @@ type SourceInput struct {
 	Info       SourceInfo
 	Catalogues []*Catalogue
 	Stamp      schema.SourceStamp
+	Walks      []Walk // flows/v1 walks over this source's catalogue
 }
 
 // Inputs is everything one refresh builds the block graph from.
@@ -29,6 +30,7 @@ type Result struct {
 	Edges    []schema.BlockEdge   `json:"edges"`
 	Sources  []schema.SourceStamp `json:"sources"`
 	Warnings []string             `json:"warnings"`
+	Flows    []schema.Flow        `json:"flows"`
 }
 
 // Build computes the block graph. It is a pure function of its inputs: the same
@@ -142,7 +144,13 @@ func Build(in Inputs) Result {
 	for _, j := range byType["label"] {
 		g.applyLabel(j)
 	}
-	return g.result(stamps)
+	var flows []schema.Flow
+	for i, s := range in.Sources {
+		flows = append(flows, g.walkFlows(ims[i], s.Walks)...)
+	}
+	r := g.result(stamps)
+	r.Flows = flows
+	return r
 }
 
 type graph struct {
