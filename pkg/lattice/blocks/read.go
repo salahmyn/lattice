@@ -24,17 +24,7 @@ func ReadGit(clone, ref, glob string) ([]File, string, string, error) {
 	if !doublestar.ValidatePattern(glob) {
 		return nil, "", "", fmt.Errorf("invalid glob %q", glob)
 	}
-	git := func(args ...string) ([]byte, error) {
-		out, err := exec.Command("git", append([]string{"-C", clone}, args...)...).Output()
-		if err != nil {
-			msg := ""
-			if ee, ok := err.(*exec.ExitError); ok {
-				msg = ": " + strings.TrimSpace(string(ee.Stderr))
-			}
-			return nil, fmt.Errorf("git %s in %s: %w%s", strings.Join(args, " "), clone, err, msg)
-		}
-		return out, nil
-	}
+	git := func(args ...string) ([]byte, error) { return runGit(clone, args...) }
 	out, err := git("rev-parse", "--verify", "--quiet", ref+"^{commit}")
 	if err != nil {
 		return nil, "", "", fmt.Errorf("ref %s not found: %w", ref, err)
@@ -87,4 +77,17 @@ func ReadDir(dir, glob string) ([]File, error) {
 		files = append(files, File{Path: name, Data: data})
 	}
 	return files, nil
+}
+
+// runGit runs a read-only git command in clone and returns its stdout.
+func runGit(clone string, args ...string) ([]byte, error) {
+	out, err := exec.Command("git", append([]string{"-C", clone}, args...)...).Output()
+	if err != nil {
+		msg := ""
+		if ee, ok := err.(*exec.ExitError); ok {
+			msg = ": " + strings.TrimSpace(string(ee.Stderr))
+		}
+		return nil, fmt.Errorf("git %s in %s: %w%s", strings.Join(args, " "), clone, err, msg)
+	}
+	return out, nil
 }
