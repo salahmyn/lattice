@@ -220,6 +220,3 @@ func contains(xs []string, x string) bool {
 	}
 	return false
 }
-
-// stub replaced in Task 7
-func (g *graph) addFeatures([]schema.Manifest, []schema.EntryPoint) {}
