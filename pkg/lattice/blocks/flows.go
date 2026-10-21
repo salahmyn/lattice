@@ -114,9 +114,11 @@ func (g *graph) walkFlows(im imported, walks []Walk) []schema.Flow {
 	for _, w := range walks {
 		f := schema.Flow{ID: w.ID, Title: w.Title, Facts: w.Facts, Steps: []schema.FlowMove{}}
 		seen, prev, loop := map[string]bool{}, "", false
+		var lost []string
 		for _, s := range w.Steps {
 			key, ok := im.keys[s.ID]
 			if !ok || g.blocks[key] == nil {
+				lost = append(lost, s.ID)
 				continue
 			}
 			if seen[key] {
@@ -146,6 +148,9 @@ func (g *graph) walkFlows(im imported, walks []Walk) []schema.Flow {
 			f.End = "ends"
 		default:
 			f.End = w.Stop
+		}
+		if len(lost) > 0 { // usually walks simulated at another commit than the catalogue
+			g.warnf("flow %s: %d step(s) name no block and were left out (first: %q)", w.ID, len(lost), lost[0])
 		}
 		out = append(out, f)
 	}

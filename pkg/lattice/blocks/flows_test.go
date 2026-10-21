@@ -1,6 +1,9 @@
 package blocks
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseWalks(t *testing.T) {
 	ws, err := ParseWalks([]byte(`[{"id":"w","title":"W","stop":"end","facts":{"a":"1"},"steps":[{"id":"x","label":"","when":[],"chosen":false}]}]`))
@@ -57,6 +60,9 @@ func TestWalkFlows(t *testing.T) {
 	}
 	if r.Flows[1].End != "ask" {
 		t.Errorf("end = %q", r.Flows[1].End)
+	}
+	if w := strings.Join(r.Warnings, "\n"); !strings.Contains(w, `flow buy: 1 step(s) name no block and were left out (first: "not.a.node")`) {
+		t.Errorf("warnings = %v", r.Warnings)
 	}
 }
 
