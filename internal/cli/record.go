@@ -88,6 +88,9 @@ func newRecordCommand(io *IO) *cobra.Command {
 				}
 				id = j.ID
 			}
+			if code, err := checkRecord(kind, body, args[0]); err != nil {
+				return io.fail(code, err.Error(), nil)
+			}
 			st, err := openStore(io)
 			if err != nil {
 				return err

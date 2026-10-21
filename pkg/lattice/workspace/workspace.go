@@ -66,6 +66,8 @@ type Source struct {
 	Stamp           string            `yaml:"stamp,omitempty"`   // snapshot stamp file, for a source read from a directory
 	Flows           string            `yaml:"flows,omitempty"`   // flows/v1 file (adapter output): simulated walks over this source
 	GroupByEndpoint *EndpointGrouping `yaml:"group_by_endpoint,omitempty"`
+	// RoutePrefixes are left off this source's route paths, normalized, when request paths are matched to them
+	RoutePrefixes []string `yaml:"route_prefixes,omitempty"`
 }
 
 // EndpointGrouping configures grouping a source's areas by endpoint and topic.

@@ -68,6 +68,9 @@ func runRefresh(io *IO) error {
 		js = append(js, j)
 	}
 	in := blocks.Inputs{Judgments: js}
+	if in.Proposals, err = loadProposals(ctx, st); err != nil {
+		return io.fail(proposalCode(err), err.Error(), nil)
+	}
 	var report refreshReport
 	for _, s := range ws.Sources {
 		if s.Catalogue == "" {
@@ -138,7 +141,8 @@ func runRefresh(io *IO) error {
 			}
 		}
 		in.Sources = append(in.Sources, blocks.SourceInput{
-			Info:       blocks.SourceInfo{ID: s.ID, Prefix: s.Prefix, Tier: s.Tier, System: s.System, Commit: stamp.Commit, Endpoints: eg},
+			Info: blocks.SourceInfo{ID: s.ID, Prefix: s.Prefix, Tier: s.Tier, System: s.System, Commit: stamp.Commit, Endpoints: eg,
+				RoutePrefixes: s.RoutePrefixes},
 			Catalogues: cats, Stamp: stamp, Walks: walks})
 	}
 	if in.Features, err = loadFeatureManifests(ws.FeaturesDir()); err != nil {

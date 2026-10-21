@@ -18,6 +18,9 @@ func newInitiativeCommand(io *IO) *cobra.Command {
 		newInitiativeShowCommand(io),
 		newInitiativeKanbanCommand(io),
 		newInitiativeCriticalPathCommand(io),
+		newInitiativeAddCommand(io),
+		newInitiativeEvidenceCommand(io),
+		newInitiativeStatusCommand(io),
 	)
 	return cmd
 }
@@ -31,10 +34,20 @@ func newInitiativeListCommand(io *IO) *cobra.Command {
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
-			if io.JSON {
-				return io.printJSON(kg.Initiatives)
+			recs, err := initiativeRecords(io)
+			if err != nil {
+				return err
 			}
-			for _, in := range kg.Initiatives {
+			all := kg.Initiatives
+			for _, in := range recs {
+				if findInitiative(kg, in.ID) == nil {
+					all = append(all, in)
+				}
+			}
+			if io.JSON {
+				return io.printJSON(all)
+			}
+			for _, in := range all {
 				io.printf("%-28s %s\n", in.ID, in.Status)
 			}
 			return nil
@@ -49,11 +62,15 @@ func newInitiativeShowCommand(io *IO) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			kg, _, err := graphFor(io, cmd, false)
-			if err != nil {
-				return io.fail("EXTRACT_FAILED", err.Error(), nil)
-			}
 			in := findInitiative(kg, args[0])
 			if in == nil {
+				shown, rerr := showInitiativeRecord(io, args[0])
+				if shown || rerr != nil {
+					return rerr
+				}
+				if err != nil {
+					return io.fail("EXTRACT_FAILED", err.Error(), nil)
+				}
 				return io.fail("INITIATIVE_NOT_FOUND", "initiative not found: "+args[0], nil)
 			}
 			tasks := tasksOf(kg, args[0])
