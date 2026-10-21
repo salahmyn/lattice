@@ -1,6 +1,7 @@
 package blocks
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -57,7 +58,9 @@ func LoadJudgments(dir string) ([]Judgment, error) {
 			return nil, err
 		}
 		var j Judgment
-		if err := yaml.Unmarshal(data, &j); err != nil {
+		dec := yaml.NewDecoder(bytes.NewReader(data))
+		dec.KnownFields(true) // hand-written files: a misspelt key must not pass silently
+		if err := dec.Decode(&j); err != nil {
 			return nil, fmt.Errorf("%s: %w", p, err)
 		}
 		switch {
@@ -70,11 +73,37 @@ func LoadJudgments(dir string) ([]Judgment, error) {
 		case seen[j.ID] != "":
 			return nil, fmt.Errorf("%s: judgment id %s is also used in %s", p, j.ID, seen[j.ID])
 		}
+		if err := j.check(); err != nil {
+			return nil, fmt.Errorf("%s: judgment %s: %w", p, j.ID, err)
+		}
 		seen[j.ID] = p
 		j.Path = p
 		out = append(out, j)
 	}
 	return out, nil
+}
+
+// check enforces the fields each judgment type needs.
+func (j Judgment) check() error {
+	for i, e := range j.Entries {
+		var need map[string]string
+		switch j.Type {
+		case "edge":
+			need = map[string]string{"from": e.From, "to": e.To, "kind": e.Kind}
+		case "label":
+			need = map[string]string{"id": e.ID, "title": e.Title}
+		case "alias":
+			need = map[string]string{"prefix": e.Prefix}
+		default:
+			need = map[string]string{"id": e.ID}
+		}
+		for _, f := range []string{"id", "title", "from", "to", "kind", "prefix"} {
+			if v, ok := need[f]; ok && v == "" {
+				return fmt.Errorf("entry %d needs %s", i, f)
+			}
+		}
+	}
+	return nil
 }
 
 // ResolveID maps an id to a known block id: the id itself when known, else the
@@ -107,6 +136,9 @@ func (g *graph) applyNodes(j Judgment, defaultKind string) {
 		if kind == "" {
 			kind = defaultKind
 		}
+		if g.blocks[e.ID] != nil {
+			g.warnf("judgment %s: %s replaces an existing block", j.ID, e.ID)
+		}
 		var attrs map[string]string
 		if e.Technology != "" {
 			attrs = map[string]string{"technology": e.Technology}
@@ -125,7 +157,11 @@ func (g *graph) applyGroup(j Judgment) {
 	for _, e := range j.Entries {
 		for _, m := range e.Members {
 			b := g.blocks[m]
-			if b == nil || m == e.ID {
+			if m == e.ID {
+				g.warnf("judgment %s: group %s lists itself as a member", j.ID, e.ID)
+				continue
+			}
+			if b == nil {
 				g.warnf("judgment %s: group %s member %q is not a block", j.ID, e.ID, m)
 				continue
 			}

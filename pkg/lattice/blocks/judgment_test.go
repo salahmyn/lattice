@@ -42,14 +42,21 @@ entries:
 
 func TestLoadJudgmentsRejects(t *testing.T) {
 	cases := map[string]string{
-		"no id":        "type: system\nentries: [{id: a}]\n",
-		"unknown type": "id: x\ntype: colour\nentries: [{id: a}]\n",
-		"no entries":   "id: x\ntype: system\n",
+		"no id":                "type: system\nentries: [{id: a}]\n",
+		"unknown type":         "id: x\ntype: colour\nentries: [{id: a}]\n",
+		"no entries":           "id: x\ntype: system\n",
+		"memebers":             "id: x\ntype: group\nentries: [{id: a, memebers: [b]}]\n",
+		"entry 0 needs id":     "id: x\ntype: group\nentries: [{title: a}]\n",
+		"entry 1 needs from":   "id: x\ntype: edge\nentries: [{from: a, to: b, kind: k}, {to: b, kind: k}]\n",
+		"entry 0 needs to":     "id: x\ntype: edge\nentries: [{from: a, kind: k}]\n",
+		"entry 0 needs kind":   "id: x\ntype: edge\nentries: [{from: a, to: b}]\n",
+		"entry 0 needs title":  "id: x\ntype: label\nentries: [{id: a}]\n",
+		"entry 0 needs prefix": "id: x\ntype: alias\nentries: [{id: a}]\n",
 	}
 	for want, body := range cases {
 		dir := t.TempDir()
 		writeJudgment(t, dir, "j.yaml", body)
-		if _, err := LoadJudgments(dir); err == nil || !strings.Contains(err.Error(), want) {
+		if _, err := LoadJudgments(dir); err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "j.yaml") {
 			t.Errorf("%s: err = %v", want, err)
 		}
 	}
@@ -104,5 +111,22 @@ func TestResolveID(t *testing.T) {
 	}
 	if _, ok := ResolveID("nothing", js, known); ok {
 		t.Error("unknown id resolved")
+	}
+}
+
+func TestGroupReparentsCatalogueBlockAndWarnsOnCollision(t *testing.T) {
+	in := shopInputs(t)
+	in.Judgments = append(in.Judgments, Judgment{ID: "g", Type: "group", Entries: []JudgmentEntry{
+		{ID: "lane", Title: "Lane", Members: []string{"fe:cart.items", "lane"}},
+		{ID: "fe:pay", Title: "Pay again"}}})
+	r := Build(in)
+	if p := blockMap(r)["fe:cart.items"].Parent; p != "lane" {
+		t.Errorf("parent = %q", p)
+	}
+	w := strings.Join(r.Warnings, "\n")
+	for _, want := range []string{"fe:pay replaces an existing block", "group lane lists itself as a member"} {
+		if !strings.Contains(w, want) {
+			t.Errorf("warnings missing %q: %v", want, r.Warnings)
+		}
 	}
 }
