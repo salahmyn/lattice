@@ -68,6 +68,7 @@ func TestOpenNotInitialized(t *testing.T) {
 }
 
 func TestSourcesAndJudgments(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	root := t.TempDir()
 	writeLatticeDir(t, filepath.Join(root, "lattice"), `mode: standalone
 judgments: rules

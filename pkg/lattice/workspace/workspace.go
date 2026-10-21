@@ -82,7 +82,7 @@ type Workspace struct {
 	Review bool
 	// Sources are the block-graph inputs declared in workspace.yaml.
 	Sources []Source
-	// judgments is the judgments directory as declared (relative to LatticeDir).
+	// judgments is the judgments directory as declared, resolved by ResolvePath.
 	judgments string
 }
 
