@@ -27,6 +27,7 @@ func NewRootCommand() *cobra.Command {
 		newMigrateCommand(io),
 		newAdaptersCommand(io),
 		newExtractCommand(io),
+		newRefreshCommand(io),
 		newImportCommand(io),
 		newCoverageCommand(io),
 		newValidateCommand(io),
