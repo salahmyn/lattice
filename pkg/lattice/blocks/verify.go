@@ -19,6 +19,7 @@ type CodeRoute struct {
 type Verification struct {
 	Source, Target string
 	Routes         []CodeRoute
+	Stamp          schema.SourceStamp // what Source's code was read at
 }
 
 // verifyRoutes marks a route block wired when the code registers its path with

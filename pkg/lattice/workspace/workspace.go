@@ -68,6 +68,16 @@ type Source struct {
 	GroupByEndpoint *EndpointGrouping `yaml:"group_by_endpoint,omitempty"`
 	// RoutePrefixes are left off this source's route paths, normalized, when request paths are matched to them
 	RoutePrefixes []string `yaml:"route_prefixes,omitempty"`
+	// LaravelRoutes are the route files of a Laravel source; Verifies names the
+	// catalogue source whose route blocks they check (spec §8)
+	LaravelRoutes []RouteFiles `yaml:"laravel_routes,omitempty"`
+	Verifies      string       `yaml:"verifies,omitempty"`
+}
+
+// RouteFiles are route files and the prefix the app mounts them under.
+type RouteFiles struct {
+	Files  string `yaml:"files"`            // glob inside the clone or path
+	Prefix string `yaml:"prefix,omitempty"` // e.g. "api"
 }
 
 // EndpointGrouping configures grouping a source's areas by endpoint and topic.

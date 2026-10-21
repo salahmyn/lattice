@@ -152,6 +152,9 @@ func Build(in Inputs) Result {
 	for i, s := range in.Sources {
 		flows = append(flows, g.walkFlows(ims[i], s.Walks)...)
 	}
+	for _, v := range in.Verified {
+		stamps = append(stamps, v.Stamp)
+	}
 	r := g.result(stamps)
 	r.Flows = flows
 	return r

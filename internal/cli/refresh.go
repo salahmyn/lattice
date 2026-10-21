@@ -36,6 +36,7 @@ type refreshReport struct {
 	Summary  string               `json:"summary"`
 	Diff     blocks.Diff          `json:"diff"`
 	Flows    int                  `json:"flows"`
+	Routes   []string             `json:"routes,omitempty"` // "<source>: N of M <target> routes wired"
 }
 
 func runRefresh(io *IO) error {
@@ -73,6 +74,14 @@ func runRefresh(io *IO) error {
 	}
 	var report refreshReport
 	for _, s := range ws.Sources {
+		if len(s.LaravelRoutes) > 0 {
+			v, code, err := readLaravelRoutes(ws, s)
+			if err != nil {
+				return io.fail(code, err.Error(), nil)
+			}
+			in.Verified = append(in.Verified, v)
+			continue
+		}
 		if s.Catalogue == "" {
 			continue
 		}
@@ -174,6 +183,9 @@ func runRefresh(io *IO) error {
 		report.Edges[e.Kind]++
 	}
 	report.Warnings = append(report.Warnings, res.Warnings...)
+	for _, v := range in.Verified {
+		report.Routes = append(report.Routes, wiredCount(ws, v, res.Blocks))
+	}
 	if io.JSON {
 		return io.printJSON(report)
 	}
@@ -188,6 +200,9 @@ func runRefresh(io *IO) error {
 		io.printf("  %-14s %d\n", k, report.Edges[k])
 	}
 	io.printf("  flows          %d\n", len(res.Flows))
+	for _, l := range report.Routes {
+		io.printf("  routes %s\n", l)
+	}
 	for _, s := range res.Sources {
 		c := s.Commit
 		if len(c) > 7 {
