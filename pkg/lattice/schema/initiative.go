@@ -20,6 +20,12 @@ type Initiative struct {
 	ID     string           `yaml:"id"`
 	Type   string           `yaml:"type"` // always "initiative"
 	Status InitiativeStatus `yaml:"status"`
+	Title  string           `yaml:"title,omitempty"`
+
+	// Pins are the commits a proposal was analysed at; Map says how it is drawn
+	// over the block graph. Both are set on initiatives kept as store records.
+	Pins []Pin          `yaml:"pins,omitempty"`
+	Map  *InitiativeMap `yaml:"map,omitempty"`
 
 	Created          string `yaml:"created"`                     // ISO datetime
 	TargetCompletion string `yaml:"target_completion,omitempty"` // ISO date
@@ -66,4 +72,47 @@ type Stream struct {
 	ID          string `yaml:"id"`
 	Owner       string `yaml:"owner"`
 	Description string `yaml:"description"`
+}
+
+// Pin is a repo commit an initiative was analysed at.
+type Pin struct {
+	Role    string `yaml:"role" json:"role"`
+	Repo    string `yaml:"repo,omitempty" json:"repo,omitempty"`
+	Ref     string `yaml:"ref,omitempty" json:"ref,omitempty"`
+	Commit  string `yaml:"commit,omitempty" json:"commit,omitempty"`
+	Clone   string `yaml:"clone,omitempty" json:"clone,omitempty"`
+	Package string `yaml:"package,omitempty" json:"package,omitempty"`
+	Note    string `yaml:"note,omitempty" json:"note,omitempty"`
+}
+
+// PinCheck is how a pin stands against its local clone.
+type PinCheck struct {
+	State      string `json:"state"`
+	Moved      int    `json:"moved,omitempty"` // commits the ref has past the pin
+	CommitDate string `json:"commit_date,omitempty"`
+	Tip        string `json:"tip,omitempty"`
+	Pushed     bool   `json:"pushed,omitempty"` // a remote branch contains the pin
+}
+
+// InitiativeMap says how a proposal is drawn over the block graph.
+type InitiativeMap struct {
+	System    MapSystem     `yaml:"system"`
+	HostBlock string        `yaml:"host_block,omitempty"` // the block that would mount the proposal
+	Flag      string        `yaml:"flag,omitempty"`
+	Decision  string        `yaml:"decision,omitempty"`
+	Blocking  []string      `yaml:"blocking,omitempty"` // gap codes that block the initiative
+	Externals []MapExternal `yaml:"externals,omitempty"`
+}
+
+// MapSystem titles the proposal's system block.
+type MapSystem struct {
+	Title       string `yaml:"title"`
+	Description string `yaml:"description,omitempty"`
+}
+
+// MapExternal is an edge from the proposal to an existing block.
+type MapExternal struct {
+	To    string `yaml:"to"`
+	Kind  string `yaml:"kind"`
+	Label string `yaml:"label,omitempty"`
 }

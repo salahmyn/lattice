@@ -4,17 +4,38 @@ package schema
 // path with inputs, decisions and outputs. Blocks nest through Parent. Features,
 // invariants and entry points are converted into blocks at build time.
 type Block struct {
-	ID          string            `json:"id"`
-	Kind        string            `json:"kind"`
-	Parent      string            `json:"parent,omitempty"`
-	Title       string            `json:"title"`
-	Description string            `json:"description,omitempty"`
-	Tier        string            `json:"tier,omitempty"`
-	System      string            `json:"system,omitempty"` // the system block whose source stamp applies
-	Truth       string            `json:"truth"`
-	Provenance  Provenance        `json:"provenance"`
-	BRD         string            `json:"brd,omitempty"` // set on blocks converted from features
-	Attrs       map[string]string `json:"attrs,omitempty"`
+	ID          string             `json:"id"`
+	Kind        string             `json:"kind"`
+	Parent      string             `json:"parent,omitempty"`
+	Title       string             `json:"title"`
+	Description string             `json:"description,omitempty"`
+	Tier        string             `json:"tier,omitempty"`
+	System      string             `json:"system,omitempty"` // the system block whose source stamp applies
+	Truth       string             `json:"truth"`
+	Provenance  Provenance         `json:"provenance"`
+	BRD         string             `json:"brd,omitempty"` // set on blocks converted from features
+	Attrs       map[string]string  `json:"attrs,omitempty"`
+	Overlays    map[string]Overlay `json:"overlays,omitempty"`   // initiative id -> its verdict on this block
+	Initiative  string             `json:"initiative,omitempty"` // set on blocks that exist only in a proposal
+}
+
+// Overlay is one initiative's verdict on a block: the top-ranked class of its
+// cases, and the cases themselves.
+type Overlay struct {
+	Verdict string        `json:"verdict"`
+	Title   string        `json:"title,omitempty"`
+	Cases   []OverlayCase `json:"cases,omitempty"`
+}
+
+// OverlayCase is one evidence row about a block.
+type OverlayCase struct {
+	Case        string   `json:"case,omitempty"`
+	ID          string   `json:"id"` // the evidence row's block id, as written
+	Class       string   `json:"class"`
+	Requirement string   `json:"requirement,omitempty"`
+	Evidence    string   `json:"evidence,omitempty"`
+	Notes       string   `json:"notes,omitempty"`
+	Gaps        []string `json:"gaps,omitempty"` // gap codes that cite this block
 }
 
 // BlockEdge is a typed, directed link between two blocks.
