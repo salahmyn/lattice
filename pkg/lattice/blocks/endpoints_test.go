@@ -7,7 +7,7 @@ import (
 func endpointInputs() Inputs {
 	routes := &Catalogue{Area: "routes", Path: "a-routes.json", Nodes: []CatNode{
 		{ID: "routes", Kind: "service", Title: "Routes"},
-		{ID: "routes.post", Parent: "routes", Kind: "route", Title: "Create", HTTP: &CatHTTP{Method: "POST", Path: "/checkout/{cart}/orders"}, Detail: "Create an order."},
+		{ID: "routes.post", Parent: "routes", Kind: "route", Title: "Create", HTTP: &CatHTTP{Method: "POST", Path: "/shop/{cart}/orders"}, Detail: "Create an order."},
 		{ID: "routes.cities", Parent: "routes", Kind: "route", Title: "Cities", HTTP: &CatHTTP{Method: "GET", Path: "/api/v1/shipping/cities"}},
 	}}
 	orders := &Catalogue{Area: "orders", Path: "b-orders.json", Nodes: []CatNode{
@@ -21,7 +21,7 @@ func endpointInputs() Inputs {
 	}}
 	return Inputs{Sources: []SourceInput{{
 		Info: SourceInfo{ID: "api", Prefix: "be", Endpoints: &EndpointGrouping{
-			SkipAreas: []string{"routes"}, SkipSegments: []string{"checkout", "api", "v1"},
+			SkipAreas: []string{"routes"}, SkipSegments: []string{"shop", "api", "v1"},
 			PathPrefixes: map[string]string{"/api/": "api-"}}},
 		Catalogues: []*Catalogue{routes, orders},
 	}}}
@@ -50,7 +50,7 @@ func TestEndpointGrouping(t *testing.T) {
 			t.Errorf("%s parent = %q (present %v) want %q", id, got.Parent, ok, parent)
 		}
 	}
-	if ep := b["grp:orders:ep:routes.post"]; ep.Kind != "endpoint" || ep.Title != "POST /checkout/{cart}/orders" || ep.Attrs["route_id"] != "routes.post" {
+	if ep := b["grp:orders:ep:routes.post"]; ep.Kind != "endpoint" || ep.Title != "POST /shop/{cart}/orders" || ep.Attrs["route_id"] != "routes.post" {
 		t.Errorf("endpoint block = %+v", ep)
 	}
 	if tp := b["grp:orders:topic:api-shipping"]; tp.Kind != "topic" || tp.Title != "Api shipping" {

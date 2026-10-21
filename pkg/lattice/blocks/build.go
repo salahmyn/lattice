@@ -62,8 +62,11 @@ func Build(in Inputs) Result {
 			}
 		}
 		ims = append(ims, im)
-		for k, b := range im.blocks {
-			g.blocks[k] = b
+		for _, k := range sortedKeys(im.blocks) {
+			if g.blocks[k] != nil {
+				g.warnf("source %s: block %q is already defined; this source's block replaces it", s.Info.ID, k)
+			}
+			g.blocks[k] = im.blocks[k]
 		}
 		for _, id := range sortedKeys(im.nodes) {
 			for _, x := range im.nodes[id].Next {

@@ -138,18 +138,23 @@ func topicOf(p string, opt *EndpointGrouping) string {
 			break
 		}
 	}
-	for _, pre := range sortedKeys(opt.PathPrefixes) {
-		if strings.HasPrefix(p, pre) {
-			return opt.PathPrefixes[pre] + t
+	best := ""
+	for pre := range opt.PathPrefixes {
+		if strings.HasPrefix(p, pre) && len(pre) > len(best) {
+			best = pre
 		}
+	}
+	if best != "" {
+		return opt.PathPrefixes[best] + t
 	}
 	return t
 }
 
 func topicTitle(t string) string {
 	s := strings.ReplaceAll(t, "-", " ")
-	if s == "" {
+	r := []rune(strings.ToLower(s))
+	if len(r) == 0 {
 		return s
 	}
-	return strings.ToUpper(s[:1]) + strings.ToLower(s[1:])
+	return strings.ToUpper(string(r[:1])) + string(r[1:])
 }

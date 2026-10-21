@@ -41,7 +41,13 @@ func (g *graph) expand(end string, exclude []string) []string {
 	if !isIDPattern(end) {
 		return []string{g.resolve(end)}
 	}
-	re := compileID(end)
+	re := compileID(end) // patterns match full block ids; aliases apply to plain ids only
+	exclude = append([]string(nil), exclude...)
+	for i, x := range exclude {
+		if !isIDPattern(x) {
+			exclude[i] = g.resolve(x)
+		}
+	}
 	var out []string
 	for _, id := range sortedKeys(g.blocks) {
 		if re.MatchString(id) && !excluded(id, exclude) {
@@ -130,7 +136,7 @@ func (g *graph) applyEvents(js []Judgment) {
 			}
 			end = g.resolve(end)
 			if g.blocks[end] == nil {
-				g.warnf("judgment %s: edge end %q is not a block", j.ID, end)
+				g.warnf("judgment %s: edge end %q is not a block", j.ID, e.From+e.To)
 				continue
 			}
 			rules = append(rules, rule{j: j, e: e, end: end, only: compileID(e.Blocks)})

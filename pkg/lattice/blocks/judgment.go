@@ -96,6 +96,15 @@ func (j Judgment) check() error {
 		var need map[string]string
 		switch j.Type {
 		case "edge":
+			rule := len(e.Events) > 0 || e.ConfigKind != "" || e.ConfigSource != ""
+			switch {
+			case len(e.Events) > 0 && (e.ConfigKind != "" || e.ConfigSource != ""), e.ConfigKind != "" && e.ConfigSource != "":
+				return fmt.Errorf("entry %d: use one of events, config_kind and config_source", i)
+			case len(e.Scopes) > 0 && e.ConfigSource == "":
+				return fmt.Errorf("entry %d: scopes needs config_source", i)
+			case rule && (isIDPattern(e.From) || isIDPattern(e.To)):
+				return fmt.Errorf("entry %d: a rule entry's from and to are block ids, not patterns", i)
+			}
 			switch {
 			case len(e.Events) > 0:
 				need = map[string]string{"kind": e.Kind}
