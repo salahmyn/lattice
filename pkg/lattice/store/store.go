@@ -110,11 +110,16 @@ func checkRecord(r Record) error {
 
 // IDOf returns a YAML body's top-level id, or "".
 func IDOf(body []byte) string {
+	id, _ := idOf(body)
+	return id
+}
+
+func idOf(body []byte) (string, error) {
 	var v struct {
 		ID string `yaml:"id"`
 	}
-	_ = yaml.Unmarshal(body, &v)
-	return v.ID
+	err := yaml.Unmarshal(body, &v)
+	return v.ID, err
 }
 
 func authorOf(body []byte) string {

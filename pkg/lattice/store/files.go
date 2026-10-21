@@ -56,8 +56,10 @@ func (f *Files) list(kind string) ([]fileRecord, error) {
 		if err != nil {
 			return nil, err
 		}
-		id := IDOf(body)
+		id, err := idOf(body)
 		switch {
+		case err != nil:
+			return nil, fmt.Errorf("%s: %w", p, err)
 		case id == "":
 			return nil, fmt.Errorf("%s: no top-level id", p)
 		case seen[id] != "":
@@ -137,12 +139,29 @@ func (f *Files) Put(ctx context.Context, r Record) (Record, error) {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return Record{}, err
 	}
-	tmp := p + ".tmp"
-	if err := os.WriteFile(tmp, r.Body, 0o644); err != nil {
+	if cur == nil {
+		if _, err := os.Stat(p); err == nil { // a file named after this id may hold another record
+			return Record{}, fmt.Errorf("record %s/%s: %s already exists and holds another record", r.Kind, r.ID, p)
+		}
+	}
+	// shortcut: the version check and the write are not atomic, so files mode assumes one writer at a time; use postgres for several
+	tmp, err := os.CreateTemp(filepath.Dir(p), "."+r.ID+"-*.tmp")
+	if err != nil {
 		return Record{}, err
 	}
-	if err := os.Rename(tmp, p); err != nil {
-		return Record{}, err
+	_, werr := tmp.Write(r.Body)
+	if cerr := tmp.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr == nil {
+		werr = os.Chmod(tmp.Name(), 0o644)
+	}
+	if werr == nil {
+		werr = os.Rename(tmp.Name(), p)
+	}
+	if werr != nil {
+		_ = os.Remove(tmp.Name())
+		return Record{}, werr
 	}
 	return f.Get(ctx, r.Kind, r.ID)
 }

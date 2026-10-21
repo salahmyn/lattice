@@ -206,11 +206,51 @@ func graphContract(t *testing.T, st Store) {
 			t.Errorf("relations %s %v %d = %s, %v; want %s", c.dir, c.kinds, c.depth, edges(es), err, c.want)
 		}
 	}
+	cyc := Graph{Blocks: []schema.Block{{ID: "n:a"}, {ID: "n:b"}}, Edges: []schema.BlockEdge{
+		{From: "n:a", To: "n:a", Kind: "flow"}, {From: "n:a", To: "n:b", Kind: "flow"}, {From: "n:b", To: "n:a", Kind: "flow"}}}
+	if err := st.ReplaceGraph(ctx, cyc); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []Direction{Out, In, Both} {
+		if es, err := st.Relations(ctx, "n:a", dir, nil, 12); err != nil || edges(es) != "n:a>n:a,n:a>n:b,n:b>n:a" {
+			t.Errorf("cycle %s = %s, %v", dir, edges(es), err)
+		}
+	}
 	small := Graph{Blocks: []schema.Block{{ID: "n:z", Kind: "action", Title: "Z"}}}
 	if err := st.ReplaceGraph(ctx, small); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := st.Graph(ctx); asJSON(t, got) != asJSON(t, small) {
 		t.Errorf("replace must not merge: %s", asJSON(t, got))
+	}
+}
+
+func TestFilesPutKeepsAnotherRecordsFile(t *testing.T) {
+	st := filesStore(t).(*Files)
+	dir := st.dir("judgment")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "010-sys.yaml"), judgmentBody("sys", "S"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Put(context.Background(), Record{Kind: "judgment", ID: "010-sys", Body: judgmentBody("010-sys", "X")}); err == nil {
+		t.Error("a new record must not overwrite the file of another")
+	}
+	if r, err := st.Get(context.Background(), "judgment", "sys"); err != nil || !strings.Contains(string(r.Body), "title: S") {
+		t.Errorf("sys = %+v, %v", r, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad.yaml"), []byte("id: [oops\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.List(context.Background(), "judgment"); err == nil || !strings.Contains(err.Error(), "bad.yaml") || strings.Contains(err.Error(), "no top-level id") {
+		t.Errorf("a YAML error should be reported as such: %v", err)
+	}
+}
+
+func TestPostgresParseErrorHidesTheDSN(t *testing.T) {
+	_, err := OpenPostgres(context.Background(), "postgres://u@h/db?password=s3cret&sslmode=bogus", "lattice")
+	if err == nil || strings.Contains(err.Error(), "s3cret") {
+		t.Errorf("err = %v", err)
 	}
 }

@@ -47,7 +47,11 @@ func OpenPostgres(ctx context.Context, dsn, sch string) (*Postgres, error) {
 	if !schemaName.MatchString(sch) {
 		return nil, fmt.Errorf("schema %q is not a lower-case SQL identifier", sch)
 	}
-	c, err := pgx.Connect(ctx, dsn)
+	cfg, err := pgx.ParseConfig(dsn)
+	if err != nil { // the parse error can quote the whole string, password included
+		return nil, errors.New("cannot parse the connection string")
+	}
+	c, err := pgx.ConnectConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -59,9 +63,11 @@ func OpenPostgres(ctx context.Context, dsn, sch string) (*Postgres, error) {
 	return p, nil
 }
 
-func (p *Postgres) q(sql string) string { return strings.ReplaceAll(sql, "{s}", p.s) }
-func (p *Postgres) Where() string       { return "postgres schema " + p.s }
-func (p *Postgres) Close() error        { return p.c.Close(context.Background()) }
+func (p *Postgres) q(sql string) string {
+	return strings.ReplaceAll(sql, "{s}", pgx.Identifier{p.s}.Sanitize())
+}
+func (p *Postgres) Where() string { return "postgres schema " + p.s }
+func (p *Postgres) Close() error  { return p.c.Close(context.Background()) }
 
 const recordCols = `id, version::text, body, author, to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`
 
