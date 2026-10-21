@@ -9,11 +9,12 @@ import (
 
 // SourceInfo names where one source's catalogues go in the graph.
 type SourceInfo struct {
-	ID     string // workspace source id, for provenance
-	Prefix string // block id namespace, e.g. "fe"
-	Tier   string
-	System string // the system block that owns this source's areas
-	Commit string // commit the catalogues were read at; empty for a directory
+	ID        string // workspace source id, for provenance
+	Prefix    string // block id namespace, e.g. "fe"
+	Tier      string
+	System    string            // the system block that owns this source's areas
+	Commit    string            // commit the catalogues were read at; empty for a directory
+	Endpoints *EndpointGrouping // when set, group areas by endpoint (endpoints.go)
 }
 
 // imported is one source's catalogues as blocks. Edges stay keyed by catalogue
@@ -24,19 +25,23 @@ type imported struct {
 	nodes       map[string]CatNode
 	prov        map[string]schema.Provenance // catalogue node id -> provenance
 	calls       [][2]string                  // catalogue ids: a parent in another area calls the child
+	order       map[string]int               // catalogue node id -> position (file order, then node order)
+	area        map[string]string            // catalogue node id -> area
+	areas       []string                     // areas in file order
 	configKinds map[string]string            // config id -> kind, from this source's catalogue `configs`
 }
 
 func importSource(cats []*Catalogue, src SourceInfo) imported {
 	im := imported{blocks: map[string]*schema.Block{}, keys: map[string]string{}, nodes: map[string]CatNode{},
-		prov: map[string]schema.Provenance{}, configKinds: map[string]string{}}
-	area := map[string]string{} // catalogue node id -> area
+		prov: map[string]schema.Provenance{}, configKinds: map[string]string{},
+		order: map[string]int{}, area: map[string]string{}}
 	for _, c := range cats {
 		for _, cfg := range c.Configs {
 			im.configKinds[cfg.ID] = cfg.Kind
 		}
 		prov := schema.Provenance{Kind: schema.ProvenanceAdapter, Source: sourceRef(src, c.Path)}
 		akey := src.Prefix + ":" + c.Area
+		im.areas = append(im.areas, c.Area)
 		title := c.Title
 		if title == "" {
 			title = c.Area
@@ -45,11 +50,12 @@ func importSource(cats []*Catalogue, src SourceInfo) imported {
 			Description: c.Summary, Tier: src.Tier, System: src.System, Truth: schema.TruthDeclared, Provenance: prov}
 		for _, n := range c.Nodes {
 			im.nodes[n.ID] = n
-			area[n.ID] = c.Area
+			im.area[n.ID] = c.Area
+			im.order[n.ID] = len(im.order)
 			im.prov[n.ID] = prov
 		}
 	}
-	areaKey := func(id string) string { return src.Prefix + ":" + area[id] }
+	areaKey := func(id string) string { return src.Prefix + ":" + im.area[id] }
 	for id, n := range im.nodes {
 		if n.Parent == "" {
 			im.keys[id] = areaKey(id)
@@ -70,7 +76,7 @@ func importSource(cats []*Catalogue, src SourceInfo) imported {
 		parent := areaKey(id)
 		if p, ok := im.nodes[n.Parent]; ok {
 			switch {
-			case area[n.Parent] != area[id]: // a block lives in its own area; a parent elsewhere is its caller
+			case im.area[n.Parent] != im.area[id]: // a block lives in its own area; a parent elsewhere is its caller
 				im.calls = append(im.calls, [2]string{n.Parent, id})
 			case p.Parent != "":
 				parent = src.Prefix + ":" + n.Parent

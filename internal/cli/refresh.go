@@ -84,8 +84,12 @@ func runRefresh(io *IO) error {
 		for _, p := range skipped {
 			report.Skipped = append(report.Skipped, s.ID+":"+p)
 		}
+		var eg *blocks.EndpointGrouping
+		if o := s.GroupByEndpoint; o != nil {
+			eg = &blocks.EndpointGrouping{SkipAreas: o.SkipAreas, SkipSegments: o.SkipSegments, PathPrefixes: o.PathPrefixes}
+		}
 		in.Sources = append(in.Sources, blocks.SourceInput{
-			Info:       blocks.SourceInfo{ID: s.ID, Prefix: s.Prefix, Tier: s.Tier, System: s.System, Commit: stamp.Commit},
+			Info:       blocks.SourceInfo{ID: s.ID, Prefix: s.Prefix, Tier: s.Tier, System: s.System, Commit: stamp.Commit, Endpoints: eg},
 			Catalogues: cats, Stamp: stamp})
 	}
 	if in.Features, err = loadFeatureManifests(ws.FeaturesDir()); err != nil {

@@ -52,15 +52,23 @@ type CodeRoot struct {
 // Source is one input of a block-graph workspace (v0.9): catalogue files read
 // from a git clone at a ref, or from a directory.
 type Source struct {
-	ID        string `yaml:"id"`
-	Repo      string `yaml:"repo,omitempty"`      // e.g. "org/name", for stamps and links
-	Clone     string `yaml:"clone,omitempty"`     // local clone, read at Ref through git
-	Ref       string `yaml:"ref,omitempty"`       // branch, tag or commit; default HEAD
-	Path      string `yaml:"path,omitempty"`      // a directory, when the source is not a clone
-	Catalogue string `yaml:"catalogue,omitempty"` // glob of catalogue/v1 files inside the clone or Path
-	Prefix    string `yaml:"prefix,omitempty"`    // block id namespace, e.g. "fe"
-	Tier      string `yaml:"tier,omitempty"`
-	System    string `yaml:"system,omitempty"` // the system block that owns this source's areas
+	ID              string            `yaml:"id"`
+	Repo            string            `yaml:"repo,omitempty"`      // e.g. "org/name", for stamps and links
+	Clone           string            `yaml:"clone,omitempty"`     // local clone, read at Ref through git
+	Ref             string            `yaml:"ref,omitempty"`       // branch, tag or commit; default HEAD
+	Path            string            `yaml:"path,omitempty"`      // a directory, when the source is not a clone
+	Catalogue       string            `yaml:"catalogue,omitempty"` // glob of catalogue/v1 files inside the clone or Path
+	Prefix          string            `yaml:"prefix,omitempty"`    // block id namespace, e.g. "fe"
+	Tier            string            `yaml:"tier,omitempty"`
+	System          string            `yaml:"system,omitempty"` // the system block that owns this source's areas
+	GroupByEndpoint *EndpointGrouping `yaml:"group_by_endpoint,omitempty"`
+}
+
+// EndpointGrouping configures grouping a source's areas by endpoint and topic.
+type EndpointGrouping struct {
+	SkipAreas    []string          `yaml:"skip_areas,omitempty"`
+	SkipSegments []string          `yaml:"skip_segments,omitempty"`
+	PathPrefixes map[string]string `yaml:"path_prefixes,omitempty"`
 }
 
 // file is the on-disk workspace.yaml model.

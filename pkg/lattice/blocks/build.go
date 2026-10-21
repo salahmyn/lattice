@@ -53,6 +53,7 @@ func Build(in Inputs) Result {
 			g.warnf("source %s: system %q is not declared by a system judgment", s.Info.ID, s.Info.System)
 		}
 		im := importSource(s.Catalogues, s.Info)
+		orderPairs := groupByEndpoint(&im, s.Info)
 		if s.Info.System != "" && g.blocks[s.Info.System] == nil {
 			for _, b := range im.blocks {
 				if b.Parent == s.Info.System {
@@ -84,6 +85,9 @@ func Build(in Inputs) Result {
 		}
 		for _, c := range im.calls {
 			g.edge(im.keys[c[0]], im.keys[c[1]], "call", "calls", nil, im.prov[c[1]])
+		}
+		for _, p := range orderPairs {
+			g.edge(p[0], p[1], "flow", "then", nil, schema.Provenance{Kind: schema.ProvenanceAdapter, Source: s.Info.ID + ":catalogue order"})
 		}
 		stamps = append(stamps, s.Stamp)
 	}
