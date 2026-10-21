@@ -30,3 +30,15 @@ func TestCarryBlocksKeepsRefreshOutput(t *testing.T) {
 		t.Fatal("absent/unparsable must not carry")
 	}
 }
+
+func TestCarryBlocksKeepsFlows(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "lattice.json")
+	if err := os.WriteFile(p, []byte(`{"flows":[{"id":"f","end":"ends","steps":[{"to":"a","kind":"start"}]}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var kg schema.KnowledgeGraph
+	CarryBlocks(p, &kg)
+	if len(kg.Flows) != 1 || kg.Flows[0].ID != "f" {
+		t.Errorf("flows = %+v", kg.Flows)
+	}
+}

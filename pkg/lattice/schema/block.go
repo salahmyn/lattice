@@ -33,13 +33,61 @@ type Provenance struct {
 	Source string `json:"source,omitempty"` // e.g. "shop@abc1234:docs/flows/cart.json", "judgment:landscape"
 }
 
-// SourceStamp records what one workspace source was read at.
+// SourceStamp says what a source was read at and how that stands against its
+// live release.
 type SourceStamp struct {
-	ID         string `json:"id"`
-	Repo       string `json:"repo,omitempty"`
-	Ref        string `json:"ref,omitempty"`
-	Commit     string `json:"commit,omitempty"`
-	CommitDate string `json:"commit_date,omitempty"`
+	ID         string   `json:"id"`
+	Repo       string   `json:"repo,omitempty"`
+	Ref        string   `json:"ref,omitempty"`
+	Commit     string   `json:"commit,omitempty"`
+	CommitDate string   `json:"commit_date,omitempty"`
+	System     string   `json:"system,omitempty"` // the system block this source describes
+	Branch     string   `json:"branch,omitempty"` // snapshot stamps: the branch the snapshot was taken from
+	State      string   `json:"state,omitempty"`  // one of the Fresh* states
+	Behind     int      `json:"behind,omitempty"` // commits the release has that Commit lacks
+	Ahead      int      `json:"ahead,omitempty"`  // commits Commit has that the release lacks
+	Release    *Release `json:"release,omitempty"`
+}
+
+// Release is the deployed version of a source's repo (release/v1).
+type Release struct {
+	Repo        string `json:"repo,omitempty"`
+	Version     string `json:"version"`
+	Commit      string `json:"commit,omitempty"`
+	CommittedAt string `json:"committed_at,omitempty"`
+	DeployedAt  string `json:"deployed_at,omitempty"`
+	Run         string `json:"run,omitempty"`
+	Source      string `json:"source,omitempty"`
+}
+
+// Freshness states of a source stamp.
+const (
+	FreshCurrent   = "current"    // Commit is the released commit
+	FreshBehind    = "behind"     // the release has commits Commit lacks
+	FreshAhead     = "ahead"      // Commit has commits not yet released
+	FreshUnknown   = "unknown"    // the release commit is not in the clone
+	FreshNoRelease = "no_release" // no release given
+	FreshSnapshot  = "snapshot"   // read from a directory snapshot, not a clone
+)
+
+// Flow is one simulated journey over blocks, cut at its first loop, with the
+// round trips to the blocks that answer its requests.
+type Flow struct {
+	ID    string            `json:"id"`
+	Title string            `json:"title,omitempty"`
+	End   string            `json:"end"` // "ends", "loops back", or the walk's stop reason
+	Facts map[string]string `json:"facts,omitempty"`
+	Steps []FlowMove        `json:"steps"`
+}
+
+// FlowMove is one step of a flow.
+type FlowMove struct {
+	From   string   `json:"from,omitempty"`
+	To     string   `json:"to"`
+	Label  string   `json:"label,omitempty"`
+	When   []string `json:"when,omitempty"`
+	Kind   string   `json:"kind"` // start | flow | loop | api | reply
+	Chosen bool     `json:"chosen,omitempty"`
 }
 
 // Truth levels a block can carry.

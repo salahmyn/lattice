@@ -33,6 +33,7 @@ type KnowledgeGraph struct {
 	Blocks     []Block       `json:"blocks,omitempty"`
 	BlockEdges []BlockEdge   `json:"block_edges,omitempty"`
 	Sources    []SourceStamp `json:"sources,omitempty"`
+	Flows      []Flow        `json:"flows,omitempty"`
 
 	// Review marks a graph built without source code (manifest-only).
 	Review bool `json:"review,omitempty"`

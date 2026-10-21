@@ -19,5 +19,5 @@ func CarryBlocks(path string, kg *schema.KnowledgeGraph) {
 	if json.Unmarshal(data, &old) != nil {
 		return
 	}
-	kg.Blocks, kg.BlockEdges, kg.Sources = old.Blocks, old.BlockEdges, old.Sources
+	kg.Blocks, kg.BlockEdges, kg.Sources, kg.Flows = old.Blocks, old.BlockEdges, old.Sources, old.Flows
 }
