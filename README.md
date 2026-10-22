@@ -35,7 +35,11 @@ Supported languages for extraction: **Python, TypeScript/JavaScript, PHP 8.0+**.
 
 ## Install
 
-Build from source (Go 1.24+, a C toolchain for the tree-sitter bindings):
+Download a binary for Linux, macOS or Windows from the
+[latest release](https://github.com/salahmyn/lattice/releases/latest) and check it against `checksums.txt`.
+A merge to `master` publishes a release when `CHANGELOG.md` names a new version.
+
+Or build from source (Go 1.25+, a C toolchain for the tree-sitter bindings):
 
 ```sh
 go build -o lattice ./cmd/lattice

@@ -2,7 +2,7 @@
 
 All notable changes to Lattice are documented in this file.
 
-## [Unreleased] — 0.9 block graph
+## [0.9.0] — 2026-10-22
 
 Block maps. Lattice can now build, keep current and serve a block map of
 any system from the catalogues its repos already publish: one graph of

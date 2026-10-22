@@ -1,0 +1,117 @@
+name: Release
+
+# A merge to master releases the first "## [X.Y.Z]" version in CHANGELOG.md when its tag doesn't exist yet.
+# A pull request builds every platform without publishing; running it by hand publishes a prerelease (e.g. v0.9.0-rc.1).
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Prerelease tag, e.g. v0.9.0-rc.1
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: v
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then
+            tag="$INPUT_TAG"
+            [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.]+$ ]] || { echo "::error::a manual run needs a prerelease tag like v1.2.3-rc.1"; exit 1; }
+          else
+            ver=$(grep -m1 -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md | tr -d '#[] ')
+            [ -n "$ver" ] || { echo "::error::no released version heading in CHANGELOG.md"; exit 1; }
+            tag="v$ver"
+          fi
+          if [ "$GITHUB_EVENT_NAME" != pull_request ] && git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "$tag already exists, nothing to release"
+            exit 0
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  ci:
+    needs: version
+    if: needs.version.outputs.tag != ''
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: [version, ci]
+    strategy:
+      matrix:
+        include:
+          - { os: ubuntu-latest, goos: linux, goarch: amd64 }
+          - { os: ubuntu-24.04-arm, goos: linux, goarch: arm64 }
+          - { os: macos-15-intel, goos: darwin, goarch: amd64 }
+          - { os: macos-latest, goos: darwin, goarch: arm64 }
+          - { os: windows-latest, goos: windows, goarch: amd64 }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # tree-sitter needs cgo, so each platform builds on its own runner.
+      - env:
+          TAG: ${{ needs.version.outputs.tag }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+        run: |
+          ver="${TAG#v}"
+          pkg=github.com/salahmyn/lattice/pkg/lattice/buildinfo
+          ext=""; [ "$GOOS" = windows ] && ext=.exe
+          mkdir -p dist
+          go build -trimpath \
+            -ldflags "-s -w -X $pkg.Version=$ver -X $pkg.Commit=$GITHUB_SHA -X $pkg.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -o "dist/lattice$ext" ./cmd/lattice
+          "./dist/lattice$ext" version
+          name="lattice_${ver}_${GOOS}_${GOARCH}"
+          cp LICENSE README.md dist/ 2>/dev/null || true
+          cd dist
+          if [ "$GOOS" = windows ]; then 7z a "../$name.zip" . >/dev/null; else tar czf "../$name.tar.gz" .; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.goos }}-${{ matrix.goarch }}
+          path: lattice_*
+
+  release:
+    needs: [version, build]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          (cd dist && sha256sum lattice_* > checksums.txt)
+          # Notes are the version's CHANGELOG section; a prerelease has none, so GitHub writes them.
+          awk -v h="## [${TAG#v}]" 'index($0, h) == 1 {on = 1; next} on && /^## \[/ {exit} on' CHANGELOG.md > notes.md
+          flags=(--title "$TAG" --target "$GITHUB_SHA")
+          if [ -s notes.md ]; then flags+=(--notes-file notes.md); else flags+=(--generate-notes); fi
+          [[ "$TAG" == *-* ]] && flags+=(--prerelease)
+          gh release create "$TAG" dist/* "${flags[@]}"
