@@ -1,46 +1,24 @@
 package blocks
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func writeJudgment(t *testing.T, dir, name, body string) {
-	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestLoadJudgments(t *testing.T) {
-	dir := t.TempDir()
-	writeJudgment(t, dir, "b-groups.yaml", `id: lanes
+func TestParseJudgment(t *testing.T) {
+	j, err := ParseJudgment([]byte(`id: lanes
 type: group
 rationale: how providers are reached
 author: a@example.com
 entries:
   - {id: pay.lanes.card, title: Card gateways, parent: pay-providers, members: [ext.visa]}
-`)
-	writeJudgment(t, dir, "a-landscape.yaml", `id: landscape
-type: system
-entries:
-  - {id: shop-web, title: Shop web app, technology: React}
-`)
-	js, err := LoadJudgments(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(js) != 2 || js[0].ID != "landscape" || js[1].Entries[0].Members[0] != "ext.visa" || js[1].Rationale == "" {
-		t.Fatalf("judgments = %+v", js)
-	}
-	if js, err := LoadJudgments(filepath.Join(dir, "absent")); err != nil || len(js) != 0 {
-		t.Errorf("missing dir: %v %v", js, err)
+`), "lanes.yaml")
+	if err != nil || j.ID != "lanes" || j.Entries[0].Members[0] != "ext.visa" || j.Rationale == "" {
+		t.Fatalf("judgment = %+v, %v", j, err)
 	}
 }
 
-func TestLoadJudgmentsRejects(t *testing.T) {
+func TestParseJudgmentRejects(t *testing.T) {
 	cases := map[string]string{
 		"exactly one of from and to": "id: x\ntype: edge\nentries: [{kind: k, from: a, to: b, events: [e]}]\n",
 		"bad event pattern":          "id: x\ntype: edge\nentries: [{kind: k, to: b, events: [\"[\"]}]\n",
@@ -56,17 +34,9 @@ func TestLoadJudgmentsRejects(t *testing.T) {
 		"entry 0 needs prefix":       "id: x\ntype: alias\nentries: [{id: a}]\n",
 	}
 	for want, body := range cases {
-		dir := t.TempDir()
-		writeJudgment(t, dir, "j.yaml", body)
-		if _, err := LoadJudgments(dir); err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "j.yaml") {
+		if _, err := ParseJudgment([]byte(body), "j.yaml"); err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "j.yaml") {
 			t.Errorf("%s: err = %v", want, err)
 		}
-	}
-	dir := t.TempDir()
-	writeJudgment(t, dir, "a.yaml", "id: x\ntype: system\nentries: [{id: a}]\n")
-	writeJudgment(t, dir, "b.yaml", "id: x\ntype: label\nentries: [{id: a, title: A}]\n")
-	if _, err := LoadJudgments(dir); err == nil || !strings.Contains(err.Error(), "also used") {
-		t.Errorf("duplicate id: err = %v", err)
 	}
 }
 
@@ -149,23 +119,11 @@ func TestAliasResolvesShortIDsInLabelAndEdge(t *testing.T) {
 	}
 }
 
-func TestParseJudgmentAndIDOrder(t *testing.T) {
-	j, err := ParseJudgment([]byte("id: b\ntype: label\nentries: [{id: x, title: X}]\n"), "record b")
-	if err != nil || j.ID != "b" || j.Path != "record b" {
+func TestParseJudgmentNamesItsLabel(t *testing.T) {
+	if j, err := ParseJudgment([]byte("id: b\ntype: label\nentries: [{id: x, title: X}]\n"), "record b"); err != nil || j.ID != "b" {
 		t.Fatalf("judgment = %+v, %v", j, err)
 	}
 	if _, err := ParseJudgment([]byte("id: b\ntype: label\nentries: [{id: x}]\n"), "record b"); err == nil || !strings.Contains(err.Error(), "record b") {
 		t.Errorf("err = %v; want the label in it", err)
-	}
-	dir := t.TempDir()
-	for name, body := range map[string]string{"1.yaml": "id: zeta\ntype: label\nentries: [{id: x, title: X}]\n",
-		"2.yaml": "id: alpha\ntype: label\nentries: [{id: x, title: Y}]\n"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	js, err := LoadJudgments(dir)
-	if err != nil || len(js) != 2 || js[0].ID != "alpha" {
-		t.Errorf("judgments = %+v, %v; want id order", js, err)
 	}
 }

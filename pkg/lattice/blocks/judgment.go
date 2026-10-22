@@ -3,10 +3,7 @@ package blocks
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"path"
-	"path/filepath"
-	"sort"
 
 	"gopkg.in/yaml.v3"
 
@@ -23,7 +20,6 @@ type Judgment struct {
 	Rationale string          `yaml:"rationale,omitempty"`
 	Author    string          `yaml:"author,omitempty"`
 	Entries   []JudgmentEntry `yaml:"entries"`
-	Path      string          `yaml:"-"`
 }
 
 // JudgmentEntry is one row; which fields matter depends on the judgment type.
@@ -49,36 +45,6 @@ type JudgmentEntry struct {
 
 var judgmentTypes = map[string]bool{"system": true, "external": true, "edge": true, "group": true, "label": true, "alias": true}
 
-// LoadJudgments reads every *.yaml judgment in dir, in file-name order. A
-// missing directory means no judgments.
-func LoadJudgments(dir string) ([]Judgment, error) {
-	paths, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(paths)
-	var out []Judgment
-	seen := map[string]string{}
-	for _, p := range paths {
-		data, err := os.ReadFile(p)
-		if err != nil {
-			return nil, err
-		}
-		j, err := ParseJudgment(data, p)
-		if err != nil {
-			return nil, err
-		}
-		if seen[j.ID] != "" {
-			return nil, fmt.Errorf("%s: judgment id %s is also used in %s", p, j.ID, seen[j.ID])
-		}
-		seen[j.ID] = p
-		out = append(out, j)
-	}
-	// judgments of one type apply in id order, whatever stores them
-	sort.Slice(out, func(a, b int) bool { return out[a].ID < out[b].ID })
-	return out, nil
-}
-
 // ParseJudgment reads one judgment record strictly. label names it in errors:
 // a file path, or a store record.
 func ParseJudgment(data []byte, label string) (Judgment, error) {
@@ -99,7 +65,6 @@ func ParseJudgment(data []byte, label string) (Judgment, error) {
 	if err := j.check(); err != nil {
 		return Judgment{}, fmt.Errorf("%s: judgment %s: %w", label, j.ID, err)
 	}
-	j.Path = label
 	return j, nil
 }
 

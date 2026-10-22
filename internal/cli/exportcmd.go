@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,6 +93,7 @@ func newExportCommand(io *IO) *cobra.Command {
 			if err := os.MkdirAll(args[0], 0o755); err != nil {
 				return io.fail("WRITE", err.Error(), nil)
 			}
+			written := map[string]string{} // file name -> BRD id
 			for _, r := range recs {
 				b, err := blocks.ParseBRD(r.Body, "brd "+r.ID)
 				if err != nil {
@@ -101,6 +103,10 @@ func newExportCommand(io *IO) *cobra.Command {
 				if name == "" || strings.ContainsAny(name, "/\\") {
 					return io.fail("BRD_INVALID", "brd "+b.ID+": cannot name a file after this id", nil)
 				}
+				if other := written[name]; other != "" {
+					return io.fail("BRD_INVALID", fmt.Sprintf("brd %s and %s would both write %s.feature; rename one", other, b.ID, name), nil)
+				}
+				written[name] = b.ID
 				p := filepath.Join(args[0], name+".feature")
 				if err := os.WriteFile(p, []byte(blocks.Gherkin(b, g.Blocks)), 0o644); err != nil {
 					return io.fail("WRITE", err.Error(), nil)

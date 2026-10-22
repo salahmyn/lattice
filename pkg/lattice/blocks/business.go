@@ -176,14 +176,19 @@ func Business(bs []schema.Block, es []schema.BlockEdge, brds []schema.BRD) Busin
 	touched := map[string][]string{} // block -> BRD ids
 	for _, b := range brds {
 		f := FeatureView{BRD: docOf(b), Tests: Coverage{}, Areas: []string{}, Missing: []string{}}
-		areas := map[string]bool{}
-		built, planned, known := 0, 0, 0
+		areas, seen := map[string]bool{}, map[string]bool{}
+		built, planned, known, found := 0, 0, 0, 0
 		for _, id := range b.Blocks {
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
 			blk := by[id]
 			if blk == nil {
 				f.Missing = append(f.Missing, id)
 				continue
 			}
+			found++
 			touched[id] = append(touched[id], b.ID)
 			if a := area(id); a != "" {
 				areas[a] = true
@@ -205,12 +210,12 @@ func Business(bs []schema.Block, es []schema.BlockEdge, brds []schema.BRD) Busin
 				}
 			}
 		}
-		switch {
+		switch { // a block without a status keeps the feature from reading built or planned
 		case known == 0:
 			f.Built = "unknown"
-		case built == known:
+		case built == found:
 			f.Built = "built"
-		case planned == known:
+		case planned == found:
 			f.Built = "planned"
 		default:
 			f.Built = "mixed"
@@ -280,7 +285,7 @@ func Business(bs []schema.Block, es []schema.BlockEdge, brds []schema.BRD) Busin
 	for _, k := range sortedKeys(systems) {
 		v.Systems = append(v.Systems, *systems[k])
 	}
-	sort.Slice(v.Systems, func(i, j int) bool { return v.Systems[i].Blocks > v.Systems[j].Blocks })
+	sort.SliceStable(v.Systems, func(i, j int) bool { return v.Systems[i].Blocks > v.Systems[j].Blocks })
 	sort.Slice(v.Actors, func(i, j int) bool { return v.Actors[i].ID < v.Actors[j].ID })
 	sk := make([][3]string, 0, len(seams))
 	for k := range seams {
@@ -313,15 +318,16 @@ func Gherkin(b schema.BRD, bs []schema.Block) string {
 		}
 		return id
 	}
+	one := func(s string) string { return strings.Join(strings.Fields(s), " ") } // a field on one Gherkin line stays one line
 	var L []string
-	L = append(L, "Feature: "+b.Title, "")
+	L = append(L, "Feature: "+one(b.Title), "")
 	for _, ln := range strings.Split(b.BusinessProblem, "\n") {
 		L = append(L, "  "+ln)
 	}
 	L = append(L, "")
 	for _, f := range b.Flags {
 		if f.Meaning != "" {
-			L = append(L, fmt.Sprintf("  # flag: %s  —  %s", f.ID, f.Meaning))
+			L = append(L, fmt.Sprintf("  # flag: %s  —  %s", one(f.ID), one(f.Meaning)))
 		}
 	}
 	L = append(L, "")
@@ -331,11 +337,11 @@ func Gherkin(b schema.BRD, bs []schema.Block) string {
 			if j > 0 {
 				w = "And"
 			}
-			L = append(L, "    "+w+" "+s)
+			L = append(L, "    "+w+" "+one(s))
 		}
 	}
 	for _, s := range b.UserScenarios {
-		L = append(L, "  Scenario: "+s.Narrative)
+		L = append(L, "  Scenario: "+one(s.Narrative))
 		step("Given", s.Given)
 		step("When", s.When)
 		step("Then", s.Then)
@@ -346,7 +352,7 @@ func Gherkin(b schema.BRD, bs []schema.Block) string {
 		L = append(L, "    # realised by: "+strings.Join(names, ", "), "")
 	}
 	for _, q := range b.OpenQuestions {
-		L = append(L, "  # "+q)
+		L = append(L, "  # "+one(q))
 	}
 	if len(b.OpenQuestions) > 0 {
 		L = append(L, "")

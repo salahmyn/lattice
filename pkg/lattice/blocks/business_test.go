@@ -74,3 +74,15 @@ func TestParseBRDAndGherkin(t *testing.T) {
 		}
 	}
 }
+
+func TestBusinessReviewCases(t *testing.T) {
+	bs := []schema.Block{{ID: "a", Kind: "screen", Attrs: map[string]string{"status": "built"}}, {ID: "b", Kind: "screen"}}
+	v := Business(bs, nil, []schema.BRD{{ID: "x", Title: "X", Blocks: []string{"a", "a", "b"}}})
+	if len(v.Shared) != 0 || len(v.Conflicts) != 0 || v.Features[0].Built != "mixed" {
+		t.Errorf("repeated block or a block without status: %+v", v)
+	}
+	g := Gherkin(schema.BRD{Title: "Two\nlines", UserScenarios: []schema.UserScenario{{Narrative: "a\nb", Then: []string{"c\n d"}}}}, nil)
+	if strings.Contains(g, "Two\nlines") || !strings.Contains(g, "Scenario: a b") || !strings.Contains(g, "Then c d") {
+		t.Errorf("newlines leak into Gherkin:\n%s", g)
+	}
+}

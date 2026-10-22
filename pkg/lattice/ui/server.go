@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"html/template"
 	"io/fs"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -144,6 +145,15 @@ func (s *Server) enforceTokenPolicy() error {
 	return nil
 }
 
+// loopbackHost reports whether a request's Host header names this machine.
+func loopbackHost(hostport string) bool {
+	h, _, err := net.SplitHostPort(hostport)
+	if err != nil {
+		h = hostport
+	}
+	return isLoopback(strings.Trim(h, "[]"))
+}
+
 func isLoopback(host string) bool {
 	switch host {
 	case "127.0.0.1", "::1", "localhost":
@@ -235,6 +245,11 @@ func (s *Server) withMiddleware(h http.Handler) http.Handler {
 				http.Error(w, fmt.Sprintf("internal error: %v", rec), http.StatusInternalServerError)
 			}
 		}()
+		if isLoopback(s.opts.Host) && !loopbackHost(r.Host) {
+			// a loopback bind has no auth: refuse a page that rebound its own name to 127.0.0.1
+			http.Error(w, "unexpected Host for a loopback server", http.StatusForbidden)
+			return
+		}
 		if hasToken || hasBasic {
 			if !s.checkAuth(r) {
 				if hasBasic {

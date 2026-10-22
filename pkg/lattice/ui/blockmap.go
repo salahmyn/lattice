@@ -8,6 +8,7 @@ import (
 	"errors"
 	"html"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -71,6 +72,7 @@ func (s *Server) apiGraph(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiBlockSearch(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limit, _ := strconv.Atoi(q.Get("limit"))
+	limit = min(limit, 500)
 	s.withStore(w, func(st store.Store) (any, error) {
 		return st.Search(r.Context(), q.Get("q"), store.Filter{Kind: q.Get("kind"), System: q.Get("system"), Tier: q.Get("tier"), Limit: limit})
 	})
@@ -103,8 +105,9 @@ const businessSlot = "/*__BUSINESS__*/"
 // BusinessData is what the views page reads: the business view plus the
 // blocks it can name and pick.
 type BusinessData struct {
-	View   blocks.BusinessView `json:"view"`
-	Blocks []BlockRef          `json:"blocks"`
+	View     blocks.BusinessView `json:"view"`
+	Blocks   []BlockRef          `json:"blocks"`
+	Versions map[string]string   `json:"versions"` // BRD id -> stored version, so a saved draft can be saved again
 }
 
 // BlockRef is a block as the views page lists it.
@@ -127,14 +130,16 @@ func Business(ctx context.Context, st store.Store) (BusinessData, error) {
 		return BusinessData{}, err
 	}
 	var brds []schema.BRD
+	versions := map[string]string{}
 	for _, r := range recs {
+		versions[r.ID] = r.Version
 		b, err := blocks.ParseBRD(r.Body, "brd "+r.ID)
 		if err != nil {
 			return BusinessData{}, err
 		}
 		brds = append(brds, b)
 	}
-	d := BusinessData{View: blocks.Business(g.Blocks, g.Edges, brds), Blocks: make([]BlockRef, 0, len(g.Blocks))}
+	d := BusinessData{View: blocks.Business(g.Blocks, g.Edges, brds), Blocks: make([]BlockRef, 0, len(g.Blocks)), Versions: versions}
 	for _, b := range g.Blocks {
 		if b.Initiative == "" {
 			d.Blocks = append(d.Blocks, BlockRef{ID: b.ID, Title: b.Title, Kind: b.Kind, Status: b.Attrs["status"], Name: b.Attrs["catalogue_id"]})
@@ -166,6 +171,8 @@ func (s *Server) pageViews(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) apiBusiness(w http.ResponseWriter, r *http.Request) {
 	s.withStore(w, func(st store.Store) (any, error) { return Business(r.Context(), st) })
 }
+
+var draftID = regexp.MustCompile(`^brd\.draft\.[a-z0-9-]{1,80}$`)
 
 // draftRequest is a feature drafted on the views page.
 type draftRequest struct {
@@ -200,8 +207,8 @@ func (s *Server) apiSaveDraft(w http.ResponseWriter, r *http.Request) {
 	for _, sc := range d.Scenarios {
 		b.UserScenarios = append(b.UserScenarios, schema.UserScenario{ID: sc.ID, Narrative: sc.Narrative, Given: sc.Given, When: sc.When, Then: sc.Then, Blocks: sc.Blocks})
 	}
-	if !strings.HasPrefix(b.ID, "brd.draft.") {
-		writeJSONError(w, errors.New("a draft's id starts with brd.draft."), http.StatusBadRequest)
+	if !draftID.MatchString(b.ID) {
+		writeJSONError(w, errors.New("a draft's id is brd.draft. plus up to 80 lower-case letters, digits and dashes"), http.StatusBadRequest)
 		return
 	}
 	body, err := yaml.Marshal(b)

@@ -161,14 +161,14 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
   </section>
   <section id="detail" aria-label="Block details"></section>
 </main>
-<script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js" integrity="sha384-KO35c6PFq7tFxAEx6FtATwL9vOBOmCzQYr7GM0iTr3oO22s7Jc9OkclOH4AV7jwK" crossorigin="anonymous"></script>
 <script id="graph" type="application/json">/*__GRAPH__*/</script>
 <script>
 (async function () {
   const inline = document.getElementById("graph").textContent.trim();
   let G;
   try {
-    G = inline ? JSON.parse(inline) : await fetch("api/graph").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
+    G = inline ? JSON.parse(inline) : await fetch("api/graph" + location.search).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
   } catch (e) {
     document.getElementById("pane").innerHTML = `<p class="empty">Could not load the block graph (${esc(String(e))}). Run <code>lattice refresh</code>.</p>`;
     return;
@@ -264,7 +264,7 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
   function select(id) {
     if (!byId.has(id)) return;
     S.sel = id;
-    for (let p = byId.get(id).parent; p && byId.has(p); p = byId.get(p).parent) S.open.add(p);
+    for (const p of anc(id)) S.open.add(p);
     renderTree(); S.tab === "diag" ? reveal(id) : renderPane(); renderDetail();
     const r = treeEl.querySelector(".row.sel");
     if (r && !qEl.value) r.scrollIntoView({ block: "nearest" });
@@ -349,7 +349,11 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
   const D = { root: "", exp: new Set(), off: new Set(), key: "", nodes: null, rep: null, boxes: new Map(), es: [], size: null, tf: { k: 1, x: 0, y: 0 }, drawn: false, run: 0, note: "", outside: false };
   const P = { flow: null, i: 0, timer: 0 }; // flow playback
   const edgeKinds = [...new Set(edges.map(e => e.kind))].sort();
-  function anc(id) { const out = []; for (let p = byId.get(id)?.parent; p && byId.has(p); p = byId.get(p).parent) out.push(p); return out; }
+  function anc(id) { // ancestors, nearest first; stops at a parent cycle
+    const out = [];
+    for (let p = byId.get(id)?.parent; p && byId.has(p) && p !== id && !out.includes(p); p = byId.get(p).parent) out.push(p);
+    return out;
+  }
   function kidsV(id) { return (kids.get(id) || []).filter(visible); }
 
   function project() {
@@ -490,7 +494,7 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
     D.drawn = true;
     bar();
     const lay = await layout(pr);
-    if (run !== D.run) return; // a newer layout started meanwhile
+    if (run !== D.run || S.tab !== "diag") return; // a newer layout started, or the diagram is no longer shown
     D.nodes = pr.nodes; D.rep = pr.rep; D.boxes = lay.boxes; D.es = pr.es; D.size = lay;
     const roll = rollup(pr.nodes);
     const depth = id => { let d = 0; for (let n = pr.nodes.get(id); n && n.parent; n = pr.nodes.get(n.parent)) d++; return d; };
@@ -541,7 +545,7 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
       h += `<g class="bx" data-box="${esc(n.id)}"><title>${esc(real)}${nIn ? " · double-click to open" : ""}</title>` +
         `<rect class="l${out ? " out" : ""}" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="9"/>` +
         (o ? `<rect x="${b.x}" y="${b.y}" width="5" height="${b.h}" rx="2" style="fill:${vcolor(o.verdict)}"/>` : "") +
-        `<text class="tg" x="${b.x + 12}" y="${y}">${par ? "in " + esc(par.title.length > 30 ? par.title.slice(0, 29) + "…" : par.title) : esc(n.kind)}</text>`;
+        `<text class="tg" x="${b.x + 12}" y="${y}">${par ? "in " + esc(title(par.id).length > 30 ? title(par.id).slice(0, 29) + "…" : title(par.id)) : esc(n.kind)}</text>`;
       for (const t of tl) { y += 16; h += `<text class="tt" x="${b.x + 12}" y="${y}">${esc(t)}</text>`; }
       for (const t of dl) { y += 14; h += `<text class="td" x="${b.x + 12}" y="${y}">${esc(t)}</text>`; }
       const fy = b.y + 94;
@@ -550,7 +554,7 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
       if (s) { const st = stampLine(s); h += `<g><title>${esc(st.tip)}</title>${badge(b.x + b.w - st.fresh.length * 6.4 - 22, fy, st.fresh, st.ok)}</g>`; }
       else if (sc) { // built share of what is inside, from attrs.status
         const total = Object.values(sc).reduce((a, c) => a + c, 0), built = sc.built || 0, bw = 56;
-        h += `<g><title>${Object.entries(sc).map(([k, c]) => `${c} ${k}`).join(", ")}</title><rect class="bar" x="${b.x + b.w - bw - 12}" y="${fy - 7}" width="${bw}" height="5" rx="2"/>` +
+        h += `<g><title>${Object.entries(sc).map(([k, c]) => `${c} ${esc(k)}`).join(", ")}</title><rect class="bar" x="${b.x + b.w - bw - 12}" y="${fy - 7}" width="${bw}" height="5" rx="2"/>` +
           `<rect class="bar on" x="${b.x + b.w - bw - 12}" y="${fy - 7}" width="${Math.round(bw * built / total)}" height="5" rx="2"/></g>`;
       }
       h += rollSvg(roll.get(n.id), b.x + 12, b.y + 111, true) + `</g>`;
@@ -607,7 +611,7 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
       edgeKinds.map(k => `<label><input type="checkbox" data-kind="${esc(k)}"${D.off.has(k) ? "" : " checked"}>${esc(k)}</label>`).join("") + `</div></details>` +
       (D.root ? `<label><input type="checkbox" data-act="outside"${D.outside ? " checked" : ""}>outside${D.hidden && !D.outside ? ` (${D.hidden} links hidden)` : ""}</label>` : "") +
       (D.note ? `<span class="n">${esc(D.note)}</span>` : "");
-    if (P.flow) {
+    if (P.flow && P.flow.steps.length) {
       const st = P.flow.steps[P.i];
       h += `<span class="play">${esc(P.flow.title || P.flow.id)} · step ${P.i + 1}/${P.flow.steps.length}: ${esc(st.kind)} ${esc(title(st.to))}${st.label ? " · " + esc(st.label) : ""}</span>` +
         `<button data-act="prev" aria-label="Previous step">◀</button><button data-act="next" aria-label="Next step">▶</button>` +
@@ -724,7 +728,8 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
   }
 
   function startPlay(id) {
-    P.flow = flows.find(f => f.id === id); P.i = 0;
+    P.flow = flows.find(f => f.id === id && f.steps.length) || null; P.i = 0;
+    if (!P.flow) return;
     S.tab = "diag";
     document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x.dataset.tab === "diag"));
     renderPane();
@@ -755,7 +760,7 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
     detail.classList.toggle("none", !b);
     if (!b) { detail.innerHTML = `<p class="empty">${blocks.length ? "No block selected." : "The graph is empty."}</p>`; return; }
     const crumbs = [];
-    for (let p = b.parent; p && byId.has(p); p = byId.get(p).parent) crumbs.unshift(`<a data-id="${esc(p)}">${esc(title(p))}</a>`);
+    for (const p of anc(b.id)) crumbs.unshift(`<a data-id="${esc(p)}">${esc(title(p))}</a>`);
     const chips = [b.kind, b.tier, b.system && "system " + b.system, b.truth, b.initiative && "proposal " + b.initiative].filter(Boolean)
       .map(c => `<span class="chip">${esc(c)}</span>`).join("");
     let h = `<button class="close" data-close aria-label="Close the details">✕</button><h2>${esc(b.title || b.id)}</h2><div class="id">${esc(b.id)}</div>` +

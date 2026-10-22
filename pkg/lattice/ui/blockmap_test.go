@@ -123,3 +123,16 @@ func TestSaveDraft(t *testing.T) {
 		}
 	}
 }
+
+func TestLoopbackRefusesForeignHost(t *testing.T) {
+	srv := New(&workspace.Workspace{LatticeDir: t.TempDir()}, Options{Host: "127.0.0.1"})
+	for host, want := range map[string]int{"evil.test:7070": http.StatusForbidden, "127.0.0.1:7070": http.StatusServiceUnavailable, "localhost:7070": http.StatusServiceUnavailable, "[::1]:7070": http.StatusServiceUnavailable} {
+		r := httptest.NewRequest(http.MethodGet, "/api/graph", nil)
+		r.Host = host
+		w := httptest.NewRecorder()
+		srv.withMiddleware(srv.routes()).ServeHTTP(w, r)
+		if w.Code != want {
+			t.Errorf("Host %s: %d, want %d", host, w.Code, want)
+		}
+	}
+}
