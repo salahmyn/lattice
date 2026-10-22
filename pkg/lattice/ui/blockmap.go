@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/salahmyn/lattice/pkg/lattice/blocks"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/store"
@@ -163,4 +165,70 @@ func (s *Server) pageViews(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) apiBusiness(w http.ResponseWriter, r *http.Request) {
 	s.withStore(w, func(st store.Store) (any, error) { return Business(r.Context(), st) })
+}
+
+// draftRequest is a feature drafted on the views page.
+type draftRequest struct {
+	Version string        `json:"version"` // the stored version this replaces, "" for a new draft
+	BRD     blocks.BRDDoc `json:"brd"`
+}
+
+// apiSaveDraft stores a drafted feature as a BRD record with status draft.
+// It takes JSON only and refuses a cross-site Origin, so another page cannot post here.
+func (s *Server) apiSaveDraft(w http.ResponseWriter, r *http.Request) {
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		writeJSONError(w, errors.New("send the draft as application/json"), http.StatusUnsupportedMediaType)
+		return
+	}
+	if o := r.Header.Get("Origin"); o != "" && o != "http://"+r.Host && o != "https://"+r.Host {
+		writeJSONError(w, errors.New("cross-site request refused"), http.StatusForbidden)
+		return
+	}
+	var req draftRequest
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	d := req.BRD
+	b := schema.BRD{ID: d.ID, Version: 1, Status: schema.BRDDraft, Title: d.Title, BusinessProblem: d.BusinessProblem,
+		Blocks: d.Blocks, OpenQuestions: d.OpenQuestions, HumanReviewRequired: true}
+	for _, f := range d.Flags {
+		b.Flags = append(b.Flags, schema.BRDFlag{ID: f.ID, Meaning: f.Meaning})
+	}
+	for _, sc := range d.Scenarios {
+		b.UserScenarios = append(b.UserScenarios, schema.UserScenario{ID: sc.ID, Narrative: sc.Narrative, Given: sc.Given, When: sc.When, Then: sc.Then, Blocks: sc.Blocks})
+	}
+	if !strings.HasPrefix(b.ID, "brd.draft.") {
+		writeJSONError(w, errors.New("a draft's id starts with brd.draft."), http.StatusBadRequest)
+		return
+	}
+	body, err := yaml.Marshal(b)
+	if err == nil {
+		_, err = blocks.ParseBRD(body, "draft "+b.ID)
+	}
+	if err != nil {
+		writeJSONError(w, err, http.StatusBadRequest)
+		return
+	}
+	if s.opts.Store == nil {
+		writeJSONError(w, errors.New("no store"), http.StatusServiceUnavailable)
+		return
+	}
+	s.storeMu.Lock()
+	rec, err := s.opts.Store.Put(r.Context(), store.Record{Kind: "brd", ID: b.ID, Version: req.Version, Body: body})
+	s.storeMu.Unlock()
+	var stale *store.StaleError
+	if errors.As(err, &stale) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error(), "current_version": stale.Current})
+		return
+	}
+	if err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"id": rec.ID, "version": rec.Version})
 }

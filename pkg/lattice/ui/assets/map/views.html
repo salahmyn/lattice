@@ -92,15 +92,17 @@ textarea { min-height: 58px; resize: vertical; }
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const main = document.getElementById("main");
   let D;
+  const inline = document.getElementById("business").textContent.trim();
+  const served = !inline; // a served page can save drafts as records; an exported file keeps them in the browser
+  const versions = {};
   try {
-    const inline = document.getElementById("business").textContent.trim();
     D = inline ? JSON.parse(inline) : await fetch("api/business").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
   } catch (e) {
     main.innerHTML = `<p class="muted">Could not load the views (${esc(e)}). Run <code>lattice refresh</code>, and add BRD records with <code>lattice record put --kind brd</code>.</p>`;
     return;
   }
-  const V = D.view, byId = new Map(D.blocks.map(b => [b.id, b]));
-  const feats = V.features || [];
+  let V = D.view, byId = new Map(D.blocks.map(b => [b.id, b]));
+  let feats = V.features || [];
   const S = { tab: "business", sel: feats[0]?.brd.id || "" };
   document.getElementById("counts").textContent = `${feats.length} features · ${D.blocks.length} blocks`;
   const nm = id => byId.get(id)?.name || id;
@@ -197,7 +199,7 @@ textarea { min-height: 58px; resize: vertical; }
       <label for="a-find">Blocks that realise it</label><input type="search" id="a-find" placeholder="Search blocks">
       <div class="picker" id="a-pick" hidden></div><div id="a-chosen">${sc.blocks.map(chip).join("")}</div>
       <div class="row"><button type="button" class="btn" id="a-add">Add scenario</button></div>
-      <div class="row"><button type="button" class="btn primary" id="a-save">Keep draft in this browser</button><button type="button" class="btn" id="a-copy">Copy as record</button></div>
+      <div class="row"><button type="button" class="btn primary" id="a-save">Keep draft in this browser</button><button type="button" class="btn" id="a-copy">Copy as record</button>${served ? `<button type="button" class="btn" id="a-record">Save as draft record</button>` : ""}</div>
       <p class="muted" id="a-msg"></p>
       ${drafts.length ? `<h3 class="sec">Drafts in this browser (${drafts.length})</h3>${drafts.map((d, i) => `<div>${esc(d.title)} <a href="#" data-load="${i}">open</a></div>`).join("")}` : ""}
     </form><div><div class="card"><h3 class="sec" style="margin-top:0">Preview</h3><div class="gherkin">${gherkinHtml(gherkin(b))}</div>
@@ -232,6 +234,23 @@ textarea { min-height: 58px; resize: vertical; }
       const text = yamlOf(draftBrd());
       try { await navigator.clipboard.writeText(text); $("a-msg").textContent = "Record copied. Save it as a .yaml file and run: lattice record put --kind brd <file>"; }
       catch (e) { $("a-msg").innerHTML = `Copy this record:<textarea readonly>${esc(text)}</textarea>`; $("a-msg").querySelector("textarea").select(); }
+    };
+    if (served) $("a-record").onclick = async () => {
+      sync();
+      const b = draftBrd();
+      if (!b.user_scenarios.length) { $("a-msg").textContent = "Add at least one scenario first."; return; }
+      const doc = { id: b.id, title: b.title, status: "draft", business_problem: b.business_problem, blocks: b.blocks, flags: [], open_questions: [],
+        user_scenarios: b.user_scenarios.map((x, i) => ({ id: "S" + (i + 1), narrative: x.narrative, given: x.given, when: x.when, then: x.then, blocks: x.blocks })) };
+      try {
+        const r = await fetch("api/brds", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: versions[b.id] || "", brd: doc }) });
+        const out = await r.json();
+        if (r.status === 409) { $("a-msg").textContent = "Someone saved this draft meanwhile. Reload the page to see it, then save again."; return; }
+        if (!r.ok) { $("a-msg").textContent = "Not saved: " + (out.error || r.status); return; }
+        versions[b.id] = out.version;
+        D = await fetch("api/business").then(x => x.json());
+        V = D.view; byId = new Map(D.blocks.map(x => [x.id, x])); feats = V.features || [];
+        $("a-msg").textContent = `Saved as ${out.id} (draft). It now shows under Business and in lattice export features.`;
+      } catch (e) { $("a-msg").textContent = "Not saved: the server did not answer."; }
     };
     document.querySelectorAll("[data-load]").forEach(a => a.onclick = e => { e.preventDefault(); Object.assign(draft, JSON.parse(JSON.stringify(drafts[+a.dataset.load]))); renderAuthor(); });
   }

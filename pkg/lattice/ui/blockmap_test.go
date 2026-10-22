@@ -85,3 +85,41 @@ func TestViewsServeAndExport(t *testing.T) {
 		t.Errorf("export: %v", err)
 	}
 }
+
+func TestSaveDraft(t *testing.T) {
+	ws := &workspace.Workspace{LatticeDir: t.TempDir()}
+	st := store.OpenFiles(ws)
+	srv := New(ws, Options{Store: st})
+	post := func(body, ctype, origin string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, "/api/brds", strings.NewReader(body))
+		if ctype != "" {
+			r.Header.Set("Content-Type", ctype)
+		}
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		w := httptest.NewRecorder()
+		srv.routes().ServeHTTP(w, r)
+		return w
+	}
+	good := `{"version": "", "brd": {"id": "brd.draft.members", "title": "Members", "status": "draft", "business_problem": "x", "blocks": [], "flags": [], "open_questions": [],
+	  "user_scenarios": [{"id": "S1", "narrative": "A member checks out", "given": ["a member"], "when": ["checkout"], "then": ["free shipping"], "blocks": []}]}}`
+	if w := post(good, "application/json", "http://"+"example.com"); w.Code != http.StatusOK {
+		t.Fatalf("save = %d %s", w.Code, w.Body.String())
+	}
+	r, err := st.Get(context.Background(), "brd", "brd.draft.members")
+	if err != nil || !strings.Contains(string(r.Body), "status: draft") {
+		t.Fatalf("stored = %v %s", err, r.Body)
+	}
+	for name, w := range map[string]*httptest.ResponseRecorder{
+		"stale (exists, no version)": post(good, "application/json", ""),
+		"form post":                  post(good, "text/plain", ""),
+		"cross-site":                 post(good, "application/json", "https://evil.test"),
+		"not a draft id":             post(strings.Replace(good, "brd.draft.members", "brd.members", 1), "application/json", ""),
+		"no then":                    post(strings.Replace(good, `"then": ["free shipping"], `, "", 1), "application/json", ""),
+	} {
+		if w.Code == http.StatusOK {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
