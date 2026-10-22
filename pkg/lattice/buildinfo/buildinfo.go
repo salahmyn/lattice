@@ -1,9 +1,9 @@
 // Package buildinfo carries version metadata stamped in at link time.
 package buildinfo
 
-// These are overridden via -ldflags -X at build time (see .goreleaser.yaml).
+// These are overridden via -ldflags -X at build time (see .github/workflows/release.yml).
 var (
-	Version = "0.8.1"
+	Version = "0.9.0"
 	Commit  = "none"
 	Date    = "unknown"
 )

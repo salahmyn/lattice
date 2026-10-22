@@ -27,6 +27,14 @@ type KnowledgeGraph struct {
 	CodeGraph  CodeGraph   `json:"code_graph"`
 	Violations []Violation `json:"violations"`
 
+	// Blocks, BlockEdges and Sources are the v0.9 block graph (rnd/0003),
+	// written by `lattice refresh`. Omitted when empty so graphs without
+	// block sources stay byte-identical.
+	Blocks     []Block       `json:"blocks,omitempty"`
+	BlockEdges []BlockEdge   `json:"block_edges,omitempty"`
+	Sources    []SourceStamp `json:"sources,omitempty"`
+	Flows      []Flow        `json:"flows,omitempty"`
+
 	// Review marks a graph built without source code (manifest-only).
 	Review bool `json:"review,omitempty"`
 }

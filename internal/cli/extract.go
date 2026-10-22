@@ -202,6 +202,7 @@ func runExtract(ctx context.Context, ws *workspace.Workspace, withCodeGraph bool
 
 // writeGraph emits the knowledge graph, sharded when configured.
 func writeGraph(ws *workspace.Workspace, cfg config.Config, kg schema.KnowledgeGraph) (bool, error) {
+	graph.CarryBlocks(ws.GraphPath(), &kg) // extract must not wipe what refresh wrote
 	if cfg.Knowledge.Sharding.Enabled {
 		if err := graph.WriteSharded(ws.GraphPath(), ws.GraphShardDir(), kg, graph.ShardOptions{
 			Strategy:            cfg.Knowledge.Sharding.Strategy,

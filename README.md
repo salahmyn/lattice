@@ -35,7 +35,11 @@ Supported languages for extraction: **Python, TypeScript/JavaScript, PHP 8.0+**.
 
 ## Install
 
-Build from source (Go 1.24+, a C toolchain for the tree-sitter bindings):
+Download a binary for Linux or macOS (on Windows, use the Linux one under WSL) from the
+[latest release](https://github.com/salahmyn/lattice/releases/latest) and check it against `checksums.txt`.
+A merge to `master` publishes a release when `CHANGELOG.md` names a new version.
+
+Or build from source (Go 1.25+, a C toolchain for the tree-sitter bindings):
 
 ```sh
 go build -o lattice ./cmd/lattice
@@ -146,10 +150,15 @@ A complete, validating three-language example lives in
 | `lattice feature spec <id>` | Emit the ≤500-word `.ai-spec.md` loading contract |
 | `lattice ep list\|show\|accept\|reject` | Manage entry points |
 | `lattice initiative list\|show\|kanban\|critical-path` | Inspect work in flight |
+| `lattice initiative add\|evidence\|status` | Record a proposal, attach its `evidence/v1`, move its status |
 | `lattice import scan\|review\|inscribe` | Brownfield import session |
 | `lattice analyze proposal <f>` | Conflict and impact analysis |
 | `lattice patch --from-file <f>` | Preview/apply a typed artifact edit |
-| `lattice serve` | Web UI (live updates, search) |
+| `lattice serve` | Web UI (live updates, search); block map at `/map`, views at `/views` |
+| `lattice refresh` | Rebuild the block graph from the workspace's sources and judgments |
+| `lattice record list\|get\|put` | Authored records (judgments, initiatives, evidence, BRDs) in the store |
+| `lattice store search\|relations\|export` | Query the stored block graph |
+| `lattice export map\|views\|features` | Self-contained map or views page; Gherkin `.feature` files |
 | `lattice view <name>` | Render developer / product / business / c4 views |
 | `lattice journey <brd>` \| `lattice actor list` | Journey and actor views |
 | `lattice rtm` | Requirements traceability matrix with attestation header |
@@ -170,6 +179,16 @@ A complete, validating three-language example lives in
 
 Every command supports `--json` for machine-readable output; `--actor`
 (or `LATTICE_ACTOR`) names the agent identity on leases and ledger entries.
+
+## Block maps (0.9, preview)
+
+Declare a workspace's sources in `lattice/workspace.yaml` (repos pinned to
+commits, each publishing `catalogue/v1` files), add judgments for what the
+catalogues cannot say, and run `lattice refresh`. The result is one graph
+of blocks and edges, stamped with the commit and release each source
+reflects. `lattice serve` shows it at `/map`; `lattice export map` writes
+the same page as one file. Storage is files by default, or PostgreSQL
+(`storage: {backend: postgres}`) for search and relation queries.
 
 ## Web UI
 

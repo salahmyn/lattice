@@ -45,14 +45,14 @@ The `lattice` binary must be on `PATH` (or set `LATTICE_BINARY`).
 
 21 tools, each wrapping one `lattice` subcommand — see `src/tools/index.ts`.
 Every tool description follows a strict template (purpose, when-to-call,
-returns, common errors); `npm test` fails the build if any deviates.
+returns, common errors); `pnpm test` fails the build if any deviates.
 
 ## Development
 
 ```sh
-npm install
-npm run build      # compile to dist/
-npm test           # description-template + integration tests
+pnpm install
+pnpm run build      # compile to dist/
+pnpm test          # description-template + integration tests
 ```
 
 Requires Node 18+.

@@ -1,0 +1,12 @@
+{"area": "cart", "title": "Cart", "summary": "The cart step.",
+ "configs": [{"id": "store.currency", "kind": "storeSetting"}],
+ "nodes": [
+  {"id": "cart", "parent": null, "kind": "screen", "title": "Cart step", "detail": "Cart root."},
+  {"id": "cart.items", "parent": "cart", "kind": "screen", "title": "Item list",
+   "next": [{"to": "cart.checkout", "label": "continue", "when": ["cart.items > 0"]}]},
+  {"id": "cart.checkout", "parent": "cart", "kind": "api", "title": "Start checkout",
+   "api": {"method": "POST", "path": "/checkout", "variant": "ok"},
+   "tests": {"react": ["web/cart.test.ts > checkout"]}},
+  {"id": "cart.checkout.retry", "parent": "cart.checkout", "kind": "action", "title": "Retry",
+   "next": [{"to": "cart.checkout", "label": "again", "loop": true}]}
+ ]}

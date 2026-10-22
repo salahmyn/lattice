@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"html/template"
 	"io/fs"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
+	"github.com/salahmyn/lattice/pkg/lattice/store"
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
@@ -48,6 +50,9 @@ type Options struct {
 	// reflected on the next page load — no daemon-staleness surprises.
 	// In tests this can be swapped for a fixture.
 	GraphBuilder func(ctx context.Context) (schema.KnowledgeGraph, error)
+	// Store serves the block graph behind /map and /api/graph, /api/search
+	// and /api/relations/{id}. Nil leaves those answering 503.
+	Store store.Store
 }
 
 // Server is the HTTP entry point. It is safe for concurrent use.
@@ -66,6 +71,8 @@ type Server struct {
 	// ListenAndServe so tests that just call ServeHTTP don't spin up
 	// an fsnotify goroutine.
 	events *eventBroker
+	// storeMu serializes store calls: the Postgres store holds one connection.
+	storeMu sync.Mutex
 }
 
 // New constructs a Server. Templates and static assets are loaded lazily
@@ -138,6 +145,15 @@ func (s *Server) enforceTokenPolicy() error {
 	return nil
 }
 
+// loopbackHost reports whether a request's Host header names this machine.
+func loopbackHost(hostport string) bool {
+	h, _, err := net.SplitHostPort(hostport)
+	if err != nil {
+		h = hostport
+	}
+	return isLoopback(strings.Trim(h, "[]"))
+}
+
 func isLoopback(host string) bool {
 	switch host {
 	case "127.0.0.1", "::1", "localhost":
@@ -176,6 +192,13 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /import/{id}", s.pageImportCandidate)
 	mux.HandleFunc("GET /config", s.pageConfig)
 	mux.HandleFunc("GET /onboarding", s.pageOnboarding)
+	mux.HandleFunc("GET /map", s.pageMap)
+	mux.HandleFunc("GET /views", s.pageViews)
+	mux.HandleFunc("GET /api/business", s.apiBusiness)
+	mux.HandleFunc("POST /api/brds", s.apiSaveDraft)
+	mux.HandleFunc("GET /api/graph", s.apiGraph)
+	mux.HandleFunc("GET /api/search", s.apiBlockSearch)
+	mux.HandleFunc("GET /api/relations/{id}", s.apiRelations)
 
 	// JSON API — same shapes as the CLI --json output.
 	mux.HandleFunc("GET /api/v1/overview", s.apiOverview)
@@ -222,6 +245,11 @@ func (s *Server) withMiddleware(h http.Handler) http.Handler {
 				http.Error(w, fmt.Sprintf("internal error: %v", rec), http.StatusInternalServerError)
 			}
 		}()
+		if isLoopback(s.opts.Host) && !loopbackHost(r.Host) {
+			// a loopback bind has no auth: refuse a page that rebound its own name to 127.0.0.1
+			http.Error(w, "unexpected Host for a loopback server", http.StatusForbidden)
+			return
+		}
 		if hasToken || hasBasic {
 			if !s.checkAuth(r) {
 				if hasBasic {

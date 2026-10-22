@@ -2,6 +2,61 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.9.0] — 2026-10-22
+
+Block maps. Lattice can now build, keep current and serve a block map of
+any system from the catalogues its repos already publish: one graph of
+blocks (a controlled logic path: input, logic, output, recursive) and the
+typed edges between them, stamped with the commit each source reflects.
+Everything is additive; workspaces without block sources are unchanged.
+
+### Added — the block graph
+
+- **`blocks`, `block_edges`, `sources`, `flows` in `lattice.json`**: blocks
+  carry kind, parent, tier, system, truth (`declared` or `wired`),
+  provenance and free-form attrs.
+- **`lattice refresh`**: reads each source's `catalogue/v1` files (from a
+  clone at its pinned ref, through git only, or from a directory), applies
+  the workspace's judgments (systems, externals, groups, edges, labels,
+  aliases, with id patterns and config/event rules), groups backend areas
+  by endpoint, converts features to composite blocks, cuts simulated walks
+  (`flows/v1`) at their first loop, and prints a one-line change summary.
+- **Freshness**: each source stamp says whether its commit is `current`,
+  `behind N` or `ahead N` of the live release (`release/v1`), or a
+  `snapshot`.
+- **Verified routes**: a source with `laravel_routes` and `verifies:` is
+  scanned by a scope-aware Laravel route reader (nested groups, prefixes,
+  closures mounted from variables, invokable controllers, resources);
+  matching route blocks become `wired`, with the file and line.
+
+### Added — storage and records
+
+- **`pkg/lattice/store`**: authored records and the latest graph in files
+  or PostgreSQL behind one interface; search and relation queries; stale
+  writes refused. Configure with `storage:` in `workspace.yaml`.
+- **`lattice record list|get|put`**, **`lattice store search|relations|export`**.
+
+### Added — proposals and requirements
+
+- **Initiatives as proposals**: `lattice initiative add|evidence|status`;
+  `evidence/v1` verdicts, gaps and payload differences are drawn over the
+  graph (verdict overlays, gap and replaces edges); `initiative show`
+  checks each pin against its clone.
+- **BRD records with scenarios**: Given/When/Then steps and the blocks
+  that realise them; the engine rolls status and tests up per feature and
+  finds the blocks two features share.
+
+### Added — serving
+
+- **`lattice serve`**: `/map` (lanes, systems as boxes of blocks with
+  their stamp, nested diagram, relations, flow playback, proposal
+  overlays) and `/views` (features with Gherkin, authoring, actors,
+  services); JSON at `/api/graph`, `/api/search`, `/api/relations/{id}`,
+  `/api/business`; drafts saved with `POST /api/brds`. Loopback binds
+  refuse foreign `Host` headers.
+- **`lattice export map|views`** (one self-contained HTML file) and
+  **`lattice export features`** (Gherkin `.feature` files).
+
 ## [0.8.1]
 
 Lifecycle governance. v0.8.0 made the graph honest about *what* is

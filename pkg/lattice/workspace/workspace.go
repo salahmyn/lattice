@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -48,10 +50,87 @@ type CodeRoot struct {
 	Available bool   `yaml:"-"`
 }
 
+// Source is one input of a block-graph workspace (v0.9): catalogue files read
+// from a git clone at a ref, or from a directory.
+type Source struct {
+	ID              string            `yaml:"id"`
+	Repo            string            `yaml:"repo,omitempty"`      // e.g. "org/name", for stamps and links
+	Clone           string            `yaml:"clone,omitempty"`     // local clone, read at Ref through git
+	Ref             string            `yaml:"ref,omitempty"`       // branch, tag or commit; default HEAD
+	Path            string            `yaml:"path,omitempty"`      // a directory, when the source is not a clone
+	Catalogue       string            `yaml:"catalogue,omitempty"` // glob of catalogue/v1 files inside the clone or Path
+	Prefix          string            `yaml:"prefix,omitempty"`    // block id namespace, e.g. "fe"
+	Tier            string            `yaml:"tier,omitempty"`
+	System          string            `yaml:"system,omitempty"`  // the system block that owns this source's areas
+	Release         string            `yaml:"release,omitempty"` // release/v1 file (adapter output): the live release, for freshness
+	Stamp           string            `yaml:"stamp,omitempty"`   // snapshot stamp file, for a source read from a directory
+	Flows           string            `yaml:"flows,omitempty"`   // flows/v1 file (adapter output): simulated walks over this source
+	GroupByEndpoint *EndpointGrouping `yaml:"group_by_endpoint,omitempty"`
+	// RoutePrefixes are left off this source's route paths, normalized, when request paths are matched to them
+	RoutePrefixes []string `yaml:"route_prefixes,omitempty"`
+	// LaravelRoutes are the route files of a Laravel source; Verifies names the
+	// catalogue source whose route blocks they check (spec §8)
+	LaravelRoutes []RouteFiles `yaml:"laravel_routes,omitempty"`
+	Verifies      string       `yaml:"verifies,omitempty"`
+}
+
+// RouteFiles are route files and the prefix the app mounts them under.
+type RouteFiles struct {
+	Files  string `yaml:"files"`            // glob inside the clone or path
+	Prefix string `yaml:"prefix,omitempty"` // e.g. "api"
+}
+
+// EndpointGrouping configures grouping a source's areas by endpoint and topic.
+type EndpointGrouping struct {
+	SkipAreas    []string          `yaml:"skip_areas,omitempty"`
+	SkipSegments []string          `yaml:"skip_segments,omitempty"`
+	PathPrefixes map[string]string `yaml:"path_prefixes,omitempty"`
+}
+
+// Storage says where authored records and the block graph live (spec §6).
+type Storage struct {
+	Backend  string          `yaml:"backend,omitempty"` // files (default) | postgres
+	Postgres PostgresStorage `yaml:"postgres,omitempty"`
+}
+
+// PostgresStorage locates the database. The connection string is read from an
+// environment variable so it never sits in the workspace repo.
+type PostgresStorage struct {
+	DSNEnv string `yaml:"dsn_env,omitempty"` // default LATTICE_PG_DSN
+	Schema string `yaml:"schema,omitempty"`  // default lattice; a bare SQL identifier
+}
+
+var sqlIdent = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
+
+func (s *Storage) defaults() {
+	if s.Backend == "" {
+		s.Backend = "files"
+	}
+	if s.Postgres.DSNEnv == "" {
+		s.Postgres.DSNEnv = "LATTICE_PG_DSN"
+	}
+	if s.Postgres.Schema == "" {
+		s.Postgres.Schema = "lattice"
+	}
+}
+
+func (s Storage) check() error {
+	if s.Backend != "files" && s.Backend != "postgres" {
+		return fmt.Errorf("storage backend %q is not files or postgres", s.Backend)
+	}
+	if !sqlIdent.MatchString(s.Postgres.Schema) {
+		return fmt.Errorf("storage postgres schema %q is not a lower-case SQL identifier", s.Postgres.Schema)
+	}
+	return nil
+}
+
 // file is the on-disk workspace.yaml model.
 type file struct {
 	Mode      Mode       `yaml:"mode"`
 	CodeRoots []CodeRoot `yaml:"code_roots,omitempty"`
+	Sources   []Source   `yaml:"sources,omitempty"`
+	Judgments string     `yaml:"judgments,omitempty"`
+	Storage   Storage    `yaml:"storage,omitempty"`
 }
 
 // Workspace is the resolved view of a project's Lattice setup.
@@ -63,6 +142,12 @@ type Workspace struct {
 	// Review is true when no code root is accessible, so only manifest-level
 	// operations are possible (the PM/QA review case).
 	Review bool
+	// Sources are the block-graph inputs declared in workspace.yaml.
+	Sources []Source
+	// judgments is the judgments directory as declared, resolved by ResolvePath.
+	judgments string
+	// Storage is where records and the block graph live; defaults to files.
+	Storage Storage
 }
 
 // Open resolves the workspace starting from startPath.
@@ -88,6 +173,10 @@ func Open(startPath string) (*Workspace, error) {
 	w := &Workspace{LatticeDir: latticeDir, Mode: ModeEmbedded}
 	if err := w.loadWorkspaceFile(); err != nil {
 		return nil, err
+	}
+	w.Storage.defaults()
+	if err := w.Storage.check(); err != nil {
+		return nil, fmt.Errorf("%s: %w", filepath.Join(latticeDir, "workspace.yaml"), err)
 	}
 	w.resolveCodeRoots()
 	return w, nil
@@ -117,6 +206,9 @@ func (w *Workspace) loadWorkspaceFile() error {
 		w.Mode = f.Mode
 	}
 	w.CodeRoots = f.CodeRoots
+	w.Sources = f.Sources
+	w.judgments = f.Judgments
+	w.Storage = f.Storage
 	return nil
 }
 
@@ -159,6 +251,32 @@ func (w *Workspace) resolveCodeRoots() {
 }
 
 // --- path accessors: everything Lattice maintains lives under LatticeDir ---
+
+// JudgmentsDir returns the directory holding judgment records (default judgments/).
+func (w *Workspace) JudgmentsDir() string {
+	if w.judgments != "" {
+		return w.ResolvePath(w.judgments)
+	}
+	return filepath.Join(w.LatticeDir, "judgments")
+}
+
+// ResolvePath resolves a path from workspace.yaml: "~/" is the home directory,
+// and relative paths use the same anchor as code roots.
+func (w *Workspace) ResolvePath(p string) string {
+	if strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			p = filepath.Join(home, p[2:])
+		}
+	}
+	if filepath.IsAbs(p) {
+		return filepath.Clean(p)
+	}
+	anchor := filepath.Dir(w.LatticeDir)
+	if w.Mode == ModeStandalone {
+		anchor = w.LatticeDir
+	}
+	return filepath.Join(anchor, p)
+}
 
 // ConfigPath returns the path to config.yaml.
 func (w *Workspace) ConfigPath() string { return filepath.Join(w.LatticeDir, "config.yaml") }

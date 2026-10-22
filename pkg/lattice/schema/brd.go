@@ -49,18 +49,28 @@ type BRD struct {
 	BusinessProblem string    `yaml:"business_problem"`
 
 	// --- Body ---
-	BusinessGoals   []string         `yaml:"business_goals,omitempty"`
-	Stakeholders    BRDStakeholders  `yaml:"stakeholders,omitempty"`
-	UserScenarios   []UserScenario   `yaml:"user_scenarios,omitempty"`
-	SuccessCriteria []BRDCriterion   `yaml:"success_criteria,omitempty"`
-	Constraints     []BRDConstraint  `yaml:"constraints,omitempty"`
-	OutOfScope      []string         `yaml:"out_of_scope,omitempty"`
+	BusinessGoals   []string        `yaml:"business_goals,omitempty"`
+	Stakeholders    BRDStakeholders `yaml:"stakeholders,omitempty"`
+	UserScenarios   []UserScenario  `yaml:"user_scenarios,omitempty"`
+	SuccessCriteria []BRDCriterion  `yaml:"success_criteria,omitempty"`
+	Constraints     []BRDConstraint `yaml:"constraints,omitempty"`
+	OutOfScope      []string        `yaml:"out_of_scope,omitempty"`
 
 	// ImplementsVia is the forward link to the Feature axis. Empty for a
 	// freshly-drafted BRD; populated as features land. The validator
 	// treats a non-empty entry that names a missing feature as an error
 	// (BRD_PHANTOM_FEATURE).
 	ImplementsVia []string `yaml:"implements_via,omitempty"`
+
+	// Blocks are the block-graph blocks the BRD touches (block ids). The
+	// engine rolls their status and test coverage up onto the BRD and finds
+	// the blocks two BRDs share.
+	Blocks []string `yaml:"blocks,omitempty"`
+	// Flags are the switches and values the BRD depends on, each with what
+	// it means in plain words.
+	Flags []BRDFlag `yaml:"flags,omitempty"`
+	// OpenQuestions are what the source cannot answer and a person must.
+	OpenQuestions []string `yaml:"open_questions,omitempty"`
 
 	// Approval is the human sign-off block. Set to all-empty for drafts;
 	// when present, ApprovedVersion freezes which version of the BRD the
@@ -110,15 +120,28 @@ type UserScenario struct {
 	// (warning). When at least one entry resolves to an entry point the
 	// scenario counts toward journey coverage.
 	VerifiedBy []string `yaml:"verified_by,omitempty"`
+
+	// Given, When and Then are the scenario's steps (Gherkin); Blocks are
+	// the block-graph blocks that realise it.
+	Given  []string `yaml:"given,omitempty"`
+	When   []string `yaml:"when,omitempty"`
+	Then   []string `yaml:"then,omitempty"`
+	Blocks []string `yaml:"blocks,omitempty"`
+}
+
+// BRDFlag is a switch or value a BRD depends on, in plain words.
+type BRDFlag struct {
+	ID      string `yaml:"id"`
+	Meaning string `yaml:"meaning,omitempty"`
 }
 
 // BRDCriterion is one measurable success criterion. It may reference a
 // feature invariant via `maps_to_invariant: feature.id:INV-N`, which the
 // graph builder uses to build the BRD → Invariant bridge.
 type BRDCriterion struct {
-	ID               string `yaml:"id"`
-	Statement        string `yaml:"statement"`
-	MapsToInvariant  string `yaml:"maps_to_invariant,omitempty"`
+	ID              string `yaml:"id"`
+	Statement       string `yaml:"statement"`
+	MapsToInvariant string `yaml:"maps_to_invariant,omitempty"`
 
 	// Tier is the pinned criticality (v0.8.1): 1 default; 2 for
 	// auth/permissions/data-loss/cross-tenant; 3 for money movement and
@@ -169,7 +192,7 @@ type BRDConstraint struct {
 // BRD_DRIFT so downstream features can flag a stale parent.
 type BRDApproval struct {
 	ApprovedBy      string `yaml:"approved_by"`
-	ApprovedAt      string `yaml:"approved_at"`     // ISO datetime
+	ApprovedAt      string `yaml:"approved_at"` // ISO datetime
 	ApprovedVersion int    `yaml:"approved_version"`
 }
 

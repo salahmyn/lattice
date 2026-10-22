@@ -1,0 +1,6 @@
+{"area": "pay", "title": "Payment", "summary": "Pay.",
+ "nodes": [
+  {"id": "pay", "parent": null, "kind": "screen", "title": "Payment step"},
+  {"id": "pay.card", "parent": "cart.items", "kind": "action", "title": "Card form"},
+  {"id": "pay.lost", "parent": "missing.node", "kind": "action", "title": "Orphan"}
+ ]}
