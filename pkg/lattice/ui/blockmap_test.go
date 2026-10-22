@@ -57,3 +57,31 @@ func TestBlockMapServesTheStore(t *testing.T) {
 		}
 	}
 }
+
+func TestViewsServeAndExport(t *testing.T) {
+	ws := &workspace.Workspace{LatticeDir: t.TempDir()}
+	st := store.OpenFiles(ws)
+	ctx := context.Background()
+	if err := st.ReplaceGraph(ctx, store.Graph{Blocks: []schema.Block{{ID: "web:cart", Kind: "screen", Title: "Cart", Attrs: map[string]string{"status": "built"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Put(ctx, store.Record{Kind: "brd", ID: "brd.sale", Body: []byte("id: brd.sale\nversion: 1\nstatus: draft\ntitle: Sale\nbusiness_problem: x\nblocks: [\"web:cart\"]\n")}); err != nil {
+		t.Fatal(err)
+	}
+	srv := New(ws, Options{Store: st})
+	w := httptest.NewRecorder()
+	srv.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/business", nil))
+	var d BusinessData
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &d) != nil || len(d.View.Features) != 1 || d.View.Features[0].Built != "built" {
+		t.Fatalf("/api/business = %d %s", w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	srv.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/views", nil))
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "<title>Block views</title>") {
+		t.Errorf("/views = %d", w.Code)
+	}
+	page, err := ViewsHTML(d, "Shop views")
+	if err != nil || !strings.Contains(string(page), "<title>Shop views</title>") || strings.Contains(string(page), businessSlot) {
+		t.Errorf("export: %v", err)
+	}
+}

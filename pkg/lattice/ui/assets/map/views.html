@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Block views</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1c2330; --muted: #5d6779; --line: #dfe3ea; --soft: #eef1f5;
+  --accent: #2f5fd0; --accent-soft: #e5ecfb; --ok: #1f8a5b; --warn: #b4690e; --bad: #c2412d;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151b; --panel: #1a1e26; --ink: #e4e8ef; --muted: #98a2b3; --line: #2c323d; --soft: #222833;
+    --accent: #7ea2ff; --accent-soft: #24304a; --ok: #4cc38a; --warn: #e3a34a; --bad: #ef7a66; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12151b; --panel: #1a1e26; --ink: #e4e8ef; --muted: #98a2b3; --line: #2c323d; --soft: #222833;
+  --accent: #7ea2ff; --accent-soft: #24304a; --ok: #4cc38a; --warn: #e3a34a; --bad: #ef7a66; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--sans); }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+h1 { font-size: 15px; margin: 0; font-weight: 650; }
+.count { color: var(--muted); font-weight: 400; }
+nav.tabs { display: flex; gap: 2px; margin-left: auto; flex-wrap: wrap; }
+nav.tabs button, .btn { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+nav.tabs button.on { background: var(--accent-soft); border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); }
+main { padding: 16px; max-width: 1400px; margin: 0 auto; }
+.grid { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px; align-items: start; }
+.list { display: grid; gap: 8px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+.card.pick { cursor: pointer; }
+.card.pick:hover { border-color: var(--accent); }
+.card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.card h3 { margin: 0 0 4px; font-size: 14.5px; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.chip { font-size: 11.5px; border: 1px solid var(--line); background: var(--soft); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+.chip.built { color: var(--ok); border-color: currentColor; background: transparent; }
+.chip.planned { color: var(--warn); border-color: currentColor; background: transparent; }
+.chip.mixed { color: var(--accent); border-color: currentColor; background: transparent; }
+.muted { color: var(--muted); }
+h2 { font-size: 18px; margin: 0 0 4px; }
+h3.sec { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 6px; }
+.narr { white-space: pre-line; margin: 8px 0; }
+.gherkin { font: 13px/1.6 var(--mono); background: var(--soft); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
+.gherkin .kw { color: var(--accent); font-weight: 600; }
+.gherkin .sc { font-weight: 600; }
+.blockchip { display: inline-flex; align-items: center; gap: 5px; font: 12px var(--mono); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; margin: 2px 4px 2px 0; background: var(--panel); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.dot.built { background: var(--ok); } .dot.planned { background: var(--warn); }
+.callout { border-left: 3px solid var(--warn); background: var(--panel); border-radius: 0 8px 8px 0; padding: 8px 12px; margin: 6px 0; }
+.callout.bad { border-left-color: var(--bad); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { text-align: left; font-weight: 600; color: var(--muted); padding: 6px 8px 6px 0; border-bottom: 1px solid var(--line); }
+td { padding: 6px 8px 6px 0; border-top: 1px solid var(--line); vertical-align: top; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.wide { overflow-x: auto; }
+.cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+form label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 3px; }
+input[type=text], input[type=search], textarea { font: inherit; width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: var(--panel); color: var(--ink); }
+textarea { min-height: 58px; resize: vertical; }
+.picker { max-height: 180px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; margin-top: 4px; }
+.picker div { padding: 4px 8px; cursor: pointer; font-size: 12.5px; border-top: 1px solid var(--line); }
+.picker div:first-child { border-top: 0; }
+.picker div:hover { background: var(--soft); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+[hidden] { display: none !important; }
+@media (max-width: 860px) { .grid { grid-template-columns: minmax(0, 1fr); } nav.tabs { margin-left: 0; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Block views <span class="count" id="counts"></span></h1>
+  <nav class="tabs" aria-label="Views">
+    <button class="on" data-tab="business">Business</button>
+    <button data-tab="author">Authoring</button>
+    <button data-tab="actors">Actors</button>
+    <button data-tab="services">Services</button>
+  </nav>
+</header>
+<main id="main"><p class="muted">Loading…</p></main>
+<script id="business" type="application/json">/*__BUSINESS__*/</script>
+<script>
+(async function () {
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const main = document.getElementById("main");
+  let D;
+  try {
+    const inline = document.getElementById("business").textContent.trim();
+    D = inline ? JSON.parse(inline) : await fetch("api/business").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
+  } catch (e) {
+    main.innerHTML = `<p class="muted">Could not load the views (${esc(e)}). Run <code>lattice refresh</code>, and add BRD records with <code>lattice record put --kind brd</code>.</p>`;
+    return;
+  }
+  const V = D.view, byId = new Map(D.blocks.map(b => [b.id, b]));
+  const feats = V.features || [];
+  const S = { tab: "business", sel: feats[0]?.brd.id || "" };
+  document.getElementById("counts").textContent = `${feats.length} features · ${D.blocks.length} blocks`;
+  const nm = id => byId.get(id)?.name || id;
+  const chip = id => {
+    const b = byId.get(id);
+    return `<span class="blockchip" title="${esc(id)}${b ? " · " + esc(b.kind) : " · not in the graph"}"><i class="dot ${esc(b?.status || "")}"></i>${esc(b ? b.title : id)}</span>`;
+  };
+
+  // the Gherkin a BRD becomes; the engine's lattice export features writes the same text
+  function gherkin(b) {
+    const L = [`Feature: ${b.title}`, ""];
+    (b.business_problem || "").split("\n").forEach(l => L.push("  " + l));
+    L.push("");
+    (b.flags || []).forEach(f => { if (f.meaning) L.push(`  # flag: ${f.id}  —  ${f.meaning}`); });
+    L.push("");
+    for (const s of b.user_scenarios || []) {
+      L.push(`  Scenario: ${s.narrative}`);
+      [["Given", s.given], ["When", s.when], ["Then", s.then]].forEach(([w, xs]) => (xs || []).forEach((x, j) => L.push(`    ${j ? "And" : w} ${x}`)));
+      L.push(`    # realised by: ${(s.blocks || []).map(nm).join(", ")}`, "");
+    }
+    (b.open_questions || []).forEach(q => L.push("  # " + q));
+    if ((b.open_questions || []).length) L.push("");
+    return L.join("\n");
+  }
+  const gherkinHtml = t => esc(t).split("\n").map(l => l
+    .replace(/^(\s*)(Feature:|Scenario:)(.*)$/, '$1<span class="kw">$2</span><span class="sc">$3</span>')
+    .replace(/^(\s*)(Given|When|Then|And)\b/, '$1<span class="kw">$2</span>')
+    .replace(/^(\s*)(#.*)$/, '$1<span class="muted">$2</span>')).join("\n");
+
+  // ---- business
+  function renderBusiness() {
+    const f = feats.find(x => x.brd.id === S.sel);
+    const list = feats.map(x => `<article class="card pick${x.brd.id === S.sel ? " on" : ""}" data-sel="${esc(x.brd.id)}" tabindex="0">
+      <h3>${esc(x.brd.title)}</h3><div class="muted">${esc(x.brd.id)}</div>
+      <div class="chips"><span class="chip">${esc(x.brd.status)}</span><span class="chip ${esc(x.built)}">${esc(x.built)}</span>
+      <span class="chip">${(x.brd.user_scenarios || []).length} scenarios</span>
+      ${Object.entries(x.tests || {}).map(([k, n]) => `<span class="chip">${n} ${esc(k)} tests</span>`).join("")}</div></article>`).join("");
+    const shared = (V.conflicts || []).map(c => `<div class="callout bad"><b>${esc(title(c.a))}</b> and <b>${esc(title(c.b))}</b> touch the same ${c.blocks.length === 1 ? "block" : c.blocks.length + " blocks"}: ${c.blocks.map(chip).join("")}
+      <div class="gherkin" style="margin-top:6px">${gherkinHtml(`  Scenario: Both apply at once\n    Given ${title(c.a).toLowerCase()} applies\n    And ${title(c.b).toLowerCase()} applies\n    Then ⚠ undefined: which one wins is a business decision`)}</div></div>`).join("");
+    let detail = `<p class="muted">No features yet. Add BRD records to the workspace.</p>`;
+    if (f) {
+      const b = f.brd;
+      detail = `<div class="card"><h2>${esc(b.title)}</h2><div class="muted">${esc(b.id)} · ${esc(b.status)} · areas: ${f.areas.map(a => esc(byId.get(a)?.title || a)).join(", ") || "none"}</div>
+        <div class="narr">${esc(b.business_problem)}</div>
+        ${f.missing.length ? `<div class="callout bad">Not in the graph: ${f.missing.map(esc).join(", ")}</div>` : ""}
+        ${(b.open_questions || []).map(q => `<div class="callout">${esc(q)}</div>`).join("")}
+        ${(b.flags || []).length ? `<h3 class="sec">Depends on</h3><table>${b.flags.map(fl => `<tr><td><code>${esc(fl.id)}</code></td><td>${esc(fl.meaning)}</td></tr>`).join("")}</table>` : ""}
+        <h3 class="sec">Scenarios</h3>${(b.user_scenarios || []).map(s => `<div class="gherkin" style="margin-bottom:8px">${gherkinHtml(
+          [`Scenario: ${s.narrative}`, ...[["Given", s.given], ["When", s.when], ["Then", s.then]].flatMap(([w, xs]) => (xs || []).map((x, j) => `  ${j ? "And" : w} ${x}`))].join("\n"))}
+          <div style="margin-top:4px">${(s.blocks || []).map(chip).join("")}</div></div>`).join("")}
+        <h3 class="sec">Blocks it touches (${(b.blocks || []).length})</h3><div>${(b.blocks || []).map(chip).join("")}</div>
+        <h3 class="sec">As a .feature file</h3><div class="gherkin">${gherkinHtml(gherkin(b))}</div></div>`;
+    }
+    main.innerHTML = `<div class="grid"><div class="list">${list}${shared ? `<h3 class="sec">Where features meet</h3>${shared}` : ""}</div><div>${detail}</div></div>`;
+  }
+  const title = id => feats.find(x => x.brd.id === id)?.brd.title || id;
+
+  // ---- authoring: drafts stay in this browser; copy one as a BRD record for lattice record put --kind brd
+  const LS = "lattice-views-drafts";
+  let drafts = [];
+  try { drafts = JSON.parse(localStorage.getItem(LS) || "[]"); } catch (e) { drafts = []; }
+  const draft = { title: "", business_problem: "", user_scenarios: [], blocks: [] };
+  let sc = { narrative: "", given: "", when: "", then: "", blocks: [] };
+  function draftBrd() {
+    const id = "brd.draft." + (draft.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "untitled");
+    const blocks = [...new Set(draft.user_scenarios.flatMap(s => s.blocks))];
+    return { id, version: 1, status: "draft", title: draft.title || "Untitled", business_problem: draft.business_problem, user_scenarios: draft.user_scenarios, blocks };
+  }
+  function yamlOf(b) {
+    const q = s => JSON.stringify(s);
+    const lines = [`id: ${b.id}`, `version: 1`, `status: draft`, `title: ${q(b.title)}`, `business_problem: ${q(b.business_problem)}`, `blocks: ${q(b.blocks)}`, `user_scenarios:`];
+    b.user_scenarios.forEach((s, i) => lines.push(`  - {id: S${i + 1}, narrative: ${q(s.narrative)}, given: ${q(s.given)}, when: ${q(s.when)}, then: ${q(s.then)}, blocks: ${q(s.blocks)}}`));
+    return lines.join("\n") + "\n";
+  }
+  function overlaps(b) {
+    const out = [];
+    for (const f of feats) {
+      const common = (f.brd.blocks || []).filter(id => b.blocks.includes(id));
+      if (common.length) out.push(`<div class="callout bad">Meets <b>${esc(f.brd.title)}</b> on ${common.map(chip).join("")}. Decide which wins when both apply.</div>`);
+    }
+    return out.join("") || `<p class="muted">No overlap with existing features yet.</p>`;
+  }
+  function renderAuthor() {
+    const b = draftBrd();
+    main.innerHTML = `<div class="grid"><form class="card" id="af" autocomplete="off">
+      <h2>New feature</h2>
+      <label for="a-title">Title</label><input type="text" id="a-title" value="${esc(draft.title)}" placeholder="Free shipping for members">
+      <label for="a-narr">Narrative</label><textarea id="a-narr" placeholder="In order to ..., as a ..., I want ...">${esc(draft.business_problem)}</textarea>
+      <h3 class="sec">Scenario</h3>
+      <label for="a-sname">Name</label><input type="text" id="a-sname" value="${esc(sc.narrative)}">
+      <label for="a-given">Given (one per line)</label><textarea id="a-given">${esc(sc.given)}</textarea>
+      <label for="a-when">When (one per line)</label><textarea id="a-when">${esc(sc.when)}</textarea>
+      <label for="a-then">Then (one per line)</label><textarea id="a-then">${esc(sc.then)}</textarea>
+      <label for="a-find">Blocks that realise it</label><input type="search" id="a-find" placeholder="Search blocks">
+      <div class="picker" id="a-pick" hidden></div><div id="a-chosen">${sc.blocks.map(chip).join("")}</div>
+      <div class="row"><button type="button" class="btn" id="a-add">Add scenario</button></div>
+      <div class="row"><button type="button" class="btn primary" id="a-save">Keep draft in this browser</button><button type="button" class="btn" id="a-copy">Copy as record</button></div>
+      <p class="muted" id="a-msg"></p>
+      ${drafts.length ? `<h3 class="sec">Drafts in this browser (${drafts.length})</h3>${drafts.map((d, i) => `<div>${esc(d.title)} <a href="#" data-load="${i}">open</a></div>`).join("")}` : ""}
+    </form><div><div class="card"><h3 class="sec" style="margin-top:0">Preview</h3><div class="gherkin">${gherkinHtml(gherkin(b))}</div>
+      <h3 class="sec">Where it meets existing features</h3>${overlaps(b)}</div></div></div>`;
+    const $ = id => document.getElementById(id);
+    const sync = () => { draft.title = $("a-title").value; draft.business_problem = $("a-narr").value; sc.narrative = $("a-sname").value; sc.given = $("a-given").value; sc.when = $("a-when").value; sc.then = $("a-then").value; };
+    ["a-title", "a-narr"].forEach(id => $(id).addEventListener("change", () => { sync(); renderAuthor(); }));
+    ["a-sname", "a-given", "a-when", "a-then"].forEach(id => $(id).addEventListener("input", sync));
+    $("a-find").addEventListener("input", e => {
+      const q = e.target.value.toLowerCase().trim(), pick = $("a-pick");
+      if (!q) { pick.hidden = true; return; }
+      const hits = D.blocks.filter(x => (x.id + " " + x.title).toLowerCase().includes(q)).slice(0, 40);
+      pick.innerHTML = hits.map(x => `<div data-add="${esc(x.id)}">${esc(x.title)} <span class="muted">${esc(x.kind)} · ${esc(x.name || x.id)}</span></div>`).join("") || `<div class="muted">No block matches.</div>`;
+      pick.hidden = false;
+    });
+    $("a-pick").addEventListener("click", e => { const a = e.target.closest("[data-add]"); if (a && !sc.blocks.includes(a.dataset.add)) { sync(); sc.blocks.push(a.dataset.add); renderAuthor(); } });
+    $("a-add").onclick = () => {
+      sync();
+      const lines = s => s.split("\n").map(x => x.trim()).filter(Boolean);
+      if (!sc.narrative || !lines(sc.then).length) { $("a-msg").textContent = "A scenario needs a name and at least one Then line."; return; }
+      draft.user_scenarios.push({ narrative: sc.narrative, given: lines(sc.given), when: lines(sc.when), then: lines(sc.then), blocks: sc.blocks });
+      sc = { narrative: "", given: "", when: "", then: "", blocks: [] };
+      renderAuthor();
+    };
+    $("a-save").onclick = () => {
+      sync();
+      drafts = drafts.filter(d => d.title !== draft.title).concat([JSON.parse(JSON.stringify(draft))]);
+      try { localStorage.setItem(LS, JSON.stringify(drafts)); $("a-msg").textContent = "Draft kept in this browser."; } catch (e) { $("a-msg").textContent = "This browser does not allow saving here; copy the record instead."; }
+    };
+    $("a-copy").onclick = async () => {
+      sync();
+      const text = yamlOf(draftBrd());
+      try { await navigator.clipboard.writeText(text); $("a-msg").textContent = "Record copied. Save it as a .yaml file and run: lattice record put --kind brd <file>"; }
+      catch (e) { $("a-msg").innerHTML = `Copy this record:<textarea readonly>${esc(text)}</textarea>`; $("a-msg").querySelector("textarea").select(); }
+    };
+    document.querySelectorAll("[data-load]").forEach(a => a.onclick = e => { e.preventDefault(); Object.assign(draft, JSON.parse(JSON.stringify(drafts[+a.dataset.load]))); renderAuthor(); });
+  }
+
+  // ---- actors and services
+  function renderActors() {
+    main.innerHTML = `<div class="cols">${(V.actors || []).map(a => `<article class="card"><h3>${esc(a.title)}</h3><div class="muted">${esc(a.id)}</div>
+      <p>${esc(a.description || "")}</p><div class="chips">${Object.entries(a.edges || {}).sort((x, y) => y[1] - x[1]).map(([k, n]) => `<span class="chip">${n} ${esc(k)}</span>`).join("")}</div>
+      <p class="muted">Reaches ${a.reaches} block${a.reaches === 1 ? "" : "s"} directly.</p></article>`).join("") || `<p class="muted">No actor blocks in the graph.</p>`}</div>`;
+  }
+  function renderServices() {
+    const top = m => Object.entries(m || {}).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, n]) => `${esc(k)} ${n}`).join(", ");
+    const t = id => esc(byId.get(id)?.title || id);
+    main.innerHTML = `<div class="card"><h2>Systems and what they own</h2><div class="wide"><table><tr><th>System</th><th>Kind</th><th class="num">Blocks</th><th>Tiers</th><th>Main kinds</th></tr>
+      ${(V.systems || []).map(s => `<tr><td>${esc(s.title)}</td><td>${esc(s.kind)}</td><td class="num">${s.blocks}</td><td>${top(s.tiers)}</td><td>${top(s.kinds)}</td></tr>`).join("")}</table></div>
+      <h3 class="sec">Seams between systems</h3><div class="wide"><table><tr><th>From</th><th>To</th><th>Kind</th><th class="num">Edges</th></tr>
+      ${(V.seams || []).map(s => `<tr><td>${t(s.from)}</td><td>${t(s.to)}</td><td>${esc(s.kind)}</td><td class="num">${s.n}</td></tr>`).join("")}</table></div></div>`;
+  }
+
+  function render() { ({ business: renderBusiness, author: renderAuthor, actors: renderActors, services: renderServices })[S.tab](); }
+  document.querySelector("nav.tabs").onclick = e => {
+    const b = e.target.closest("[data-tab]"); if (!b) return;
+    S.tab = b.dataset.tab;
+    document.querySelectorAll("nav.tabs button").forEach(x => x.classList.toggle("on", x === b));
+    render();
+  };
+  main.addEventListener("click", e => { const c = e.target.closest("[data-sel]"); if (c) { S.sel = c.dataset.sel; renderBusiness(); } });
+  main.addEventListener("keydown", e => { const c = e.target.closest("[data-sel]"); if (c && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); S.sel = c.dataset.sel; renderBusiness(); } });
+  render();
+})();
+</script>
+</body>
+</html>

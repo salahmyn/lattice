@@ -70,6 +70,10 @@ func checkRecord(kind string, body []byte, label string) (string, error) {
 		if _, err := blocks.ParseInitiative(body, label); err != nil {
 			return "INITIATIVE_INVALID", err
 		}
+	case "brd":
+		if _, err := blocks.ParseBRD(body, label); err != nil {
+			return "BRD_INVALID", err
+		}
 	case "evidence":
 		if _, err := blocks.ParseEvidence(body); err != nil {
 			return "EVIDENCE_INVALID", fmt.Errorf("%s: %w", label, err)

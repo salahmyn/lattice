@@ -183,6 +183,8 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /config", s.pageConfig)
 	mux.HandleFunc("GET /onboarding", s.pageOnboarding)
 	mux.HandleFunc("GET /map", s.pageMap)
+	mux.HandleFunc("GET /views", s.pageViews)
+	mux.HandleFunc("GET /api/business", s.apiBusiness)
 	mux.HandleFunc("GET /api/graph", s.apiGraph)
 	mux.HandleFunc("GET /api/search", s.apiBlockSearch)
 	mux.HandleFunc("GET /api/relations/{id}", s.apiRelations)
