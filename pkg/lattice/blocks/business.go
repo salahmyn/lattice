@@ -46,13 +46,54 @@ type BusinessView struct {
 	Seams     []Seam        `json:"seams"`
 }
 
+// BRDDoc is the part of a BRD the views page shows, with JSON names.
+type BRDDoc struct {
+	ID              string        `json:"id"`
+	Title           string        `json:"title"`
+	Status          string        `json:"status"`
+	BusinessProblem string        `json:"business_problem"`
+	Blocks          []string      `json:"blocks"`
+	Flags           []FlagDoc     `json:"flags"`
+	Scenarios       []ScenarioDoc `json:"user_scenarios"`
+	OpenQuestions   []string      `json:"open_questions"`
+	ReviewRequired  bool          `json:"human_review_required,omitempty"`
+}
+
+// FlagDoc is a BRD flag with JSON names.
+type FlagDoc struct {
+	ID      string `json:"id"`
+	Meaning string `json:"meaning,omitempty"`
+}
+
+// ScenarioDoc is a BRD scenario with JSON names.
+type ScenarioDoc struct {
+	ID        string   `json:"id"`
+	Narrative string   `json:"narrative"`
+	Given     []string `json:"given"`
+	When      []string `json:"when"`
+	Then      []string `json:"then"`
+	Blocks    []string `json:"blocks"`
+}
+
+func docOf(b schema.BRD) BRDDoc {
+	d := BRDDoc{ID: b.ID, Title: b.Title, Status: string(b.Status), BusinessProblem: b.BusinessProblem, Blocks: b.Blocks,
+		OpenQuestions: b.OpenQuestions, ReviewRequired: b.HumanReviewRequired, Flags: []FlagDoc{}, Scenarios: []ScenarioDoc{}}
+	for _, f := range b.Flags {
+		d.Flags = append(d.Flags, FlagDoc{ID: f.ID, Meaning: f.Meaning})
+	}
+	for _, s := range b.UserScenarios {
+		d.Scenarios = append(d.Scenarios, ScenarioDoc{ID: s.ID, Narrative: s.Narrative, Given: s.Given, When: s.When, Then: s.Then, Blocks: s.Blocks})
+	}
+	return d
+}
+
 // FeatureView is one BRD with its computed facts.
 type FeatureView struct {
-	BRD     schema.BRD `json:"brd"`
-	Built   string     `json:"built"` // built | planned | mixed | unknown, from the blocks' status attrs
-	Tests   Coverage   `json:"tests"`
-	Areas   []string   `json:"areas"`   // the top-level areas its blocks sit in
-	Missing []string   `json:"missing"` // block ids it names that the graph does not have
+	BRD     BRDDoc   `json:"brd"`
+	Built   string   `json:"built"` // built | planned | mixed | unknown, from the blocks' status attrs
+	Tests   Coverage `json:"tests"`
+	Areas   []string `json:"areas"`   // the top-level areas its blocks sit in
+	Missing []string `json:"missing"` // block ids it names that the graph does not have
 }
 
 // Coverage counts the tests listed on the blocks (attrs tests_<name>, " | " separated).
@@ -134,7 +175,7 @@ func Business(bs []schema.Block, es []schema.BlockEdge, brds []schema.BRD) Busin
 	v := BusinessView{Features: []FeatureView{}, Shared: []SharedBlock{}, Conflicts: []BRDConflict{}}
 	touched := map[string][]string{} // block -> BRD ids
 	for _, b := range brds {
-		f := FeatureView{BRD: b, Tests: Coverage{}, Areas: []string{}, Missing: []string{}}
+		f := FeatureView{BRD: docOf(b), Tests: Coverage{}, Areas: []string{}, Missing: []string{}}
 		areas := map[string]bool{}
 		built, planned, known := 0, 0, 0
 		for _, id := range b.Blocks {
@@ -209,6 +250,9 @@ func Business(bs []schema.Block, es []schema.BlockEdge, brds []schema.BRD) Busin
 		}
 		out[e.From][e.Kind]++
 		reach[e.From][e.To] = true
+		if f, t := by[e.From], by[e.To]; f == nil || t == nil || f.Initiative != "" || t.Initiative != "" {
+			continue // seams are between what exists; a proposal's links are drawn on the map
+		}
 		if a, b := top(e.From), top(e.To); a != "" && b != "" && a != b {
 			seams[[3]string{a, b, e.Kind}]++
 		}
