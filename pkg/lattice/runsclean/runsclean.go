@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
@@ -110,7 +111,7 @@ func bootWait(rt config.Runtime) time.Duration {
 func bootApp(ctx context.Context, root, cmd string, wait time.Duration) (StepResult, func(), error) {
 	c := exec.CommandContext(ctx, "sh", "-c", cmd)
 	c.Dir = root
-	startGroup(c)
+	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	var buf strings.Builder
 	c.Stdout, c.Stderr = &buf, &buf
 	if err := c.Start(); err != nil {
@@ -128,11 +129,13 @@ func bootApp(ctx context.Context, root, cmd string, wait time.Duration) (StepRes
 	}
 
 	stop := func() {
-		stopGroup(c, false)
+		// Negative pid signals the process group — boot commands commonly
+		// spawn children (shells, dev servers) that a bare Kill would orphan.
+		_ = syscall.Kill(-c.Process.Pid, syscall.SIGTERM)
 		select {
 		case <-exited:
 		case <-time.After(5 * time.Second):
-			stopGroup(c, true)
+			_ = syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
 		}
 	}
 	return StepResult{Step: StepBoot, Command: cmd, OK: true}, stop, nil

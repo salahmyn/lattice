@@ -35,7 +35,7 @@ Supported languages for extraction: **Python, TypeScript/JavaScript, PHP 8.0+**.
 
 ## Install
 
-Download a binary for Linux, macOS or Windows from the
+Download a binary for Linux or macOS (on Windows, use the Linux one under WSL) from the
 [latest release](https://github.com/salahmyn/lattice/releases/latest) and check it against `checksums.txt`.
 A merge to `master` publishes a release when `CHANGELOG.md` names a new version.
 
