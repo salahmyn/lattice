@@ -43,9 +43,12 @@ func TestBlockMapServesTheStore(t *testing.T) {
 	if w := get("/api/relations/web:cart?dir=out"); w.Code != 200 || !strings.Contains(w.Body.String(), "api:items") {
 		t.Errorf("/api/relations = %d %s", w.Code, w.Body.String())
 	}
-	page, err := MapHTML(g)
+	page, err := MapHTML(g, "")
 	if err != nil || strings.Contains(string(page), "Cart </script>") || !strings.Contains(string(page), `Cart \u003c/script\u003e`) {
 		t.Errorf("export does not escape the inlined graph")
+	}
+	if page, _ := MapHTML(g, "Shop <map>"); !strings.Contains(string(page), "<title>Shop &lt;map&gt;</title>") || !strings.Contains(string(page), "<h1>Shop &lt;map&gt; ") {
+		t.Errorf("title not applied")
 	}
 	if w := httptest.NewRecorder(); true {
 		New(ws, Options{}).routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/graph", nil))

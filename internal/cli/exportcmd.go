@@ -11,7 +11,8 @@ import (
 
 func newExportCommand(io *IO) *cobra.Command {
 	cmd := &cobra.Command{Use: "export", Short: "Write views of the workspace as files"}
-	cmd.AddCommand(&cobra.Command{
+	var title string
+	mapCmd := &cobra.Command{
 		Use:   "map <out.html>",
 		Short: "Write the block map as one self-contained HTML file (the stored graph inlined)",
 		Args:  cobra.ExactArgs(1),
@@ -25,7 +26,7 @@ func newExportCommand(io *IO) *cobra.Command {
 			if err != nil {
 				return io.fail("GRAPH_READ", err.Error(), nil)
 			}
-			page, err := ui.MapHTML(g)
+			page, err := ui.MapHTML(g, title)
 			if err != nil {
 				return io.fail("EXPORT_FAILED", err.Error(), nil)
 			}
@@ -35,6 +36,8 @@ func newExportCommand(io *IO) *cobra.Command {
 			io.printf("wrote %s: %d blocks, %d edges, %d flows\n", args[0], len(g.Blocks), len(g.Edges), len(g.Flows))
 			return nil
 		},
-	})
+	}
+	mapCmd.Flags().StringVar(&title, "title", "", "page title (default \"Block map\")")
+	cmd.AddCommand(mapCmd)
 	return cmd
 }

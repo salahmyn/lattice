@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
+	"html"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,13 +22,19 @@ var mapHTML []byte
 const graphSlot = "/*__GRAPH__*/"
 
 // MapHTML returns the map page with g inlined, so it works as a single file
-// without a server (lattice export map).
-func MapHTML(g store.Graph) ([]byte, error) {
+// without a server (lattice export map). A non-empty title replaces "Block map".
+func MapHTML(g store.Graph, title string) ([]byte, error) {
 	data, err := json.Marshal(g) // escapes < and >, so the data cannot close its <script>
 	if err != nil {
 		return nil, err
 	}
-	return bytes.Replace(mapHTML, []byte(graphSlot), data, 1), nil
+	page := bytes.Replace(mapHTML, []byte(graphSlot), data, 1)
+	if title != "" {
+		t := []byte(html.EscapeString(title))
+		page = bytes.Replace(page, []byte("<title>Block map</title>"), append(append([]byte("<title>"), t...), "</title>"...), 1)
+		page = bytes.Replace(page, []byte("<h1>Block map "), append(append([]byte("<h1>"), t...), ' '), 1)
+	}
+	return page, nil
 }
 
 // withStore runs fn with the store; the Postgres store holds one connection,
