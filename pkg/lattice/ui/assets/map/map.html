@@ -39,7 +39,27 @@ h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: .01em; }
 input, select, button { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
 input[type=search] { width: 240px; max-width: 60vw; }
 main { flex: 1; display: grid; grid-template-columns: 320px 1fr 380px; min-height: 0; }
-main:has(#pane.diag) { grid-template-columns: 260px 1fr 320px; }
+main:has(#pane.diag) { grid-template-columns: 1fr; position: relative; }
+main:has(#pane.diag) #tree { display: none; }
+main.tree-on:has(#pane.diag) { grid-template-columns: 280px 1fr; }
+main.tree-on:has(#pane.diag) #tree { display: block; }
+main:has(#pane.diag) #detail { position: absolute; right: 12px; top: 12px; bottom: 12px; width: min(400px, calc(100% - 24px)); z-index: 5; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 28px rgb(0 0 0 / .14); }
+main:has(#pane.diag) #detail.none { display: none; }
+#detail .close { float: right; border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 14px; }
+.dbar .seg { display: inline-flex; align-items: center; gap: 2px; color: var(--muted); }
+.dbar .seg button { min-width: 26px; }
+.dbar button.on, .dbar button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+svg text.lane { font: 600 11px var(--sans); letter-spacing: .08em; fill: var(--muted); }
+.bx text.ck { font: 600 10.5px var(--mono); letter-spacing: .05em; fill: var(--wired); }
+.bx text.tt { font: 600 12.5px var(--sans); fill: var(--ink); }
+.bx text.td { font: 11px var(--sans); fill: var(--muted); }
+svg text.el { font: 10px var(--mono); fill: var(--muted); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; pointer-events: none; }
+.bx rect.badge { fill: var(--soft); stroke: var(--warn); }
+.bx rect.badge.ok, g > rect.badge.ok { stroke: var(--wired); }
+rect.badge { fill: var(--soft); stroke: var(--warn); }
+text.bt { font: 600 10px var(--mono); fill: var(--ink); }
+rect.bar { fill: var(--soft); stroke: var(--line); stroke-width: .5; }
+rect.bar.on { fill: var(--wired); stroke: none; }
 section { min-height: 0; overflow: auto; }
 #tree { background: var(--panel); border-right: 1px solid var(--line); padding: 6px 0; }
 #detail { background: var(--panel); border-left: 1px solid var(--line); padding: 14px 16px; }
@@ -351,13 +371,20 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
       }
       return null;
     };
+    const chainUp = x => { const c = [x]; for (let n = nodes.get(x); n && n.parent; n = nodes.get(n.parent)) c.push(n.parent); return c; };
+    const lift = (a, b) => { // a line between boxes in different containers joins the outermost boxes that differ
+      const ca = chainUp(a), cb = chainUp(b), inB = new Set(cb), i = ca.findIndex(x => inB.has(x));
+      if (i < 0) return [ca[ca.length - 1], cb[cb.length - 1]];
+      return [ca[i - 1], cb[cb.indexOf(ca[i]) - 1]];
+    };
     const nests = (a, b) => { for (let n = nodes.get(b); n && n.parent; n = nodes.get(n.parent)) if (n.parent === a) return true; return false; };
     const agg = new Map();
     D.hidden = 0;
     for (const e of edges) {
       if (D.off.has(e.kind)) continue;
-      const a = rep(e.from), b = rep(e.to);
+      let a = rep(e.from), b = rep(e.to);
       if (!a || !b || a === b || nests(a, b) || nests(b, a)) continue;
+      [a, b] = lift(a, b);
       if (!D.outside && (a.startsWith("out:") || b.startsWith("out:"))) { D.hidden++; continue; }
       for (const x of [a, b]) if (x.startsWith("out:") && !nodes.has(x)) // outside the root: a dashed box beside the others
         nodes.set(x, { id: x, parent: "", open: false, title: title(x.slice(4)), kind: byId.get(x.slice(4)).kind });
@@ -380,12 +407,45 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
     return r;
   }
 
-  const LW = 210, lh = () => S.init ? 70 : 54; // a third line holds verdict counts when a proposal is on
+  // what each block holds: blocks below it, and its statuses (attrs.status) for the built bar
+  const inside = new Map(), statusIn = new Map();
+  for (const b of blocks) for (const a of anc(b.id)) {
+    inside.set(a, (inside.get(a) || 0) + 1);
+    const st = b.attrs?.status;
+    if (st) { const m = statusIn.get(a) || statusIn.set(a, {}).get(a); m[st] = (m[st] || 0) + 1; }
+  }
+  const stampOf = new Map(sources.filter(s => s.system).map(s => [s.system, s])); // system block -> its source stamp
+  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function day(iso) { const d = iso ? new Date(iso) : null; return d && !isNaN(d) ? `${d.getDate()} ${MON[d.getMonth()]}` : ""; }
+  function stampLine(s) { // "@ abc1234 · 21 Oct", and the freshness badge
+    const fresh = s.state === "behind" ? `behind ${s.behind}` : s.state === "ahead" ? `ahead ${s.ahead}` : s.state === "current" ? "live" : (s.state || "");
+    return { text: `@ ${(s.commit || "").slice(0, 7)}${s.commit_date ? " · " + day(s.commit_date) : ""}`, fresh,
+      ok: s.state === "current" || s.state === "snapshot",
+      tip: `${s.repo || s.id} ${s.branch ? s.branch + " " : ""}${s.commit || ""} ${s.commit_date || ""}` +
+        (s.release ? ` · release ${s.release.version}${s.release.deployed_at ? " deployed " + s.release.deployed_at : ""}` : "") };
+  }
+  function lane(kind) { return /^(actor|agent)$/.test(kind) ? 0 : /^external/.test(kind) ? 2 : 1; }
+  const LANES = ["Actors", "Systems", "External systems"];
+  function kindColor(k) { let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) % 360; return `hsl(${h} 55% 48%)`; }
+  function wrap(text, chars, lines) {
+    const words = String(text || "").split(/\s+/), out = [];
+    let cur = "";
+    for (const w of words) {
+      if ((cur + " " + w).trim().length > chars && cur) { out.push(cur); cur = w; if (out.length === lines) break; }
+      else cur = (cur + " " + w).trim();
+    }
+    if (out.length < lines && cur) out.push(cur);
+    if (out.length === lines && words.join(" ").length > out.join(" ").length) out[lines - 1] = out[lines - 1].slice(0, chars - 1) + "…";
+    return out;
+  }
+
+  const LW = 250, lh = () => S.init ? 118 : 102; // a last line holds verdict counts when a proposal is on
   async function layout(pr) {
     const elkNode = id => {
       const n = pr.nodes.get(id);
-      if (!n.open) return { id, width: LW, height: lh() };
-      return { id, layoutOptions: { "elk.padding": "[top=34,left=12,bottom=12,right=12]" },
+      const part = n.parent === "" && !D.root ? { "elk.partitioning.partition": String(lane(n.kind)) } : {};
+      if (!n.open) return { id, width: LW, height: lh(), layoutOptions: part };
+      return { id, layoutOptions: { ...part, "elk.padding": "[top=40,left=14,bottom=14,right=14]", "elk.direction": "RIGHT" },
         children: [...pr.nodes.values()].filter(c => c.parent === id).map(c => elkNode(c.id)) };
     };
     const top = [...pr.nodes.values()].filter(n => n.parent === "").map(n => elkNode(n.id));
@@ -395,8 +455,8 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
       try {
         const res = await new ELK().layout({ id: "root", children: top,
           layoutOptions: { "elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-            "elk.layered.spacing.nodeNodeBetweenLayers": "60", "elk.spacing.nodeNode": "18", "elk.spacing.componentComponent": "40",
-            "elk.edgeRouting": "SPLINES", "elk.layered.mergeEdges": "true" },
+            "elk.partitioning.activate": String(!D.root), "elk.layered.spacing.nodeNodeBetweenLayers": "90",
+            "elk.spacing.nodeNode": "22", "elk.spacing.componentComponent": "50", "elk.edgeRouting": "SPLINES", "elk.layered.mergeEdges": "true" },
           edges: pr.es.map((e, i) => ({ id: "e" + i, sources: [e.from], targets: [e.to] })) });
         const walk = (n, ox, oy) => { for (const c of n.children || []) { boxes.set(c.id, { x: ox + c.x, y: oy + c.y, w: c.width, h: c.height }); walk(c, ox + c.x, oy + c.y); } };
         walk(res, 0, 0);
@@ -413,6 +473,11 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
     const leaves = [...pr.nodes.values()].filter(n => !n.open), cols = Math.max(1, Math.ceil(Math.sqrt(leaves.length * 2)));
     for (const n of leaves) { boxes.set(n.id, { x: (i % cols) * (LW + 40), y: Math.floor(i / cols) * (lh() + 40), w: LW, h: lh() }); i++; }
     return { boxes, pts: new Map(), w: cols * (LW + 40), h: Math.ceil(leaves.length / cols) * (lh() + 40) };
+  }
+
+  function badge(x, y, text, ok) {
+    const w = text.length * 6.4 + 12;
+    return `<rect class="badge${ok ? " ok" : ""}" x="${x}" y="${y - 11}" width="${w}" height="15" rx="7"/><text class="bt" x="${x + 6}" y="${y}">${esc(text)}</text>`;
   }
 
   async function renderDiagram() {
@@ -432,25 +497,63 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
     const open = [...pr.nodes.values()].filter(n => n.open).sort((a, b) => depth(a.id) - depth(b.id));
     const leaf = [...pr.nodes.values()].filter(n => !n.open);
     let h = "";
+    if (!D.root) { // lane titles above each column of the landscape
+      const xs = {};
+      for (const n of pr.nodes.values()) {
+        if (n.parent !== "") continue;
+        const b = lay.boxes.get(n.id), l = lane(n.kind);
+        if (b) xs[l] = { x: Math.min(xs[l]?.x ?? Infinity, b.x), y: Math.min(xs[l]?.y ?? Infinity, b.y) };
+      }
+      for (const l in xs) h += `<text class="lane" x="${xs[l].x}" y="${xs[l].y - 14}">${LANES[l].toUpperCase()}</text>`;
+    }
     for (const n of open) {
       const b = lay.boxes.get(n.id); if (!b) continue;
-      h += `<g class="bx" data-box="${esc(n.id)}"><rect class="c" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="10"/>` +
-        `<text class="ct" x="${b.x + 12}" y="${b.y + 21}">▾ ${esc(n.title)}</text>` + rollSvg(roll.get(n.id), b.x + b.w - 12, b.y + 21) + `</g>`;
+      const s = stampOf.get(n.id), nIn = inside.get(n.id) || 0;
+      let x = b.x + 14;
+      h += `<g class="bx" data-box="${esc(n.id)}"><rect class="c" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="12"/>` +
+        `<text class="ck" x="${x}" y="${b.y + 24}">${esc(n.kind.toUpperCase())}</text>`;
+      x += n.kind.length * 7.2 + 10;
+      h += `<text class="ct" x="${x}" y="${b.y + 24}">▾ ${esc(n.title)}</text>`;
+      x += (n.title.length + 2) * 7.6 + 10;
+      h += `<text class="tg" x="${x}" y="${b.y + 24}">${nIn} blocks${s ? " · " + esc(stampLine(s).text) : ""}</text>`;
+      x += ((nIn + " blocks").length + (s ? stampLine(s).text.length + 3 : 0)) * 6.6 + 10;
+      if (s) h += `<g><title>${esc(stampLine(s).tip)}</title>${badge(x, b.y + 24, stampLine(s).fresh, stampLine(s).ok)}</g>`;
+      h += rollSvg(roll.get(n.id), b.x + b.w - 14, b.y + 24) + `</g>`;
     }
+    const labelled = pr.es.length <= 90;
     pr.es.forEach((e, i) => {
       const p = lay.pts.get("e" + i) || straight(lay.boxes.get(e.from), lay.boxes.get(e.to));
       if (!p) return;
-      h += `<path class="e" data-e="${i}" d="${curve(p)}"><title>${esc(title(e.from.replace(/^out:/, "")))} → ${esc(title(e.to.replace(/^out:/, "")))}: ${Object.entries(e.kinds).map(([k, n]) => esc(k) + (n > 1 ? " ×" + n : "")).join(", ")}</title></path>`;
+      const kinds = Object.entries(e.kinds).sort((a, b) => b[1] - a[1]);
+      const col = kinds.length === 1 ? kindColor(kinds[0][0]) : "";
+      h += `<path class="e" data-e="${i}" d="${curve(p)}"${col ? ` style="stroke:${col}"` : ""}><title>${esc(title(e.from.replace(/^out:/, "")))} → ${esc(title(e.to.replace(/^out:/, "")))}: ${kinds.map(([k, n]) => esc(k) + (n > 1 ? " ×" + n : "")).join(", ")}</title></path>`;
+      if (labelled) {
+        const m = p[Math.floor(p.length / 2)], t = `${kinds[0][1] > 1 ? kinds[0][1] + " × " : ""}${kinds[0][0].replace(/_/g, " ")}${kinds.length > 1 ? " +" + (kinds.length - 1) : ""}`;
+        h += `<text class="el" data-e="${i}" x="${m.x}" y="${m.y - 4}" text-anchor="middle">${esc(t)}</text>`;
+      }
     });
     for (const n of leaf) {
       const b = lay.boxes.get(n.id); if (!b) continue;
-      const real = n.id.startsWith("out:") ? n.id.slice(4) : n.id, blk = byId.get(real), o = ov(blk), inner = kidsV(real).length;
-      const chars = Math.floor((b.w - 20) / 7);
-      h += `<g class="bx" data-box="${esc(n.id)}"><title>${esc(real)}${inner ? " · double-click to open" : ""}</title><rect class="l${n.id.startsWith("out:") ? " out" : ""}" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="8"/>` +
+      const out = n.id.startsWith("out:"), real = out ? n.id.slice(4) : n.id, blk = byId.get(real), o = ov(blk);
+      const nIn = inside.get(real) || 0, s = stampOf.get(real), sc = statusIn.get(real), par = blk.parent && byId.get(blk.parent);
+      const tl = wrap(n.title, Math.floor((b.w - 28) / 7.4), 2), dl = wrap(blk.description, Math.floor((b.w - 28) / 6), tl.length > 1 ? 1 : 2);
+      let y = b.y + 16;
+      h += `<g class="bx" data-box="${esc(n.id)}"><title>${esc(real)}${nIn ? " · double-click to open" : ""}</title>` +
+        `<rect class="l${out ? " out" : ""}" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="9"/>` +
         (o ? `<rect x="${b.x}" y="${b.y}" width="5" height="${b.h}" rx="2" style="fill:${vcolor(o.verdict)}"/>` : "") +
-        `<text x="${b.x + 12}" y="${b.y + 21}">${esc(n.title.length > chars ? n.title.slice(0, chars - 1) + "…" : n.title)}</text>` +
-        `<text class="tg" x="${b.x + 12}" y="${b.y + 40}">${esc(n.kind)}${blk.truth === "wired" ? " · wired" : ""}${inner && !n.id.startsWith("out:") ? " · ▸ " + inner : ""}</text>` +
-        rollSvg(roll.get(n.id), b.x + 12, b.y + 59, true) + `</g>`;
+        `<text class="tg" x="${b.x + 12}" y="${y}">${par ? "in " + esc(par.title.length > 30 ? par.title.slice(0, 29) + "…" : par.title) : esc(n.kind)}</text>`;
+      for (const t of tl) { y += 16; h += `<text class="tt" x="${b.x + 12}" y="${y}">${esc(t)}</text>`; }
+      for (const t of dl) { y += 14; h += `<text class="td" x="${b.x + 12}" y="${y}">${esc(t)}</text>`; }
+      const fy = b.y + 94;
+      const foot = [n.kind, nIn ? `${nIn} inside` : "", blk.truth === "wired" ? "wired" : ""].filter(Boolean).join(" · ");
+      h += `<text class="tg" x="${b.x + 12}" y="${fy}">${esc(foot)}</text>`;
+      if (s) { const st = stampLine(s); h += `<g><title>${esc(st.tip)}</title>${badge(b.x + b.w - st.fresh.length * 6.4 - 22, fy, st.fresh, st.ok)}</g>`; }
+      else if (sc) { // built share of what is inside, from attrs.status
+        const total = Object.values(sc).reduce((a, c) => a + c, 0), built = sc.built || 0, bw = 56;
+        h += `<g><title>${Object.entries(sc).map(([k, c]) => `${c} ${k}`).join(", ")}</title><rect class="bar" x="${b.x + b.w - bw - 12}" y="${fy - 7}" width="${bw}" height="5" rx="2"/>` +
+          `<rect class="bar on" x="${b.x + b.w - bw - 12}" y="${fy - 7}" width="${Math.round(bw * built / total)}" height="5" rx="2"/></g>`;
+      }
+      h += rollSvg(roll.get(n.id), b.x + 12, b.y + 111, true) + `</g>`;
     }
     document.getElementById("vp").innerHTML = h;
     bar();
@@ -478,12 +581,27 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
     return out;
   }
 
+  function showInside(n) { // open every block down to depth n under the root (1: the systems of the landscape)
+    D.exp = new Set();
+    const go = (id, d) => {
+      for (const c of kidsV(id)) {
+        if (!kidsV(c).length || d > n) continue;
+        if (D.root || d > 1 || byId.get(c).kind === "system") { D.exp.add(c); go(c, d + 1); }
+      }
+    };
+    go(D.root, 1);
+    D.depth = n;
+    if (S.tab === "diag") renderPane(); // sets the pane up for the diagram, then draws it
+  }
+
   function bar() {
     const el = document.getElementById("dbar");
     if (!el) return;
     const crumbs = [`<a data-root="">All</a>`];
     if (D.root) for (const a of [...anc(D.root)].reverse().concat(D.root)) crumbs.push(`<a data-root="${esc(a)}">${esc(title(a))}</a>`);
-    let h = `<span class="crumbs">${crumbs.join(" › ")}</span><button data-act="fit">Fit</button>` +
+    let h = `<button data-act="tree" aria-pressed="${!!S.treeOn}">Blocks</button><span class="crumbs">${crumbs.join(" › ")}</span>` +
+      `<span class="seg">Show inside ${[1, 2, 3].map(n => `<button data-depth="${n}"${D.depth === n ? ' class="on"' : ""}>${n}</button>`).join("")}</span>` +
+      `<button data-act="fit">Fit</button>` +
       (D.exp.size ? `<button data-act="collapse">Collapse all</button>` : "") +
       `<details class="kinds"><summary>Edges${D.off.size ? ` (${edgeKinds.length - D.off.size} of ${edgeKinds.length})` : ""}</summary><div>` +
       edgeKinds.map(k => `<label><input type="checkbox" data-kind="${esc(k)}"${D.off.has(k) ? "" : " checked"}>${esc(k)}</label>`).join("") + `</div></details>` +
@@ -577,10 +695,13 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
     const el = document.getElementById("dbar");
     el.onclick = e => {
       const r = e.target.closest("[data-root]");
-      if (r) { D.root = r.dataset.root; D.exp = new Set(); renderDiagram(); return; }
+      if (r) { D.root = r.dataset.root; D.exp = new Set(); D.depth = 0; renderDiagram(); return; }
+      const dp = e.target.closest("[data-depth]");
+      if (dp) { showInside(+dp.dataset.depth); return; }
+      if (e.target.closest("button[data-act=tree]")) { S.treeOn = !S.treeOn; document.querySelector("main").classList.toggle("tree-on", S.treeOn); bar(); setTimeout(fit, 0); return; }
       const a = e.target.closest("button[data-act]")?.dataset.act;
       if (a === "fit") fit();
-      if (a === "collapse") { D.exp.clear(); renderDiagram(); }
+      if (a === "collapse") { D.exp.clear(); D.depth = 0; renderDiagram(); }
       if (a === "prev" && P.i > 0) { P.i--; showStep(true); }
       if (a === "next") nextStep();
       if (a === "auto") { if (P.timer) { clearInterval(P.timer); P.timer = 0; } else P.timer = setInterval(nextStep, 1400); bar(); }
@@ -620,9 +741,10 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
   // ---- detail
   const detail = document.getElementById("detail");
   detail.onclick = e => {
+    if (e.target.closest("[data-close]")) { S.sel = ""; renderTree(); renderDetail(); marks(); return; }
     const f = e.target.closest("[data-focus]");
     if (f) { // drill in: the block's inside becomes the whole diagram
-      D.root = f.dataset.focus; D.exp = new Set(); S.tab = "diag";
+      D.root = f.dataset.focus; D.exp = new Set(); D.depth = 0; S.tab = "diag";
       document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x.dataset.tab === "diag"));
       renderPane(); return;
     }
@@ -630,15 +752,22 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
   };
   function renderDetail() {
     const b = byId.get(S.sel);
+    detail.classList.toggle("none", !b);
     if (!b) { detail.innerHTML = `<p class="empty">${blocks.length ? "No block selected." : "The graph is empty."}</p>`; return; }
     const crumbs = [];
     for (let p = b.parent; p && byId.has(p); p = byId.get(p).parent) crumbs.unshift(`<a data-id="${esc(p)}">${esc(title(p))}</a>`);
     const chips = [b.kind, b.tier, b.system && "system " + b.system, b.truth, b.initiative && "proposal " + b.initiative].filter(Boolean)
       .map(c => `<span class="chip">${esc(c)}</span>`).join("");
-    let h = `<h2>${esc(b.title || b.id)}</h2><div class="id">${esc(b.id)}</div>` +
+    let h = `<button class="close" data-close aria-label="Close the details">✕</button><h2>${esc(b.title || b.id)}</h2><div class="id">${esc(b.id)}</div>` +
       (kidsV(b.id).length ? `<div class="crumbs"><a class="link" data-focus="${esc(b.id)}">focus in the diagram</a></div>` : "") +
       (crumbs.length ? `<div class="crumbs">${crumbs.join(" › ")}</div>` : "") + `<div class="chips">${chips}</div>` +
       (b.description ? `<p>${esc(b.description)}</p>` : "");
+    const sst = stampOf.get(b.id);
+    if (sst) {
+      const st = stampLine(sst);
+      h += `<h3>Reflects</h3><div>${esc(sst.repo || sst.id)}${sst.branch ? " · " + esc(sst.branch) : ""} ${esc(st.text)} <span class="chip ${st.ok ? "ok" : "warn"}"><span class="st">${esc(st.fresh)}</span></span></div>` +
+        (sst.release ? `<div class="n">live release ${esc(sst.release.version)}${sst.release.deployed_at ? ", deployed " + esc(day(sst.release.deployed_at)) : ""}${sst.release.commit ? " (" + esc(sst.release.commit.slice(0, 7)) + ")" : ""}</div>` : "");
+    }
     const o = ov(b);
     if (o) {
       h += `<h3>Proposal verdict</h3><div class="verdict"><i class="dot" style="background:${vcolor(o.verdict)}"></i>${esc(o.title || o.verdict)}</div>` +
@@ -655,7 +784,9 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
     detail.innerHTML = h;
   }
 
-  renderTree(); renderPane(); renderDetail();
+  showInside(1); // also draws the diagram
+  renderTree(); renderDetail();
+  if (S.tab !== "diag") renderPane();
   window.addEventListener("resize", () => { if (S.tab === "rel") renderRelations(); });
 })();
 </script>
