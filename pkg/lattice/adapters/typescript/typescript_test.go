@@ -143,3 +143,20 @@ func TestDetectsRoutesAndNoDoubleCount(t *testing.T) {
 		}
 	}
 }
+
+// TestTestNameKeepsEscapedQuotes: a description with an escape sequence is
+// split into several string nodes; the symbol name must keep all of them.
+func TestTestNameKeepsEscapedQuotes(t *testing.T) {
+	src := "/** @verifies kid:INV-3 */\nit('saving one kid never changes another kid\\'s time', () => {});\n"
+	mod, err := New().Parse(context.Background(), "src/kid.test.ts", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	want := "saving one kid never changes another kid's time"
+	for _, s := range mod.Symbols {
+		if s.Name == want {
+			return
+		}
+	}
+	t.Errorf("no test symbol named %q; got %+v", want, mod.Symbols)
+}

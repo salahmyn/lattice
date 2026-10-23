@@ -2,6 +2,18 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **TypeScript test names keep escape sequences**: an `it('… kid\'s …')`
+  description was cut at the first escape (only the first string fragment was
+  read), so its test FQN and name were truncated.
+- **vitest / jest results reach `demonstrated`**: JUnit cases are now also
+  indexed as `<file without extension>.test.<slug of the it() text>`, the FQN
+  shape the TypeScript adapter gives `it()` blocks. Before, `lattice rtm`
+  could never upgrade a TypeScript-verified criterion past `verified`.
+
 ## [0.9.0] — 2026-10-22
 
 Block maps. Lattice can now build, keep current and serve a block map of

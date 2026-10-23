@@ -390,12 +390,21 @@ func (p *tsParser) firstStringArg(args *sitter.Node) string {
 		if c.Type() != "string" {
 			continue
 		}
+		// A literal is split into string_fragment and escape_sequence nodes
+		// ('kid\'s' is three children); join them all, decoding simple escapes.
+		var b strings.Builder
 		for j := 0; j < int(c.NamedChildCount()); j++ {
-			if frag := c.NamedChild(j); frag.Type() == "string_fragment" {
-				return frag.Content(p.src)
+			part := c.NamedChild(j)
+			switch part.Type() {
+			case "string_fragment":
+				b.WriteString(part.Content(p.src))
+			case "escape_sequence":
+				if esc := part.Content(p.src); len(esc) == 2 {
+					b.WriteString(esc[1:])
+				}
 			}
 		}
-		return "" // empty string literal
+		return b.String() // "" for an empty string literal
 	}
 	return ""
 }

@@ -72,3 +72,28 @@ func TestParseBareTestsuite(t *testing.T) {
 		t.Errorf("bare suite lookup = (%s,%v), want (pass,true)", o, ok)
 	}
 }
+
+// TestLookupVitestItBlock joins a vitest report (classname = file path, name =
+// "describe > it") to the FQN the TypeScript adapter gives an it() block.
+func TestLookupVitestItBlock(t *testing.T) {
+	const report = `<testsuites><testsuite name="src/kid/screenTime.test.ts">
+<testcase classname="src/kid/screenTime.test.ts" name="screen time &gt; counts watched seconds against the daily limit"/>
+<testcase classname="src/kid/screenTime.test.ts" name="screen time &gt; stores usage per kid: saving one kid never changes another kid's remaining time"><failure/></testcase>
+</testsuite></testsuites>`
+	set, err := ParseJUnit([]byte(report))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		ref  string
+		want Outcome
+	}{
+		{"apps.client.src.kid.screenTime.test.test.counts-watched-seconds-against-the-daily-limit", Pass},
+		{"apps.client.src.kid.screenTime.test.test.stores-usage-per-kid-saving-one-kid-never-changes-another-kid-s-remaining-time", Fail},
+	}
+	for _, c := range cases {
+		if got, ok := set.Lookup(c.ref); !ok || got != c.want {
+			t.Errorf("Lookup(%q) = (%s,%v), want (%s,true)", c.ref, got, ok, c.want)
+		}
+	}
+}
