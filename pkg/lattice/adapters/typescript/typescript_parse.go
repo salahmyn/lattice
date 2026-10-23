@@ -165,8 +165,19 @@ func (p *tsParser) handleTestCall(call *sitter.Node, anns []ir.Annotation) {
 		return
 	}
 	args := call.ChildByFieldName("arguments")
+	kind := classifyTestCall(fn, p.src)
+	if kind == notATest {
+		return
+	}
+	// A modifier call (test.skip, it.only, test.fail, ...) declares a test only
+	// when its first argument is the title; forms such as test.skip(cond,
+	// "reason") toggle the surrounding test and are not tests themselves.
+	if kind == testCase && fn.Type() == "member_expression" && !denoTest(fn, p.src) &&
+		!firstArgIsTitle(args) && len(anns) == 0 {
+		return
+	}
 
-	if callee == "describe" || callee == "suite" || callee == "context" {
+	if kind == testGroup {
 		// A grouping call is structure, not a test — record it only when it
 		// carries annotations. Always recurse for nested cases.
 		if len(anns) > 0 {
@@ -440,6 +451,87 @@ func innerCall(stmt *sitter.Node) *sitter.Node {
 	return nil
 }
 
+// firstArgIsTitle reports whether a call's first argument is a string or
+// template literal, the title slot of a test declaration.
+func firstArgIsTitle(args *sitter.Node) bool {
+	if args == nil || args.NamedChildCount() == 0 {
+		return false
+	}
+	switch args.NamedChild(0).Type() {
+	case "string", "template_string":
+		return true
+	}
+	return false
+}
+
+type testCallKind int
+
+const (
+	notATest testCallKind = iota
+	testCase
+	testGroup
+)
+
+// testCallHelpers are members of a test function that are not test cases:
+// hooks, fixtures, configuration and runtime helpers (Playwright's
+// test.beforeEach / test.use / test.step / test.describe.configure, ...).
+var testCallHelpers = map[string]bool{
+	"beforeEach": true, "afterEach": true, "beforeAll": true, "afterAll": true,
+	"use": true, "step": true, "extend": true, "info": true, "configure": true,
+	"setTimeout": true, "slow": true, "expect": true, "each": true,
+}
+
+// classifyTestCall decides whether a call whose root callee is a test
+// function declares a test case, a group of tests, or neither. Groups are
+// describe()/suite()/context() and any chain through .describe, so
+// Playwright's test.describe(...) and test.describe.serial(...) are walked
+// for their nested tests instead of being read as one test.
+func classifyTestCall(fn *sitter.Node, src []byte) testCallKind {
+	if denoTest(fn, src) {
+		return testCase
+	}
+	chain := memberChain(fn, src)
+	if len(chain) == 0 {
+		return notATest
+	}
+	for _, part := range chain[1:] {
+		if testCallHelpers[part] {
+			return notATest
+		}
+	}
+	switch chain[0] {
+	case "describe", "suite", "context":
+		return testGroup
+	}
+	for _, part := range chain[1:] {
+		if part == "describe" {
+			return testGroup
+		}
+	}
+	return testCase
+}
+
+// memberChain flattens a callee into its identifier path:
+// test.describe.serial -> [test describe serial]. It returns nil for callees
+// that are not plain identifier/member chains (calls, subscripts, ...).
+func memberChain(n *sitter.Node, src []byte) []string {
+	switch n.Type() {
+	case "identifier":
+		return []string{n.Content(src)}
+	case "member_expression":
+		obj, prop := n.ChildByFieldName("object"), n.ChildByFieldName("property")
+		if obj == nil || prop == nil {
+			return nil
+		}
+		head := memberChain(obj, src)
+		if head == nil {
+			return nil
+		}
+		return append(head, prop.Content(src))
+	}
+	return nil
+}
+
 // calleeName resolves the callee of a call expression to a bare name,
 // unwrapping member access so describe.only / it.skip still resolve.
 func calleeName(fn *sitter.Node, src []byte) string {
@@ -455,8 +547,8 @@ func calleeName(fn *sitter.Node, src []byte) string {
 		if denoTest(fn, src) || denoTest(obj, src) {
 			return "test"
 		}
-		if obj.Type() == "identifier" {
-			return obj.Content(src)
+		if chain := memberChain(fn, src); len(chain) > 0 {
+			return chain[0]
 		}
 	}
 	return ""

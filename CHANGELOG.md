@@ -17,6 +17,28 @@ All notable changes to Lattice are documented in this file.
   `.mts` / `.cts` forms) count as test files. CommonJS e2e scripts can carry
   `@verifies` and join their JUnit results; the results join already accepted
   these extensions.
+- **Playwright tests inside `test.describe` are found**: `test.describe(...)`
+  and its `.serial` / `.parallel` / `.only` / `.skip` forms are now groups
+  whose bodies are walked. Before, the group was recorded as one test named
+  after the group and every test inside it was lost, so `@verifies` on
+  idiomatic Playwright specs never attached. Hooks, `test.use`, `test.step`,
+  `test.describe.configure` and untitled `test.skip(cond, …)` are no longer
+  mistaken for tests.
+- **Playwright results reach `demonstrated`**: Playwright's JUnit reporter
+  names a case by its title path joined with ` › `; the join now takes the
+  last part as the test title, as it already did for vitest/jest's ` > `. A
+  case that fails in any browser project counts as failing.
+- **Result lookup is deterministic**: when several report cases match a
+  verifier, the most specific match wins (the longest shared path), and equal
+  matches resolve to the worst outcome. Before, two files with the same test
+  title gave a pass or a fail depending on map order.
+
+### Changed
+
+- **`lattice results ingest` takes several reports**: `ingest unit.xml
+  e2e.xml` merges them into one set, a failure in any report winning.
+  Previously each call replaced the set, so unit and e2e results could not
+  both count toward one criterion.
 
 ## [0.9.1] — 2026-10-23
 
