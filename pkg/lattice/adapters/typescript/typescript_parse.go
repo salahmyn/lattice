@@ -7,9 +7,11 @@ import (
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
+	tstsx "github.com/smacker/go-tree-sitter/typescript/tsx"
 	tsts "github.com/smacker/go-tree-sitter/typescript/typescript"
 
 	"github.com/salahmyn/lattice/pkg/lattice/adapters/astutil"
+	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 )
 
@@ -52,7 +54,7 @@ func (a *Adapter) parse(ctx context.Context, path string, source []byte) (ir.Mod
 	mod := ir.Module{File: path, Language: a.Name()}
 
 	parser := sitter.NewParser()
-	parser.SetLanguage(tsts.GetLanguage())
+	parser.SetLanguage(grammarFor(path))
 	tree, err := parser.ParseCtx(ctx, nil, source)
 	if err != nil {
 		return mod, err
@@ -68,6 +70,19 @@ func (a *Adapter) parse(ctx context.Context, path string, source []byte) (ir.Mod
 	}
 	p.walkStatements(tree.RootNode())
 	return mod, nil
+}
+
+// grammarFor picks the tree-sitter grammar for a path. Only .ts/.mts/.cts use
+// the plain TypeScript grammar, where <T>expr is a type assertion; every other
+// extension may contain JSX, which that grammar cannot parse (a React
+// component in a .tsx file would come out as an error tree with no symbols).
+// The tsx grammar is a superset for JavaScript, so .js/.mjs/.cjs use it too.
+func grammarFor(path string) *sitter.Language {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".ts", ".mts", ".cts":
+		return tsts.GetLanguage()
+	}
+	return tstsx.GetLanguage()
 }
 
 type tsParser struct {
@@ -93,36 +108,69 @@ func (p *tsParser) walkStatements(parent *sitter.Node) {
 			// imports may sit between the module-header JSDoc and code;
 			// keep pending annotations alive across them.
 		case "export_statement":
-			if decl := exportedDecl(n); decl != nil {
-				p.handleDecl(decl, pending, true)
+			if decl := exportedDecl(n); decl == nil || !p.handleDecl(decl, pending, true) {
+				p.orphan(pending, n)
 			}
 			pending = nil
 		case "function_declaration", "class_declaration", "abstract_class_declaration",
 			"lexical_declaration", "variable_declaration", "interface_declaration":
-			p.handleDecl(n, pending, false)
+			if !p.handleDecl(n, pending, false) {
+				p.orphan(pending, n)
+			}
 			pending = nil
 		case "expression_statement":
-			if call := innerCall(n); call != nil {
-				p.handleCall(call, pending)
+			if call := innerCall(n); call == nil || !p.handleCall(call, pending) {
+				p.orphan(pending, n)
 			}
 			pending = nil
 		default:
+			p.orphan(pending, n)
 			pending = nil
 		}
 	}
+	p.orphan(pending, nil)
+}
+
+// orphan reports annotations that attach to no symbol. They used to be
+// dropped silently, so an @feature or @verifies above a construct the adapter
+// does not model (an object literal, a bare statement, or a file the grammar
+// could not parse) looked declared but never reached the graph. at is the
+// node that followed the annotations; nil means the end of the block.
+func (p *tsParser) orphan(anns []ir.Annotation, at *sitter.Node) {
+	if len(anns) == 0 {
+		return
+	}
+	ln, what := 0, "the end of the block"
+	if at != nil {
+		ln, what = line(at), "a "+strings.ReplaceAll(at.Type(), "_", " ")
+	}
+	kinds := make([]string, 0, len(anns))
+	for _, a := range anns {
+		kinds = append(kinds, "@"+a.Kind)
+	}
+	if ln == 0 {
+		ln = anns[0].Line
+	}
+	p.mod.Diagnostics = append(p.mod.Diagnostics, ir.Diagnostic{
+		Line: ln, Code: schema.CodeAnnotationOrphaned,
+		Message: fmt.Sprintf("%s attaches to no symbol: it is followed by %s, which declares no function, class or test",
+			strings.Join(kinds, ", "), what),
+	})
 }
 
 // handleDecl records a declaration's symbol(s) with the given annotations.
 // exported reports whether the declaration is part of the module's public API.
-func (p *tsParser) handleDecl(n *sitter.Node, anns []ir.Annotation, exported bool) {
+// It reports whether the declaration produced a symbol for the annotations.
+func (p *tsParser) handleDecl(n *sitter.Node, anns []ir.Annotation, exported bool) bool {
 	switch n.Type() {
 	case "function_declaration":
-		p.addSymbol(p.fieldText(n, "name"), ir.KindFunction, "", n, anns, exported)
+		return p.addSymbol(p.fieldText(n, "name"), ir.KindFunction, "", n, anns, exported)
 	case "class_declaration", "abstract_class_declaration":
-		p.addClass(n, anns, exported)
+		return p.addClass(n, anns, exported)
 	case "interface_declaration":
-		p.addSymbol(p.fieldText(n, "name"), ir.KindInterface, "", n, anns, exported)
+		return p.addSymbol(p.fieldText(n, "name"), ir.KindInterface, "", n, anns, exported)
 	case "lexical_declaration", "variable_declaration":
+		added := false
 		for i := 0; i < int(n.NamedChildCount()); i++ {
 			d := n.NamedChild(i)
 			if d.Type() != "variable_declarator" {
@@ -134,17 +182,21 @@ func (p *tsParser) handleDecl(n *sitter.Node, anns []ir.Annotation, exported boo
 			}
 			switch val.Type() {
 			case "arrow_function", "function", "function_expression":
-				p.addSymbol(p.fieldText(d, "name"), ir.KindFunction, "", d, anns, exported)
+				added = p.addSymbol(p.fieldText(d, "name"), ir.KindFunction, "", d, anns, exported) || added
 			}
 		}
+		return added
 	}
+	return false
 }
 
 // handleCall dispatches a bare call statement to test-symbol capture and
 // HTTP-route auto-detection.
-func (p *tsParser) handleCall(call *sitter.Node, anns []ir.Annotation) {
-	p.handleTestCall(call, anns)
+// It reports whether the call produced a symbol for the annotations.
+func (p *tsParser) handleCall(call *sitter.Node, anns []ir.Annotation) bool {
+	consumed := p.handleTestCall(call, anns)
 	p.detectRoute(call)
+	return consumed
 }
 
 // handleTestCall records a synthetic symbol for a Jest/Vitest-style test call
@@ -154,27 +206,28 @@ func (p *tsParser) handleCall(call *sitter.Node, anns []ir.Annotation) {
 // carry meaning: an it()/test() with an inline callback (the idiomatic case,
 // where annotations attach to the call) or any test call carrying pending
 // annotations. `it("desc", namedFn)` merely registers an already-captured
-// named function and is not duplicated.
-func (p *tsParser) handleTestCall(call *sitter.Node, anns []ir.Annotation) {
+// named function and is not duplicated. It reports whether a symbol carrying
+// the annotations was recorded.
+func (p *tsParser) handleTestCall(call *sitter.Node, anns []ir.Annotation) bool {
 	fn := call.ChildByFieldName("function")
 	if fn == nil {
-		return
+		return false
 	}
 	callee := calleeName(fn, p.src)
 	if !testCallNames[callee] {
-		return
+		return false
 	}
 	args := call.ChildByFieldName("arguments")
 	kind := classifyTestCall(fn, p.src)
 	if kind == notATest {
-		return
+		return false
 	}
 	// A modifier call (test.skip, it.only, test.fail, ...) declares a test only
 	// when its first argument is the title; forms such as test.skip(cond,
 	// "reason") toggle the surrounding test and are not tests themselves.
 	if kind == testCase && fn.Type() == "member_expression" && !denoTest(fn, p.src) &&
 		!firstArgIsTitle(args) && len(anns) == 0 {
-		return
+		return false
 	}
 
 	if kind == testGroup {
@@ -186,11 +239,13 @@ func (p *tsParser) handleTestCall(call *sitter.Node, anns []ir.Annotation) {
 		if body := callbackBody(args); body != nil {
 			p.walkStatements(body)
 		}
-		return
+		return len(anns) > 0
 	}
 	if hasInlineCallback(args) || len(anns) > 0 {
 		p.addTestSymbol(p.testDesc(args, callee), call, anns)
+		return true
 	}
+	return false
 }
 
 // testDesc returns the first string argument of a test call, falling back to
@@ -229,10 +284,10 @@ func (p *tsParser) detectRoute(call *sitter.Node) {
 }
 
 // addClass records a class symbol and its method symbols.
-func (p *tsParser) addClass(n *sitter.Node, anns []ir.Annotation, exported bool) {
+func (p *tsParser) addClass(n *sitter.Node, anns []ir.Annotation, exported bool) bool {
 	name := p.fieldText(n, "name")
 	if name == "" {
-		return
+		return false
 	}
 	fqn := p.modulePath + "." + name
 	p.mod.Symbols = append(p.mod.Symbols, ir.Symbol{
@@ -243,7 +298,7 @@ func (p *tsParser) addClass(n *sitter.Node, anns []ir.Annotation, exported bool)
 
 	body := n.ChildByFieldName("body")
 	if body == nil {
-		return
+		return true
 	}
 	var pending []ir.Annotation
 	for i := 0; i < int(body.NamedChildCount()); i++ {
@@ -258,18 +313,23 @@ func (p *tsParser) addClass(n *sitter.Node, anns []ir.Annotation, exported bool)
 			// A method is part of the public surface only when its class is
 			// and it carries no private/protected accessibility modifier.
 			methodExported := exported && !hasPrivateModifier(c, p.src)
-			p.addSymbol(mname, ir.KindMethod, fqn, c, pending, methodExported)
+			if !p.addSymbol(mname, ir.KindMethod, fqn, c, pending, methodExported) {
+				p.orphan(pending, c)
+			}
 			pending = nil
 		default:
+			p.orphan(pending, c)
 			pending = nil
 		}
 	}
+	p.orphan(pending, nil)
+	return true
 }
 
-// addSymbol appends one symbol to the module.
-func (p *tsParser) addSymbol(name string, kind ir.SymbolKind, enclosingFQN string, n *sitter.Node, anns []ir.Annotation, exported bool) {
+// addSymbol appends one symbol to the module and reports whether it did.
+func (p *tsParser) addSymbol(name string, kind ir.SymbolKind, enclosingFQN string, n *sitter.Node, anns []ir.Annotation, exported bool) bool {
 	if name == "" {
-		return
+		return false
 	}
 	fqn := p.modulePath + "." + name
 	if enclosingFQN != "" {
@@ -280,6 +340,7 @@ func (p *tsParser) addSymbol(name string, kind ir.SymbolKind, enclosingFQN strin
 		File: p.mod.File, Line: line(n), EnclosingFQN: enclosingFQN,
 		Annotations: anns, IsTest: p.testFile || hasVerify(anns), Exported: exported,
 	})
+	return true
 }
 
 // addTestSymbol records a synthetic symbol for a test-framework call. The test

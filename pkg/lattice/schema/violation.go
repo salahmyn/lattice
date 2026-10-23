@@ -29,6 +29,7 @@ const (
 	CodeOrphanAnnotationInvariant  = "ORPHAN_ANNOTATION_INVARIANT"
 	CodeOrphanAnnotationRole       = "ORPHAN_ANNOTATION_ROLE"
 	CodeAnnotationArgNotLiteral    = "ANNOTATION_ARG_NOT_LITERAL"
+	CodeAnnotationOrphaned         = "ANNOTATION_ORPHANED"
 	CodeModuleAnnotationConflict   = "MODULE_ANNOTATION_CONFLICT"
 
 	// Verification integrity

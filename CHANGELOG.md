@@ -28,6 +28,15 @@ All notable changes to Lattice are documented in this file.
   names a case by its title path joined with ` › `; the join now takes the
   last part as the test title, as it already did for vitest/jest's ` > `. A
   case that fails in any browser project counts as failing.
+- **React components in `.tsx` / `.jsx` are extracted**: those files were
+  parsed with the plain TypeScript grammar, which cannot read JSX, so a file
+  holding a function component came out with no symbols and every
+  `@feature`, `@capability` or `@enforces` on a component was dropped. JSX-capable
+  extensions now use the tsx grammar; `.ts` / `.mts` / `.cts` keep the
+  TypeScript grammar, where `<T>expr` is a type assertion.
+- **Orphaned annotations are reported**: an annotation that attaches to no
+  symbol (above an object literal, a bare statement, or at the end of a block)
+  now raises `ANNOTATION_ORPHANED` (warning) instead of vanishing.
 - **Result lookup is deterministic**: when several report cases match a
   verifier, the most specific match wins (the longest shared path), and equal
   matches resolve to the worst outcome. Before, two files with the same test
