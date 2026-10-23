@@ -21,12 +21,14 @@ func New() *Adapter { return &Adapter{} }
 func (*Adapter) Name() string { return "typescript" }
 
 // FileExtensions returns the extensions this adapter owns.
-func (*Adapter) FileExtensions() []string { return []string{".ts", ".tsx", ".js", ".jsx"} }
+func (*Adapter) FileExtensions() []string {
+	return []string{".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"}
+}
 
 // CanParse reports whether path is a TS/JS file.
 func (a *Adapter) CanParse(path string) bool {
 	switch strings.ToLower(filepath.Ext(path)) {
-	case ".ts", ".tsx", ".js", ".jsx":
+	case ".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs":
 		return true
 	}
 	return false

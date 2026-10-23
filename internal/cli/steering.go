@@ -66,9 +66,13 @@ func newResultsCommand(io *IO) *cobra.Command {
 
 func newResultsIngestCommand(io *IO) *cobra.Command {
 	return &cobra.Command{
-		Use:   "ingest <junit.xml>",
-		Short: "Parse a junit/pytest/phpunit XML report into lattice/.cache/results",
-		Args:  cobra.ExactArgs(1),
+		Use:   "ingest <junit.xml>...",
+		Short: "Parse junit/pytest/phpunit/Playwright XML reports into lattice/.cache/results",
+		Long: "Parse one or more JUnit-family XML reports into lattice/.cache/results,\n" +
+			"replacing the previous set. Pass every report of the run together (unit\n" +
+			"and e2e): a verifier with no result cannot count as demonstrated, and a\n" +
+			"failure in any report wins over a pass.",
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ws, err := openWorkspace(io)
 			if err != nil {
@@ -77,7 +81,7 @@ func newResultsIngestCommand(io *IO) *cobra.Command {
 			// The commit is best-effort: the graph carries it, but ingesting
 			// shouldn't require a full extract, so we read it cheaply.
 			kg, _, _ := graphFor(io, cmd, false)
-			set, err := results.Ingest(ws.LatticeDir, args[0], kg.GeneratedFromCommit)
+			set, err := results.Ingest(ws.LatticeDir, kg.GeneratedFromCommit, args...)
 			if err != nil {
 				return io.fail("INGEST_FAILED", err.Error(), nil)
 			}

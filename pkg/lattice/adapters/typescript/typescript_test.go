@@ -184,3 +184,99 @@ func TestDenoTestIsATest(t *testing.T) {
 		}
 	}
 }
+
+func TestModuleExtensionsAreParsed(t *testing.T) {
+	a := New()
+	for _, p := range []string{"e2e/smoke.spec.cjs", "e2e/pair.test.mjs", "src/lib.mts", "src/lib.cts"} {
+		if !a.CanParse(p) {
+			t.Errorf("CanParse(%q) = false", p)
+		}
+	}
+	src := "const { test } = require('@playwright/test');\n" +
+		"/** @verifies app:INV-3 */\ntest('signs in with a code', async ({ page }) => {});\n"
+	mod, err := a.Parse(context.Background(), "e2e/signin.spec.cjs", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var found bool
+	for _, s := range mod.Symbols {
+		if s.IsTest && s.Name == "signs in with a code" {
+			for _, an := range s.Annotations {
+				found = found || an.Kind == "verifies"
+			}
+			if s.FQN != "e2e.signin.spec.test.signs-in-with-a-code" {
+				t.Errorf("FQN = %q", s.FQN)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("no verifying test symbol in a .spec.cjs file; got %+v", mod.Symbols)
+	}
+}
+
+const playwrightSample = `import { test, expect } from '@playwright/test';
+
+test.use({ locale: 'en-US' });
+test.beforeEach(async ({ page }) => { await page.goto('/'); });
+
+test.describe('Sign in', () => {
+  test.describe.configure({ mode: 'serial' });
+  test.skip(({ browserName }) => browserName === 'firefox', 'flaky there');
+
+  /** @verifies auth:INV-1 */
+  test('signs in with a code', async ({ page }) => {
+    await test.step('enter the code', async () => {});
+  });
+
+  test.describe.serial('expiry', () => {
+    /** @verifies auth:INV-2 */
+    test('rejects an expired code', async ({ page }) => {});
+  });
+
+  test.fixme('remembers the device', async ({ page }) => {});
+});
+
+test.describe(() => {
+  test('anonymous group case', async ({ page }) => {});
+});
+`
+
+// TestPlaywrightSpec: test.describe(...) and its .serial/.parallel forms are
+// groups whose bodies hold the real tests; hooks, test.use, configure and
+// untitled test.skip(cond) are not tests.
+func TestPlaywrightSpec(t *testing.T) {
+	mod, err := New().Parse(context.Background(), "e2e/auth/signin.spec.ts", []byte(playwrightSample))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := map[string]string{} // name -> FQN
+	verified := map[string]string{}
+	for _, s := range mod.Symbols {
+		if !s.IsTest {
+			continue
+		}
+		got[s.Name] = s.FQN
+		for _, a := range s.Annotations {
+			if a.Kind == "verifies" && len(a.Args) == 1 {
+				verified[s.Name], _ = a.Args[0].(string)
+			}
+		}
+	}
+	want := map[string]string{
+		"signs in with a code":    "e2e.auth.signin.spec.test.signs-in-with-a-code",
+		"rejects an expired code": "e2e.auth.signin.spec.test.rejects-an-expired-code",
+		"remembers the device":    "e2e.auth.signin.spec.test.remembers-the-device",
+		"anonymous group case":    "e2e.auth.signin.spec.test.anonymous-group-case",
+	}
+	for name, fqn := range want {
+		if got[name] != fqn {
+			t.Errorf("test %q: FQN %q, want %q", name, got[name], fqn)
+		}
+	}
+	if len(got) != len(want) {
+		t.Errorf("test symbols = %v, want exactly %v", got, want)
+	}
+	if verified["signs in with a code"] != "auth:INV-1" || verified["rejects an expired code"] != "auth:INV-2" {
+		t.Errorf("@verifies not attached inside test.describe: %v", verified)
+	}
+}

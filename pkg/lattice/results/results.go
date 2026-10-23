@@ -105,16 +105,21 @@ func collect(s junitSuite, out map[string]Outcome) {
 			o = Skip
 		}
 		for _, k := range keysFor(c.Classname, c.Name) {
-			// A failure anywhere wins over a pass under the same key.
-			if prev, ok := out[k]; ok && prev == Fail {
-				continue
-			}
-			out[k] = o
+			record(out, k, o)
 		}
 	}
 	for _, nested := range s.Suites {
 		collect(nested, out)
 	}
+}
+
+// record stores an outcome under a key. A failure anywhere wins over a pass
+// under the same key, across cases, projects and reports.
+func record(out map[string]Outcome, k string, o Outcome) {
+	if prev, ok := out[k]; ok && prev == Fail {
+		return
+	}
+	out[k] = o
 }
 
 // keysFor returns the lookup keys for a test case: the fully-qualified
@@ -143,10 +148,12 @@ func keysFor(classname, name string) []string {
 	return keys
 }
 
-// jsTestKey indexes a vitest/jest case under the FQN shape the TypeScript
-// adapter gives it-blocks: <file path without extension>.test.<slug of the
-// it() description>. vitest/jest report classname as the file path and name
-// as "describe > ... > it description"; only the last part is the it() text.
+// jsTestKey indexes a vitest/jest/Playwright case under the FQN shape the
+// TypeScript adapter gives it-blocks: <file path without extension>.test.<slug
+// of the it() description>. These runners report classname as the file path
+// and name as the title path, "describe > ... > it description" (vitest/jest)
+// or "describe › ... › test title" (Playwright); only the last part is the
+// it() text.
 // Lookup's suffix match then joins the adapter's repo-relative FQN to the
 // runner's package-relative path.
 func jsTestKey(classname, name string) string {
@@ -157,8 +164,10 @@ func jsTestKey(classname, name string) string {
 		return ""
 	}
 	leaf := name
-	if i := strings.LastIndex(leaf, " > "); i >= 0 {
-		leaf = leaf[i+3:]
+	for _, sep := range []string{" > ", " › "} {
+		if i := strings.LastIndex(leaf, sep); i >= 0 {
+			leaf = leaf[i+len(sep):]
+		}
 	}
 	return strings.TrimSuffix(classname, ext) + ".test." + slugify(leaf)
 }
@@ -203,6 +212,13 @@ func normalize(s string) string {
 // outcome. Matching is exact-on-normalized first, then by trailing
 // segment so a verifier FQN need not be byte-identical to the report's
 // classname.name. The bool is false when the test isn't in the set.
+//
+// When several report cases match, the most specific one wins: the
+// longest overlap between the ref and the report key, so a runner path
+// relative to a test directory (auth.signin.spec...) still beats a
+// same-titled case in another file. Equally specific matches resolve
+// to the worst outcome (fail, then skip, then pass), so the answer
+// never depends on map order and a failure is never hidden.
 func (s Set) Lookup(ref string) (Outcome, bool) {
 	if len(s.Results) == 0 {
 		return "", false
@@ -211,32 +227,55 @@ func (s Set) Lookup(ref string) (Outcome, bool) {
 	if o, ok := s.Results[key]; ok {
 		return o, true
 	}
-	// Trailing-segment match: the report key ends with the ref's last
-	// segment(s), or vice-versa.
 	last := key
 	if i := strings.LastIndex(key, "."); i >= 0 {
 		last = key[i+1:]
 	}
+	best, bestScore, found := Outcome(""), 0, false
 	for k, o := range s.Results {
-		if strings.HasSuffix(k, "."+last) || k == last || strings.HasSuffix(key, "."+k) {
-			return o, true
+		score := 0
+		switch {
+		case strings.HasSuffix(key, "."+k):
+			score = len(k) // the report key is a dotted tail of the ref
+		case strings.HasSuffix(k, "."+key):
+			score = len(key) // the ref is a dotted tail of the report key
+		case strings.HasSuffix(k, "."+last) || k == last:
+			score = len(last) // only the final segment agrees
+		default:
+			continue
+		}
+		if !found || score > bestScore || (score == bestScore && worse(o, best)) {
+			best, bestScore, found = o, score, true
 		}
 	}
-	return "", false
+	return best, found
 }
 
-// Ingest parses an XML report and writes the normalized Set to the
-// lattice cache. commit stamps which commit the run covers.
-func Ingest(latticeDir, xmlPath, commit string) (Set, error) {
-	data, err := os.ReadFile(xmlPath)
-	if err != nil {
-		return Set{}, err
+// worse reports whether a is a worse outcome than b (fail < skip < pass).
+func worse(a, b Outcome) bool {
+	rank := map[Outcome]int{Fail: 0, Skip: 1, Pass: 2}
+	return rank[a] < rank[b]
+}
+
+// Ingest parses one or more XML reports into a single Set and writes it to
+// the lattice cache, replacing any earlier set. commit stamps which commit
+// the run covers. Pass every report of the run together (unit, e2e, ...):
+// a verifier with no result in the set cannot count as demonstrated.
+func Ingest(latticeDir, commit string, xmlPaths ...string) (Set, error) {
+	set := Set{Commit: commit, Results: map[string]Outcome{}}
+	for _, p := range xmlPaths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return Set{}, err
+		}
+		one, err := ParseJUnit(data)
+		if err != nil {
+			return Set{}, fmt.Errorf("%s: %w", p, err)
+		}
+		for k, o := range one.Results {
+			record(set.Results, k, o)
+		}
 	}
-	set, err := ParseJUnit(data)
-	if err != nil {
-		return Set{}, err
-	}
-	set.Commit = commit
 	if err := Save(latticeDir, set); err != nil {
 		return set, err
 	}

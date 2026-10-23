@@ -39,9 +39,37 @@ type Options struct {
 }
 
 // skipDirs are directory names never descended into when scanning code.
+// .claude holds agent state, including full checkouts under .claude/worktrees.
 var skipDirs = map[string]bool{
 	".git": true, ".lattice": true, "node_modules": true, "vendor": true,
 	"__pycache__": true, ".venv": true, "venv": true, "dist": true, "build": true,
+	".claude": true,
+}
+
+// isLinkedWorktree reports whether dir is a linked git worktree: its .git is
+// a file pointing into another repository's .git/worktrees/. Such a directory
+// is a second checkout of the code, so scanning it double-counts every symbol.
+// Submodules (gitdir under .git/modules/) are not matched.
+func isLinkedWorktree(dir string) bool {
+	b, err := os.ReadFile(filepath.Join(dir, ".git"))
+	if err != nil {
+		return false
+	}
+	line := strings.TrimSpace(string(b))
+	if !strings.HasPrefix(line, "gitdir:") {
+		return false
+	}
+	gitdir := filepath.ToSlash(strings.TrimSpace(strings.TrimPrefix(line, "gitdir:")))
+	return strings.Contains(gitdir, "/worktrees/")
+}
+
+// skipDir reports whether the walk of a code root should not descend into
+// dir. The root itself is never skipped, so a workspace may live in a worktree.
+func skipDir(root, dir, name, latticeDir string) bool {
+	if dir == root {
+		return false
+	}
+	return skipDirs[name] || dir == latticeDir || isLinkedWorktree(dir)
 }
 
 // Extract loads all artifacts for a workspace. Source files are parsed
@@ -197,7 +225,7 @@ func parseSources(ctx context.Context, w *workspace.Workspace, reg *adapters.Reg
 				return nil
 			}
 			if d.IsDir() {
-				if skipDirs[d.Name()] || path == w.LatticeDir {
+				if skipDir(root.Abs, path, d.Name(), w.LatticeDir) {
 					return filepath.SkipDir
 				}
 				return nil

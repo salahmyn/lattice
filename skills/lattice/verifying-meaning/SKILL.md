@@ -69,8 +69,10 @@ declared entry point** — not when a pure-logic unit test exists.
 - Tag the journey test `@verifies brd.<id>:US-N`; ensure the BRD scenario's
   `verified_by` names it and the entry point it drives.
 - Ingest the result so Lattice sees the green/red, not just the wiring:
-  `lattice results ingest <junit.xml>`. The RTM row should read
-  `demonstrated`, and journey coverage should count the scenario.
+  `lattice results ingest <junit.xml>...`. Pass the unit and e2e reports of
+  the run together (for Playwright, the `junit` reporter); each call replaces
+  the previous set. The RTM row should read `demonstrated`, and journey
+  coverage should count the scenario.
 
 ## 5. Gate zero: the app must actually run
 
