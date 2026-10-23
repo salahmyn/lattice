@@ -75,6 +75,14 @@ for the user to critique *before* touching implementation.
   metadata structs (e.g. `ProjectMetadata`). A mismatched/absent tag silently
   produces the wrong wire field.
 
+## Branches
+
+Name every branch `<type>/<topic>` as set out in `CONTRIBUTING.md`, e.g.
+`fix/e2e-playwright-traceability`. Types: `feat`, `fix`, `docs`, `refactor`,
+`perf`, `test`, `ci`, `build`, `chore`, `rnd`. Never push a generated or
+placeholder name (`worktree/…`, `claude/…`): rename the branch to the
+convention first.
+
 ## Working Style
 
 - For multi-phase implementations, track phases with tasks and only advance a
