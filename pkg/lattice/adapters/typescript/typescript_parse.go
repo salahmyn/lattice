@@ -559,7 +559,9 @@ func isTestFile(path string) bool {
 	}
 	base := filepath.Base(path)
 	for _, suf := range []string{".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx",
-		".test.js", ".test.jsx", ".spec.js", ".spec.jsx"} {
+		".test.js", ".test.jsx", ".spec.js", ".spec.jsx",
+		".test.mts", ".test.cts", ".spec.mts", ".spec.cts",
+		".test.mjs", ".test.cjs", ".spec.mjs", ".spec.cjs"} {
 		if strings.HasSuffix(base, suf) {
 			return true
 		}

@@ -184,3 +184,32 @@ func TestDenoTestIsATest(t *testing.T) {
 		}
 	}
 }
+
+func TestModuleExtensionsAreParsed(t *testing.T) {
+	a := New()
+	for _, p := range []string{"e2e/smoke.spec.cjs", "e2e/pair.test.mjs", "src/lib.mts", "src/lib.cts"} {
+		if !a.CanParse(p) {
+			t.Errorf("CanParse(%q) = false", p)
+		}
+	}
+	src := "const { test } = require('@playwright/test');\n" +
+		"/** @verifies app:INV-3 */\ntest('signs in with a code', async ({ page }) => {});\n"
+	mod, err := a.Parse(context.Background(), "e2e/signin.spec.cjs", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var found bool
+	for _, s := range mod.Symbols {
+		if s.IsTest && s.Name == "signs in with a code" {
+			for _, an := range s.Annotations {
+				found = found || an.Kind == "verifies"
+			}
+			if s.FQN != "e2e.signin.spec.test.signs-in-with-a-code" {
+				t.Errorf("FQN = %q", s.FQN)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("no verifying test symbol in a .spec.cjs file; got %+v", mod.Symbols)
+	}
+}

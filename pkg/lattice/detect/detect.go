@@ -388,7 +388,7 @@ func hasFileAnywhere(root, marker string) bool {
 		}
 		if d.IsDir() {
 			name := d.Name()
-			if name == "vendor" || name == "node_modules" || name == ".git" {
+			if name == "vendor" || name == "node_modules" || name == ".git" || name == ".claude" {
 				return filepath.SkipDir
 			}
 			return nil

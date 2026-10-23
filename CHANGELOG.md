@@ -2,6 +2,22 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **Agent worktrees are no longer scanned**: code extraction skips `.claude/`
+  and any linked git worktree (a directory whose `.git` file points into
+  `.git/worktrees/`). Before, an agent's checkout under `.claude/worktrees`
+  was parsed as a second copy of the code, doubling symbol counts and adding
+  false colocation warnings. Submodules are still scanned, and a workspace
+  rooted in a worktree still works.
+- **`.mjs`, `.cjs`, `.mts` and `.cts` files are parsed**: the TypeScript
+  adapter now owns these extensions, and `*.spec.cjs` / `*.test.mjs` (and the
+  `.mts` / `.cts` forms) count as test files. CommonJS e2e scripts can carry
+  `@verifies` and join their JUnit results; the results join already accepted
+  these extensions.
+
 ## [0.9.1] — 2026-10-23
 
 TypeScript test discovery and result-joining fixes.
