@@ -15,6 +15,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -134,9 +135,53 @@ func keysFor(classname, name string) []string {
 	}
 	if classname != "" {
 		add(classname + "." + name)
+		if k := jsTestKey(classname, name); k != "" {
+			add(k)
+		}
 	}
 	add(name)
 	return keys
+}
+
+// jsTestKey indexes a vitest/jest case under the FQN shape the TypeScript
+// adapter gives it-blocks: <file path without extension>.test.<slug of the
+// it() description>. vitest/jest report classname as the file path and name
+// as "describe > ... > it description"; only the last part is the it() text.
+// Lookup's suffix match then joins the adapter's repo-relative FQN to the
+// runner's package-relative path.
+func jsTestKey(classname, name string) string {
+	ext := path.Ext(classname)
+	switch ext {
+	case ".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs":
+	default:
+		return ""
+	}
+	leaf := name
+	if i := strings.LastIndex(leaf, " > "); i >= 0 {
+		leaf = leaf[i+3:]
+	}
+	return strings.TrimSuffix(classname, ext) + ".test." + slugify(leaf)
+}
+
+// slugify mirrors the TypeScript adapter's test-name slug: lowercase ASCII
+// letters and digits, every other run collapsed to one dash.
+func slugify(s string) string {
+	var b strings.Builder
+	lastDash := true
+	for _, r := range strings.ToLower(s) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+		} else if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "test"
+	}
+	return out
 }
 
 // normalize lowercases and unifies separators (::, /, \, #, space) to a

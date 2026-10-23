@@ -390,12 +390,21 @@ func (p *tsParser) firstStringArg(args *sitter.Node) string {
 		if c.Type() != "string" {
 			continue
 		}
+		// A literal is split into string_fragment and escape_sequence nodes
+		// ('the customer\'s cart' splits into several children); join them all, decoding simple escapes.
+		var b strings.Builder
 		for j := 0; j < int(c.NamedChildCount()); j++ {
-			if frag := c.NamedChild(j); frag.Type() == "string_fragment" {
-				return frag.Content(p.src)
+			part := c.NamedChild(j)
+			switch part.Type() {
+			case "string_fragment":
+				b.WriteString(part.Content(p.src))
+			case "escape_sequence":
+				if esc := part.Content(p.src); len(esc) == 2 {
+					b.WriteString(esc[1:])
+				}
 			}
 		}
-		return "" // empty string literal
+		return b.String() // "" for an empty string literal
 	}
 	return ""
 }
@@ -438,11 +447,29 @@ func calleeName(fn *sitter.Node, src []byte) string {
 	case "identifier":
 		return fn.Content(src)
 	case "member_expression":
-		if obj := fn.ChildByFieldName("object"); obj != nil && obj.Type() == "identifier" {
+		obj := fn.ChildByFieldName("object")
+		if obj == nil {
+			return ""
+		}
+		// Deno's runner: Deno.test(...) and Deno.test.ignore/only(...) are tests.
+		if denoTest(fn, src) || denoTest(obj, src) {
+			return "test"
+		}
+		if obj.Type() == "identifier" {
 			return obj.Content(src)
 		}
 	}
 	return ""
+}
+
+// denoTest reports whether a member expression is exactly `Deno.test`.
+func denoTest(n *sitter.Node, src []byte) bool {
+	if n.Type() != "member_expression" {
+		return false
+	}
+	obj, prop := n.ChildByFieldName("object"), n.ChildByFieldName("property")
+	return obj != nil && prop != nil && obj.Type() == "identifier" &&
+		obj.Content(src) == "Deno" && prop.Content(src) == "test"
 }
 
 // hasInlineCallback reports whether an arguments node contains an inline

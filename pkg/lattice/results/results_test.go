@@ -72,3 +72,28 @@ func TestParseBareTestsuite(t *testing.T) {
 		t.Errorf("bare suite lookup = (%s,%v), want (pass,true)", o, ok)
 	}
 }
+
+// TestLookupVitestItBlock joins a vitest report (classname = file path, name =
+// "describe > it") to the FQN the TypeScript adapter gives an it() block.
+func TestLookupVitestItBlock(t *testing.T) {
+	const report = `<testsuites><testsuite name="src/cart/total.test.ts">
+<testcase classname="src/cart/total.test.ts" name="cart total &gt; adds line items"/>
+<testcase classname="src/cart/total.test.ts" name="cart total &gt; applies the customer's discount: a discount never changes another customer's total"><failure/></testcase>
+</testsuite></testsuites>`
+	set, err := ParseJUnit([]byte(report))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		ref  string
+		want Outcome
+	}{
+		{"web.src.cart.total.test.test.adds-line-items", Pass},
+		{"web.src.cart.total.test.test.applies-the-customer-s-discount-a-discount-never-changes-another-customer-s-total", Fail},
+	}
+	for _, c := range cases {
+		if got, ok := set.Lookup(c.ref); !ok || got != c.want {
+			t.Errorf("Lookup(%q) = (%s,%v), want (%s,true)", c.ref, got, ok, c.want)
+		}
+	}
+}
