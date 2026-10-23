@@ -48,7 +48,7 @@ func Build(in Input, opts Options) schema.KnowledgeGraph {
 			r := res.resolveSymbol(sym, mod)
 			gs := schema.GraphSymbol{
 				Name: sym.Name, FQN: sym.FQN, Kind: string(sym.Kind),
-				File: sym.File, Line: sym.Line, Language: mod.Language,
+				File: sym.File, Line: sym.Line, EndLine: sym.EndLine, Language: mod.Language,
 				EnclosingFQN: sym.EnclosingFQN, IsTest: sym.IsTest,
 				Exported: sym.Exported,
 				Feature:  r.feature, Capabilities: r.capabilities,

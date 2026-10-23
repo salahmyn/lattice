@@ -15,7 +15,11 @@ import (
 // `architecture.ama_mode: true`; MIXED_COMMAND_QUERY only fires when
 // ama_mode is on (a `mixed` capability is the legacy default and
 // shouldn't pollute the validation noise floor for projects that
-// haven't opted into AMA).
+// haven't opted into AMA). The line caps follow the same rule: they run
+// under ama_mode, or when the workspace sets file_line_cap /
+// method_line_cap itself. AMA's 150/25 defaults fire on almost every
+// component and test of a project that never chose AMA, which buries
+// the findings that matter.
 //
 // The rules read the same KnowledgeGraph + Config that every other
 // rule uses; the AMA-specific knobs live in `cfg.Architecture` and
@@ -24,8 +28,12 @@ func (c *corpus) checkAMA() []schema.Violation {
 	var v []schema.Violation
 	v = append(v, c.checkCrossFeatureImport()...)
 	v = append(v, c.checkFeatureColocation()...)
-	v = append(v, c.checkFileLineCap()...)
-	v = append(v, c.checkMethodLineCap()...)
+	if c.cfg.Architecture.AMAMode || c.cfg.Architecture.FileLineCap > 0 {
+		v = append(v, c.checkFileLineCap()...)
+	}
+	if c.cfg.Architecture.AMAMode || c.cfg.Architecture.MethodLineCap > 0 {
+		v = append(v, c.checkMethodLineCap()...)
+	}
 	v = append(v, c.checkMixedCommandQuery()...)
 	v = append(v, c.checkFeatureSpecSize()...)
 	return v
@@ -161,9 +169,13 @@ func (c *corpus) checkFeatureColocation() []schema.Violation {
 // not get one rolled-up count.
 func (c *corpus) checkFileLineCap() []schema.Violation {
 	cap := c.cfg.Architecture.EffectiveFileLineCap()
+	tests := map[string]bool{}
+	for _, t := range c.kg.Tests {
+		tests[t.FQN] = true
+	}
 	var v []schema.Violation
 	for _, mod := range c.kg.Modules {
-		if mod.LineCount <= cap {
+		if mod.LineCount <= cap || onlyTests(mod, tests) {
 			continue
 		}
 		v = append(v, schema.Violation{
@@ -181,14 +193,27 @@ func (c *corpus) checkFileLineCap() []schema.Violation {
 	return v
 }
 
+// onlyTests reports whether every symbol of a module is a test: a test
+// file is long by nature and is not what the file cap is about.
+func onlyTests(mod schema.GraphModule, tests map[string]bool) bool {
+	if len(mod.SymbolFQNs) == 0 {
+		return false
+	}
+	for _, fqn := range mod.SymbolFQNs {
+		if !tests[fqn] {
+			return false
+		}
+	}
+	return true
+}
+
 // checkMethodLineCap fires for each function/method whose footprint
-// exceeds the configured cap (default 25). Footprint is approximate:
-// we sort same-file symbols by start line and use the distance to
-// the next symbol's start line as the method's size. Last symbol in
-// a file uses the module LineCount as its upper bound.
-//
-// This avoids adapter-side AST end-line plumbing while still catching
-// the failure mode the rule is meant to flag (sprawling functions).
+// exceeds the configured cap (default 25). The footprint is the
+// declaration's own extent when the adapter reports its end line.
+// Otherwise it is approximated by the distance to the next same-file
+// symbol's start line, with the module LineCount as the bound for the
+// last symbol (which over-reports a short function at the end of a
+// file). Test symbols live in kg.Tests and are never measured.
 func (c *corpus) checkMethodLineCap() []schema.Violation {
 	cap := c.cfg.Architecture.EffectiveMethodLineCap()
 
@@ -213,6 +238,9 @@ func (c *corpus) checkMethodLineCap() []schema.Violation {
 			end := moduleLines[file]
 			if i+1 < len(syms) {
 				end = syms[i+1].Line - 1
+			}
+			if sym.EndLine >= sym.Line {
+				end = sym.EndLine
 			}
 			footprint := end - sym.Line + 1
 			if footprint <= cap {

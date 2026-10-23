@@ -267,15 +267,15 @@ type Architecture struct {
 	AMAMode bool `yaml:"ama_mode,omitempty"`
 
 	// FileLineCap is the maximum source-file length in lines before
-	// FILE_LINE_CAP fires. Default 150 (AMA spec §5).
+	// FILE_LINE_CAP fires. Default 150 (AMA spec §5). The rule runs only
+	// under AMAMode or when this is set; test-only files are skipped.
 	FileLineCap int `yaml:"file_line_cap,omitempty"`
 
 	// MethodLineCap is the maximum method/function length in lines
-	// before METHOD_LINE_CAP fires. Default 25 (AMA spec §5).
-	// Detection is approximate — we use the distance to the next
-	// symbol's start line as the method's footprint, which is enough
-	// to catch sprawling functions without an adapter-side AST end
-	// position.
+	// before METHOD_LINE_CAP fires. Default 25 (AMA spec §5). The rule
+	// runs only under AMAMode or when this is set. A symbol is measured
+	// by its own extent when the adapter reports an end line, else by
+	// the distance to the next symbol's start.
 	MethodLineCap int `yaml:"method_line_cap,omitempty"`
 }
 

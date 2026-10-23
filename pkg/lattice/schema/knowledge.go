@@ -46,6 +46,7 @@ type GraphSymbol struct {
 	Kind         string `json:"kind"`
 	File         string `json:"file"`
 	Line         int    `json:"line"`
+	EndLine      int    `json:"end_line,omitempty"`
 	Language     string `json:"language"`
 	EnclosingFQN string `json:"enclosing_fqn,omitempty"`
 	IsTest       bool   `json:"is_test"`

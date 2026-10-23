@@ -359,3 +359,19 @@ export function total() { return 1; }
 		t.Errorf("total should keep its own annotation only: %+v", mod.Symbols)
 	}
 }
+
+// TestSymbolEndLine: symbols carry the last line of their declaration, so
+// length rules measure the declaration itself.
+func TestSymbolEndLine(t *testing.T) {
+	src := "export function a() {\n  return 1;\n}\n\nexport const b = () => {\n  return 2;\n};\n"
+	mod, err := New().Parse(context.Background(), "src/x.ts", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	want := map[string][2]int{"a": {1, 3}, "b": {5, 7}}
+	for _, s := range mod.Symbols {
+		if w, ok := want[s.Name]; ok && (s.Line != w[0] || s.EndLine != w[1]) {
+			t.Errorf("%s: lines %d-%d, want %d-%d", s.Name, s.Line, s.EndLine, w[0], w[1])
+		}
+	}
+}
