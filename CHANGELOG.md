@@ -44,10 +44,20 @@ All notable changes to Lattice are documented in this file.
 - **`e2e/` is test code**: files under an `e2e/` (or `__e2e__/`) directory,
   or named `*.e2e.*`, are test files in every adapter. Browser and device
   scripts no longer count as production code.
+- **Git-ignored files are not scanned**: code extraction asks git which
+  untracked paths its ignore rules exclude (every `.gitignore`, nested files
+  and negations included) and skips them; tracked files are always scanned.
+  Outside a git work tree nothing changes.
 - **Result lookup is deterministic**: when several report cases match a
   verifier, the most specific match wins (the longest shared path), and equal
   matches resolve to the worst outcome. Before, two files with the same test
   title gave a pass or a fail depending on map order.
+
+### Added
+
+- **`exclude:` in `workspace.yaml`**: slash-path globs, relative to each code
+  root, of files and directories never scanned. An invalid glob fails to open
+  the workspace.
 
 ### Changed
 

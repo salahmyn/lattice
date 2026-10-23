@@ -2,6 +2,7 @@ package extract
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -52,5 +53,61 @@ func TestSkipDirRootWorktree(t *testing.T) {
 	}
 	if skipDir(root, root, filepath.Base(root), "") {
 		t.Fatal("a workspace rooted in a worktree must still be scanned")
+	}
+}
+
+func TestScanFilter(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	write := func(rel, body string) {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git := func(args ...string) {
+		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	write(".gitignore", "out/\n*.gen.ts\n")
+	write("pkg/.gitignore", "local.ts\n")
+	write("src/app.ts", "")
+	write("src/schema.gen.ts", "")
+	write("src/forced.gen.ts", "")
+	write("out/bundle.ts", "")
+	write("pkg/local.ts", "")
+	write("pkg/shared.ts", "")
+	write("legacy/old.ts", "")
+	git("add", "-f", "src/forced.gen.ts") // tracked despite the pattern
+
+	f := newScanFilter(root, []string{"legacy/**"})
+	for rel, want := range map[string]bool{
+		"src/app.ts":        false,
+		"src/schema.gen.ts": true,  // root .gitignore
+		"src/forced.gen.ts": false, // tracked files are always scanned
+		"pkg/local.ts":      true,  // nested .gitignore
+		"pkg/shared.ts":     false,
+		"legacy/old.ts":     true, // workspace exclude glob
+	} {
+		if got := f.skipFile(rel); got != want {
+			t.Errorf("skipFile(%q) = %v, want %v", rel, got, want)
+		}
+	}
+	if !f.skipDir("out") || f.skipDir("src") {
+		t.Errorf("skipDir: out=%v src=%v, want true false", f.skipDir("out"), f.skipDir("src"))
+	}
+
+	// Outside a git work tree nothing is ignored, but excludes still apply.
+	plain := newScanFilter(t.TempDir(), []string{"legacy/**"})
+	if plain.skipFile("src/schema.gen.ts") || !plain.skipFile("legacy/old.ts") {
+		t.Error("non-git root: only the exclude glob should apply")
 	}
 }

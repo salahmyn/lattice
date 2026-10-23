@@ -94,6 +94,18 @@ source code stays where it already is. `lattice/workspace.yaml` selects
 **embedded** mode (lattice/ inside one code repo) or **standalone** mode
 (lattice/ as its own repo governing external code roots).
 
+Code extraction skips what git ignores (every `.gitignore`, so build output
+and agent worktrees stay out) and `.claude/`. To leave out more, list globs
+relative to the code root:
+
+```yaml
+# lattice/workspace.yaml
+mode: embedded
+exclude:
+  - "apps/legacy/**"
+  - "**/*.generated.ts"
+```
+
 ### Step 2 — Declare a feature
 
 Write `lattice/features/checkout/refund.yaml` (or `lattice new feature checkout.refund`):
