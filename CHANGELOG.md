@@ -2,13 +2,18 @@
 
 All notable changes to Lattice are documented in this file.
 
-## [Unreleased]
+## [0.9.1] — 2026-10-23
+
+TypeScript test discovery and result-joining fixes.
 
 ### Fixed
 
-- **TypeScript test names keep escape sequences**: an `it('… kid\'s …')`
-  description was cut at the first escape (only the first string fragment was
-  read), so its test FQN and name were truncated.
+- **TypeScript test names keep escape sequences**: an
+  `it('the customer\'s cart …')` description was cut at the first escape (only
+  the first string fragment was read), so its test FQN and name were truncated.
+- **`Deno.test(...)` is recognised as a test**: `Deno.test`, `Deno.test.ignore`
+  and `Deno.test.only` calls now produce test symbols, so `@verifies`
+  annotations above them attach instead of being dropped.
 - **vitest / jest results reach `demonstrated`**: JUnit cases are now also
   indexed as `<file without extension>.test.<slug of the it() text>`, the FQN
   shape the TypeScript adapter gives `it()` blocks. Before, `lattice rtm`

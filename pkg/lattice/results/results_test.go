@@ -76,9 +76,9 @@ func TestParseBareTestsuite(t *testing.T) {
 // TestLookupVitestItBlock joins a vitest report (classname = file path, name =
 // "describe > it") to the FQN the TypeScript adapter gives an it() block.
 func TestLookupVitestItBlock(t *testing.T) {
-	const report = `<testsuites><testsuite name="src/kid/screenTime.test.ts">
-<testcase classname="src/kid/screenTime.test.ts" name="screen time &gt; counts watched seconds against the daily limit"/>
-<testcase classname="src/kid/screenTime.test.ts" name="screen time &gt; stores usage per kid: saving one kid never changes another kid's remaining time"><failure/></testcase>
+	const report = `<testsuites><testsuite name="src/cart/total.test.ts">
+<testcase classname="src/cart/total.test.ts" name="cart total &gt; adds line items"/>
+<testcase classname="src/cart/total.test.ts" name="cart total &gt; applies the customer's discount: a discount never changes another customer's total"><failure/></testcase>
 </testsuite></testsuites>`
 	set, err := ParseJUnit([]byte(report))
 	if err != nil {
@@ -88,8 +88,8 @@ func TestLookupVitestItBlock(t *testing.T) {
 		ref  string
 		want Outcome
 	}{
-		{"apps.client.src.kid.screenTime.test.test.counts-watched-seconds-against-the-daily-limit", Pass},
-		{"apps.client.src.kid.screenTime.test.test.stores-usage-per-kid-saving-one-kid-never-changes-another-kid-s-remaining-time", Fail},
+		{"web.src.cart.total.test.test.adds-line-items", Pass},
+		{"web.src.cart.total.test.test.applies-the-customer-s-discount-a-discount-never-changes-another-customer-s-total", Fail},
 	}
 	for _, c := range cases {
 		if got, ok := set.Lookup(c.ref); !ok || got != c.want {
