@@ -16,6 +16,15 @@ All notable changes to Lattice are documented in this file.
   database next to its code is not sprawling.
 - **`validate` text output separates the line**: a finding's line now reads
   `(line 463)` after the message instead of being glued onto it.
+- **Node's built-in test runner reports can be ingested**:
+  `node --test --test-reporter=junit` writes its `<testcase>` elements
+  directly under `<testsuites>`, so `lattice results ingest` failed with
+  `expected element type <testsuite>`. These cases are now read, and since
+  the runner names no file (classname `test`), a case titled
+  `every tool description follows the template` joins the TypeScript
+  adapter's `….test.every-tool-description-follows-the-template` by its tail.
+  Only titles with a space get this key. A title shared by two files stays
+  ambiguous and is not demonstrated.
 
 ### Added
 

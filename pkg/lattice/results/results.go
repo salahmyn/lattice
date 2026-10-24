@@ -54,6 +54,10 @@ const cacheFile = ".cache/results/results.json"
 type junitSuites struct {
 	XMLName xml.Name     `xml:"testsuites"`
 	Suites  []junitSuite `xml:"testsuite"`
+	// Cases directly under the root: Node's built-in runner
+	// (node --test --test-reporter=junit) writes no <testsuite> for
+	// top-level test() calls.
+	Cases []junitCase `xml:"testcase"`
 }
 
 type junitSuite struct {
@@ -76,15 +80,17 @@ type junitOutcome struct {
 }
 
 // ParseJUnit reads a junit-family XML report and returns a normalized
-// Set. A top-level <testsuite> (no <testsuites> wrapper) is accepted too.
+// Set. A top-level <testsuite> (no <testsuites> wrapper) is accepted too,
+// and so are <testcase> elements directly under <testsuites>.
 func ParseJUnit(data []byte) (Set, error) {
 	set := Set{Results: map[string]Outcome{}, Cases: map[string]string{}}
 
 	var suites junitSuites
-	if err := xml.Unmarshal(data, &suites); err == nil && len(suites.Suites) > 0 {
+	if err := xml.Unmarshal(data, &suites); err == nil && (len(suites.Suites) > 0 || len(suites.Cases) > 0) {
 		for _, s := range suites.Suites {
 			collect(s, set.Results, set.Cases)
 		}
+		collect(junitSuite{Cases: suites.Cases}, set.Results, set.Cases)
 		return set, nil
 	}
 
@@ -152,14 +158,35 @@ func keysFor(classname, name string) []string {
 			keys = append(keys, k)
 		}
 	}
+	jsKey := ""
 	if classname != "" {
 		add(classname + "." + name)
-		if k := jsTestKey(classname, name); k != "" {
-			add(k)
+		if jsKey = jsTestKey(classname, name); jsKey != "" {
+			add(jsKey)
 		}
 	}
 	add(name)
+	// A runner that reports a test by its title but not its file (Node's
+	// built-in runner writes classname "test") still joins the TypeScript
+	// adapter's "<module>.test.<slug>" FQN by its tail. Only a title with a
+	// space gets this key: an identifier-style name (TestX, test_x) is never
+	// a test() title.
+	if jsKey == "" && strings.Contains(name, " ") {
+		add("test." + slugify(titleLeaf(name)))
+	}
 	return keys
+}
+
+// titleLeaf returns the last part of a runner's title path: "describe >
+// ... > it description" (vitest/jest) or "describe › ... › title"
+// (Playwright) gives the it() or test() text.
+func titleLeaf(name string) string {
+	for _, sep := range []string{" > ", " › "} {
+		if i := strings.LastIndex(name, sep); i >= 0 {
+			name = name[i+len(sep):]
+		}
+	}
+	return name
 }
 
 // jsTestKey indexes a vitest/jest/Playwright case under the FQN shape the
@@ -178,13 +205,7 @@ func jsTestKey(classname, name string) string {
 	default:
 		return ""
 	}
-	leaf := name
-	for _, sep := range []string{" > ", " › "} {
-		if i := strings.LastIndex(leaf, sep); i >= 0 {
-			leaf = leaf[i+len(sep):]
-		}
-	}
-	return strings.TrimSuffix(classname, ext) + ".test." + slugify(leaf)
+	return strings.TrimSuffix(classname, ext) + ".test." + slugify(titleLeaf(name))
 }
 
 // slugify mirrors the TypeScript adapter's test-name slug: lowercase ASCII
