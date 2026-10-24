@@ -119,6 +119,30 @@ success_criteria:
   - id: SC-34
     statement: Canonical formatting never drops information; a file with a comment, an anchor or alias, or a key its schema does not know is skipped with the reason instead of rewritten.
     maps_to_invariant: schema:INV-2
+  - id: SC-35
+    statement: An adapter records each reference as written (a call, new, .rpc, .from, a JSX component, a named value) and credits it to the innermost symbol that contains it, or to the module's top-level code.
+    maps_to_invariant: reachability:INV-1
+  - id: SC-36
+    statement: A reference resolves through the module's imports, then its own scope, then a member name unique in its language; an ambiguous or missing one stays unresolved and is counted, never guessed.
+    maps_to_invariant: reachability:INV-2
+  - id: SC-37
+    statement: Roots are only the automatic set (entry-point handlers, build-config entry files, func main, triggers, policies, cron jobs, serve handlers) and the declared coverage.roots; no file is a root because of its name.
+    maps_to_invariant: reachability:INV-3
+  - id: SC-38
+    statement: A runtime symbol is entry when a root reaches it, an ambiguous method call reaching only the candidates whose type reached code uses; test_only when only tests reach it; unreached when nothing does even through an ambiguous reference; unknown otherwise or when there are no roots.
+    maps_to_invariant: reachability:INV-4
+  - id: SC-39
+    statement: Runtime coverage only moves a symbol up; a symbol that ran is never unreached, and one that did not run keeps its static class.
+    maps_to_invariant: reachability:INV-5
+  - id: SC-40
+    statement: The reachability codes are off until enabled in validate.severity; with no roots one REACHABILITY_NO_ROOTS replaces every per-symbol finding, and each message names its evidence.
+    maps_to_invariant: reachability:INV-6
+  - id: SC-41
+    statement: When the call graph has roots, a feature is reached when a root reaches any of its symbols; without roots FEATURE_UNREACHED keeps its flow-based rule.
+    maps_to_invariant: reachability:INV-7
+  - id: SC-42
+    statement: SUITE_OVERLAP fires for two suites whose verified targets have a Jaccard index at or above coverage.overlap.
+    maps_to_invariant: reachability:INV-8
 out_of_scope:
   - A SCIP indexer and a mutation runner for Go.
 implements_via:
@@ -132,6 +156,7 @@ implements_via:
   - entrypoints
   - extraction
   - graph
+  - reachability
   - schema
   - scip
   - store

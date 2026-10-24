@@ -1,0 +1,28 @@
+id: reachability
+version: 1
+status: production
+purpose: |
+  Builds a call graph from the references the language adapters read, finds the roots the
+  runtime starts from, and classifies every runtime symbol by what reaches it, so dead code,
+  test-only code and unused exports are findings instead of guesses.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.code_graph
+invariants:
+  - id: INV-1
+    statement: An adapter records each reference as written (a call, new, .rpc, .from, a JSX component, a named value) and credits it to the innermost symbol that contains it, or to the module's top-level code.
+  - id: INV-2
+    statement: A reference resolves through the module's imports, then its own scope, then a member name unique in its language; an ambiguous or missing one stays unresolved and is counted, never guessed.
+  - id: INV-3
+    statement: Roots are only the automatic set (entry-point handlers, build-config entry files, func main, triggers, policies, cron jobs, serve handlers) and the declared coverage.roots; no file is a root because of its name.
+  - id: INV-4
+    statement: A runtime symbol is entry when a root reaches it, an ambiguous method call reaching only the candidates whose type reached code uses; test_only when only tests reach it; unreached when nothing does even through an ambiguous reference; unknown otherwise or when there are no roots.
+  - id: INV-5
+    statement: Runtime coverage only moves a symbol up; a symbol that ran is never unreached, and one that did not run keeps its static class.
+  - id: INV-6
+    statement: The reachability codes are off until enabled in validate.severity; with no roots one REACHABILITY_NO_ROOTS replaces every per-symbol finding, and each message names its evidence.
+  - id: INV-7
+    statement: When the call graph has roots, a feature is reached when a root reaches any of its symbols; without roots FEATURE_UNREACHED keeps its flow-based rule.
+  - id: INV-8
+    statement: SUITE_OVERLAP fires for two suites whose verified targets have a Jaccard index at or above coverage.overlap.
