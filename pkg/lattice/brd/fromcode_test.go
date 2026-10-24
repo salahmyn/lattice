@@ -91,10 +91,10 @@ func TestFromCodeSetsDeterministicFields(t *testing.T) {
 	if len(b.SuccessCriteria) != 2 {
 		t.Fatalf("expected 2 criteria, got %d", len(b.SuccessCriteria))
 	}
-	if b.SuccessCriteria[0].MapsToInvariant != "checkout.refund:INV-1" {
+	if b.SuccessCriteria[0].MapsToInvariant.String() != "checkout.refund:INV-1" {
 		t.Errorf("real invariant ref was dropped: %+v", b.SuccessCriteria[0])
 	}
-	if b.SuccessCriteria[1].MapsToInvariant != "" {
+	if b.SuccessCriteria[1].MapsToInvariant.String() != "" {
 		t.Errorf("fabricated invariant ref survived: %+v", b.SuccessCriteria[1])
 	}
 	// Constraints must always be empty — model was forbidden from

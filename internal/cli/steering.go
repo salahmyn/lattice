@@ -490,15 +490,15 @@ func actionForCriterion(r rtm.Row) string {
 	case rtm.StatusPhantom:
 		return "fix maps_to_invariant — it resolves to nothing"
 	case rtm.StatusUnenforced:
-		return "add an @enforces guard for " + r.MapsTo
+		return "add an @enforces guard for " + r.Ref()
 	case rtm.StatusFailing:
 		return "the verifier is failing — fix the code or the test, then re-ingest results"
 	case rtm.StatusUnverified:
-		return "add a test that @verifies " + r.MapsTo
+		return "add a test that @verifies " + r.Ref()
 	case rtm.StatusUnmapped:
 		return "map this criterion to an invariant (maps_to_invariant)"
 	case rtm.StatusPartial:
-		return "raise the mutation score on " + r.MapsTo + " above threshold"
+		return "raise the mutation score on " + r.Ref() + " above threshold"
 	}
 	return "advance toward demonstrated"
 }

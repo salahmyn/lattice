@@ -26,7 +26,7 @@ func v08Graph() schema.KnowledgeGraph {
 			ID: "brd.x", Title: "X", Status: schema.BRDApproved, Version: 1,
 			BusinessProblem: "p",
 			SuccessCriteria: []schema.BRDCriterion{
-				{ID: "SC-1", Statement: "refund never exceeds charge", MapsToInvariant: "pay:INV-1"},
+				{ID: "SC-1", Statement: "refund never exceeds charge", MapsToInvariant: schema.InvariantRefs{"pay:INV-1"}},
 			},
 			UserScenarios: []schema.UserScenario{
 				{ID: "US-1", Narrative: "user pays and sees a receipt"},
