@@ -638,7 +638,7 @@ edges, roots, e2e coverage) were answered for phase 2.
 
 ### Phase 2 measured on this repository
 
-Lattice's own workspace: Go and the TypeScript MCP server, 361 modules,
+Lattice's own workspace: Go and the TypeScript MCP server, 360 modules,
 2,173 runtime symbols. Roots (49): the 46 CLI entry points, `func main` and
 its package, and `lattice-mcp`'s `package.json` `bin` (mapped from
 `dist/index.js` to `src/index.ts`). No `coverage.roots` declared.
