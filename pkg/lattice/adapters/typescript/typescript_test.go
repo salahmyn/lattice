@@ -508,7 +508,7 @@ func TestIsTestFile(t *testing.T) {
 		"e2e/login.spec.cjs":                        true,
 		"src/latest.ts":                             false,
 		"src/contest.ts":                            false,
-		"src/test_utils.ts":                         false,
+		"src/test_utils.ts":                         true, // test-support name
 	} {
 		if got := isTestFile(path); got != want {
 			t.Errorf("isTestFile(%q) = %v, want %v", path, got, want)
