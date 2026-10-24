@@ -269,8 +269,8 @@ func (b *builder) topOf(ns string) string {
 // the imported one (its top-level code runs), a dynamic import() uses the
 // export it names, and a named import marks its target imported.
 func (b *builder) importEdges(mi int, top string, im ir.Import) {
-	if im.Module == "" || top == "" {
-		return
+	if im.Module == "" || top == "" || im.Dynamic {
+		return // a dynamic import is an edge of the code that loads it
 	}
 	g := b.g
 	if t := b.topOf(im.Module); t != "" && im.Module != g.modules[mi].Namespace {
@@ -337,6 +337,21 @@ func (b *builder) member(ns, name string, depth int) (fqn, namespace string) {
 	return "", ""
 }
 
+// exportsOf lists a namespace's exported symbols (methods of exported
+// types too) and what it re-exports from other modules.
+func (b *builder) exportsOf(ns string) []string {
+	var out []string
+	for _, mi := range b.g.byNS[ns] {
+		for _, s := range b.g.modules[mi].Symbols {
+			if s.Exported && !s.IsTest {
+				out = append(out, s.FQN)
+			}
+		}
+		out = append(out, b.g.reexported(mi)...)
+	}
+	return out
+}
+
 // binding is what a local import name stands for: a symbol or a namespace.
 type binding struct {
 	fqn, ns  string
@@ -350,11 +365,18 @@ type modCtx struct {
 	mod   *ir.Module
 	binds map[string]binding
 	dots  []string
+	// dynamic maps a specifier loaded at run time to its namespace ("" when
+	// it is outside the workspace).
+	dynamic map[string]string
 }
 
 func (b *builder) context(mi int) *modCtx {
-	mc := &modCtx{mi: mi, mod: &b.g.modules[mi], binds: map[string]binding{}}
+	mc := &modCtx{mi: mi, mod: &b.g.modules[mi], binds: map[string]binding{}, dynamic: map[string]string{}}
 	for _, im := range mc.mod.Imports {
+		if im.Dynamic {
+			mc.dynamic[im.From] = im.Module
+			continue
+		}
 		switch {
 		case im.Name == "" || im.Name == "_":
 		case im.Name == ".":
@@ -401,6 +423,26 @@ func (b *builder) resolve(mc *modCtx, owner *node, from string, r ir.Ref) {
 	external := func() { g.Stats.External++ }
 
 	switch {
+	case r.Kind == ir.RefImport:
+		// import('./x'): the module loads, and which of its exports the
+		// caller then uses is not told apart, so all of them are reached.
+		if r.Name == "" {
+			unresolved("dynamic", nil)
+			return
+		}
+		ns := mc.dynamic[r.Name]
+		if ns == "" {
+			external()
+			return
+		}
+		g.Stats.Resolved++
+		if t := b.topOf(ns); t != "" {
+			b.addEdge(Edge{From: from, To: t, Kind: ir.RefImport, Via: "import", Line: r.Line})
+		}
+		for _, f := range b.exportsOf(ns) {
+			b.addEdge(Edge{From: from, To: f, Kind: "use", Via: "import", Line: r.Line})
+		}
+		return
 	case r.Kind == ir.RefRPC:
 		if r.Name == "" {
 			unresolved("dynamic", nil)

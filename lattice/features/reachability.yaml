@@ -11,11 +11,11 @@ owners:
 implements_brd: brd.code_graph
 invariants:
   - id: INV-1
-    statement: An adapter records each reference as written (a call, new, .rpc, .from, a JSX component, a named value) and credits it to the innermost symbol that contains it, or to the module's top-level code.
+    statement: An adapter records each reference as written (a call, new, .rpc, .from, a JSX component, a named value, a module loaded at run time) and credits it to the innermost symbol that contains it, or to the module's top-level code.
   - id: INV-2
     statement: A reference resolves through the module's imports, then its own scope, then a member name unique in its language; an ambiguous or missing one stays unresolved and is counted, never guessed.
   - id: INV-3
-    statement: Roots are only the automatic set (entry-point handlers, build-config entry files, func main, triggers, policies, cron jobs, serve handlers) and the declared coverage.roots; no file is a root because of its name.
+    statement: Roots are only the automatic set (entry-point handlers, build-config entry files, tool config files, func main, triggers, policies, applied migration statements, cron jobs, serve modules) and the declared coverage.roots; nothing in between is guessed.
   - id: INV-4
     statement: A runtime symbol is entry when a root reaches it, an ambiguous method call reaching only the candidates whose type reached code uses; test_only when only tests reach it; unreached when nothing does even through an ambiguous reference; unknown otherwise or when there are no roots.
   - id: INV-5

@@ -74,6 +74,19 @@ func sqlCalls(text string, withStrings bool) []sqlCall {
 		case c == '\n':
 			line++
 			i++
+		case c == '-' && i+1 < n && text[i+1] == '-':
+			// A comment in a body: its words name nothing, and an apostrophe
+			// in it ("each other's") must not open a string.
+			for i < n && text[i] != '\n' {
+				i++
+			}
+		case c == '/' && i+1 < n && text[i+1] == '*':
+			end := strings.Index(text[i+2:], "*/")
+			if end < 0 {
+				end = n - i - 2
+			}
+			line += strings.Count(text[i:i+2+end], "\n")
+			i += end + 4
 		case c == '\'' && !withStrings:
 			j := i + 1
 			for j < n {
@@ -160,6 +173,28 @@ var (
 	reCronSchedule   = regexp.MustCompile(`(?is)\bcron\s*\.\s*schedule\s*\(`)
 	reCronUnschedule = regexp.MustCompile(`(?is)\bcron\s*\.\s*unschedule\s*\(`)
 )
+
+// namesOnly are statements that name functions without running them.
+var namesOnly = regexp.MustCompile(`(?is)^(grant|revoke|comment|drop|security\s+label|alter\s+(function|procedure|routine|extension)|create\s+(extension|schema|type|domain|aggregate|cast|operator)|reassign|set|reset|notify|listen)\b`)
+
+// appliedRefs returns the calls of a top-level statement that the database
+// runs when it applies the file: a seed select f(...), a do $$ ... $$
+// block, a check constraint, a column default or a view that calls a
+// function. Statements that only name functions (grant, revoke, comment,
+// drop, alter function) give none.
+func appliedRefs(st statement) []ir.Ref {
+	if namesOnly.MatchString(st.text) {
+		return nil
+	}
+	return callRefs(st, false)
+}
+
+// appliedNode is the root holding a migration's (or schema file's)
+// top-level calls: the database runs them when the file is applied.
+func appliedNode(file string, line int, refs []ir.Ref) ir.Node {
+	return ir.Node{FQN: "sql.applied." + seg(strings.TrimSuffix(file, path.Ext(file))), Kind: ir.NodeTop,
+		Root: "migration", Line: line, Refs: refs}
+}
 
 // cronUnscheduleKind marks a cron.unschedule in ModuleAnnotations; Resolve
 // consumes it.

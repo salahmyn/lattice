@@ -275,6 +275,13 @@ func triggerFQN(schemaName, table, name string) string {
 
 // parseDefinitions records functions, policies and triggers, and marks drops.
 func parseDefinitions(mod *ir.Module, stmts []statement) {
+	var applied []ir.Ref
+	appliedLine := 0
+	defer func() {
+		if len(applied) > 0 {
+			mod.Nodes = append(mod.Nodes, appliedNode(mod.File, appliedLine, applied))
+		}
+	}()
 	for _, st := range stmts {
 		anns := tags(mod, attached(st))
 		var sym *ir.Symbol
@@ -312,6 +319,11 @@ func parseDefinitions(mod *ir.Module, stmts []statement) {
 		if sym == nil {
 			if n, ok := cronNode(mod, st); ok {
 				mod.Nodes = append(mod.Nodes, n)
+			} else if refs := appliedRefs(st); len(refs) > 0 {
+				if appliedLine == 0 {
+					appliedLine = st.line
+				}
+				applied = append(applied, refs...)
 			}
 			orphan(mod, anns, st)
 			continue

@@ -151,7 +151,7 @@ func TestReachCodesOffUntilEnabled(t *testing.T) {
 		for _, x := range v {
 			switch x.Code {
 			case schema.CodeSymbolUnreached, schema.CodeSymbolTestOnly, schema.CodeSymbolUntested,
-				schema.CodeUnusedExport, schema.CodeReachabilityNoRoots, schema.CodeRPCUnresolved, schema.CodeSuiteOverlap:
+				schema.CodeUnusedExport, schema.CodeReachabilityNoRoots, schema.CodeRPCUnresolved, schema.CodeImportUnresolved, schema.CodeSuiteOverlap:
 				out = append(out, string(x.Severity)+" "+x.Code+" "+x.Subject)
 			}
 		}

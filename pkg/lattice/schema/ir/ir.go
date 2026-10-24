@@ -68,6 +68,11 @@ const (
 	RefTable = "table" // a database table by name: .from('table')
 	RefJSX   = "jsx"   // a JSX component: <Component />
 	RefValue = "ref"   // a function, type or value named without being called (a callback, a type)
+	// RefImport is a module loaded at run time: import('./x'), require('./x')
+	// where no binding says which exports are used. Name is the specifier,
+	// "" when it is not a literal; the module's Import of that specifier
+	// (Dynamic) carries its resolution.
+	RefImport = "import"
 )
 
 // Ref is one raw reference in a symbol's body or a module's top-level code.
@@ -107,7 +112,11 @@ type Import struct {
 	// package's Namespace), set by the adapter once it has seen every file;
 	// "" when the target is outside the workspace.
 	Module string `json:"module,omitempty"`
-	Line   int    `json:"line"`
+	// Dynamic marks a module loaded at run time (import('./x')); the code
+	// that loads it holds a RefImport, so the import is no edge of the
+	// module's top-level code.
+	Dynamic bool `json:"dynamic,omitempty"`
+	Line    int  `json:"line"`
 }
 
 // Node kinds (Node.Kind).

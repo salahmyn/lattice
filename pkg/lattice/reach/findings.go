@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
+	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 )
 
 // Executed reports a symbol's whole-suite runtime coverage: whether the
@@ -144,11 +145,23 @@ func Findings(kg schema.KnowledgeGraph, r *Result, ran Executed) []schema.Violat
 
 // dynamicRPC is RPC_UNRESOLVED: an .rpc() called with a computed name may
 // call any database function, so it is named where a SYMBOL_UNREACHED of a
-// SQL function could otherwise hide it.
+// SQL function could otherwise hide it. IMPORT_UNRESOLVED does the same
+// for import(x) and require(x) of a computed module.
 func (r *Result) dynamicRPC() []schema.Violation {
 	var v []schema.Violation
 	for _, u := range r.Graph.Unresolved {
 		if u.Why != "dynamic" {
+			continue
+		}
+		if u.Kind == ir.RefImport {
+			v = append(v, schema.Violation{
+				Code: schema.CodeImportUnresolved, Severity: schema.SeverityInfo,
+				Subject:  fmt.Sprintf("%s:%d", u.From, u.Line),
+				Message:  fmt.Sprintf("%s loads a module whose name is not a literal (import() or require()), so which module it reaches is unknown; an unreached symbol may be in it (evidence: static call graph)", u.From),
+				Location: &schema.Location{File: u.File, Line: u.Line},
+				NextAction: &schema.NextAction{Kind: "edit_code",
+					Detail: "import a literal path, or declare the modules it can load in coverage.roots"},
+			})
 			continue
 		}
 		v = append(v, schema.Violation{

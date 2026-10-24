@@ -46,10 +46,11 @@ type RootInput struct {
 
 // Roots collects the graph's roots. Automatic roots are the handlers of
 // declared and detected entry points, the entry files named by build
-// configuration, symbols and nodes an adapter marks as run by the runtime
-// (Go's func main, SQL triggers and policies, cron.schedule bodies, Deno
-// serve handlers). Declared roots come from coverage.roots. Nothing in
-// between is guessed: a file is not a root because of its name.
+// configuration and the tool config files, symbols and nodes an adapter
+// marks as run by the runtime (Go's func main and its package, SQL
+// triggers and policies, a migration's applied top-level calls,
+// cron.schedule bodies, Deno serve handlers and their module's top level).
+// Declared roots come from coverage.roots. Nothing in between is guessed.
 // @enforces reachability:INV-3
 func (g *Graph) Roots(in RootInput) []Root {
 	seen := map[string]bool{}
@@ -78,8 +79,12 @@ func (g *Graph) Roots(in RootInput) []Root {
 			continue
 		}
 		add(f, n.root)
-		if n.root == "main" {
-			add(g.tops[n.mod], "main") // the main package is initialised before main runs
+		switch n.root {
+		case "main", "serve":
+			// The module runs as a whole: Go initialises the main package
+			// before main, and a serve() call sits in a module's top-level
+			// code, beside what it sets up for the handler.
+			add(g.tops[n.mod], n.root)
 		}
 	}
 	byFile := map[string][]int{}
@@ -169,7 +174,8 @@ var attr = regexp.MustCompile(`(?i)\b(type|src)\s*=\s*["']([^"']*)["']`)
 
 // EntryFiles reads the build configuration beside the parsed modules: a
 // package.json's main, module, exports and bin, and an index.html's
-// <script type="module" src>. Only directories that hold (or contain)
+// <script type="module" src>; and it names every tool config file
+// (vite.config.ts, playwright.config.ts, ...). Only directories that hold (or contain)
 // parsed modules are looked at, so excluded trees stay excluded. A named
 // file that was not parsed (a build output) is mapped back to its source
 // (dist/index.js -> src/index.ts, via tsconfig's outDir and rootDir when
@@ -240,6 +246,12 @@ func EntryFiles(roots []CodeRoot, modules []ir.Module) []EntryFile {
 			}
 		}
 	}
+	for _, m := range modules {
+		if isToolConfig(m.File) && !seen[m.File+"|tool config"] {
+			seen[m.File+"|tool config"] = true
+			out = append(out, EntryFile{File: m.File, Reason: "tool config", API: true})
+		}
+	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].File != out[j].File {
 			return out[i].File < out[j].File
@@ -247,6 +259,22 @@ func EntryFiles(roots []CodeRoot, modules []ir.Module) []EntryFile {
 		return out[i].Reason < out[j].Reason
 	})
 	return out
+}
+
+// isToolConfig reports a file a build or test tool loads by its name:
+// <tool>.config.<js|ts|mjs|cjs|mts|cts> (vite, vitest, playwright, eslint,
+// tailwind, postcss, jest, capacitor, ...). The tool runs its top-level
+// code and reads its exports, so it is a root, the same convention by
+// which attribution leaves it out of the product.
+func isToolConfig(file string) bool {
+	base := path.Base(file)
+	ext := path.Ext(base)
+	switch ext {
+	case ".js", ".ts", ".mjs", ".cjs", ".mts", ".cts":
+	default:
+		return false
+	}
+	return strings.HasSuffix(strings.TrimSuffix(base, ext), ".config")
 }
 
 type pkgEntry struct{ field, target string }

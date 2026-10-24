@@ -69,7 +69,9 @@ type GraphSymbol struct {
 	// root reaches it), test_only (only tests do), unreached, or unknown
 	// (no roots, no reference data for its language, or reached only
 	// through a reference the call graph could not resolve). Set on
-	// runtime symbols only; validate folds in runtime coverage on top.
+	// runtime symbols only (functions, methods, classes, consts, traits):
+	// interfaces and type aliases run nothing and have none. validate
+	// folds in runtime coverage on top.
 	Reach string `json:"reach,omitempty"`
 }
 

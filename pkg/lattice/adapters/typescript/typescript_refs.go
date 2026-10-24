@@ -193,6 +193,7 @@ func (p *tsParser) requireImports(n *sitter.Node, names map[string]bool) {
 		if from == "" {
 			continue
 		}
+		p.boundRequires[val.StartByte()] = true
 		name := d.ChildByFieldName("name")
 		switch {
 		case name == nil:
@@ -440,6 +441,27 @@ func (w *tsRefWalker) visit(n *sitter.Node) {
 	w.visitChildren(n)
 }
 
+// dynamicImport records import('./x') or an unbound require('./x'): a
+// module loaded at run time, of which any export may be used. A computed
+// specifier is a reference with no name, which the core counts as
+// unresolved.
+func (w *tsRefWalker) dynamicImport(call, args *sitter.Node) {
+	lit, isLit, hasArg := w.literalFirstArg(args)
+	if !hasArg {
+		return
+	}
+	if !isLit {
+		if args.NamedChild(0).Type() == "template_string" && args.NamedChild(0).NamedChildCount() == 0 {
+			lit = strings.Trim(w.text(args.NamedChild(0)), "`") // import(`./x`)
+		} else {
+			w.emit(call, ir.Ref{Kind: ir.RefImport})
+			return
+		}
+	}
+	w.p.mod.Imports = append(w.p.mod.Imports, ir.Import{From: lit, Dynamic: true, Line: line(call)})
+	w.emit(call, ir.Ref{Name: lit, Kind: ir.RefImport})
+}
+
 // isServe reports a call of serve(...) or Deno.serve(...).
 func (w *tsRefWalker) isServe(call *sitter.Node) bool {
 	fn := call.ChildByFieldName("function")
@@ -456,16 +478,22 @@ func (w *tsRefWalker) call(n *sitter.Node) {
 	switch {
 	case fn == nil:
 	case fn.Type() == "import":
-		// import('./page'): the module loads and its default export is used.
-		if from := w.p.firstStringArg(args); from != "" {
-			w.p.mod.Imports = append(w.p.mod.Imports, ir.Import{From: from, Member: "default", Line: line(n)})
-		}
+		w.dynamicImport(n, args)
+		w.visit(args)
 		return
 	case fn.Type() == "identifier":
-		if t := w.text(fn); t != "require" {
-			w.emit(fn, ir.Ref{Name: t, Kind: ir.RefCall})
-		} else {
+		t := w.text(fn)
+		if t == "require" {
+			if !w.p.boundRequires[n.StartByte()] {
+				w.dynamicImport(n, args)
+			}
 			return
+		}
+		w.emit(fn, ir.Ref{Name: t, Kind: ir.RefCall})
+		// A project's own wrapper named rpc ('rpc("fn", args)' around a
+		// PostgREST call) names the database function as .rpc() does.
+		if lit, isLit, hasArg := w.literalFirstArg(args); t == "rpc" && hasArg && isLit {
+			w.emit(fn, ir.Ref{Name: lit, Kind: ir.RefRPC})
 		}
 	case fn.Type() == "member_expression":
 		obj, prop := fn.ChildByFieldName("object"), fn.ChildByFieldName("property")

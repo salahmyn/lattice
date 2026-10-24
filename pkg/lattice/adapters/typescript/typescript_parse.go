@@ -65,11 +65,12 @@ func (a *Adapter) parse(ctx context.Context, path string, source []byte) (ir.Mod
 	defer tree.Close()
 
 	p := &tsParser{
-		src:        source,
-		mod:        &mod,
-		modulePath: astutil.ModulePath(path),
-		testFile:   isTestFile(path),
-		testCounts: map[string]int{},
+		src:           source,
+		mod:           &mod,
+		modulePath:    astutil.ModulePath(path),
+		testFile:      isTestFile(path),
+		testCounts:    map[string]int{},
+		boundRequires: map[uint32]bool{},
 	}
 	p.walkStatements(tree.RootNode())
 	mod.HasCode = !p.testFile && hasTopLevelCode(tree.RootNode())
@@ -134,6 +135,9 @@ type tsParser struct {
 	// owners is the span of each symbol, for the reference pass
 	// (typescript_refs.go).
 	owners astutil.Owners
+	// boundRequires are the require() calls a top-level binding
+	// (const x = require('./x')) records as an import.
+	boundRequires map[uint32]bool
 }
 
 // track records the span of the symbol just appended.
