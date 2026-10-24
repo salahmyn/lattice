@@ -67,6 +67,8 @@ All notable changes to Lattice are documented in this file.
   FQN marks each title placeholder (`%s`, `$name`, `${x}`) with `_`; the
   result join matches every row's case in the same file, and the test is
   demonstrated only when all rows pass.
+- **Deno test files are test code**: `x_test.ts` (Deno's naming) is a test
+  file, like `x.test.ts`; its helpers no longer count as production code.
 - **More TypeScript annotation targets**: an annotated non-function `const`
   (`export const client = createClient(…)`) is a symbol; annotated methods of
   an object literal (`export const store = { get() {} }`) are method symbols

@@ -500,3 +500,18 @@ func TestEachTests(t *testing.T) {
 		t.Errorf("unexpected diagnostics %+v", mod.Diagnostics)
 	}
 }
+
+func TestIsTestFile(t *testing.T) {
+	for path, want := range map[string]bool{
+		"supabase/functions/add-source/url_test.ts": true, // Deno
+		"src/cart.test.ts":                          true,
+		"e2e/login.spec.cjs":                        true,
+		"src/latest.ts":                             false,
+		"src/contest.ts":                            false,
+		"src/test_utils.ts":                         false,
+	} {
+		if got := isTestFile(path); got != want {
+			t.Errorf("isTestFile(%q) = %v, want %v", path, got, want)
+		}
+	}
+}

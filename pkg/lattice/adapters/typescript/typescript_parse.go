@@ -923,6 +923,10 @@ func isTestFile(path string) bool {
 		return true
 	}
 	base := filepath.Base(path)
+	// Deno's convention: x_test.ts (also x.test.ts, handled below).
+	if strings.HasSuffix(strings.TrimSuffix(base, filepath.Ext(base)), "_test") {
+		return true
+	}
 	for _, suf := range []string{".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx",
 		".test.js", ".test.jsx", ".spec.js", ".spec.jsx",
 		".test.mts", ".test.cts", ".spec.mts", ".spec.cts",
