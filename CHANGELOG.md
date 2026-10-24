@@ -61,6 +61,11 @@ All notable changes to Lattice are documented in this file.
   as warnings, while `--json` gave their severity as `info`. Text, summary
   and JSON now agree: `N error(s), M warning(s), K info`, with `infos` in
   `--json`.
+- **`lattice coverage` works without `lattice import`**: it refused to run
+  unless an import session existed, and documentation coverage counted only
+  accepted import candidates, so a hand-written workspace read 0%. Coverage
+  now comes from the graph: documentation is the share of production symbols
+  attributed to a feature (plus accepted candidates, when there are any).
 - **Table-driven tests are tests**: `it.each(table)("title", fn)`,
   `test.each` and `describe.each` were not recognised (the callee is itself a
   call), so their `@verifies` was dropped. They are now test symbols whose
@@ -83,6 +88,10 @@ All notable changes to Lattice are documented in this file.
 
 ### Added
 
+- **Attribution coverage**: `lattice coverage` reports the share of
+  production modules that belong to a feature and lists the ones that do
+  not. Modules holding only tests, types or nothing are not production code.
+  It is the same definition `UNATTRIBUTED_MODULE` uses.
 - **Validation policy in `config.yaml`**: `validate.severity` sets any
   finding code to `error`, `warning`, `info` or `off`; `validate.fail_on`
   (or `lattice validate --fail-on`) sets the lowest severity that fails the
