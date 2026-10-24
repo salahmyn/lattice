@@ -53,6 +53,11 @@ All notable changes to Lattice are documented in this file.
   as warnings, while `--json` gave their severity as `info`. Text, summary
   and JSON now agree: `N error(s), M warning(s), K info`, with `infos` in
   `--json`.
+- **`lattice coverage` works without `lattice import`**: it refused to run
+  unless an import session existed, and documentation coverage counted only
+  accepted import candidates, so a hand-written workspace read 0%. Coverage
+  now comes from the graph: documentation is the share of production symbols
+  attributed to a feature (plus accepted candidates, when there are any).
 - **Result lookup is deterministic**: when several report cases match a
   verifier, the most specific match wins (the longest shared path), and equal
   matches resolve to the worst outcome. Before, two files with the same test
@@ -60,6 +65,10 @@ All notable changes to Lattice are documented in this file.
 
 ### Added
 
+- **Attribution coverage**: `lattice coverage` reports the share of
+  production modules that belong to a feature and lists the ones that do
+  not. Modules holding only tests, types or nothing are not production code.
+  It is the same definition `UNATTRIBUTED_MODULE` uses.
 - **Validation policy in `config.yaml`**: `validate.severity` sets any
   finding code to `error`, `warning`, `info` or `off`; `validate.fail_on`
   (or `lattice validate --fail-on`) sets the lowest severity that fails the
