@@ -23,3 +23,11 @@ validate:
   # Tier-3 criteria (money) must be exercised: a verifier's own run executed
   # the guard. Everything else must be demonstrated.
   require_level: {default: demonstrated, tier: {3: exercised}}
+  # The reachability codes are off until enabled here (the coverage: block
+  # does not turn them on). The roots are the entry point's handler
+  # (src.cli.main) and the trigger the database runs.
+  severity:
+    SYMBOL_UNREACHED: warning   # sql.public.debit_v1: nothing calls it
+    SYMBOL_TEST_ONLY: info      # src.statement.formatStatement: only a test does
+    SYMBOL_UNTESTED: info       # reached, but the suite did not run it
+    UNUSED_EXPORT: info         # exported, imported by no other module
