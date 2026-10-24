@@ -1,9 +1,11 @@
 # 0009 — Coverage and reachability
 
 - **Status:** accepted. Phase 1 (coverage ingest, `exercised`, the coverage
-  findings and the per-tier level) is implemented; see
-  [Decisions](#decisions) and the user guide, section 4f. Static
-  reachability, roots and suite overlap are phase 2 and still proposals.
+  findings and the per-tier level) is implemented; see the user guide,
+  section 4f. Phase 2 (call edges from the adapters, roots, reach classes,
+  the reachability findings and a static suite-overlap check) is
+  implemented; see the user guide, section 4g. See
+  [Decisions](#decisions) for both.
   The prototype described below lives on branch
   `rnd/coverage-and-reachability`; its sample workspace moved to
   `examples/coverage-prototype/`, and its package was replaced by
@@ -476,8 +478,8 @@ one run, one commit stamp, one ledger event. This is open question 1.
 
 ## Decisions
 
-The owner answered the phase-1 questions as follows. Questions 6, 8 and 9
-(static edges, roots, e2e coverage) belong to phase 2 and stay open.
+The owner answered the questions as follows. Questions 6, 8 and 9 (static
+edges, roots, e2e coverage) were answered for phase 2.
 
 1. **Ingest through `lattice results ingest`.** Coverage reports go in
    beside test reports and are told apart by content, as JUnit and TAP
@@ -506,12 +508,52 @@ The owner answered the phase-1 questions as follows. Questions 6, 8 and 9
    `VERIFIER_UNPROVEN` (info); each declared floor switches on
    `COVERAGE_BELOW_FLOOR` (warning). Explicit `validate.severity` entries
    win. A finding states its evidence basis and fires only on ingested data.
+6. **Call edges: the adapters first, cautious resolution, SCIP when
+   present.** The TS/JS, Go, Python and Postgres adapters emit raw
+   references from their tree-sitter (or SQL) parse: `ir.Module.Imports`
+   (name, from, member, re-export, line), `ir.Symbol.Refs` (name,
+   qualifier, line, kind: call, new, rpc, table, jsx, and ref for a value
+   named without a call), and top-level code as a `<module>.<top>` node.
+   The core (`pkg/lattice/reach`) resolves each reference through the
+   module's imports, then its own scope, then a member name unique in the
+   language. Anything else stays unresolved, never guessed, and is counted
+   (ambiguous, missing, dynamic). When a SCIP index exists for a language
+   it replaces the core's resolution for that language, each reference
+   credited to its innermost definition bounded by `enclosing_range`. The
+   resolved edges go to `lattice/.cache/callgraph.json`. SQL edges came
+   first: `.rpc('fn')`, `.from('table')` to the table's policies and
+   triggers, trigger to function, function-body calls, policy expressions,
+   and `cron.schedule` bodies as cron roots; a computed `.rpc(x)` is
+   `RPC_UNRESOLVED` (info). PHP is not done: its symbols are `unknown`.
 7. **Postgres runtime data has no hard requirement.** Function call counts
    from `pg_stat_user_functions` (`track_functions = 'pl'` or `'all'`) are
    the baseline, mapped to `sql.<schema>.<fn>` symbols as per-test or
    per-file "executed" evidence. `plpgsql_check` profiler data is optional
    and not read in phase 1. SQL functions that Postgres inlines are never
    counted, so such enforcers cannot reach `exercised`.
+8. **Roots: a small automatic set plus declared ones, nothing guessed in
+   between.** Automatic roots are the handlers of declared and detected
+   entry points; entry files named by build configuration (`package.json`
+   `main`, `module`, `exports` and `bin`, and an `index.html`'s `<script
+   type="module" src>`); Deno `serve(...)` handlers; `cron.schedule`
+   bodies; SQL triggers and policies; Go's `func main` in package main.
+   Declared roots are `coverage.roots: [{symbol: <fqn or glob>, reason},
+   {file: <glob>, reason}]`. With no roots at all, one
+   `REACHABILITY_NO_ROOTS` (info) replaces every per-symbol finding. Each
+   runtime symbol's class (`entry`, `test_only`, `unreached`, `unknown`)
+   is `GraphSymbol.Reach` in `lattice.json`. Runtime coverage only moves a
+   symbol up. `SYMBOL_UNREACHED` (warning), `SYMBOL_TEST_ONLY`,
+   `SYMBOL_UNTESTED` and `UNUSED_EXPORT` (info) are off until each is
+   enabled in `validate.severity`; a `coverage:` block does not turn them
+   on. With roots, `FEATURE_UNREACHED` counts a feature as reached when a
+   root reaches any of its symbols.
+9. **End-to-end (Playwright) coverage is deferred.** The cheap static check
+   ships instead: `SUITE_OVERLAP` (info, off until enabled) compares each
+   pair of suites' `@verifies` targets and the entry points in
+   `verified_by` of the scenarios their tests verify, and fires at a
+   Jaccard index at or above `coverage.overlap` (default 0.8). Suites come
+   from `coverage.suites: {name: [globs]}`, or default to the top-level
+   test directories. Per-test e2e coverage would make it precise.
 10. **Tier 3 needs both.** `validate.require_level` takes a per-tier form
     (`{default: demonstrated, tier: {3: exercised}}`), and the tier-2+
     `MUTATION_REQUIRED_TIER` gate stays as it is, so a tier-3 criterion
@@ -548,3 +590,99 @@ The owner answered the phase-1 questions as follows. Questions 6, 8 and 9
   in the user guide). Its per-test and per-file runs are kept whole, like
   coverage.py contexts. No Postgres server was available, so the format is
   tested with hand-written fixtures only.
+
+### Where phase 2 differs from the proposal above
+
+- **Another reference kind, `ref`.** A function named without being called
+  (a callback, a default argument `guard = assertSufficientFunds`, a Go
+  method value `p.handleTop`) is a reference. Without it, the prototype's
+  `assertSufficientFunds` and most of Lattice's own Go parser read as
+  unreached.
+- **Imports carry what they bind.** `ir.Import` also has `member` (the
+  export imported), `export` (a re-export's name) and `module` (the
+  workspace namespace the adapter resolved `from` to, once it has seen
+  every file). Each adapter resolves its own specifiers in its `Resolve`
+  hook: TS paths and `@/` aliases, Go import paths against an inferred
+  module path, Python relative and `src/`-layout imports. The core only
+  follows bindings and re-exports.
+- **"A globally unique name" applies to members.** A bare name in TS, Go
+  or Python is lexically scoped: it is an import or a name of its own
+  module, never a unique name elsewhere. The unique-name step resolves a
+  method called on a value of unknown type, within one language, and a
+  production caller never resolves to a test's member. A value whose type
+  the Go adapter read (a parameter, `var x T`, `x := &T{}`) resolves by
+  that type instead, and the result of an outside call
+  (`time.Now().Add(d)`) never falls back to a workspace method.
+- **Ambiguous calls and Rapid Type Analysis.** An ambiguous reference
+  (typically an interface call: `ad.Parse(...)` with five adapters that
+  have `Parse`) stays unresolved in the call graph and counted. For the
+  classes only, it reaches the candidates whose type reached code builds
+  or names, as Go's own `deadcode` tool does (RTA). A candidate whose type
+  nothing reached is `unknown`, never `unreached`: no dead-code finding
+  rests on a guess. Without RTA, 352 of this repository's 2,173 runtime
+  symbols were `unknown` (90 interface methods and the 262 symbols only
+  they call, most of the adapters' parsers); with it, 3 are.
+  `FEATURE_UNREACHED` counts only `entry` symbols as reached.
+- **Conventions as edges.** Go methods the standard library calls through
+  an interface (`String`, `Error`, `MarshalJSON`, `UnmarshalYAML`,
+  `Len/Less/Swap`, ...) are reached with their type; a Python class reaches
+  its dunder methods; `new C()` reaches C's constructor. Python's `if
+  __name__ == "__main__":` block is a root, like Go's `func main`.
+- **`FEATURE_UNREACHED` with roots runs without entry points.** A project
+  whose only roots are a `func main` or SQL triggers now gets the check.
+- **Default suites** are the top-level directories named `tests`, `test`,
+  `e2e`, `__tests__`, `spec`, `specs`, `cypress` or `playwright`; tests
+  elsewhere belong to none. That is clean for the usual e2e layouts and
+  says nothing about colocated unit tests, which `coverage.suites` can
+  group.
+
+### Phase 2 measured on this repository
+
+Lattice's own workspace: Go and the TypeScript MCP server, 361 modules,
+2,173 runtime symbols. Roots (49): the 46 CLI entry points, `func main` and
+its package, and `lattice-mcp`'s `package.json` `bin` (mapped from
+`dist/index.js` to `src/index.ts`). No `coverage.roots` declared.
+
+| What | Value | |
+|---|---|---|
+| `lattice extract`, before / after (median of 9 runs, same tree) | 376 ms / 507 ms | M |
+| Where the added time goes | the adapters' reference walk (tree-sitter calls); building, rooting and classifying the graph take about 30 ms | M |
+| References read | 28,764 (Go 28,641, TypeScript 123) | M |
+| Resolved | 11,949, into 9,630 distinct edges (the name scan gave 14,991) | M |
+| Unresolved | 569, all ambiguous; 0 missing, 0 dynamic | M |
+| External (standard library, dependencies, locals) | 16,246 | M |
+| Resolved by: own scope / import / declared type / receiver / unique member / structure / adapter target | 4,877 / 2,971 / 470 / 410 / 317 / 557 / 18 (edges) | M |
+| Classes, as committed | entry 2,129, test_only 10, unreached 31, unknown 3 | M |
+| Classes without Rapid Type Analysis | entry 1,785, test_only 5, unreached 31, unknown 352 | M |
+| Classes with `coverage.roots: [{file: pkg/lattice/lattice.go}]` | entry 2,143, test_only 10, unreached 20, unknown 0 | M |
+| `lattice.json` | 1,439,833 → 1,492,994 bytes (+53 KB, +3.7%: one `reach` per runtime symbol) | M |
+| `lattice/.cache/callgraph.json` | 1.76 MB (not committed) | M |
+
+The unreached list, checked by hand:
+
+- **The Go library API** (`pkg/lattice/lattice.go`: `Open` and the
+  `Lattice` methods, 11 symbols): public API that nothing in the workspace
+  calls. Not dead: declare it in `coverage.roots`, which leaves 20.
+- **Really dead, 20 symbols**: each is named only by its own declaration
+  anywhere in the repository. `agentic.Capabilities.WithProvider`,
+  `analyze.Analyzer.WithEmbedder`, `analyze.ImpactReport.HasConflicts`,
+  `brd.ByStatus`, `config.Autonomy.MayAdvanceMeaning`,
+  `entrypoints.LoadStatus`, `entrypoints.ResetForTest`,
+  `mutation.ParseStrykerJSON`, `mutation.AggregatePerInvariant`,
+  `mutation.FileScore` and its `Score`, `mutation.strykerReport`,
+  `schema.InvariantRefs.Has`, `ui.Server.configRelPath`,
+  `validate.HasErrors`, and `workspace.Workspace.AdaptersPath`,
+  `EmbeddingsDir`, `MCPPath`, `SchemasDir`, `SkillsDir`. Some are exported
+  and may be meant as API; none is called.
+- **Test-only, 10**: each adapter's `CanParse` (the registry dispatches by
+  extension, so only tests call it), `brd.LoadVotes`, `graph.Load`,
+  `ledger.Entry.From`, `validate.applySeverity` and `scip.NewCorpus`.
+
+Resolution gaps found and fixed on the way: method values and calls on a
+typed local (`p.walkList(root, p.handleTop)`: the whole Go parser read as
+unreached), calls on the result of an outside call
+(`time.Now().Add(d)` wired to a workspace `Add`), a library file's
+exported methods as roots, and interface dispatch (RTA above). What
+remains: a Go local's type is read from its declaration only, never from
+a function's result type, so a method on such a value resolves by unique
+name or stays ambiguous.

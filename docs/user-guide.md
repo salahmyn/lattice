@@ -543,7 +543,8 @@ coverage:
 Paths are relative to the directory holding `lattice/`. When a path given
 on the command line matches an entry here, the entry's `format`, `root` and
 `include` apply to it. `coverage: {}` turns the findings on with nothing
-else configured.
+else configured. It does not turn on the reachability codes; the same
+block's `roots`, `suites` and `overlap` keys belong to section 4g.
 
 ### Collect per-test coverage in CI
 
@@ -710,6 +711,219 @@ Limits:
 - Call counts carry no lines, so Postgres symbols add nothing to floors.
 - This format was defined without a running Postgres server. The SQL
   above follows the Postgres documentation and has not been run here.
+
+## 4g. Reachability: what does nothing reach?
+
+`lattice extract` builds a call graph from the code it already parses,
+finds the roots the runtime starts from, and gives every runtime symbol a
+reach class. Four findings then report dead code, test-only code,
+untested code and unused exports. Each one is off until you enable it.
+
+### The call graph
+
+Each adapter records the references in a symbol's body as written. The
+core resolves them.
+
+| Adapter | References | Resolution |
+|---|---|---|
+| TypeScript / JavaScript | imports, `export … from`, `export default`, `import('./x')`, `require('./x')`; calls, `new C()`, JSX `<C />`, named values (a callback, a default argument); `.rpc('fn')`, `.from('table')`, `.schema('s')` | relative paths (with or without an extension, or a directory's `index`); `@/`, `~/` and `#/` aliases by a unique path suffix |
+| Go | imports; calls, composite literals, types, function values; a method's receiver; a local's declared type (`func f(kg schema.KnowledgeGraph)`, `var x T`, `x := &T{}`) | an import path is local when it is `<module>/<dir>`; the module path is inferred from the imports, not read from `go.mod` |
+| Python | `import`, `from … import` (relative too), calls, `self.m()`, named values, supabase-py `.rpc()` / `.table()` | exact module, `__init__.py` for a package, or a unique `src/`-layout suffix |
+| Postgres | a function body's calls (`f(`, `perform f(`, `select f(`), a trigger's `execute function f()`, a policy's `using` / `with check` calls, `cron.schedule` bodies | `schema.name` as written; an unqualified name in `public` |
+| PHP | none yet | its symbols are `unknown` |
+
+A reference resolves, in order, through the module's imports, through its
+own scope (the enclosing function, then the module or package), and, for a
+method called on a value of unknown type, through a member name that is
+unique in the language. Anything else stays unresolved and is counted,
+never guessed:
+
+- **ambiguous**: several members share the name (`x.Parse()` with five
+  adapters that have `Parse`), so no edge is drawn;
+- **missing**: it names a module of the workspace, or a database function,
+  that has no such symbol;
+- **dynamic**: `.rpc(name)` with a computed name. With the reachability
+  codes on, each one is an `RPC_UNRESOLVED` info, so it cannot hide a live
+  function.
+
+A reference to the standard library, a dependency, a builtin or a local
+variable resolves to nothing and is not counted as unresolved. A method
+called on the result of an outside call (`time.Now().Add(d)`) never falls
+back to a workspace method of the same name.
+
+A few runtime conventions are edges too: Go's `String`, `Error`,
+`MarshalJSON`, `UnmarshalYAML`, `Len/Less/Swap` and the like are reached
+with their type; a Python class reaches its `__dunder__` methods; `new C()`
+reaches C's constructor; a module's top-level code runs when another
+module imports it.
+
+When a SCIP index exists for a language (`extract --with-code-graph`), it
+replaces this resolution for that language: each reference goes from its
+innermost enclosing definition (bounded by `enclosing_range`) to the
+referenced symbol.
+
+The resolved edges, the unresolved references, the roots and the counts
+go to `lattice/.cache/callgraph.json`. `lattice.json` keeps only each
+symbol's class, in `symbols[].reach`.
+
+### Roots
+
+Automatic roots, and nothing guessed in between:
+
+- the handlers of declared and detected entry points;
+- entry files named by build configuration: a `package.json`'s `main`,
+  `module` and `exports` (a library: the file's exports are roots) and
+  `bin` (a script: its top-level code), and an `index.html`'s
+  `<script type="module" src>`. A build output maps back to its source
+  (`dist/index.js` to `src/index.ts`, or through `tsconfig.json`'s `outDir`
+  and `rootDir`);
+- a top-level `serve(...)` or `Deno.serve(...)` handler;
+- `cron.schedule` bodies;
+- SQL triggers and policies (the database runs them);
+- Go's `func main` in package `main`, and Python's
+  `if __name__ == "__main__":` block.
+
+Declare the rest: route tables, framework conventions, a library's
+exported API.
+
+```yaml
+coverage:
+  roots:
+    - symbol: "pkg.lattice.*"             # an FQN, or a glob over FQNs
+      reason: the Go library API, called from outside the workspace
+    - file: "src/routes/**"               # a glob over graph file paths
+      reason: route modules, loaded by the router by convention
+```
+
+A `file:` root makes the file's top-level code and its exported symbols
+roots.
+
+### Reach classes
+
+| Class | Means |
+|---|---|
+| `entry` | a root reaches it through resolved edges, or it is a method an ambiguous call from reached code names and reached code also uses its type |
+| `test_only` | no root reaches it, a test does |
+| `unreached` | nothing reaches it, not even through an ambiguous reference that names it |
+| `unknown` | there are no roots; or its language has no reference data; or only an ambiguous reference reaches it and nothing reached uses its type |
+
+An ambiguous call stays unresolved in the call graph. For the classes,
+it reaches the candidates whose type reached code builds or names, and no
+others: Rapid Type Analysis, the rule of Go's own `deadcode` tool. So
+`ad.Parse(...)` through the `LanguageAdapter` interface reaches each
+adapter's `Parse`, because the registry builds every adapter, while a type
+nothing builds keeps its methods `unknown`.
+
+Runtime coverage (section 4f) only moves a symbol up: a symbol the suite
+ran is never `unreached` (it counts as `test_only`), and one that did not
+run keeps its class. `lattice.json` holds the static class; `validate`
+folds coverage in.
+
+### Findings
+
+All are off until enabled in `validate.severity`; the severity you set
+there is the one reported. A `coverage:` block does not turn them on,
+because they depend on how complete the call graph is. The second column
+is the severity each is designed for.
+
+| Code | Severity | Fires when |
+|---|---|---|
+| `SYMBOL_UNREACHED` | warning | reached from no root, no test and no reached symbol, and it did not run |
+| `SYMBOL_TEST_ONLY` | info | only tests reach it (statically, or it ran only under the suite) |
+| `SYMBOL_UNTESTED` | info | a root reaches it, but suite coverage says no test executed it; needs ingested coverage |
+| `UNUSED_EXPORT` | info | exported, top-level, and no other module imports or references it; roots are exempt |
+| `REACHABILITY_NO_ROOTS` | info, with any of the four above | the graph has no roots; it replaces every per-symbol finding |
+| `RPC_UNRESOLVED` | info, with any of the four above | an `.rpc()` with a computed name |
+| `SUITE_OVERLAP` | info | two test suites verify nearly the same targets (below) |
+
+```yaml
+validate:
+  severity:
+    SYMBOL_UNREACHED: warning
+    SYMBOL_TEST_ONLY: info
+    UNUSED_EXPORT: info
+```
+
+Every message states its evidence: the static call graph and its root
+count, plus suite coverage when it was used. Subjects are FQNs, so the
+allowlist takes them as they are:
+
+```yaml
+entries:
+  - code: SYMBOL_UNREACHED
+    subject: "src.generated.**"
+    kind: generated
+    reason: the API client is generated; only part of it is used
+```
+
+**`FEATURE_UNREACHED` changes when the graph has roots.** A feature also
+counts as reached when a root reaches any of its symbols, and the rule
+runs even with no entry point declared. Without roots it keeps its
+flow-based rule.
+
+### Suite overlap
+
+`SUITE_OVERLAP` compares what two test suites claim to verify: the
+`@verifies` targets of their tests, plus the entry points named in
+`verified_by` of the scenarios their tests verify. It fires when the
+Jaccard index of the two sets is at or above `coverage.overlap` (default
+0.8).
+
+```yaml
+coverage:
+  suites:                          # name -> globs over graph file paths
+    checkout-e2e: ["e2e/checkout/**"]
+    journeys: ["tests/journeys/**"]
+  overlap: 0.8
+```
+
+Without `coverage.suites`, each top-level test directory (`tests/`,
+`test/`, `e2e/`, `__tests__/`, `spec/`, `cypress/`, `playwright/`) is one
+suite, and tests elsewhere belong to none. This is a static check on
+declared tags. Per-test end-to-end coverage (Playwright) would compare what
+the suites actually run; that is future work.
+
+### The example
+
+`examples/coverage-prototype/` enables the four codes:
+
+```sh
+cd examples/coverage-prototype
+lattice extract
+lattice results ingest coverage/junit.xml coverage/all.lcov --per-test coverage/per-test
+lattice validate
+```
+
+```
+warn  SYMBOL_UNREACHED   sql.public.debit_v1 is reached from no root, no test and no reached symbol (evidence: static call graph, 2 root(s); no coverage for its file)
+info  SYMBOL_UNTESTED    src.cli.main is reachable from a root (entry point ep.cli.wallet), but no test executed it (evidence: static call graph, 2 root(s); suite coverage)
+info  SYMBOL_TEST_ONLY   src.statement.formatStatement is reached only from tests: no root reaches it (evidence: static call graph, 2 root(s); suite coverage: it ran)
+info  SYMBOL_UNTESTED    src.wallet.assertSufficientFunds is reachable from a root (entry point ep.cli.wallet), but no test executed it (evidence: static call graph, 2 root(s); suite coverage)
+info  SYMBOL_UNTESTED    src.wallet.debitInDatabase is reachable from a root (entry point ep.cli.wallet), but no test executed it (evidence: static call graph, 2 root(s); suite coverage)
+info  UNUSED_EXPORT      src.wallet.assertPositive is exported, but no other module imports or references it (evidence: static imports and references)
+info  UNUSED_EXPORT      src.wallet.assertSufficientFunds is exported, but no other module imports or references it (evidence: static imports and references)
+```
+
+`sql.public.debit` is reached through `client.rpc("debit")`; its replaced
+`debit_v1` is not. `public.touch_account` is called by no code, but the
+database runs it through a trigger, so it is reached. The run writes
+`lattice/lattice.json`, `lattice/.cache/` and `lattice/.ledger/` there, so
+run it in a copy to keep the example as committed.
+
+### Limits
+
+- Calls through an interface, and methods on a value whose type the
+  adapter could not read, are ambiguous whenever two types share the
+  method name. Rapid Type Analysis takes the candidates whose type is
+  used; that over-approximates, so a method of a used type can read
+  `entry` when no call of its interface could hold that type. The other
+  candidates are `unknown`, never `unreached`.
+- Go's local types come from declarations only (parameters, `var`,
+  composite literals); a function's result type is not followed.
+- Reflection, dependency injection and registration by string are
+  invisible. Declare their targets in `coverage.roots` or allowlist them
+  with `kind: framework`.
+- PHP has no reference extraction yet.
 
 ## 5. Day-to-day commands
 
