@@ -110,6 +110,7 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 	v = append(v, c.checkManifests()...)
 	v = append(v, c.checkBRDs()...)
 	v = append(v, c.checkScenarios()...)  // v0.8 α/β — scenario + reach
+	v = append(v, c.checkRequiredLevel()...)
 	v = append(v, c.checkDependencies()...)
 	v = append(v, c.checkInitiativesAndTasks()...)
 	v = append(v, c.checkLeases()...)     // v0.8 §5 — fleet coordination

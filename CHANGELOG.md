@@ -2,6 +2,18 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **`validate.require_level`**: `verified` or `demonstrated` (or
+  `lattice validate --require-level`). Every BRD success criterion and user
+  scenario below the level raises `BRD_BELOW_LEVEL` (error), with the
+  subject `brd.<id>:SC-N` / `brd.<id>:US-N` for the allowlist. Before, the
+  RTM computed each one's level but nothing failed on it: a verified
+  criterion raised no finding and an unmapped one only an info, so a gate
+  on "every criterion demonstrated" had to be scripted.
+
 ## [0.10.0] — 2026-10-24
 
 ### Fixed

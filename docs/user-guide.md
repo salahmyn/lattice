@@ -172,6 +172,16 @@ validate:
     BRD_SCENARIO_UNMAPPED: warning
 ```
 
+To gate on the truth level, set `require_level` (or pass
+`--require-level`): every BRD success criterion and user scenario below it
+raises `BRD_BELOW_LEVEL` (error), with the subject `brd.<id>:SC-N` or
+`brd.<id>:US-N` for the allowlist.
+
+```yaml
+validate:
+  require_level: demonstrated   # or verified
+```
+
 `UNATTRIBUTED_MODULE` (off unless set) flags a production module with no
 `@module-feature` and no feature on any of its symbols, so a coverage figure
 over annotated code cannot hide the code nobody annotated.

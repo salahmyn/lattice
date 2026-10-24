@@ -54,6 +54,11 @@ type ValidatePolicy struct {
 	// Allowlist is the allowlist file, relative to the lattice/ directory.
 	// Default allowlist.yaml.
 	Allowlist string `yaml:"allowlist,omitempty"`
+	// RequireLevel is the truth level every BRD success criterion and user
+	// scenario must reach: verified or demonstrated. Below it, validate
+	// raises BRD_BELOW_LEVEL (error). Empty means no level is required.
+	// `lattice validate --require-level` overrides it.
+	RequireLevel string `yaml:"require_level,omitempty"`
 }
 
 // AllowlistPath returns the allowlist file relative to the lattice/ dir.
