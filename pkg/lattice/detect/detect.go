@@ -12,11 +12,14 @@ package detect
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Language is the detected programming language. Kept as a typed
@@ -69,6 +72,10 @@ type Detection struct {
 	// Lattice needs to index this stack: e.g. scip-php for PHP/Laravel,
 	// scip-python for Django/FastAPI.
 	RequiredPackages []Package `json:"required_packages,omitempty"`
+
+	// Packages are the workspace packages of a JS/TS monorepo (pnpm,
+	// npm/yarn workspaces), as root-relative directories.
+	Packages []string `json:"packages,omitempty"`
 
 	// Evidence is the human-readable list of signals (file paths) that
 	// fed the score. Surfaced in the CLI and the wizard so the user
@@ -165,6 +172,24 @@ func Detect(root string) Detection {
 			s.evidence = append(s.evidence, "tsconfig.json (typescript)")
 		}
 		req := npmDeps(filepath.Join(root, "package.json"))
+		// A monorepo keeps its code, tsconfig and framework dependencies in
+		// the workspace packages, not at the root: read them too.
+		pkgs := workspacePackages(root)
+		if len(pkgs) > 0 {
+			s.score += 10
+			s.evidence = append(s.evidence, fmt.Sprintf("workspace with %d package(s): %s", len(pkgs), strings.Join(pkgs, ", ")))
+			det.Packages = pkgs
+			for _, p := range pkgs {
+				if s.lang != LanguageTypeScript && exists(filepath.Join(root, p), "tsconfig.json") {
+					s.lang = LanguageTypeScript
+					s.score += 5
+					s.evidence = append(s.evidence, p+"/tsconfig.json (typescript)")
+				}
+				for dep := range npmDeps(filepath.Join(root, p, "package.json")) {
+					req[dep] = true
+				}
+			}
+		}
 		switch {
 		case req["next"]:
 			s.fw = FrameworkNextJS
@@ -429,6 +454,59 @@ func composerRequires(path string) map[string]bool {
 	for k := range parsed.RequireDev {
 		out[k] = true
 	}
+	return out
+}
+
+// workspacePackages returns the root-relative directories of a JS/TS
+// monorepo's packages, from pnpm-workspace.yaml or package.json
+// "workspaces" (an array, or an object with "packages"). Only directories
+// holding a package.json count. Sorted; nil when the root is no workspace.
+func workspacePackages(root string) []string {
+	var globs []string
+	if data, err := os.ReadFile(filepath.Join(root, "pnpm-workspace.yaml")); err == nil {
+		var ws struct {
+			Packages []string `yaml:"packages"`
+		}
+		if yaml.Unmarshal(data, &ws) == nil {
+			globs = append(globs, ws.Packages...)
+		}
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "package.json")); err == nil {
+		var pj struct {
+			Workspaces json.RawMessage `json:"workspaces"`
+		}
+		if json.Unmarshal(data, &pj) == nil && len(pj.Workspaces) > 0 {
+			var list []string
+			var obj struct {
+				Packages []string `json:"packages"`
+			}
+			if json.Unmarshal(pj.Workspaces, &list) == nil {
+				globs = append(globs, list...)
+			} else if json.Unmarshal(pj.Workspaces, &obj) == nil {
+				globs = append(globs, obj.Packages...)
+			}
+		}
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, g := range globs {
+		if strings.HasPrefix(g, "!") {
+			continue // an exclusion; the inclusions bound the set well enough
+		}
+		matches, _ := filepath.Glob(filepath.Join(root, filepath.FromSlash(strings.TrimSuffix(g, "/"))))
+		for _, m := range matches {
+			if !exists(m, "package.json") {
+				continue
+			}
+			rel, err := filepath.Rel(root, m)
+			if err != nil || seen[rel] {
+				continue
+			}
+			seen[rel] = true
+			out = append(out, filepath.ToSlash(rel))
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 

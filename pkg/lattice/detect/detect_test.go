@@ -127,3 +127,45 @@ func TestDetectPicksHighestScoreOnMultiManifest(t *testing.T) {
 		t.Errorf("got %s, expected go to win on score", d.Language)
 	}
 }
+
+// A pnpm (or npm/yarn workspaces) monorepo keeps tsconfig and framework
+// dependencies in its packages; detection reads them.
+func TestDetectTSMonorepo(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, body string) {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("package.json", `{"name":"mono","private":true}`)
+	write("pnpm-workspace.yaml", "packages:\n  - apps/*\n  - packages/*\n")
+	write("apps/web/package.json", `{"dependencies":{"react":"18"}}`)
+	write("apps/web/tsconfig.json", `{}`)
+	write("apps/api/package.json", `{"dependencies":{"express":"4"}}`)
+	write("apps/notes/README.md", "not a package")
+
+	d := Detect(root)
+	if d.Language != LanguageTypeScript || d.Framework != FrameworkExpress {
+		t.Errorf("language/framework = %s/%s, want typescript/express", d.Language, d.Framework)
+	}
+	if d.Confidence == "low" || d.Confidence == "none" {
+		t.Errorf("confidence = %s", d.Confidence)
+	}
+	if len(d.Packages) != 2 || d.Packages[0] != "apps/api" || d.Packages[1] != "apps/web" {
+		t.Errorf("packages = %v", d.Packages)
+	}
+
+	// npm/yarn "workspaces" as an object.
+	root2 := t.TempDir()
+	root = root2
+	write("package.json", `{"workspaces":{"packages":["libs/*"]}}`)
+	write("libs/core/package.json", `{}`)
+	write("libs/core/tsconfig.json", `{}`)
+	if d := Detect(root2); d.Language != LanguageTypeScript || len(d.Packages) != 1 {
+		t.Errorf("workspaces object: %+v", d)
+	}
+}

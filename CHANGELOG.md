@@ -61,6 +61,12 @@ All notable changes to Lattice are documented in this file.
   as warnings, while `--json` gave their severity as `info`. Text, summary
   and JSON now agree: `N error(s), M warning(s), K info`, with `infos` in
   `--json`.
+- **`detect` / `init` understand JS/TS monorepos**: a pnpm workspace
+  (`pnpm-workspace.yaml`) or npm/yarn `workspaces` keeps its `tsconfig.json`
+  and framework dependencies in the packages, so a TypeScript monorepo was
+  detected as "javascript, low confidence". Detection now reads the
+  workspace packages (listed as `packages`), so TypeScript and the framework
+  are recognised.
 - **Result lookup is deterministic**: when several report cases match a
   verifier, the most specific match wins (the longest shared path), and equal
   matches resolve to the worst outcome. Before, two files with the same test
