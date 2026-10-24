@@ -1,5 +1,7 @@
 package schema
 
+import "strings"
+
 // KnowledgeGraph is the single artifact Lattice emits as lattice.json.
 //
 // It is committed to git and written with deterministic ordering: extracting
@@ -160,6 +162,10 @@ func (kg KnowledgeGraph) Attribution() []ModuleAttribution {
 	out := make([]ModuleAttribution, 0, len(kg.Modules))
 	for _, m := range kg.Modules {
 		a := ModuleAttribution{File: m.File, Attributed: m.Feature != ""}
+		if nonProductFile(m.File) {
+			out = append(out, a) // ProductionSymbols stays 0
+			continue
+		}
 		for _, fqn := range m.SymbolFQNs {
 			s, ok := sym[fqn] // tests live in kg.Tests, so they are not found here
 			if !ok {
@@ -175,4 +181,24 @@ func (kg KnowledgeGraph) Attribution() []ModuleAttribution {
 		out = append(out, a)
 	}
 	return out
+}
+
+// nonProductFile reports files that hold code but not product behaviour:
+// ambient type declarations (*.d.ts) and tool configuration
+// (vite.config.ts, playwright.config.ts, jest.config.js, …). They are left
+// out of attribution so a coverage figure measures the product, not its
+// build setup; a workspace that wants them counted can attribute them anyway.
+func nonProductFile(file string) bool {
+	base := file
+	if i := strings.LastIndex(base, "/"); i >= 0 {
+		base = base[i+1:]
+	}
+	if strings.HasSuffix(base, ".d.ts") || strings.HasSuffix(base, ".d.mts") || strings.HasSuffix(base, ".d.cts") {
+		return true
+	}
+	stem := base
+	if i := strings.LastIndex(stem, "."); i > 0 {
+		stem = stem[:i]
+	}
+	return strings.HasSuffix(stem, ".config")
 }

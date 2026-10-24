@@ -90,8 +90,13 @@ All notable changes to Lattice are documented in this file.
 
 - **Attribution coverage**: `lattice coverage` reports the share of
   production modules that belong to a feature and lists the ones that do
-  not. Modules holding only tests, types or nothing are not production code.
-  It is the same definition `UNATTRIBUTED_MODULE` uses.
+  not. Modules holding only tests, types or nothing are not production code,
+  nor are ambient declarations (`*.d.ts`) and tool configuration
+  (`*.config.*`). It is the same definition `UNATTRIBUTED_MODULE` uses.
+- **Test-support files are test code**: `__mocks__/`, `__fixtures__/`,
+  `testdata/`, and files named `testing.*`, `test-utils.*` /
+  `test_utils.*` or `test-helpers.*` / `test_helpers.*` are test files in
+  every adapter.
 - **Validation policy in `config.yaml`**: `validate.severity` sets any
   finding code to `error`, `warning`, `info` or `off`; `validate.fail_on`
   (or `lattice validate --fail-on`) sets the lowest severity that fails the
@@ -120,6 +125,17 @@ All notable changes to Lattice are documented in this file.
   e2e.xml` merges them into one set, a failure in any report winning.
   Previously each call replaced the set, so unit and e2e results could not
   both count toward one criterion.
+
+### Behaviour changes to plan for
+
+- `validate` counts `info` findings as info, not warnings, so
+  `BRD_CRITERION_UNMAPPED`, `BRD_SCENARIO_UNMAPPED`, `FEATURE_UNREACHED` and
+  the other info-level codes leave the `warnings` total (and `--json`
+  `warnings`). Set `validate.fail_on: info`, or raise a code with
+  `validate.severity`, to keep failing on them.
+- `FILE_LINE_CAP` / `METHOD_LINE_CAP` need `architecture.ama_mode` or an
+  explicit cap.
+- A malformed entry-point file is now an error (`ENTRYPOINT_PARSE_ERROR`).
 
 ## [0.9.1] — 2026-10-23
 
