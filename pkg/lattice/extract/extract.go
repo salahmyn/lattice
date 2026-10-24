@@ -220,21 +220,22 @@ func parseSources(ctx context.Context, w *workspace.Workspace, reg *adapters.Reg
 		if !root.Available {
 			continue
 		}
+		filter := newScanFilter(root.Abs, w.Exclude)
 		_ = filepath.WalkDir(root.Abs, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil
 			}
+			rel, _ := filepath.Rel(root.Abs, path)
+			rel = filepath.ToSlash(rel)
 			if d.IsDir() {
-				if skipDir(root.Abs, path, d.Name(), w.LatticeDir) {
+				if skipDir(root.Abs, path, d.Name(), w.LatticeDir) || (path != root.Abs && filter.skipDir(rel)) {
 					return filepath.SkipDir
 				}
 				return nil
 			}
-			if reg.For(path) == nil {
+			if reg.For(path) == nil || filter.skipFile(rel) {
 				return nil
 			}
-			rel, _ := filepath.Rel(root.Abs, path)
-			rel = filepath.ToSlash(rel)
 			if multiRoot {
 				rel = root.Name + "/" + rel
 			}

@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"gopkg.in/yaml.v3"
 )
 
@@ -128,6 +129,7 @@ func (s Storage) check() error {
 type file struct {
 	Mode      Mode       `yaml:"mode"`
 	CodeRoots []CodeRoot `yaml:"code_roots,omitempty"`
+	Exclude   []string   `yaml:"exclude,omitempty"`
 	Sources   []Source   `yaml:"sources,omitempty"`
 	Judgments string     `yaml:"judgments,omitempty"`
 	Storage   Storage    `yaml:"storage,omitempty"`
@@ -142,6 +144,10 @@ type Workspace struct {
 	// Review is true when no code root is accessible, so only manifest-level
 	// operations are possible (the PM/QA review case).
 	Review bool
+	// Exclude holds slash-path globs (doublestar syntax) of files and
+	// directories never scanned for code, matched against paths relative to
+	// each code root. Git-ignored paths are skipped as well.
+	Exclude []string
 	// Sources are the block-graph inputs declared in workspace.yaml.
 	Sources []Source
 	// judgments is the judgments directory as declared, resolved by ResolvePath.
@@ -205,6 +211,12 @@ func (w *Workspace) loadWorkspaceFile() error {
 	if f.Mode != "" {
 		w.Mode = f.Mode
 	}
+	for _, g := range f.Exclude {
+		if !doublestar.ValidatePattern(g) {
+			return fmt.Errorf("%s: exclude: invalid glob %q", path, g)
+		}
+	}
+	w.Exclude = f.Exclude
 	w.CodeRoots = f.CodeRoots
 	w.Sources = f.Sources
 	w.judgments = f.Judgments

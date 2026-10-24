@@ -142,3 +142,21 @@ func TestStorage(t *testing.T) {
 		}
 	}
 }
+
+func TestExcludeGlobs(t *testing.T) {
+	root := t.TempDir()
+	writeLatticeDir(t, filepath.Join(root, "lattice"), "mode: embedded\nexclude:\n  - \"apps/legacy/**\"\n  - \"**/*.generated.ts\"\n")
+	w, err := Open(root)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if len(w.Exclude) != 2 || w.Exclude[0] != "apps/legacy/**" {
+		t.Errorf("Exclude = %v", w.Exclude)
+	}
+
+	bad := t.TempDir()
+	writeLatticeDir(t, filepath.Join(bad, "lattice"), "mode: embedded\nexclude:\n  - \"src/[\"\n")
+	if _, err := Open(bad); err == nil {
+		t.Error("an invalid exclude glob should fail to open")
+	}
+}
