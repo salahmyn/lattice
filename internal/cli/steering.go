@@ -13,6 +13,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/ledger"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/rtm"
+	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
@@ -385,7 +386,8 @@ lease held by another actor are withheld so a fleet doesn't collide.`,
 			}
 			me := io.actor()
 
-			actions := rankActions(m, leasedBy, me)
+			actions := append(rankActions(m, leasedBy, me), approvalActions(kg.BRDs)...)
+			empty := len(m.Rows) == 0 && len(m.Scenarios) == 0 && len(kg.BRDs) == 0
 			if limit > 0 && len(actions) > limit {
 				actions = actions[:limit]
 			}
@@ -393,11 +395,17 @@ lease held by another actor are withheld so a fleet doesn't collide.`,
 				return io.printJSON(map[string]interface{}{
 					"journey_coverage": rtm.ComputeJourneyCoverage(m),
 					"actions":          actions,
+					"empty":            empty,
 				})
 			}
 			jc := rtm.ComputeJourneyCoverage(m)
 			io.printf("journey coverage: %d/%d scenarios reach a declared entry point\n\n",
 				jc.ReachedScenarios, jc.TotalScenarios)
+			if empty {
+				io.printf("nothing declared yet: no BRD criteria or scenarios to rank.\n" +
+					"Start with `lattice brd new <id>` or draft from the code with `lattice brd from-code`.\n")
+				return nil
+			}
 			if len(actions) == 0 {
 				io.printf("nothing outstanding — every unit is demonstrated and correctly-meant\n")
 				return nil
@@ -451,6 +459,30 @@ func rankActions(m rtm.Matrix, leasedBy map[string]string, me string) []nextActi
 		}
 		return out[i].Unit < out[j].Unit
 	})
+	return out
+}
+
+// approvalActions lists the BRDs still waiting for a human sign-off. They come
+// after every unit that needs work: approval is the last step, and only a
+// person (or a mandate a person granted) takes it, never the agent reading
+// this list.
+func approvalActions(brds []schema.BRD) []nextAction {
+	var out []nextAction
+	for _, b := range brds {
+		if b.Status != schema.BRDDraft && b.Status != schema.BRDProposed {
+			continue
+		}
+		action := "a human reviews it against the code and `lattice rtm`, then runs `lattice brd approve " +
+			b.ID + " --by <email>`; an agent never approves"
+		if b.Provenance.Source == schema.BRDSourceLLMFromCode {
+			action = "drafted from code by an LLM: " + action
+		}
+		out = append(out, nextAction{
+			Unit: b.ID, Level: "awaiting-approval", Severity: 6,
+			Action: action, Skill: "verifying-meaning",
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Unit < out[j].Unit })
 	return out
 }
 

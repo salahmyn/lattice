@@ -61,6 +61,9 @@ All notable changes to Lattice are documented in this file.
   as warnings, while `--json` gave their severity as `info`. Text, summary
   and JSON now agree: `N error(s), M warning(s), K info`, with `infos` in
   `--json`.
+- **`lattice next` on an empty workspace**: it said "every unit is
+  demonstrated" when nothing was declared; it now says nothing is declared
+  yet and how to start (`--json` carries `empty: true`).
 - **Result lookup is deterministic**: when several report cases match a
   verifier, the most specific match wins (the longest shared path), and equal
   matches resolve to the worst outcome. Before, two files with the same test
@@ -68,6 +71,9 @@ All notable changes to Lattice are documented in this file.
 
 ### Added
 
+- **`lattice next` ranks BRD approvals**: draft and proposed BRDs appear
+  after every unit that needs work, as `awaiting-approval`, with the human
+  approval step (an agent never approves).
 - **Validation policy in `config.yaml`**: `validate.severity` sets any
   finding code to `error`, `warning`, `info` or `off`; `validate.fail_on`
   (or `lattice validate --fail-on`) sets the lowest severity that fails the
