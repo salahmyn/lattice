@@ -34,10 +34,19 @@ Rules to honor when generating or editing artifacts:
   unless explicitly told to author forward. `lattice brd from-code` regenerates
   BRDs from feature evidence via LLM.
 - **`llm_from_code` BRDs are always `draft`** and carry
-  `provenance.source: llm_from_code`. They require a human approval pass
-  (`lattice brd approve <id> --by <email>`) before becoming source of truth —
-  never flip status to `approved` on the user's behalf. The validator enforces
-  this (`BRD_UNAPPROVED_LLM`).
+  `provenance.source: llm_from_code`. They require an approval pass before
+  becoming source of truth. The validator enforces this (`BRD_UNAPPROVED_LLM`).
+  - By default that pass is a human's: `lattice brd approve <id> --by <email>`.
+    Never flip status to `approved` on the user's behalf.
+  - **Council mode is the one exception.** It applies when
+    `autonomy.default_mode: council` is set and a human has pinned a
+    `brd_approve` mandate. A council of agent seats may then approve, using
+    `lattice brd vote` per seat and then `lattice brd decide`. The human gets
+    the summary and can overturn it.
+  - Agents never pin, widen or renew mandates.
+  - Agents never put a council approval on a BRD with a tier-3 criterion, or
+    with a regulatory, legal or financial constraint.
+  - Agents never write the `approval` block by hand (`BRD_COUNCIL_INVALID`).
 - **BRD lifecycle**: `draft → proposed → approved → superseded`. Don't invent
   other statuses.
 - **Link integrity**: an `implements_via` entry naming a missing feature is a
