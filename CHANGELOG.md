@@ -53,6 +53,19 @@ All notable changes to Lattice are documented in this file.
   as warnings, while `--json` gave their severity as `info`. Text, summary
   and JSON now agree: `N error(s), M warning(s), K info`, with `infos` in
   `--json`.
+- **Table-driven tests are tests**: `it.each(table)("title", fn)`,
+  `test.each` and `describe.each` were not recognised (the callee is itself a
+  call), so their `@verifies` was dropped. They are now test symbols whose
+  FQN marks each title placeholder (`%s`, `$name`, `${x}`) with `_`; the
+  result join matches every row's case in the same file, and the test is
+  demonstrated only when all rows pass.
+- **More TypeScript annotation targets**: an annotated non-function `const`
+  (`export const client = createClient(…)`) is a symbol; annotated methods of
+  an object literal (`export const store = { get() {} }`) are method symbols
+  of that const; annotated functions declared inside a function body (a
+  handler inside a React component) are symbols enclosed by it. Unannotated
+  ones stay out of the graph. `// @module-feature x` on one line works like
+  the JSDoc form (line comments never carry symbol tags).
 - **Result lookup is deterministic**: when several report cases match a
   verifier, the most specific match wins (the longest shared path), and equal
   matches resolve to the worst outcome. Before, two files with the same test

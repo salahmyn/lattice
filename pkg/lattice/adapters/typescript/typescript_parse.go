@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -164,7 +165,12 @@ func (p *tsParser) orphan(anns []ir.Annotation, at *sitter.Node) {
 func (p *tsParser) handleDecl(n *sitter.Node, anns []ir.Annotation, exported bool) bool {
 	switch n.Type() {
 	case "function_declaration":
-		return p.addSymbol(p.fieldText(n, "name"), ir.KindFunction, "", n, anns, exported)
+		name := p.fieldText(n, "name")
+		ok := p.addSymbol(name, ir.KindFunction, "", n, anns, exported)
+		if ok {
+			p.walkBody(n.ChildByFieldName("body"), p.modulePath+"."+name)
+		}
+		return ok
 	case "class_declaration", "abstract_class_declaration":
 		return p.addClass(n, anns, exported)
 	case "interface_declaration":
@@ -180,9 +186,20 @@ func (p *tsParser) handleDecl(n *sitter.Node, anns []ir.Annotation, exported boo
 			if val == nil {
 				continue
 			}
+			name := p.fieldText(d, "name")
 			switch val.Type() {
 			case "arrow_function", "function", "function_expression":
-				added = p.addSymbol(p.fieldText(d, "name"), ir.KindFunction, "", d, anns, exported) || added
+				if p.addSymbol(name, ir.KindFunction, "", d, anns, exported) {
+					added = true
+					p.walkBody(val.ChildByFieldName("body"), p.modulePath+"."+name)
+				}
+			default:
+				// A value const (a client, a config object) is a symbol only
+				// when something is said about it: annotations on the const,
+				// or annotated methods in an object literal.
+				if p.addConst(name, d, val, anns, exported) {
+					added = true
+				}
 			}
 		}
 		return added
@@ -212,6 +229,9 @@ func (p *tsParser) handleTestCall(call *sitter.Node, anns []ir.Annotation) bool 
 	fn := call.ChildByFieldName("function")
 	if fn == nil {
 		return false
+	}
+	if fn.Type() == "call_expression" {
+		return p.handleEachCall(call, fn, anns)
 	}
 	callee := calleeName(fn, p.src)
 	if !testCallNames[callee] {
@@ -244,6 +264,76 @@ func (p *tsParser) handleTestCall(call *sitter.Node, anns []ir.Annotation) bool 
 	if hasInlineCallback(args) || len(anns) > 0 {
 		p.addTestSymbol(p.testDesc(args, callee), call, anns)
 		return true
+	}
+	return false
+}
+
+// handleEachCall handles a table-driven test, it.each(table)("title", fn) or
+// describe.each(table)(...): call is the outer call, inner is it.each(table).
+// The title is a template ("%s", "$name", "${x}" fill it per row), so the
+// test is named by templateSlug and its results join every row's case.
+func (p *tsParser) handleEachCall(call, inner *sitter.Node, anns []ir.Annotation) bool {
+	fn := inner.ChildByFieldName("function")
+	if fn == nil {
+		return false
+	}
+	chain := memberChain(fn, p.src)
+	if len(chain) < 2 || chain[len(chain)-1] != "each" || !testCallNames[chain[0]] {
+		return false
+	}
+	args := call.ChildByFieldName("arguments")
+	group := false
+	for _, part := range chain[:len(chain)-1] {
+		if part == "describe" || part == "suite" || part == "context" {
+			group = true
+		}
+	}
+	if group {
+		if len(anns) > 0 {
+			p.addTestSymbolSlug(p.firstStringArg(args), templateSlug(p.firstStringArg(args)), call, anns)
+		}
+		if body := callbackBody(args); body != nil {
+			p.walkStatements(body)
+		}
+		return len(anns) > 0
+	}
+	if !hasInlineCallback(args) && len(anns) == 0 {
+		return false
+	}
+	title := p.firstStringArg(args)
+	p.addTestSymbolSlug(title, templateSlug(title), call, anns)
+	return true
+}
+
+// eachPlaceholder matches the per-row placeholders of jest/vitest .each
+// titles: printf verbs (%s %d %i %f %j %o %O %p %#) and $name / ${expr}.
+var eachPlaceholder = regexp.MustCompile(`%[sdifjoOp#]|\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_.]*`)
+
+// templateSlug slugs a table-test title, marking each placeholder with "_"
+// (which slugify never emits), so the result join can match every row:
+// "fails when the %s read fails" -> "fails-when-the-_-read-fails".
+func templateSlug(title string) string {
+	if !eachPlaceholder.MatchString(title) {
+		return slugify(title)
+	}
+	var tokens []string
+	for i, part := range eachPlaceholder.Split(title, -1) {
+		if i > 0 {
+			tokens = append(tokens, "_")
+		}
+		if hasAlnum(part) {
+			tokens = append(tokens, slugify(part))
+		}
+	}
+	return strings.Join(tokens, "-")
+}
+
+// hasAlnum reports whether s holds a letter or digit slugify would keep.
+func hasAlnum(s string) bool {
+	for _, r := range strings.ToLower(s) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			return true
+		}
 	}
 	return false
 }
@@ -326,6 +416,108 @@ func (p *tsParser) addClass(n *sitter.Node, anns []ir.Annotation, exported bool)
 	return true
 }
 
+// addConst records a non-function const that carries annotations, or whose
+// object-literal value has annotated methods (export const store = { get() {} }).
+// Each annotated method becomes a method symbol enclosed by the const.
+func (p *tsParser) addConst(name string, decl, val *sitter.Node, anns []ir.Annotation, exported bool) bool {
+	if name == "" {
+		return false
+	}
+	fqn := p.modulePath + "." + name
+	var members []func()
+	if val.Type() == "object" {
+		var pending []ir.Annotation
+		for i := 0; i < int(val.NamedChildCount()); i++ {
+			c := val.NamedChild(i)
+			switch c.Type() {
+			case "comment":
+				if a := p.parseJSDoc(c); a != nil {
+					pending = append(pending, a...)
+				}
+				continue
+			case "method_definition":
+				if len(pending) > 0 {
+					mname, mnode, manns := p.fieldText(c, "name"), c, pending
+					members = append(members, func() { p.addSymbol(mname, ir.KindMethod, fqn, mnode, manns, exported) })
+				}
+			case "pair":
+				if v := c.ChildByFieldName("value"); v != nil && len(pending) > 0 {
+					switch v.Type() {
+					case "arrow_function", "function", "function_expression":
+						mname, mnode, manns := p.fieldText(c, "key"), c, pending
+						members = append(members, func() { p.addSymbol(mname, ir.KindMethod, fqn, mnode, manns, exported) })
+					default:
+						p.orphan(pending, c)
+					}
+				}
+			default:
+				p.orphan(pending, c)
+			}
+			pending = nil
+		}
+		p.orphan(pending, nil)
+	}
+	if len(anns) == 0 && len(members) == 0 {
+		return false
+	}
+	p.addSymbol(name, ir.KindConst, "", decl, anns, exported)
+	for _, add := range members {
+		add()
+	}
+	return true
+}
+
+// walkBody records annotated functions declared inside a function body
+// (an event handler inside a React component, a helper inside a factory) as
+// symbols enclosed by that function. Unannotated inner functions stay out of
+// the graph; an annotation inside the body that reaches no function is
+// reported as orphaned.
+func (p *tsParser) walkBody(body *sitter.Node, enclosingFQN string) {
+	if body == nil || body.Type() != "statement_block" {
+		return
+	}
+	var pending []ir.Annotation
+	for i := 0; i < int(body.NamedChildCount()); i++ {
+		n := body.NamedChild(i)
+		switch n.Type() {
+		case "comment":
+			if a := p.parseJSDoc(n); a != nil {
+				pending = append(pending, a...)
+			}
+			continue
+		case "function_declaration":
+			if len(pending) > 0 {
+				name := p.fieldText(n, "name")
+				if p.addSymbol(name, ir.KindFunction, enclosingFQN, n, pending, false) {
+					p.walkBody(n.ChildByFieldName("body"), enclosingFQN+"."+name)
+					pending = nil
+				}
+			}
+		case "lexical_declaration", "variable_declaration":
+			if len(pending) > 0 {
+				for j := 0; j < int(n.NamedChildCount()); j++ {
+					d := n.NamedChild(j)
+					val := d.ChildByFieldName("value")
+					if d.Type() != "variable_declarator" || val == nil {
+						continue
+					}
+					switch val.Type() {
+					case "arrow_function", "function", "function_expression":
+						name := p.fieldText(d, "name")
+						if p.addSymbol(name, ir.KindFunction, enclosingFQN, d, pending, false) {
+							p.walkBody(val.ChildByFieldName("body"), enclosingFQN+"."+name)
+							pending = nil
+						}
+					}
+				}
+			}
+		}
+		p.orphan(pending, n)
+		pending = nil
+	}
+	p.orphan(pending, nil)
+}
+
 // addSymbol appends one symbol to the module and reports whether it did.
 func (p *tsParser) addSymbol(name string, kind ir.SymbolKind, enclosingFQN string, n *sitter.Node, anns []ir.Annotation, exported bool) bool {
 	if name == "" {
@@ -346,7 +538,15 @@ func (p *tsParser) addSymbol(name string, kind ir.SymbolKind, enclosingFQN strin
 // addTestSymbol records a synthetic symbol for a test-framework call. The test
 // description becomes the symbol name; the FQN is slugified and de-duplicated.
 func (p *tsParser) addTestSymbol(desc string, n *sitter.Node, anns []ir.Annotation) {
-	base := p.modulePath + ".test." + slugify(desc)
+	p.addTestSymbolSlug(desc, slugify(desc), n, anns)
+}
+
+// addTestSymbolSlug is addTestSymbol with the FQN slug given.
+func (p *tsParser) addTestSymbolSlug(desc, slug string, n *sitter.Node, anns []ir.Annotation) {
+	if slug == "" {
+		slug = "test"
+	}
+	base := p.modulePath + ".test." + slug
 	fqn := base
 	if c := p.testCounts[base]; c > 0 {
 		fqn = fmt.Sprintf("%s_%d", base, c+1)
@@ -387,7 +587,17 @@ func (p *tsParser) extends(n *sitter.Node) []string {
 // declaration.
 func (p *tsParser) parseJSDoc(n *sitter.Node) []ir.Annotation {
 	text := n.Content(p.src)
-	if !strings.HasPrefix(text, "/**") {
+	moduleOnly := false
+	if strings.HasPrefix(text, "//") {
+		// A one-line comment may carry module tags (// @module-feature x),
+		// but never symbol tags: a stray line comment must not re-attribute
+		// the declaration below it.
+		if !strings.Contains(text, "@module-") {
+			return nil
+		}
+		moduleOnly = true
+		text = strings.TrimPrefix(text, "//")
+	} else if !strings.HasPrefix(text, "/**") {
 		return nil
 	}
 	startLine := line(n)
@@ -412,7 +622,7 @@ func (p *tsParser) parseJSDoc(n *sitter.Node) []ir.Annotation {
 			}
 			fields := strings.SplitN(seg, " ", 2)
 			kind, ok := tagKinds[fields[0]]
-			if !ok {
+			if !ok || moduleOnly && !strings.HasPrefix(kind, "module_") {
 				continue
 			}
 			ann := ir.Annotation{Kind: kind, Line: startLine}
