@@ -61,6 +61,19 @@ All notable changes to Lattice are documented in this file.
   as warnings, while `--json` gave their severity as `info`. Text, summary
   and JSON now agree: `N error(s), M warning(s), K info`, with `infos` in
   `--json`.
+- **`lattice next` on an empty workspace**: it said "every unit is
+  demonstrated" when nothing was declared; it now says nothing is declared
+  yet and how to start (`--json` carries `empty: true`).
+- **Result lookup is deterministic**: when several report cases match a
+  verifier, the most specific match wins (the longest shared path), and equal
+  matches resolve to the worst outcome. Before, two files with the same test
+  title gave a pass or a fail depending on map order.
+
+### Added
+
+- **`lattice next` ranks BRD approvals**: draft and proposed BRDs appear
+  after every unit that needs work, as `awaiting-approval`, with the human
+  approval step (an agent never approves).
 - **`lattice coverage` works without `lattice import`**: it refused to run
   unless an import session existed, and documentation coverage counted only
   accepted import candidates, so a hand-written workspace read 0%. Coverage
