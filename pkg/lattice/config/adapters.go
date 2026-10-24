@@ -34,12 +34,14 @@ type AdapterSettings struct {
 // repository's .sql files are often seed data or dumps, not migrations.
 var optInAdapters = map[string]bool{"postgres": true}
 
-// DefaultAdapters returns all three v1.0 adapters enabled.
+// DefaultAdapters returns the built-in language adapters enabled: python,
+// typescript, php and go. Opt-in adapters (postgres) are not listed.
 func DefaultAdapters() AdaptersConfig {
 	return AdaptersConfig{Adapters: map[string]AdapterSettings{
 		"python":     {Enabled: true},
 		"typescript": {Enabled: true},
 		"php":        {Enabled: true},
+		"go":         {Enabled: true},
 	}}
 }
 

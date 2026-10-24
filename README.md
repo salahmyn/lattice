@@ -27,7 +27,8 @@ source code and is kept in sync mechanically**.
 
 This repository is the **core engine**: one static Go binary, `lattice`.
 
-Supported languages for extraction: **Python, TypeScript/JavaScript, PHP 8.0+**.
+Supported languages for extraction: **Python, TypeScript/JavaScript, PHP 8.0+,
+Go**, plus opt-in PostgreSQL migrations and pgTAP tests.
 
 | For engineers | For product and leadership | For AI agents |
 |---|---|---|
