@@ -56,6 +56,11 @@ All notable changes to Lattice are documented in this file.
 - **`init` makes the ledger merge cleanly**: it writes
   `lattice/.ledger/ledger.jsonl merge=union` to `.gitattributes` (when the
   file does not exist yet), so git keeps both sides' lines on a merge.
+- **`validate` counts info findings as info**: the text output printed info
+  findings as `warn` and the summary (and `--json` `warnings`) counted them
+  as warnings, while `--json` gave their severity as `info`. Text, summary
+  and JSON now agree: `N error(s), M warning(s), K info`, with `infos` in
+  `--json`.
 - **Result lookup is deterministic**: when several report cases match a
   verifier, the most specific match wins (the longest shared path), and equal
   matches resolve to the worst outcome. Before, two files with the same test
@@ -63,6 +68,20 @@ All notable changes to Lattice are documented in this file.
 
 ### Added
 
+- **Validation policy in `config.yaml`**: `validate.severity` sets any
+  finding code to `error`, `warning`, `info` or `off`; `validate.fail_on`
+  (or `lattice validate --fail-on`) sets the lowest severity that fails the
+  run. An unknown severity name is reported as `VALIDATE_POLICY`.
+- **Allowlist**: `lattice/allowlist.yaml` accepts known findings by code and
+  `subject` / `file` / `feature`, each entry with a required `reason`.
+  Accepted findings are reported apart (`allowlisted` in `--json`) and never
+  fail the run; an entry that matches nothing raises `ALLOWLIST_STALE`, so
+  the list only shrinks. Malformed entries raise `ALLOWLIST_SCHEMA`.
+- **`UNATTRIBUTED_MODULE`** (off unless enabled in `validate.severity`): a
+  production module with no `@module-feature` and no feature on any symbol.
+- **Findings carry a `subject`**: a stable id of what they are about
+  (`brd.<id>:SC-N`, `brd.<id>:US-N`, a module file, a symbol FQN) for
+  allowlists and tooling.
 - **`exclude:` in `workspace.yaml`**: slash-path globs, relative to each code
   root, of files and directories never scanned. An invalid glob fails to open
   the workspace.

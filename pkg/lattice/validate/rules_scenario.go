@@ -42,6 +42,7 @@ func (c *corpus) checkScenarios() []schema.Violation {
 				Code: schema.CodeBRDScenarioUnmapped, Severity: schema.SeverityInfo,
 				Message: fmt.Sprintf("BRD %q scenario %s declares no verified_by — what the user does is untraced",
 					s.BRDID, s.ScenarioID),
+				Subject:  s.BRDID + ":" + s.ScenarioID,
 				Location: loc,
 				NextAction: &schema.NextAction{
 					Kind:   "edit_brd",
@@ -54,6 +55,7 @@ func (c *corpus) checkScenarios() []schema.Violation {
 				Code: schema.CodeBRDScenarioUnverified, Severity: schema.SeverityWarning,
 				Message: fmt.Sprintf("BRD %q scenario %s: %s",
 					s.BRDID, s.ScenarioID, s.StatusReason),
+				Subject:  s.BRDID + ":" + s.ScenarioID,
 				Location: loc,
 				NextAction: &schema.NextAction{
 					Kind:   "add_verification",
@@ -65,6 +67,7 @@ func (c *corpus) checkScenarios() []schema.Violation {
 				Code: schema.CodeVerifierFailing, Severity: schema.SeverityWarning,
 				Message: fmt.Sprintf("BRD %q scenario %s: %s",
 					s.BRDID, s.ScenarioID, s.StatusReason),
+				Subject:  s.BRDID + ":" + s.ScenarioID,
 				Location: loc,
 				NextAction: &schema.NextAction{
 					Kind:   "fix_test",
@@ -82,6 +85,7 @@ func (c *corpus) checkScenarios() []schema.Violation {
 				Code: schema.CodeScenarioNoEntryPoint, Severity: schema.SeverityInfo,
 				Message: fmt.Sprintf("BRD %q scenario %s is verified at pure-logic altitude — no entry point in verified_by",
 					s.BRDID, s.ScenarioID),
+				Subject:  s.BRDID + ":" + s.ScenarioID,
 				Location: loc,
 				NextAction: &schema.NextAction{
 					Kind:   "edit_brd",
