@@ -3,7 +3,6 @@ package cli
 // @module-feature steering
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/salahmyn/lattice/pkg/lattice/brd"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/coverage"
 	"github.com/salahmyn/lattice/pkg/lattice/lease"
 	"github.com/salahmyn/lattice/pkg/lattice/ledger"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
@@ -69,51 +69,10 @@ func resultOfFrom(set results.Set) func(string) (bool, bool) {
 func newResultsCommand(io *IO) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "results",
-		Short: "Ingest test results so the RTM can say DEMONSTRATED, not just declared",
+		Short: "Ingest test results and coverage so the RTM can say DEMONSTRATED and EXERCISED, not just declared",
 	}
-	cmd.AddCommand(newResultsIngestCommand(io), newResultsShowCommand(io))
+	cmd.AddCommand(newResultsIngestCommand(io), newResultsShowCommand(io), newResultsTestsCommand(io))
 	return cmd
-}
-
-func newResultsIngestCommand(io *IO) *cobra.Command {
-	return &cobra.Command{
-		Use:   "ingest <report>...",
-		Short: "Parse JUnit XML or TAP (pgTAP) reports into lattice/.cache/results",
-		Long: "Parse one or more reports into lattice/.cache/results, replacing the\n" +
-			"previous set: JUnit-family XML (junit, pytest, phpunit, Playwright) or a\n" +
-			"TAP stream (a .tap file, e.g. pgTAP output from pg_prove --verbose).\n" +
-			"Pass every report of the run together (unit, e2e, database): a verifier\n" +
-			"with no result cannot count as demonstrated, and a failure in any report\n" +
-			"wins over a pass.",
-		Args: cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ws, err := openWorkspace(io)
-			if err != nil {
-				return io.fail("WORKSPACE_FAILED", err.Error(), nil)
-			}
-			// The commit is best-effort: the graph carries it, but ingesting
-			// shouldn't require a full extract, so we read it cheaply.
-			kg, _, _ := graphFor(io, cmd, false)
-			set, err := results.Ingest(ws.LatticeDir, kg.GeneratedFromCommit, args...)
-			if err != nil {
-				return io.fail("INGEST_FAILED", err.Error(), nil)
-			}
-			total, pass, fail, skip := set.Tally()
-			appendLedgerEvent(io, ws, ledger.EventCheckRun, "workspace",
-				fmt.Sprintf("results ingest: %d pass, %d fail, %d skip @ %s",
-					pass, fail, skip, shortCommit(set.Commit)))
-			if io.JSON {
-				return io.printJSON(map[string]interface{}{
-					"commit": set.Commit, "total": total,
-					"pass": pass, "fail": fail, "skip": skip,
-				})
-			}
-			io.printf("ingested %d test results (%d pass, %d fail, %d skip)\n",
-				total, pass, fail, skip)
-			io.printf("run `lattice rtm` to see DECLARED criteria upgrade to DEMONSTRATED\n")
-			return nil
-		},
-	}
 }
 
 func newResultsShowCommand(io *IO) *cobra.Command {
@@ -126,16 +85,30 @@ func newResultsShowCommand(io *IO) *cobra.Command {
 				return io.fail("WORKSPACE_FAILED", err.Error(), nil)
 			}
 			set := results.Load(ws.LatticeDir)
+			cov, hasCov := coverage.Load(ws.LatticeDir)
 			if io.JSON {
+				if hasCov {
+					return io.printJSON(map[string]interface{}{"results": set, "coverage": cov})
+				}
 				return io.printJSON(set)
 			}
-			if len(set.Results) == 0 {
+			if len(set.Results) == 0 && !hasCov {
 				io.printf("no results ingested — `lattice results ingest <junit.xml>`\n")
 				return nil
 			}
-			total, pass, fail, skip := set.Tally()
-			io.printf("commit %s: %d results (%d pass, %d fail, %d skip)\n",
-				shortCommit(set.Commit), total, pass, fail, skip)
+			if len(set.Results) > 0 {
+				total, pass, fail, skip := set.Tally()
+				io.printf("commit %s: %d results (%d pass, %d fail, %d skip)\n",
+					shortCommit(set.Commit), total, pass, fail, skip)
+			}
+			if hasCov {
+				dirty := ""
+				if cov.Dirty {
+					dirty = ", dirty tree"
+				}
+				io.printf("coverage @ %s%s: %d source report(s), %d symbols, per-test data for %d test(s), per-file for %d file(s)\n",
+					shortCommit(cov.Commit), dirty, len(cov.Sources), len(cov.Symbols), len(cov.PerTest), len(cov.PerFile))
+			}
 			return nil
 		},
 	}
@@ -309,6 +282,7 @@ func newLedgerRebuildCommand(io *IO) *cobra.Command {
 			m := rtm.Build(kg, rtm.Options{
 				MutationThreshold: cfg.MutationTesting.Thresholds.Default,
 				ResultOf:          resultOfFrom(set),
+				Coverage:          coverageEvidence(ws, kg),
 			})
 			mode := cfg.Autonomy.DefaultMode
 			if mode == "" {
@@ -366,6 +340,7 @@ lease held by another actor are withheld so a fleet doesn't collide.`,
 			m := rtm.Build(kg, rtm.Options{
 				MutationThreshold: cfg.MutationTesting.Thresholds.Default,
 				ResultOf:          resultOfFrom(set),
+				Coverage:          coverageEvidence(ws, kg),
 			})
 
 			// Withhold leased units held by a different actor.
@@ -427,7 +402,7 @@ type nextAction struct {
 func rankActions(m rtm.Matrix, leasedBy map[string]string, me string) []nextAction {
 	var out []nextAction
 	add := func(unit string, st rtm.Status, action string) {
-		if st == rtm.StatusDemonstrated || st == rtm.StatusVerified {
+		if st.IsDemonstrated() || st == rtm.StatusVerified {
 			return
 		}
 		if holder, ok := leasedBy[unit]; ok && holder != me {

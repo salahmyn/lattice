@@ -75,6 +75,7 @@ func newValidateCommand(io *IO) *cobra.Command {
 				Leases:        activeLeases,
 				LedgerEntries: entries,
 				FlagsOf:       flagReasons(flags.OpenByUnit(ws.LatticeDir)),
+				Coverage:      coverageIndex(ws, kg),
 			})
 			violations = append(violations, ambiguousResults(kg, set)...)
 			kg.Violations = violations
