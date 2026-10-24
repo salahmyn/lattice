@@ -16,16 +16,28 @@ func ModulePath(rel string) string {
 	return strings.ReplaceAll(rel, "/", ".")
 }
 
-// IsTestPath reports whether a path looks like test code by directory, or by
-// an end-to-end marker in the file name (login.e2e.ts). An e2e/ directory
-// holds browser or device scripts, never production code.
+// IsTestPath reports whether a path looks like test code by directory
+// (tests/, __tests__/, e2e/, __mocks__/, __fixtures__/, testdata/), by an
+// end-to-end marker in the file name (login.e2e.ts), or by a test-support
+// name (testing.ts, test-utils.ts, test_helpers.py). An e2e/ directory holds
+// browser or device scripts, never production code.
 func IsTestPath(rel string) bool {
 	rel = filepath.ToSlash(rel)
 	for _, seg := range strings.Split(rel, "/") {
 		switch seg {
-		case "tests", "test", "__tests__", "e2e", "__e2e__":
+		case "tests", "test", "__tests__", "e2e", "__e2e__", "__mocks__", "__fixtures__", "testdata":
 			return true
 		}
 	}
-	return strings.Contains(filepath.Base(rel), ".e2e.")
+	base := filepath.Base(rel)
+	if strings.Contains(base, ".e2e.") {
+		return true
+	}
+	// Test-support modules by name: testing.ts, test-utils.ts, test_helpers.py.
+	stem := strings.ToLower(strings.TrimSuffix(base, filepath.Ext(base)))
+	switch stem {
+	case "testing", "test-utils", "test_utils", "testutils", "test-helpers", "test_helpers", "testhelpers":
+		return true
+	}
+	return false
 }

@@ -44,3 +44,23 @@ func TestCoverageFromGraph(t *testing.T) {
 		t.Errorf("accepted candidate not counted: %+v", doc)
 	}
 }
+
+// Ambient declarations and tool configuration are not product code.
+func TestAttributionSkipsDeclarationsAndConfig(t *testing.T) {
+	kg := schema.KnowledgeGraph{
+		Modules: []schema.GraphModule{
+			{File: "src/vite-env.d.ts", SymbolFQNs: []string{"a"}},
+			{File: "vite.config.ts", SymbolFQNs: []string{"b"}},
+			{File: "apps/web/playwright.config.mjs", SymbolFQNs: []string{"c"}},
+			{File: "src/configure.ts", SymbolFQNs: []string{"d"}},
+		},
+		Symbols: []schema.GraphSymbol{
+			{FQN: "a", Kind: "const"}, {FQN: "b", Kind: "const"},
+			{FQN: "c", Kind: "const"}, {FQN: "d", Kind: "function"},
+		},
+	}
+	at := ComputeAttribution(kg)
+	if at.TotalModules != 1 || len(at.Unattributed) != 1 || at.Unattributed[0] != "src/configure.ts" {
+		t.Errorf("attribution = %+v, want only src/configure.ts counted", at)
+	}
+}
