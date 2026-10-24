@@ -34,6 +34,7 @@ const (
 	CodeAllowlistStale             = "ALLOWLIST_STALE"
 	CodeAllowlistSchema            = "ALLOWLIST_SCHEMA"
 	CodeValidatePolicy             = "VALIDATE_POLICY"
+	CodeResultAmbiguous            = "RESULT_AMBIGUOUS"
 	CodeModuleAnnotationConflict   = "MODULE_ANNOTATION_CONFLICT"
 
 	// Verification integrity

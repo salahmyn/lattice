@@ -158,6 +158,7 @@ func newImportStatusCommand(io *IO) *cobra.Command {
 type coverageReport struct {
 	Discovery     importer.DiscoveryCoverage     `json:"discovery"`
 	Documentation importer.DocumentationCoverage `json:"documentation"`
+	Attribution   importer.AttributionCoverage   `json:"attribution"`
 	Verification  importer.VerificationCoverage  `json:"verification"`
 	BRD           importer.BRDCoverage           `json:"brd"`
 	RTM           rtm.Coverage                   `json:"rtm"`
@@ -166,24 +167,30 @@ type coverageReport struct {
 func newCoverageCommand(io *IO) *cobra.Command {
 	return &cobra.Command{
 		Use:   "coverage",
-		Short: "Report adoption coverage: how much of the code the import describes",
+		Short: "Report coverage: how much of the code the graph describes, verifies and traces to BRDs",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ws, err := openWorkspace(io)
 			if err != nil {
 				return io.fail("NO_WORKSPACE", err.Error(), nil)
 			}
-			cf, err := importer.LoadCandidates(filepath.Join(ws.ImportDir(), importer.CandidatesFileName))
-			if err != nil {
-				return io.fail("NO_IMPORT_SESSION",
-					"no candidates; run `lattice import scan` first", nil)
+			// Import discovery is optional: a hand-written workspace has none,
+			// and every other figure comes from the graph.
+			var cf *importer.CandidatesFile
+			var decisions map[string]string
+			if c, err := importer.LoadCandidates(filepath.Join(ws.ImportDir(), importer.CandidatesFileName)); err == nil {
+				cf = &c
+				if sess, err := importer.LoadSession(filepath.Join(ws.ImportDir(), importer.SessionFileName)); err == nil {
+					decisions = sess.Decisions
+				}
 			}
-			sess, _ := importer.LoadSession(filepath.Join(ws.ImportDir(), importer.SessionFileName))
-			report := coverageReport{
-				Discovery:     cf.Coverage.Discovery,
-				Documentation: importer.ComputeDocumentation(cf, sess.Decisions),
+			report := coverageReport{}
+			if cf != nil {
+				report.Discovery = cf.Coverage.Discovery
+				report.Documentation = importer.ComputeDocumentation(*cf, decisions)
 			}
-			// Verification + BRD + RTM coverage need the graph and the validation engine.
 			if kg, gerr := buildGraph(cmd.Context(), ws, false); gerr == nil {
+				report.Documentation = importer.ComputeDocumentationGraph(kg, cf, decisions)
+				report.Attribution = importer.ComputeAttribution(kg)
 				cfg, _ := config.Load(ws.LatticeDir)
 				viol := validate.Validate(kg, cfg, validate.Options{ReviewMode: ws.Review})
 				report.Verification = importer.ComputeVerification(kg.Features, viol)
@@ -196,9 +203,14 @@ func newCoverageCommand(io *IO) *cobra.Command {
 				return io.printJSON(report)
 			}
 			d, doc, ver, brdc, rtmc := report.Discovery, report.Documentation, report.Verification, report.BRD, report.RTM
-			io.printf("Discovery coverage:     %.1f%%  (%d/%d production symbols clustered into candidates)\n",
-				d.Ratio*100, d.ClusteredSymbols, d.TotalSymbols)
-			io.printf("Documentation coverage: %.1f%%  (%d/%d symbols attached to an accepted feature)\n",
+			if cf != nil {
+				io.printf("Discovery coverage:     %.1f%%  (%d/%d production symbols clustered into candidates)\n",
+					d.Ratio*100, d.ClusteredSymbols, d.TotalSymbols)
+			}
+			at := report.Attribution
+			io.printf("Attribution coverage:   %.1f%%  (%d/%d production modules belong to a feature)\n",
+				at.Ratio*100, at.AttributedModules, at.TotalModules)
+			io.printf("Documentation coverage: %.1f%%  (%d/%d production symbols attributed to a feature)\n",
 				doc.Ratio*100, doc.DocumentedSymbols, doc.TotalSymbols)
 			io.printf("Verification coverage:  %.1f%%  (%d/%d invariants enforced and verified)\n",
 				ver.Ratio*100, ver.VerifiedInvariants, ver.TotalInvariants)
@@ -206,6 +218,15 @@ func newCoverageCommand(io *IO) *cobra.Command {
 				brdc.Ratio*100, brdc.CoveredFeatures, brdc.TotalFeatures, brdc.ApprovedBRDs, brdc.TotalBRDs)
 			io.printf("BRD goal coverage:      %.1f%%  (%d/%d success criteria traced to a verified invariant)\n",
 				rtmc.Ratio*100, rtmc.VerifiedCriteria, rtmc.TotalCriteria)
+			if len(at.Unattributed) > 0 {
+				io.printf("\nUnattributed modules:\n")
+				for _, f := range at.Unattributed {
+					io.printf("  %s\n", f)
+				}
+			}
+			if cf == nil {
+				return nil
+			}
 			io.printf("\nDiscovery by package:\n")
 			for _, p := range d.ByPackage {
 				io.printf("  %5.1f%%  %4d/%-4d  %s\n",

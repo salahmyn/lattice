@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -68,6 +69,7 @@ func newValidateCommand(io *IO) *cobra.Command {
 				LedgerEntries: entries,
 				FlagsOf:       flagReasons(flags.OpenByUnit(ws.LatticeDir)),
 			})
+			violations = append(violations, ambiguousResults(kg, set)...)
 			kg.Violations = violations
 			_, _ = writeGraph(ws, cfg, kg)
 
@@ -190,4 +192,30 @@ func describeNextAction(na *schema.NextAction) string {
 		s += " (" + na.Detail + ")"
 	}
 	return s
+}
+
+// ambiguousResults reports verifier tests whose ingested result cannot be
+// told apart from another case's: the lookup refuses them, so they count as
+// not demonstrated, and the finding says which cases compete.
+func ambiguousResults(kg schema.KnowledgeGraph, set results.Set) []schema.Violation {
+	var v []schema.Violation
+	for _, t := range kg.Tests {
+		if len(t.Verifies) == 0 {
+			continue
+		}
+		cases := set.Ambiguous(t.FQN)
+		if len(cases) == 0 {
+			continue
+		}
+		v = append(v, schema.Violation{
+			Code: schema.CodeResultAmbiguous, Severity: schema.SeverityWarning,
+			Subject: t.FQN,
+			Message: fmt.Sprintf("verifier %s matches %d report cases equally (%s); its result is not counted",
+				t.FQN, len(cases), strings.Join(cases, ", ")),
+			Location: &schema.Location{File: t.File, Line: t.Line},
+			NextAction: &schema.NextAction{Kind: "rename_test",
+				Detail: "give the test a name unique in the report, or ingest the report whose classname matches its file"},
+		})
+	}
+	return v
 }
