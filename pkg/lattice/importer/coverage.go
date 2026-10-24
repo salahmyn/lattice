@@ -99,7 +99,7 @@ type AttributionCoverage struct {
 func ComputeAttribution(kg schema.KnowledgeGraph) AttributionCoverage {
 	var out AttributionCoverage
 	for _, a := range kg.Attribution() {
-		if a.ProductionSymbols == 0 {
+		if !a.Production {
 			continue
 		}
 		out.TotalModules++

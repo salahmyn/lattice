@@ -81,6 +81,12 @@ type Module struct {
 	// v0.7 AMA FILE_LINE_CAP rule a value without touching every
 	// adapter implementation.
 	LineCount         int          `json:"line_count,omitempty"`
+	// HasCode reports top-level runtime code outside any symbol (a render
+	// call, an unannotated value const). It makes a module with no
+	// behaviour symbols production code for attribution. Set by adapters
+	// that can tell it apart from imports and type declarations; never set
+	// on test files.
+	HasCode           bool         `json:"has_code,omitempty"`
 	ModuleAnnotations []Annotation `json:"module_annotations,omitempty"`
 	Symbols           []Symbol     `json:"symbols,omitempty"`
 	Surfaces          []Surface    `json:"surfaces,omitempty"`

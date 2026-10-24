@@ -515,3 +515,28 @@ func TestIsTestFile(t *testing.T) {
 		}
 	}
 }
+
+// A file has top-level code when something runs at load: a render call or a
+// plain value const. Imports, type declarations, directives and re-exports
+// run nothing, and a test file never counts.
+func TestHasTopLevelCode(t *testing.T) {
+	for _, tc := range []struct {
+		path, src string
+		want      bool
+	}{
+		{"src/main.tsx", "/** @module-feature app.shell */\nimport { createRoot } from 'react-dom/client';\ncreateRoot(document.body).render(<App />);\n", true},
+		{"src/i18n.ts", "export const en = { hello: 'Hello' };\n", true},
+		{"src/default.ts", "export default { retries: 3 };\n", true},
+		{"src/types.ts", "'use client';\nimport type { X } from './x';\nexport type Id = string;\nexport interface Row { id: Id }\ndeclare const VERSION: string;\n", false},
+		{"src/index.ts", "export { total } from './cart';\nexport * from './pay';\n", false},
+		{"src/cart.test.ts", "import { it } from 'vitest';\nit('adds', () => {});\n", false},
+	} {
+		mod, err := New().Parse(context.Background(), tc.path, []byte(tc.src))
+		if err != nil {
+			t.Fatalf("%s: %v", tc.path, err)
+		}
+		if mod.HasCode != tc.want {
+			t.Errorf("%s: HasCode = %v, want %v", tc.path, mod.HasCode, tc.want)
+		}
+	}
+}
