@@ -67,18 +67,6 @@ All notable changes to Lattice are documented in this file.
   `@enforces x:INV-1` and the other tag names now attach to the declaration
   below them.
 
-### Behaviour changes to plan for
-
-- **Repositories with `.go` files start seeing Go modules.** The Go adapter
-  is on by default, so `extract` now parses them: coverage denominators grow,
-  and with `UNATTRIBUTED_MODULE` raised to an error, each untagged Go
-  production file fails `validate`. Exclude what is not product code
-  (`exclude:` in `workspace.yaml`), or switch the adapter off in
-  `adapters.yaml` (`go: {enabled: false}`). `vendor/` is never scanned;
-  files under `testdata/` are test code. Comments that start a line with
-  `@enforces x:INV-1` and the other tag names now attach to the declaration
-  below them.
-
 ## [0.12.0] — 2026-10-24
 
 ### Added
