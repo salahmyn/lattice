@@ -78,6 +78,69 @@ A class that `use`-es a trait inherits that trait's annotations — an explicit
 Lattice semantic, even though the PHP runtime does not carry trait attributes
 onto the consuming class.
 
+## Go
+
+Tags in the doc comment directly above a declaration (`.go`), with the
+TypeScript tag names. The comment must touch the declaration: a blank line
+between them, or a tag trailing code on the same line, attaches to nothing
+and raises `ANNOTATION_ORPHANED`.
+
+```go
+// Settle pays a refund.
+// @feature checkout.refund
+// @capability self_service_refund
+// @enforces checkout.refund:INV-1, checkout.refund:INV-2
+func Settle(r Refund) error { ... }
+
+// @enforces checkout.refund:INV-3
+func (p *Processor) Run() error { ... }
+```
+
+Module-level tags go in any comment of the file, usually the package comment:
+
+```go
+// Package refund settles refunds.
+//
+// @module-feature checkout.refund.settlement
+// @module-enforces checkout.refund:INV-12
+package refund
+```
+
+- **Symbols** are named by package directory: `Settle` in
+  `pkg/checkout/refund` is `pkg.checkout.refund.Settle`, the method is
+  `pkg.checkout.refund.Processor.Run`. Functions, methods, struct and named
+  types (classes) and interfaces are symbols; a package-level `const` or
+  `var` only when it is tagged. A file at the module root uses its package
+  name (`main.main`).
+- **Tests** are the functions of `_test.go` files. A `t.Run("name", ...)`
+  subtest of a `TestXxx` is a test of its own, named as `go test` names it
+  (`pkg.checkout.refund.TestSettle.rejects_a_double_refund`), so a tag above
+  the call verifies that subtest alone:
+
+  ```go
+  func TestSettle(t *testing.T) {
+      // @verifies checkout.refund:INV-1
+      t.Run("rejects a double refund", func(t *testing.T) { ... })
+
+      // @verifies checkout.refund:INV-2
+      for _, tc := range cases {
+          t.Run(tc.name, func(t *testing.T) { ... })
+      }
+  }
+  ```
+
+  A subtest named by a variable (a table test) has no static name: a tag
+  above it, or above the table's `for` loop, attaches to the enclosing test,
+  which passes only when every row passes.
+- **Prose is not a tag.** A wrapped doc comment line may start with `@`
+  (`// @error annotations found in source ...`). A tag's arguments are
+  comma-separated single tokens; a line whose arguments read as words
+  separated by spaces is prose and is not parsed. `@surface` keeps its
+  space-separated form and must start with an interaction type
+  (`// @surface http POST /refunds`).
+- `init` functions are not addressable (a package may declare several):
+  tag a named function, or the file with `@module-*` tags.
+
 ## Scope and precedence
 
 - **feature** — a symbol's own annotation wins; otherwise the enclosing
