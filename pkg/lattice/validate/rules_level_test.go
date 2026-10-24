@@ -20,8 +20,8 @@ func levelGraph() schema.KnowledgeGraph {
 			Title: "x", BusinessProblem: "p",
 			ImplementsVia: []string{"checkout"},
 			SuccessCriteria: []schema.BRDCriterion{
-				{ID: "SC-1", Statement: "a", MapsToInvariant: "checkout:INV-1"},
-				{ID: "SC-2", Statement: "b", MapsToInvariant: "checkout:INV-2"},
+				{ID: "SC-1", Statement: "a", MapsToInvariant: schema.InvariantRefs{"checkout:INV-1"}},
+				{ID: "SC-2", Statement: "b", MapsToInvariant: schema.InvariantRefs{"checkout:INV-2"}},
 				{ID: "SC-3", Statement: "c"},
 			},
 			UserScenarios: []schema.UserScenario{{ID: "US-1", Actor: "buyer", VerifiedBy: []string{"T1"}}},

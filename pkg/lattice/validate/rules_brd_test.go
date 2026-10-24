@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
@@ -105,6 +106,40 @@ func TestBRDUnapprovedLLM(t *testing.T) {
 	}
 }
 
+// A draft an agent wrote needs review whatever its source says: `brd new`
+// run by an agent records source: human. A human's draft and an approved
+// agent draft raise nothing.
+func TestBRDUnapprovedAgentAuthored(t *testing.T) {
+	for name, tc := range map[string]struct {
+		status schema.BRDStatus
+		author string
+		want   bool
+	}{
+		"agent draft":    {schema.BRDDraft, "agent:drafter", true},
+		"Agent prefix":   {"", "Agent-7", true},
+		"human draft":    {schema.BRDDraft, "pm@example.com", false},
+		"no author":      {schema.BRDDraft, "", false},
+		"agent approved": {schema.BRDApproved, "agent:drafter", false},
+	} {
+		kg := schema.KnowledgeGraph{BRDs: []schema.BRD{{
+			ID: "brd.checkout", Version: 1, Status: tc.status, Title: "x", BusinessProblem: "p",
+			Provenance: schema.BRDProvenance{Source: schema.BRDSourceHuman, AuthoredBy: tc.author},
+		}}}
+		var got *schema.Violation
+		for _, x := range Validate(kg, config.Default(), Options{}) {
+			if x.Code == schema.CodeBRDUnapprovedLLM {
+				got = &x
+			}
+		}
+		if (got != nil) != tc.want {
+			t.Errorf("%s: BRD_UNAPPROVED_LLM = %v, want %v", name, got != nil, tc.want)
+		}
+		if got != nil && !strings.Contains(got.Message, "written by "+tc.author) {
+			t.Errorf("%s: message %q does not name the author", name, got.Message)
+		}
+	}
+}
+
 func TestFeatureNoBRDWarning(t *testing.T) {
 	kg := schema.KnowledgeGraph{
 		Features: []schema.Manifest{brdManifest("checkout")},
@@ -173,7 +208,7 @@ func TestBRDCriterionPhantomInvariant(t *testing.T) {
 			Title: "x", BusinessProblem: "p",
 			ImplementsVia: []string{"checkout"},
 			SuccessCriteria: []schema.BRDCriterion{
-				{ID: "SC-1", Statement: "x", MapsToInvariant: "checkout:INV-NOPE"},
+				{ID: "SC-1", Statement: "x", MapsToInvariant: schema.InvariantRefs{"checkout:INV-NOPE"}},
 			},
 			Approval: &schema.BRDApproval{ApprovedBy: "x", ApprovedVersion: 1},
 		}},
@@ -194,7 +229,7 @@ func TestBRDCriterionUnverifiedWarning(t *testing.T) {
 			Title: "x", BusinessProblem: "p",
 			ImplementsVia: []string{"checkout"},
 			SuccessCriteria: []schema.BRDCriterion{
-				{ID: "SC-1", Statement: "x", MapsToInvariant: "checkout:INV-1"},
+				{ID: "SC-1", Statement: "x", MapsToInvariant: schema.InvariantRefs{"checkout:INV-1"}},
 			},
 			Approval: &schema.BRDApproval{ApprovedBy: "x", ApprovedVersion: 1},
 		}},
@@ -216,7 +251,7 @@ func TestBRDCriterionVerifiedNoViolation(t *testing.T) {
 			Title: "x", BusinessProblem: "p",
 			ImplementsVia: []string{"checkout"},
 			SuccessCriteria: []schema.BRDCriterion{
-				{ID: "SC-1", Statement: "x", MapsToInvariant: "checkout:INV-1"},
+				{ID: "SC-1", Statement: "x", MapsToInvariant: schema.InvariantRefs{"checkout:INV-1"}},
 			},
 			Approval: &schema.BRDApproval{ApprovedBy: "x", ApprovedVersion: 1},
 		}},

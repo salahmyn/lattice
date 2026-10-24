@@ -168,9 +168,13 @@ func FromCode(ctx context.Context, feature schema.Manifest, reachedBy []schema.E
 	criteria := make([]schema.BRDCriterion, 0, len(parsed.SuccessCriteria))
 	for _, c := range parsed.SuccessCriteria {
 		sc := c.toSchema()
-		if sc.MapsToInvariant != "" && !knownInvariants[sc.MapsToInvariant] {
-			sc.MapsToInvariant = "" // drop the bogus reference, keep the statement
+		var kept schema.InvariantRefs
+		for _, ref := range sc.MapsToInvariant {
+			if knownInvariants[ref] {
+				kept = append(kept, ref) // drop a bogus reference, keep the statement
+			}
 		}
+		sc.MapsToInvariant = kept
 		criteria = append(criteria, sc)
 	}
 
@@ -246,7 +250,11 @@ type llmBRDCriterion struct {
 }
 
 func (c llmBRDCriterion) toSchema() schema.BRDCriterion {
-	return schema.BRDCriterion{ID: c.ID, Statement: c.Statement, MapsToInvariant: c.MapsToInvariant}
+	sc := schema.BRDCriterion{ID: c.ID, Statement: c.Statement}
+	if ref := strings.TrimSpace(c.MapsToInvariant); ref != "" {
+		sc.MapsToInvariant = schema.InvariantRefs{ref}
+	}
+	return sc
 }
 
 func parseFromCodeResponse(text string) (llmFromCodeResponse, error) {

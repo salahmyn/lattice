@@ -6,6 +6,17 @@ All notable changes to Lattice are documented in this file.
 
 ### Fixed
 
+- **A BRD an agent drafts needs review like an LLM draft**: `lattice brd
+  new` run by an agent (`--actor agent:…`) recorded `source: human`, so
+  `BRD_UNAPPROVED_LLM` never fired for it and a `fail_on: warning` gate let
+  an unreviewed agent draft through.
+  - The rule now also fires for a draft whose `provenance.authored_by` is an
+    agent, and names the author.
+  - `brd new` sets `human_review_required: true` for an agent.
+  - `brd show` and `next` say who wrote it.
+  - An agent is an actor starting with `agent`, the test that already gates
+    deciding a CR and clearing a flag.
+
 - **`adapters.yaml` is strict**: an adapter block outside `adapters:` (for
   example `postgres:` at the top level) or a misspelt adapter name was
   ignored without a word, so a language silently went unscanned. Both are
@@ -33,6 +44,19 @@ All notable changes to Lattice are documented in this file.
 
 ### Added
 
+- **A success criterion can map to several invariants**:
+  `maps_to_invariant` takes a list as well as a single ref
+  (`maps_to_invariant: [checkout.refund:INV-1, checkout.refund:INV-2]`).
+  - The criterion holds only when all of them do. In `lattice rtm` it takes
+    the worst status of its invariants, and the reason, `validate` and
+    `next` name the invariant that decided it.
+  - Its enforcers and verifiers are the union of theirs, and the
+    tier-2+ mutation gate checks each invariant.
+  - This lets a criterion that spans several guards be traced guard by
+    guard. A single invariant that joins them is enforced as soon as any one
+    carries `@enforces`, which hid a guard that lost its tag.
+  - A single ref is still written as a plain string, so existing files keep
+    their shape. Graphs extracted by earlier versions still load.
 - **Go adapter** (on by default, `go` in `adapters.yaml`): Lattice now reads
   `.go` files, including its own engine.
   - Functions, methods, struct and named types, and interfaces are symbols,

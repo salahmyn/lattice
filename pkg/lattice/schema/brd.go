@@ -2,6 +2,14 @@ package schema
 
 // @module-feature schema
 
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
 // BRDStatus is the lifecycle state of a Business Requirements Document.
 //
 // A BRD is the layer above the Feature axis: it captures *business intent*
@@ -138,12 +146,14 @@ type BRDFlag struct {
 }
 
 // BRDCriterion is one measurable success criterion. It may reference a
-// feature invariant via `maps_to_invariant: feature.id:INV-N`, which the
-// graph builder uses to build the BRD → Invariant bridge.
+// feature invariant via `maps_to_invariant: feature.id:INV-N`, or several
+// as a list, which the graph builder uses to build the BRD → Invariant
+// bridge. A criterion mapped to several invariants holds only when all of
+// them do.
 type BRDCriterion struct {
-	ID              string `yaml:"id"`
-	Statement       string `yaml:"statement"`
-	MapsToInvariant string `yaml:"maps_to_invariant,omitempty"`
+	ID              string        `yaml:"id"`
+	Statement       string        `yaml:"statement"`
+	MapsToInvariant InvariantRefs `yaml:"maps_to_invariant,omitempty"`
 
 	// Tier is the pinned criticality (v0.8.1): 1 default; 2 for
 	// auth/permissions/data-loss/cross-tenant; 3 for money movement and
@@ -159,6 +169,74 @@ type BRDCriterion struct {
 	DirectWire bool     `yaml:"direct_wire,omitempty"`
 	EnforcedBy []string `yaml:"enforced_by,omitempty"`
 	VerifiedBy []string `yaml:"verified_by,omitempty"`
+}
+
+// InvariantRefs is a criterion's `maps_to_invariant`: one
+// `feature.id:INV-N` ref or a list of them. On disk a single ref stays a
+// plain string, so files written before lists were allowed keep their
+// shape.
+type InvariantRefs []string
+
+// UnmarshalYAML accepts a string or a list of strings.
+func (r *InvariantRefs) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind == yaml.ScalarNode {
+		*r = nil
+		if s := strings.TrimSpace(n.Value); s != "" {
+			*r = InvariantRefs{s}
+		}
+		return nil
+	}
+	var refs []string
+	if err := n.Decode(&refs); err != nil {
+		return fmt.Errorf("maps_to_invariant: want a ref or a list of refs: %w", err)
+	}
+	*r = nil
+	for _, s := range refs {
+		if s = strings.TrimSpace(s); s != "" {
+			*r = append(*r, s)
+		}
+	}
+	return nil
+}
+
+// MarshalYAML writes a single ref as a string and several as a list.
+func (r InvariantRefs) MarshalYAML() (interface{}, error) {
+	if len(r) == 1 {
+		return r[0], nil
+	}
+	return []string(r), nil
+}
+
+// UnmarshalJSON accepts a string too, the form graphs extracted before
+// lists were allowed carry.
+func (r *InvariantRefs) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		*r = nil
+		if s = strings.TrimSpace(s); s != "" {
+			*r = InvariantRefs{s}
+		}
+		return nil
+	}
+	var refs []string
+	if err := json.Unmarshal(b, &refs); err != nil {
+		return err
+	}
+	*r = refs
+	return nil
+}
+
+// String joins the refs for messages: "a:INV-1, b:INV-2".
+func (r InvariantRefs) String() string { return strings.Join(r, ", ") }
+
+// Has reports whether ref is one of the refs.
+func (r InvariantRefs) Has(ref string) bool {
+	for _, s := range r {
+		if s == ref {
+			return true
+		}
+	}
+	return false
 }
 
 // EffectiveTier returns the pinned tier, defaulting to 1.
@@ -254,4 +332,19 @@ type BRDProvenance struct {
 	// command that created or regenerated it). A council seat may not be
 	// held by the author of the version it reviews.
 	AuthoredBy string `yaml:"authored_by,omitempty"`
+}
+
+// IsAgentActor reports whether an actor names an agent: an "agent"
+// prefix, as in "agent:refunds" (case-insensitive). The same test gates
+// the human-only commands (deciding a CR, clearing a flag).
+func IsAgentActor(actor string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(actor)), "agent")
+}
+
+// MachineWritten reports whether this version of the BRD was written by
+// a machine — regenerated from code by an LLM, or authored by an agent —
+// and so needs a human (or a council) to review it before it is the
+// source of truth.
+func (b BRD) MachineWritten() bool {
+	return b.Provenance.Source == BRDSourceLLMFromCode || IsAgentActor(b.Provenance.AuthoredBy)
 }

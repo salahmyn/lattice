@@ -341,7 +341,7 @@ func newCRShowCommand(io *IO) *cobra.Command {
 // unless a valid mandate covers exactly this case. The non-delegable
 // floor — narrowings, tier-2+ radii — holds regardless of mandates.
 func authorizeDecision(cfg config.Config, r schema.Revision, by, mandateID string, now time.Time) error {
-	isAgent := strings.HasPrefix(strings.ToLower(by), "agent")
+	isAgent := schema.IsAgentActor(by)
 	if !isAgent && mandateID == "" {
 		return nil // a human deciding directly is always legitimate
 	}

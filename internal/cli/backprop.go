@@ -226,8 +226,11 @@ func affectedCriteria(kg schema.KnowledgeGraph, changed []string) []string {
 			continue // only grounded intent back-propagates
 		}
 		for _, sc := range b.SuccessCriteria {
-			if movedInv[sc.MapsToInvariant] {
-				units = append(units, b.ID+"/"+sc.ID)
+			for _, ref := range sc.MapsToInvariant {
+				if movedInv[ref] {
+					units = append(units, b.ID+"/"+sc.ID)
+					break
+				}
 			}
 		}
 	}

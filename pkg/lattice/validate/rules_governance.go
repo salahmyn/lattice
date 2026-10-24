@@ -107,30 +107,32 @@ func (c *corpus) checkMutationTierGate() []schema.Violation {
 			if sc.EffectiveTier() < 2 || sc.DirectWire {
 				continue
 			}
-			feature, inv := resolveRef(sc.MapsToInvariant, "")
-			if feature == "" || inv == "" {
-				continue // unmapped/phantom — other rules own that
+			for _, ref := range sc.MapsToInvariant {
+				feature, inv := resolveRef(ref, "")
+				if feature == "" || inv == "" {
+					continue // unmapped/phantom — other rules own that
+				}
+				f := c.features[feature]
+				if f == nil {
+					continue
+				}
+				if _, has := f.MutationScores[inv]; has {
+					continue
+				}
+				v = append(v, schema.Violation{
+					Code:        schema.CodeMutationRequiredTier,
+					Severity:    schema.SeverityWarning,
+					FeatureID:   feature,
+					InvariantID: inv,
+					Message: fmt.Sprintf(
+						"%s/%s is tier %d but %s has no mutation evidence — at tier 2+ the verifier must be shown to constrain the enforcer",
+						b.ID, sc.ID, sc.EffectiveTier(), inv),
+					NextAction: &schema.NextAction{
+						Kind:    "run_command",
+						Command: []string{"lattice", "mutation", "run", "--feature", feature},
+					},
+				})
 			}
-			f := c.features[feature]
-			if f == nil {
-				continue
-			}
-			if _, has := f.MutationScores[inv]; has {
-				continue
-			}
-			v = append(v, schema.Violation{
-				Code:        schema.CodeMutationRequiredTier,
-				Severity:    schema.SeverityWarning,
-				FeatureID:   feature,
-				InvariantID: inv,
-				Message: fmt.Sprintf(
-					"%s/%s is tier %d but %s has no mutation evidence — at tier 2+ the verifier must be shown to constrain the enforcer",
-					b.ID, sc.ID, sc.EffectiveTier(), inv),
-				NextAction: &schema.NextAction{
-					Kind:    "run_command",
-					Command: []string{"lattice", "mutation", "run", "--feature", feature},
-				},
-			})
 		}
 	}
 	return v

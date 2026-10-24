@@ -133,12 +133,18 @@ func (c *corpus) checkBRDs() []schema.Violation {
 			})
 		}
 
-		// BRD_UNAPPROVED_LLM — LLM-generated BRD still in draft.
-		if b.Provenance.Source == schema.BRDSourceLLMFromCode &&
-			(b.Status == schema.BRDDraft || b.Status == "") {
+		// BRD_UNAPPROVED_LLM — a machine-written BRD still in draft:
+		// LLM-regenerated, or authored by an agent whatever its source
+		// says (`brd new` run by an agent records source: human).
+		if b.MachineWritten() && (b.Status == schema.BRDDraft || b.Status == "") {
+			msg := fmt.Sprintf("BRD %q was LLM-regenerated and still draft — needs human review", b.ID)
+			if b.Provenance.Source != schema.BRDSourceLLMFromCode {
+				msg = fmt.Sprintf("BRD %q was written by %s and still draft — needs human review",
+					b.ID, b.Provenance.AuthoredBy)
+			}
 			v = append(v, schema.Violation{
 				Code: schema.CodeBRDUnapprovedLLM, Severity: schema.SeverityWarning,
-				Message:  fmt.Sprintf("BRD %q was LLM-regenerated and still draft — needs human review", b.ID),
+				Message:  msg,
 				Location: loc,
 				NextAction: &schema.NextAction{
 					Kind:   "edit_brd",
@@ -223,7 +229,7 @@ func (c *corpus) checkBRDs() []schema.Violation {
 			v = append(v, schema.Violation{
 				Code: schema.CodeBRDCriterionPhantomInvariant, Severity: schema.SeverityError,
 				Message: fmt.Sprintf("BRD %q criterion %s: maps_to_invariant %q does not resolve (%s)",
-					row.BRDID, row.CriterionID, row.MapsTo, row.StatusReason),
+					row.BRDID, row.CriterionID, row.Ref(), row.StatusReason),
 				Subject:  row.BRDID + ":" + row.CriterionID,
 				Location: rowLoc,
 				NextAction: &schema.NextAction{
@@ -243,7 +249,7 @@ func (c *corpus) checkBRDs() []schema.Violation {
 				Location: rowLoc,
 				NextAction: &schema.NextAction{
 					Kind:   "fix_test",
-					Ref:    row.MapsTo,
+					Ref:    row.Ref(),
 					Detail: "the verifier is failing on the generated commit — fix the code or the test, then re-ingest results",
 				},
 			})
@@ -260,8 +266,8 @@ func (c *corpus) checkBRDs() []schema.Violation {
 				Location: rowLoc,
 				NextAction: &schema.NextAction{
 					Kind:   "add_verification",
-					Ref:    row.MapsTo,
-					Detail: "back the criterion with an enforcer + test verifying " + row.MapsTo,
+					Ref:    row.Ref(),
+					Detail: "back the criterion with an enforcer + test verifying " + row.Ref(),
 				},
 			})
 		case rtm.StatusUnmapped:

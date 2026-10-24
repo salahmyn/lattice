@@ -30,6 +30,12 @@ func TestApprovalActions(t *testing.T) {
 	if !strings.HasPrefix(got[1].Action, "drafted from code by an LLM") {
 		t.Errorf("llm_from_code BRD should say so: %q", got[1].Action)
 	}
+
+	agent := approvalActions([]schema.BRD{{ID: "brd.e", Status: schema.BRDDraft,
+		Provenance: schema.BRDProvenance{Source: schema.BRDSourceHuman, AuthoredBy: "agent:drafter"}}}, config.Autonomy{})
+	if len(agent) != 1 || !strings.HasPrefix(agent[0].Action, "written by agent:drafter: ") {
+		t.Errorf("an agent-authored BRD should name its author: %+v", agent)
+	}
 }
 
 // In council mode with a brd_approve mandate, next points at the council
