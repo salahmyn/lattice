@@ -198,3 +198,43 @@ func TestIngestMergesReports(t *testing.T) {
 		t.Error("ingesting a missing report should fail")
 	}
 }
+
+// A table-driven test (it.each) is demonstrated only when every row passed.
+func TestLookupEachRows(t *testing.T) {
+	const report = `<testsuites>
+<testsuite name="src/parent/data.test.ts">
+<testcase classname="src/parent/data.test.ts" name="library &gt; fails as a whole when the kid_profiles read fails"/>
+<testcase classname="src/parent/data.test.ts" name="library &gt; fails as a whole when the feeds read fails"/>
+<testcase classname="src/parent/data.test.ts" name="library &gt; 1 plus 2"/>
+</testsuite>
+<testsuite name="src/other/data.test.ts">
+<testcase classname="src/other/data.test.ts" name="fails as a whole when the videos read fails"><failure/></testcase>
+</testsuite>
+</testsuites>`
+	set, err := ParseJUnit([]byte(report))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := "web.src.parent.data.test.test.fails-as-a-whole-when-the-_-read-fails"
+	for i := 0; i < 30; i++ {
+		if got, ok := set.Lookup(ref); !ok || got != Pass {
+			t.Fatalf("Lookup(%q) = (%s,%v), want pass: the failing row is in another file", ref, got, ok)
+		}
+	}
+	if got, ok := set.Lookup("web.src.parent.data.test.test._-plus-_"); !ok || got != Pass {
+		t.Errorf("$a plus $b: got (%s,%v)", got, ok)
+	}
+
+	red, _ := ParseJUnit([]byte(`<testsuite name="s">
+<testcase classname="src/parent/data.test.ts" name="fails as a whole when the feeds read fails"/>
+<testcase classname="src/parent/data.test.ts" name="fails as a whole when the devices read fails"><failure/></testcase>
+</testsuite>`))
+	if got, _ := red.Lookup(ref); got != Fail {
+		t.Errorf("one red row must fail the table test, got %s", got)
+	}
+	// A Python name with underscores is not a template.
+	py, _ := ParseJUnit([]byte(`<testsuite name="p"><testcase classname="tests.test_cart" name="test_valid"/></testsuite>`))
+	if got, ok := py.Lookup("tests.test_cart.test_valid"); !ok || got != Pass {
+		t.Errorf("python lookup: (%s,%v)", got, ok)
+	}
+}

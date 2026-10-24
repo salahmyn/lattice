@@ -17,6 +17,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -227,6 +228,9 @@ func (s Set) Lookup(ref string) (Outcome, bool) {
 	if o, ok := s.Results[key]; ok {
 		return o, true
 	}
+	if o, ok := s.lookupTemplate(key); ok {
+		return o, ok
+	}
 	last := key
 	if i := strings.LastIndex(key, "."); i >= 0 {
 		last = key[i+1:]
@@ -243,6 +247,47 @@ func (s Set) Lookup(ref string) (Outcome, bool) {
 			score = len(last) // only the final segment agrees
 		default:
 			continue
+		}
+		if !found || score > bestScore || (score == bestScore && worse(o, best)) {
+			best, bestScore, found = o, score, true
+		}
+	}
+	return best, found
+}
+
+// lookupTemplate resolves a table-driven test (it.each / test.each), whose
+// FQN marks each title placeholder with a standalone "_" token
+// ("…test.fails-when-the-_-read-fails"). Every report case whose last segment
+// fills the placeholders is a row of it; among those, the rows with the
+// longest shared path to the ref (the same file) count. The test is
+// demonstrated only when every row passed, so the worst outcome wins.
+func (s Set) lookupTemplate(key string) (Outcome, bool) {
+	lastDot := strings.LastIndex(key, ".")
+	last := key[lastDot+1:]
+	tokens := strings.Split(last, "-")
+	isTemplate := false
+	for i, t := range tokens {
+		if t == "_" {
+			tokens[i] = `[a-z0-9]+(?:-[a-z0-9]+)*`
+			isTemplate = true
+		} else {
+			tokens[i] = regexp.QuoteMeta(t)
+		}
+	}
+	if !isTemplate {
+		return "", false
+	}
+	re := regexp.MustCompile("^" + strings.Join(tokens, "-") + "$")
+	refSegs := strings.Split(key, ".")
+	best, bestScore, found := Outcome(""), -1, false
+	for k, o := range s.Results {
+		segs := strings.Split(k, ".")
+		if !re.MatchString(segs[len(segs)-1]) {
+			continue
+		}
+		score := 0 // trailing path segments shared before the title
+		for i, j := len(segs)-2, len(refSegs)-2; i >= 0 && j >= 0 && segs[i] == refSegs[j]; i, j = i-1, j-1 {
+			score++
 		}
 		if !found || score > bestScore || (score == bestScore && worse(o, best)) {
 			best, bestScore, found = o, score, true

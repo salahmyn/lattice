@@ -331,7 +331,7 @@ func TestTSStillParsesTypeAssertions(t *testing.T) {
 // reported instead of silently dropped.
 func TestOrphanedAnnotations(t *testing.T) {
 	src := `/** @feature cart */
-export const LIMITS = { max: 3 };
+export default 42;
 
 /** @verifies cart:INV-1 */
 console.log('not a test');
@@ -372,6 +372,146 @@ func TestSymbolEndLine(t *testing.T) {
 	for _, s := range mod.Symbols {
 		if w, ok := want[s.Name]; ok && (s.Line != w[0] || s.EndLine != w[1]) {
 			t.Errorf("%s: lines %d-%d, want %d-%d", s.Name, s.Line, s.EndLine, w[0], w[1])
+		}
+	}
+}
+
+const annotationTargetsSample = `// @module-feature parent.kids
+import { createClient } from '@supabase/supabase-js';
+
+/** @capability parent.kids:connect */
+export const supabase = createClient('url', 'key');
+
+export const LIMITS = { max: 3 };
+
+export const storage = {
+  /** @enforces parent.kids:INV-1 */
+  get(key: string) { return key; },
+  /** @capability parent.kids:clear */
+  clear: () => {},
+  plain() {},
+};
+
+/** @capability parent.kids:list */
+export function KidsTab() {
+  /** @capability parent.kids:unlink */
+  const unlink = () => {};
+  const untracked = () => {};
+  /** @enforces parent.kids:INV-2 */
+  function confirmUnlink() {}
+  /** @enforces parent.kids:INV-3 */
+  const n = 1;
+  return (
+    <ul>
+      <li onClick={unlink}>x</li>
+    </ul>
+  );
+}
+`
+
+// TestAnnotationTargets: annotated value consts, object-literal methods and
+// functions nested in a component are symbols; one-line module tags work;
+// an annotation on a nested non-function is reported, not dropped.
+func TestAnnotationTargets(t *testing.T) {
+	mod, err := New().Parse(context.Background(), "src/parent/KidsTab.tsx", []byte(annotationTargetsSample))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(mod.ModuleAnnotations) != 1 || mod.ModuleAnnotations[0].Kind != "module_feature" {
+		t.Errorf("module annotations = %+v, want one module_feature from the line comment", mod.ModuleAnnotations)
+	}
+	got := map[string]string{}
+	for _, s := range mod.Symbols {
+		kinds := ""
+		for _, a := range s.Annotations {
+			kinds += a.Kind + ";"
+		}
+		got[s.FQN] = string(s.Kind) + ":" + kinds
+	}
+	base := "src.parent.KidsTab."
+	want := map[string]string{
+		base + "supabase":              "const:capability;",
+		base + "storage":               "const:",
+		base + "storage.get":           "method:enforces_invariant;",
+		base + "storage.clear":         "method:capability;",
+		base + "KidsTab":               "function:capability;",
+		base + "KidsTab.unlink":        "function:capability;",
+		base + "KidsTab.confirmUnlink": "function:enforces_invariant;",
+	}
+	for fqn, w := range want {
+		if got[fqn] != w {
+			t.Errorf("%s = %q, want %q", fqn, got[fqn], w)
+		}
+	}
+	for _, absent := range []string{base + "LIMITS", base + "storage.plain", base + "KidsTab.untracked", base + "KidsTab.n"} {
+		if _, ok := got[absent]; ok {
+			t.Errorf("%s should not be a symbol", absent)
+		}
+	}
+	if len(mod.Diagnostics) != 1 || mod.Diagnostics[0].Code != "ANNOTATION_ORPHANED" {
+		t.Errorf("want one orphan (the @enforces on const n), got %+v", mod.Diagnostics)
+	}
+}
+
+// A line comment never carries symbol tags: a stray // @capability must not
+// re-attribute the declaration below it.
+func TestLineCommentIgnoresSymbolTags(t *testing.T) {
+	src := "// @capability cart:total\nexport function total() { return 1; }\n"
+	mod, err := New().Parse(context.Background(), "src/cart.ts", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(mod.Symbols) != 1 || len(mod.Symbols[0].Annotations) != 0 {
+		t.Errorf("symbols = %+v", mod.Symbols)
+	}
+}
+
+// TestEachTests: it.each / test.each / describe.each are tests; their FQN
+// marks each title placeholder with "_" so results can join every row.
+func TestEachTests(t *testing.T) {
+	src := `describe('library', () => {
+  /** @verifies parent.library_ui:INV-1 */
+  it.each(['kid_profiles', 'feeds'])('fails as a whole when the %s read fails', async (table) => {});
+  test.each([[1, 2]])('$a plus $b', (a, b) => {});
+  describe.each([['x']])('group %s', (g) => {
+    it('inner case', () => {});
+  });
+});
+`
+	mod, err := New().Parse(context.Background(), "src/parent/data.test.ts", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := map[string]int{}
+	for _, s := range mod.Symbols {
+		got[s.FQN] = len(s.Annotations)
+	}
+	base := "src.parent.data.test.test."
+	for fqn, anns := range map[string]int{
+		base + "fails-as-a-whole-when-the-_-read-fails": 1,
+		base + "_-plus-_":   0,
+		base + "inner-case": 0,
+	} {
+		if n, ok := got[fqn]; !ok || n != anns {
+			t.Errorf("%s: present=%v annotations=%d, want %d (symbols %v)", fqn, ok, n, anns, got)
+		}
+	}
+	if len(mod.Diagnostics) != 0 {
+		t.Errorf("unexpected diagnostics %+v", mod.Diagnostics)
+	}
+}
+
+func TestIsTestFile(t *testing.T) {
+	for path, want := range map[string]bool{
+		"supabase/functions/add-source/url_test.ts": true, // Deno
+		"src/cart.test.ts":                          true,
+		"e2e/login.spec.cjs":                        true,
+		"src/latest.ts":                             false,
+		"src/contest.ts":                            false,
+		"src/test_utils.ts":                         false,
+	} {
+		if got := isTestFile(path); got != want {
+			t.Errorf("isTestFile(%q) = %v, want %v", path, got, want)
 		}
 	}
 }
