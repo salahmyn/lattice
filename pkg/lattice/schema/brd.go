@@ -1,5 +1,7 @@
 package schema
 
+import "strings"
+
 // BRDStatus is the lifecycle state of a Business Requirements Document.
 //
 // A BRD is the layer above the Feature axis: it captures *business intent*
@@ -252,4 +254,19 @@ type BRDProvenance struct {
 	// command that created or regenerated it). A council seat may not be
 	// held by the author of the version it reviews.
 	AuthoredBy string `yaml:"authored_by,omitempty"`
+}
+
+// IsAgentActor reports whether an actor names an agent: an "agent"
+// prefix, as in "agent:refunds" (case-insensitive). The same test gates
+// the human-only commands (deciding a CR, clearing a flag).
+func IsAgentActor(actor string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(actor)), "agent")
+}
+
+// MachineWritten reports whether this version of the BRD was written by
+// a machine — regenerated from code by an LLM, or authored by an agent —
+// and so needs a human (or a council) to review it before it is the
+// source of truth.
+func (b BRD) MachineWritten() bool {
+	return b.Provenance.Source == BRDSourceLLMFromCode || IsAgentActor(b.Provenance.AuthoredBy)
 }
