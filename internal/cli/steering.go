@@ -96,18 +96,18 @@ func newResultsIngestCommand(io *IO) *cobra.Command {
 			if err != nil {
 				return io.fail("INGEST_FAILED", err.Error(), nil)
 			}
-			pass, fail, skip := tallyResults(set)
+			total, pass, fail, skip := set.Tally()
 			appendLedgerEvent(io, ws, ledger.EventCheckRun, "workspace",
 				fmt.Sprintf("results ingest: %d pass, %d fail, %d skip @ %s",
 					pass, fail, skip, shortCommit(set.Commit)))
 			if io.JSON {
 				return io.printJSON(map[string]interface{}{
-					"commit": set.Commit, "total": len(set.Results),
+					"commit": set.Commit, "total": total,
 					"pass": pass, "fail": fail, "skip": skip,
 				})
 			}
 			io.printf("ingested %d test results (%d pass, %d fail, %d skip)\n",
-				len(set.Results), pass, fail, skip)
+				total, pass, fail, skip)
 			io.printf("run `lattice rtm` to see DECLARED criteria upgrade to DEMONSTRATED\n")
 			return nil
 		},
@@ -131,26 +131,12 @@ func newResultsShowCommand(io *IO) *cobra.Command {
 				io.printf("no results ingested — `lattice results ingest <junit.xml>`\n")
 				return nil
 			}
-			pass, fail, skip := tallyResults(set)
+			total, pass, fail, skip := set.Tally()
 			io.printf("commit %s: %d results (%d pass, %d fail, %d skip)\n",
-				shortCommit(set.Commit), len(set.Results), pass, fail, skip)
+				shortCommit(set.Commit), total, pass, fail, skip)
 			return nil
 		},
 	}
-}
-
-func tallyResults(set results.Set) (pass, fail, skip int) {
-	for _, o := range set.Results {
-		switch o {
-		case results.Pass:
-			pass++
-		case results.Fail:
-			fail++
-		case results.Skip:
-			skip++
-		}
-	}
-	return
 }
 
 // ---------------------------------------------------------------------------
