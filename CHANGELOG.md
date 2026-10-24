@@ -61,6 +61,12 @@ All notable changes to Lattice are documented in this file.
   as warnings, while `--json` gave their severity as `info`. Text, summary
   and JSON now agree: `N error(s), M warning(s), K info`, with `infos` in
   `--json`.
+- **`detect` / `init` understand JS/TS monorepos**: a pnpm workspace
+  (`pnpm-workspace.yaml`) or npm/yarn `workspaces` keeps its `tsconfig.json`
+  and framework dependencies in the packages, so a TypeScript monorepo was
+  detected as "javascript, low confidence". Detection now reads the
+  workspace packages (listed as `packages`), so TypeScript and the framework
+  are recognised.
 - **`lattice next` on an empty workspace**: it said "every unit is
   demonstrated" when nothing was declared; it now says nothing is declared
   yet and how to start (`--json` carries `empty: true`).
