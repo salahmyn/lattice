@@ -2,12 +2,12 @@ id: ep.cli.symbol
 version: 1
 status: production
 kind: cli
-purpose: "Show the Lattice context of a code symbol"
+purpose: Show the Lattice context of a code symbol
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice symbol"
+  command: lattice symbol
 handler:
   symbol: internal.cli.newSymbolCommand
   file: internal/cli/code.go

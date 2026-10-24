@@ -2,12 +2,12 @@ id: ep.cli.runs-clean
 version: 1
 status: production
 kind: cli
-purpose: "Gate zero: clean install, build, boot, smoke probes (V0)"
+purpose: 'Gate zero: clean install, build, boot, smoke probes (V0)'
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice runs-clean"
+  command: lattice runs-clean
 handler:
   symbol: internal.cli.newRunsCleanCommand
   file: internal/cli/runsclean.go

@@ -116,6 +116,9 @@ success_criteria:
   - id: SC-33
     statement: A Postgres connection error never echoes the DSN's password.
     maps_to_invariant: store:INV-2
+  - id: SC-34
+    statement: Canonical formatting never drops information; a file with a comment, an anchor or alias, or a key its schema does not know is skipped with the reason instead of rewritten.
+    maps_to_invariant: schema:INV-2
 out_of_scope:
   - A SCIP indexer and a mutation runner for Go.
 implements_via:

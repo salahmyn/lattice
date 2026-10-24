@@ -245,6 +245,16 @@ entries:
 - Assess a proposed change before committing:
   `lattice analyze proposal lattice/features/.../proposals/new-thing.yaml`.
 - Coordinate larger work as an **initiative** with tasks and streams.
+- Keep hand-written YAML canonical with `lattice fmt`. It rewrites
+  features, BRDs and entry points in their schema's field order, as
+  Lattice's own writers do. Run it in its own commit, so that a later
+  `brd approve` or `brd link` diff shows only the change it makes.
+  `lattice fmt --check` writes nothing and exits non-zero when a file would
+  change, for CI. A file with a YAML comment, an anchor or alias, or a key
+  its schema does not know is skipped with the reason and never rewritten.
+- Keep both halves of a BRD link: a BRD's `implements_via` and the
+  feature's `implements_brd`. When they disagree, `validate` warns
+  `BRD_LINK_ONE_SIDED`, and `lattice brd link <brd> <feature>` writes both.
 
 ### Step 6 — Commit
 
@@ -440,6 +450,7 @@ yet.
 ```sh
 lattice extract                       # refresh the knowledge graph
 lattice validate                      # check everything
+lattice fmt [--check]                  # canonical field order for features, BRDs, entry points
 lattice feature list                  # what features exist
 lattice feature show checkout.refund   # one feature, hydrated
 lattice symbol <fqn>                   # Lattice context of a code symbol

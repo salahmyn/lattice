@@ -2,12 +2,12 @@ id: ep.cli.coverage
 version: 1
 status: production
 kind: cli
-purpose: "Report coverage: how much of the code the graph describes, verifies and traces to BRDs"
+purpose: 'Report coverage: how much of the code the graph describes, verifies and traces to BRDs'
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice coverage"
+  command: lattice coverage
 handler:
   symbol: internal.cli.newCoverageCommand
   file: internal/cli/importcmd.go

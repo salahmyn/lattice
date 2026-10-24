@@ -2,12 +2,12 @@ id: ep.cli.version
 version: 1
 status: production
 kind: cli
-purpose: "Print version information"
+purpose: Print version information
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice version"
+  command: lattice version
 handler:
   symbol: internal.cli.newVersionCommand
   file: internal/cli/version.go

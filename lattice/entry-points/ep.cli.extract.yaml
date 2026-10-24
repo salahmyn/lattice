@@ -2,12 +2,12 @@ id: ep.cli.extract
 version: 1
 status: production
 kind: cli
-purpose: "Extract the knowledge graph and write lattice.json"
+purpose: Extract the knowledge graph and write lattice.json
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice extract"
+  command: lattice extract
 handler:
   symbol: internal.cli.newExtractCommand
   file: internal/cli/extract.go

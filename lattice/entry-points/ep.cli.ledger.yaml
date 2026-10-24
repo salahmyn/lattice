@@ -2,12 +2,12 @@ id: ep.cli.ledger
 version: 1
 status: production
 kind: cli
-purpose: "Show the append-only ledger of truth-level transitions"
+purpose: Show the append-only ledger of truth-level transitions
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice ledger"
+  command: lattice ledger
 handler:
   symbol: internal.cli.newLedgerCommand
   file: internal/cli/steering.go
