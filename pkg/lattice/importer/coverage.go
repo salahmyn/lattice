@@ -52,6 +52,67 @@ func ComputeDocumentation(cf CandidatesFile, decisions map[string]string) Docume
 	}
 }
 
+// ComputeDocumentationGraph measures documentation coverage over the graph:
+// the share of production symbols attributed to a feature, whether by
+// annotation, @module-feature or an accepted import candidate (cf may be nil
+// for a workspace that never ran `lattice import`).
+func ComputeDocumentationGraph(kg schema.KnowledgeGraph, cf *CandidatesFile, decisions map[string]string) DocumentationCoverage {
+	accepted := map[string]bool{}
+	if cf != nil {
+		for _, c := range cf.Candidates {
+			if decisions[c.ID] == DecisionAccepted {
+				for _, fqn := range c.Symbols {
+					accepted[fqn] = true
+				}
+			}
+		}
+	}
+	total, documented := 0, 0
+	for _, s := range kg.Symbols {
+		if s.IsTest {
+			continue
+		}
+		total++
+		if s.Feature != "" || accepted[s.FQN] {
+			documented++
+		}
+	}
+	if total == 0 && cf != nil {
+		return ComputeDocumentation(*cf, decisions)
+	}
+	return DocumentationCoverage{TotalSymbols: total, DocumentedSymbols: documented, Ratio: ratio(documented, total)}
+}
+
+// AttributionCoverage is the share of production modules that belong to a
+// feature, by @module-feature or a feature on any of their symbols. A module
+// holding only tests, types or nothing is not production code (see
+// schema.KnowledgeGraph.Attribution).
+type AttributionCoverage struct {
+	TotalModules      int      `json:"total_modules"`
+	AttributedModules int      `json:"attributed_modules"`
+	Ratio             float64  `json:"ratio"`
+	Unattributed      []string `json:"unattributed,omitempty"`
+}
+
+// ComputeAttribution measures module attribution over the graph. It counts
+// the same modules UNATTRIBUTED_MODULE reports.
+func ComputeAttribution(kg schema.KnowledgeGraph) AttributionCoverage {
+	var out AttributionCoverage
+	for _, a := range kg.Attribution() {
+		if a.ProductionSymbols == 0 {
+			continue
+		}
+		out.TotalModules++
+		if a.Attributed {
+			out.AttributedModules++
+		} else {
+			out.Unattributed = append(out.Unattributed, a.File)
+		}
+	}
+	out.Ratio = ratio(out.AttributedModules, out.TotalModules)
+	return out
+}
+
 // VerificationCoverage is the share of declared invariants that have both an
 // enforcer and a verifier: how much of the recorded meaning is fact-checked.
 // It is v0.1's UNENFORCED/UNVERIFIED accounting surfaced as a ratio.

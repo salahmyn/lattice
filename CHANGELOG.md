@@ -74,6 +74,40 @@ All notable changes to Lattice are documented in this file.
 - **`lattice next` ranks BRD approvals**: draft and proposed BRDs appear
   after every unit that needs work, as `awaiting-approval`, with the human
   approval step (an agent never approves).
+- **`lattice coverage` works without `lattice import`**: it refused to run
+  unless an import session existed, and documentation coverage counted only
+  accepted import candidates, so a hand-written workspace read 0%. Coverage
+  now comes from the graph: documentation is the share of production symbols
+  attributed to a feature (plus accepted candidates, when there are any).
+- **Table-driven tests are tests**: `it.each(table)("title", fn)`,
+  `test.each` and `describe.each` were not recognised (the callee is itself a
+  call), so their `@verifies` was dropped. They are now test symbols whose
+  FQN marks each title placeholder (`%s`, `$name`, `${x}`) with `_`; the
+  result join matches every row's case in the same file, and the test is
+  demonstrated only when all rows pass.
+- **Deno test files are test code**: `x_test.ts` (Deno's naming) is a test
+  file, like `x.test.ts`; its helpers no longer count as production code.
+- **More TypeScript annotation targets**: an annotated non-function `const`
+  (`export const client = createClient(…)`) is a symbol; annotated methods of
+  an object literal (`export const store = { get() {} }`) are method symbols
+  of that const; annotated functions declared inside a function body (a
+  handler inside a React component) are symbols enclosed by it. Unannotated
+  ones stay out of the graph. `// @module-feature x` on one line works like
+  the JSDoc form (line comments never carry symbol tags).
+- **Result lookup is deterministic and refuses to guess**: when several
+  report cases match a verifier, the most specific match wins (the longest
+  shared path). When two different cases match equally (the same short test
+  name in two files and nothing else in common), the result is not counted
+  and `validate` raises `RESULT_AMBIGUOUS` (warning) naming them. Before,
+  such a verifier took a pass or a fail depending on map order. The ingested
+  set records which case each key came from (`cases`).
+
+### Added
+
+- **Attribution coverage**: `lattice coverage` reports the share of
+  production modules that belong to a feature and lists the ones that do
+  not. Modules holding only tests, types or nothing are not production code.
+  It is the same definition `UNATTRIBUTED_MODULE` uses.
 - **Validation policy in `config.yaml`**: `validate.severity` sets any
   finding code to `error`, `warning`, `info` or `off`; `validate.fail_on`
   (or `lattice validate --fail-on`) sets the lowest severity that fails the
