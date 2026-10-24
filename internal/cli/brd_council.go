@@ -208,7 +208,7 @@ func councilEvidence(kg schema.KnowledgeGraph, latticeDir string, cfg config.Con
 	for _, r := range m.Rows {
 		if r.BRDID == id {
 			crit++
-			if r.Status == rtm.StatusDemonstrated {
+			if r.Status.IsDemonstrated() {
 				critDone++
 			}
 		}
@@ -216,7 +216,7 @@ func councilEvidence(kg schema.KnowledgeGraph, latticeDir string, cfg config.Con
 	for _, s := range m.Scenarios {
 		if s.BRDID == id {
 			scen++
-			if s.Status == rtm.StatusDemonstrated {
+			if s.Status.IsDemonstrated() {
 				scenDone++
 			}
 		}

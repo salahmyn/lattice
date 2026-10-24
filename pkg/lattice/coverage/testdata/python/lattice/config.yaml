@@ -1,0 +1,3 @@
+# Coverage fixture. Defaults apply.
+mutation_testing:
+  enabled: false

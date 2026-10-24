@@ -58,9 +58,62 @@ const (
 
 	// StatusDemonstrated — everything StatusVerified requires, plus an
 	// ingested test result showing the verifier *passed* on the
-	// generated commit (v0.8 γ). The top of the ladder.
+	// generated commit (v0.8 γ).
 	StatusDemonstrated Status = "demonstrated"
+
+	// StatusExercised — demonstrated, and for every invariant behind the
+	// unit at least one verifier's own per-test coverage executed at least
+	// one enforcer (rnd/0009). The top of the ladder. Only per-test
+	// coverage can promote to it; it never changes what demonstrated means.
+	StatusExercised Status = "exercised"
 )
+
+// IsDemonstrated reports whether a status is demonstrated or above: an
+// exercised unit is demonstrated too, so counts of demonstrated units do
+// not drop when coverage is ingested.
+func (s Status) IsDemonstrated() bool {
+	return s == StatusDemonstrated || s == StatusExercised
+}
+
+// Evidence bases a coverage claim rests on, strongest first (rnd/0009).
+// Only EvidencePerTest can promote a unit to exercised.
+const (
+	EvidencePerTest = "per_test" // the verifier's own run
+	EvidencePerFile = "per_file" // a run of the verifier's whole test file
+	EvidenceSuite   = "suite"    // one run of the whole suite
+	EvidenceNone    = "none"     // no coverage covers the enforcers
+)
+
+// CoverageEvidence is ingested test coverage, wired by the caller to the
+// coverage package so rtm keeps importing only schema. nil means no
+// coverage was ingested: no row is exercised and no evidence is reported.
+type CoverageEvidence interface {
+	// TestRan reports whether a test's own coverage executed a symbol, and
+	// the basis: EvidencePerTest when the test has a report of its own,
+	// EvidencePerFile when only a run of its test file does, EvidenceNone
+	// when neither exists (executed is then false and means nothing).
+	TestRan(test, symbol string) (executed bool, basis string)
+	// SuiteRan reports whether the whole suite executed a symbol. known is
+	// false when no suite report covers the symbol's file.
+	SuiteRan(symbol string) (executed, known bool)
+	// EnforcerLines rolls up the body lines of the enforcers: over what the
+	// tests ran when each has per-test line data (overTests), else over the
+	// suite. ok is false when neither has data for them.
+	EnforcerLines(enforcers, tests []string) (lines, hit int, overTests, ok bool)
+	// HasPerTest reports whether any per-test coverage was ingested.
+	HasPerTest() bool
+}
+
+// EnforcerCoverage is the share of an invariant's enforcer body lines that
+// ran, and what it was measured over.
+type EnforcerCoverage struct {
+	Lines   int     `json:"lines"`
+	Hit     int     `json:"hit"`
+	Percent float64 `json:"percent"`
+	// Over is "verifiers" (the union of the verifiers' per-test runs) or
+	// "suite" (the whole run, when a verifier has no per-test data).
+	Over string `json:"over"`
+}
 
 // Severity returns 0 for the worst status and increases for healthier
 // states. Used to roll up multiple rows to one summary status.
@@ -82,6 +135,8 @@ func (s Status) Severity() int {
 		return 6
 	case StatusDemonstrated:
 		return 7
+	case StatusExercised:
+		return 8
 	}
 	return 0
 }
@@ -116,6 +171,16 @@ type Row struct {
 	// the computed status — it is never hidden behind a green row.
 	Flagged bool     `json:"flagged,omitempty"`
 	Flags   []string `json:"flags,omitempty"`
+
+	// Coverage (rnd/0009), set only when coverage was ingested. Evidence is
+	// the strongest basis behind the deciding invariant's verifiers
+	// (per_test, per_file, suite or none); ExercisedBy names the verifiers
+	// whose per-test run executed an enforcer; CoverageReason says why a
+	// demonstrated row is not exercised.
+	Evidence         string            `json:"evidence,omitempty"`
+	EnforcerCoverage *EnforcerCoverage `json:"enforcer_coverage,omitempty"`
+	ExercisedBy      []string          `json:"exercised_by,omitempty"`
+	CoverageReason   string            `json:"coverage_reason,omitempty"`
 }
 
 // Ref names the invariant that decided the row's status: the only one
@@ -133,10 +198,13 @@ func (r Row) Ref() string {
 
 // BRDSummary rolls up every Row for one BRD into a verification ratio.
 type BRDSummary struct {
-	BRDID            string  `json:"brd_id"`
-	BRDTitle         string  `json:"brd_title,omitempty"`
-	Total            int     `json:"total"`
+	BRDID    string `json:"brd_id"`
+	BRDTitle string `json:"brd_title,omitempty"`
+	Total    int    `json:"total"`
+	// Demonstrated counts rows at demonstrated or above (exercised rows
+	// too); Exercised counts those that are also exercised.
 	Demonstrated     int     `json:"demonstrated"`
+	Exercised        int     `json:"exercised"`
 	Verified         int     `json:"verified"`
 	Partial          int     `json:"partial"`
 	Failing          int     `json:"failing"`
@@ -155,6 +223,7 @@ type BRDSummary struct {
 	// not just what an invariant asserts.
 	ScenarioTotal        int `json:"scenario_total"`
 	ScenarioDemonstrated int `json:"scenario_demonstrated"`
+	ScenarioExercised    int `json:"scenario_exercised"`
 }
 
 // ScenarioRow is one walked BRD user_scenario (v0.8 α). A scenario is a
@@ -177,6 +246,13 @@ type ScenarioRow struct {
 	// reported alongside the computed status.
 	Flagged bool     `json:"flagged,omitempty"`
 	Flags   []string `json:"flags,omitempty"`
+
+	// Coverage (rnd/0009): a scenario is exercised when it is demonstrated
+	// and a verifier's per-test run executed the handler of an entry point
+	// it names. Set only when coverage was ingested.
+	Evidence       string   `json:"evidence,omitempty"`
+	ExercisedBy    []string `json:"exercised_by,omitempty"`
+	CoverageReason string   `json:"coverage_reason,omitempty"`
 }
 
 // Matrix is the full traceability output: every row + per-BRD
@@ -212,6 +288,10 @@ type Options struct {
 	// honest ceiling is "wired"; a lite workspace never reports
 	// demonstrated until the full profile (architect pass) is adopted.
 	ProfileLite bool
+
+	// Coverage is the ingested coverage evidence (rnd/0009); nil means none
+	// was ingested and nothing is exercised.
+	Coverage CoverageEvidence
 }
 
 // invKey identifies an invariant uniquely across the graph by its
@@ -257,8 +337,10 @@ func Build(kg schema.KnowledgeGraph, opts Options) Matrix {
 	// epIDs lets a scenario's verified_by entry be classified as a
 	// declared entry point — the journey-coverage signal (v0.8 β).
 	epIDs := map[string]bool{}
+	handlers := map[string]string{} // entry point id -> handler symbol
 	for _, ep := range kg.EntryPoints {
 		epIDs[ep.ID] = true
+		handlers[ep.ID] = ep.Handler.Symbol
 	}
 	// Mutation scores live on the Manifest as a map keyed by
 	// invariant id; lift to invKey for uniform lookup.
@@ -297,6 +379,9 @@ func Build(kg schema.KnowledgeGraph, opts Options) Matrix {
 			}
 			sum.Total++
 			switch row.Status {
+			case StatusExercised:
+				sum.Demonstrated++
+				sum.Exercised++
 			case StatusDemonstrated:
 				sum.Demonstrated++
 			case StatusVerified:
@@ -319,12 +404,16 @@ func Build(kg schema.KnowledgeGraph, opts Options) Matrix {
 		// Scenario walk (v0.8 α): user_scenarios are verifiable units too.
 		for _, us := range b.UserScenarios {
 			sr := classifyScenario(b, us, verifiers, testFQNs, epIDs, opts)
+			exerciseScenario(&sr, testFQNs, handlers, opts)
 			applyOverlays(&sr.Status, &sr.StatusReason, &sr.Flagged, &sr.Flags,
 				b.ID+"/"+us.ID, opts)
 			scenarios = append(scenarios, sr)
 			sum.ScenarioTotal++
-			if sr.Status == StatusDemonstrated {
+			if sr.Status.IsDemonstrated() {
 				sum.ScenarioDemonstrated++
+			}
+			if sr.Status == StatusExercised {
+				sum.ScenarioExercised++
 			}
 		}
 	}
@@ -495,6 +584,7 @@ func classify(
 			} else {
 				row.Status = StatusVerified
 			}
+			exercise(row, row.Enforcers, row.Verifiers, opts)
 		}
 		return
 	}
@@ -525,6 +615,11 @@ func classify(
 		row.FeatureID, row.InvariantID = r.FeatureID, r.InvariantID
 		row.MutationScore, row.HasMutation = r.MutationScore, r.HasMutation
 		row.Status, row.StatusReason = r.Status, r.StatusReason
+		row.Evidence, row.EnforcerCoverage = r.Evidence, r.EnforcerCoverage
+		row.ExercisedBy, row.CoverageReason = r.ExercisedBy, r.CoverageReason
+		if len(sc.MapsToInvariant) > 1 && r.CoverageReason != "" {
+			row.CoverageReason = ref + ": " + r.CoverageReason
+		}
 		if len(sc.MapsToInvariant) > 1 && r.StatusReason != "" {
 			row.StatusReason = ref + ": " + r.StatusReason
 		}
@@ -605,9 +700,145 @@ func classifyRef(
 	if status, reason, decided := resultStatus(row.Verifiers, opts.ResultOf); decided {
 		row.Status = status
 		row.StatusReason = reason
+	} else {
+		row.Status = StatusVerified
+	}
+	exercise(row, row.Enforcers, row.Verifiers, opts)
+}
+
+// exercise folds ingested coverage into a wired row (rnd/0009): it records
+// the evidence basis and the enforcer line coverage, and lifts a
+// demonstrated row to exercised when a verifier's own per-test run executed
+// an enforcer. per_file and suite evidence are reported but never promote.
+// @enforces rtm:INV-8
+func exercise(row *Row, enforcers, verifiers []string, opts Options) {
+	cov := opts.Coverage
+	if cov == nil || len(enforcers) == 0 || len(verifiers) == 0 {
 		return
 	}
-	row.Status = StatusVerified
+	best := EvidenceNone
+	var missing, perFileOnly []string
+	for _, v := range verifiers {
+		basis, ran := EvidenceNone, false
+		for _, e := range enforcers {
+			executed, b := cov.TestRan(v, e)
+			if stronger(b, basis) {
+				basis = b
+			}
+			if executed && b == EvidencePerTest {
+				ran = true
+			}
+		}
+		if ran {
+			row.ExercisedBy = append(row.ExercisedBy, v)
+		}
+		switch basis {
+		case EvidencePerFile:
+			perFileOnly = append(perFileOnly, v)
+		case EvidenceNone:
+			missing = append(missing, v)
+		}
+		if stronger(basis, best) {
+			best = basis
+		}
+	}
+	if best == EvidenceNone {
+		for _, e := range enforcers {
+			if _, known := cov.SuiteRan(e); known {
+				best = EvidenceSuite
+				break
+			}
+		}
+	}
+	row.Evidence = best
+	if lines, hit, overTests, ok := cov.EnforcerLines(enforcers, verifiers); ok {
+		ec := &EnforcerCoverage{Lines: lines, Hit: hit, Percent: Percent(hit, lines), Over: "suite"}
+		if overTests {
+			ec.Over = "verifiers"
+		}
+		row.EnforcerCoverage = ec
+	}
+
+	if len(row.ExercisedBy) > 0 {
+		if row.Status == StatusDemonstrated {
+			row.Status = StatusExercised
+			row.StatusReason = "verifier passed, and its per-test coverage executed an enforcer"
+		}
+		return
+	}
+	switch {
+	case !cov.HasPerTest():
+		row.CoverageReason = "no per-test coverage ingested"
+	case len(missing)+len(perFileOnly) == 0:
+		row.CoverageReason = "no verifier's per-test coverage executed an enforcer"
+	case len(missing) > 0:
+		row.CoverageReason = "no per-test coverage for " + strings.Join(missing, ", ")
+		if len(perFileOnly) > 0 {
+			row.CoverageReason += "; per_file only for " + strings.Join(perFileOnly, ", ") + ", which cannot promote"
+		}
+	default:
+		row.CoverageReason = "per_file coverage only for " + strings.Join(perFileOnly, ", ") + ", which cannot promote"
+	}
+}
+
+// exerciseScenario lifts a demonstrated scenario to exercised when a
+// verifier's per-test run executed the handler of an entry point the
+// scenario names, turning the declared TouchesEntryPoint into a checked fact.
+func exerciseScenario(sr *ScenarioRow, testFQNs map[string]bool, handlers map[string]string, opts Options) {
+	cov := opts.Coverage
+	if cov == nil || len(sr.Verifiers) == 0 {
+		return
+	}
+	best, ran := EvidenceNone, false
+	for _, v := range sr.Verifiers {
+		if !testFQNs[v] {
+			continue
+		}
+		for _, ep := range sr.EntryPoints {
+			h := handlers[ep]
+			if h == "" {
+				continue
+			}
+			executed, b := cov.TestRan(v, h)
+			if stronger(b, best) {
+				best = b
+			}
+			if executed && b == EvidencePerTest && !ran {
+				ran = true
+				sr.ExercisedBy = append(sr.ExercisedBy, v)
+			}
+		}
+	}
+	sr.Evidence = best
+	switch {
+	case ran:
+		if sr.Status == StatusDemonstrated {
+			sr.Status = StatusExercised
+			sr.StatusReason = "verifier passed, and its per-test coverage executed the entry point's handler"
+		}
+	case len(sr.EntryPoints) == 0:
+		sr.CoverageReason = "names no entry point whose handler a verifier could execute"
+	case !cov.HasPerTest():
+		sr.CoverageReason = "no per-test coverage ingested"
+	case best == EvidencePerTest:
+		sr.CoverageReason = "no verifier's per-test coverage executed the entry point's handler"
+	default:
+		sr.CoverageReason = "no per-test coverage for its verifiers"
+	}
+}
+
+// stronger reports whether evidence basis a is stronger than b.
+func stronger(a, b string) bool {
+	rank := map[string]int{EvidencePerTest: 3, EvidencePerFile: 2, EvidenceSuite: 1, EvidenceNone: 0}
+	return rank[a] > rank[b]
+}
+
+// Percent is hit/lines as a percentage rounded to one decimal; 100 for no lines.
+func Percent(hit, lines int) float64 {
+	if lines == 0 {
+		return 100
+	}
+	return float64(int(1000*float64(hit)/float64(lines)+0.5)) / 10
 }
 
 // appendNew appends the entries of add not already in list.
@@ -633,7 +864,7 @@ func appendNew(list, add []string) []string {
 // alongside the status, never replacing it).
 // @enforces rtm:INV-5
 func applyOverlays(status *Status, reason *string, flagged *bool, flagList *[]string, unit string, opts Options) {
-	if opts.ProfileLite && *status == StatusDemonstrated {
+	if opts.ProfileLite && status.IsDemonstrated() {
 		*status = StatusVerified
 		*reason = "lite profile: ceiling is wired — adopt the full profile to claim demonstrated"
 	}
@@ -717,6 +948,9 @@ func worstFor(s *BRDSummary) Status {
 	if s.Verified > 0 {
 		return StatusVerified
 	}
+	if s.Exercised > 0 && s.Exercised == s.Demonstrated {
+		return StatusExercised
+	}
 	return StatusDemonstrated
 }
 
@@ -757,13 +991,13 @@ type Coverage struct {
 	Ratio            float64 `json:"ratio"`
 }
 
-// ComputeCoverage rolls the whole matrix into one number. Both VERIFIED
-// (declared) and DEMONSTRATED criteria count as covered, so the v0.6
-// headline never regresses when v0.8 splits the rung.
+// ComputeCoverage rolls the whole matrix into one number. VERIFIED
+// (declared), DEMONSTRATED and EXERCISED criteria count as covered, so the
+// v0.6 headline never regresses when a rung splits.
 func ComputeCoverage(m Matrix) Coverage {
 	c := Coverage{TotalCriteria: len(m.Rows)}
 	for _, r := range m.Rows {
-		if r.Status == StatusVerified || r.Status == StatusDemonstrated {
+		if r.Status == StatusVerified || r.Status.IsDemonstrated() {
 			c.VerifiedCriteria++
 		}
 	}
@@ -790,7 +1024,7 @@ func ComputeJourneyCoverage(m Matrix) JourneyCoverage {
 	for _, s := range m.Scenarios {
 		if s.TouchesEntryPoint {
 			jc.ReachedScenarios++
-			if s.Status == StatusDemonstrated {
+			if s.Status.IsDemonstrated() {
 				jc.Demonstrated++
 			}
 		}

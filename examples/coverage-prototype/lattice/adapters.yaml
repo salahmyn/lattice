@@ -1,0 +1,11 @@
+adapters:
+  typescript:
+    enabled: true
+  postgres:
+    enabled: true
+  python:
+    enabled: false
+  php:
+    enabled: false
+  go:
+    enabled: false

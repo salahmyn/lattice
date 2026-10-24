@@ -104,7 +104,7 @@ func newDemonstrateCommand(io *IO) *cobra.Command {
 				case rtm.StatusVerified:
 					v4.Pass = false
 					v4.Findings = append(v4.Findings, r.BRDID+"/"+r.CriterionID+": verifier exists but no result ingested — run the suite and `lattice results ingest`")
-				case rtm.StatusDemonstrated:
+				case rtm.StatusDemonstrated, rtm.StatusExercised:
 				default:
 					v4.Pass = false
 					v4.Findings = append(v4.Findings, r.BRDID+"/"+r.CriterionID+": "+string(r.Status)+" — "+r.StatusReason)
@@ -123,7 +123,7 @@ func newDemonstrateCommand(io *IO) *cobra.Command {
 					v5.Pass = false
 					v5.Findings = append(v5.Findings, unit+": verified only below its entry point — declare and exercise the real trigger")
 				}
-				if s.Status != rtm.StatusDemonstrated {
+				if !s.Status.IsDemonstrated() {
 					v5.Pass = false
 					v5.Findings = append(v5.Findings, unit+": "+string(s.Status)+" — "+s.StatusReason)
 				}

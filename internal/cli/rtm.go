@@ -4,6 +4,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -49,6 +50,9 @@ func newRTMCommand(io *IO) *cobra.Command {
 invariant, its enforcer symbols and verifier tests, and the mutation
 score (if available). Reports a per-row status:
 
+  exercised  — demonstrated, and a verifier's own per-test coverage ran an
+               enforcer (needs per-test coverage: lattice results ingest --per-test)
+  demonstrated — verified, and every verifier passed on the commit
   verified   — enforcer + verifier present, mutation OK
   partial    — enforcer + verifier present, mutation below threshold
   unenforced — invariant exists but no symbol enforces it
@@ -71,6 +75,7 @@ The same rows back the BRD_CRITERION_* validation rules and the
 				ResultOf:          resultOfFrom(set),
 				FlagsOf:           flagReasons(openFlags),
 				ProfileLite:       cfg.IsLite(),
+				Coverage:          coverageEvidence(ws, kg),
 			})
 			coverage := rtm.ComputeCoverage(matrix)
 			journey := rtm.ComputeJourneyCoverage(matrix)
@@ -131,6 +136,7 @@ The same rows back the BRD_CRITERION_* validation rules and the
 				for _, fl := range r.Flags {
 					io.printf("    ⚑ %s\n", fl)
 				}
+				renderRowCoverage(io, r)
 			}
 			// Scenario rows (v0.8 α) beneath the criteria — what the user does.
 			if len(matrix.Scenarios) > 0 {
@@ -144,13 +150,16 @@ The same rows back the BRD_CRITERION_* validation rules and the
 					}
 					io.printf("%-32s %-6s %-12s %-8s %d\n",
 						truncate(s.BRDID, 32), s.ScenarioID, string(s.Status), reach, len(s.Verifiers))
+					if s.Status == rtm.StatusDemonstrated && s.CoverageReason != "" {
+						io.printf("    not exercised: %s\n", s.CoverageReason)
+					}
 				}
 			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&filterStatus, "status", "",
-		"filter rows by status (verified|partial|unenforced|unverified|unmapped|phantom)")
+		"filter rows by status (exercised|demonstrated|verified|partial|failing|unenforced|unverified|unmapped|phantom)")
 	cmd.Flags().StringVar(&filterBRD, "brd", "", "filter rows to a single BRD id")
 	cmd.Flags().BoolVar(&summaryOnly, "summary", false, "show per-BRD verification ratios only")
 	return cmd
@@ -169,6 +178,9 @@ func renderRTMSummary(io *IO, attestation string, c rtm.Coverage, j rtm.JourneyC
 	}
 	io.printf("BRD verification coverage: %.1f%%  (%d/%d criteria verified)\n",
 		c.Ratio*100, c.VerifiedCriteria, c.TotalCriteria)
+	if ex, dem, ok := exercisedCount(m); ok {
+		io.printf("exercised:                 %d/%d demonstrated criteria (a verifier's per-test run executed an enforcer)\n", ex, dem)
+	}
 	if j.TotalScenarios > 0 {
 		io.printf("journey coverage:          %.1f%%  (%d/%d scenarios reach a declared entry point; %d demonstrated)\n",
 			j.Ratio*100, j.ReachedScenarios, j.TotalScenarios, j.Demonstrated)
@@ -182,9 +194,50 @@ func renderRTMSummary(io *IO, attestation string, c rtm.Coverage, j rtm.JourneyC
 		if s.Flagged > 0 {
 			flagged = fmt.Sprintf("  ⚑%d", s.Flagged)
 		}
-		io.printf("  %-32s  %5.1f%%  dem:%d v:%d p:%d fail:%d u-enf:%d u-ver:%d unmap:%d phantom:%d  worst=%s%s\n",
+		exercised := ""
+		if s.Exercised > 0 {
+			exercised = fmt.Sprintf(" ex:%d", s.Exercised)
+		}
+		io.printf("  %-32s  %5.1f%%  dem:%d%s v:%d p:%d fail:%d u-enf:%d u-ver:%d unmap:%d phantom:%d  worst=%s%s\n",
 			truncate(s.BRDID, 32), s.VerificationRate*100,
-			s.Demonstrated, s.Verified, s.Partial, s.Failing, s.Unenforced, s.Unverified, s.Unmapped, s.Phantom,
+			s.Demonstrated, exercised, s.Verified, s.Partial, s.Failing, s.Unenforced, s.Unverified, s.Unmapped, s.Phantom,
 			string(s.WorstStatus), flagged)
+	}
+}
+
+// exercisedCount counts exercised and demonstrated rows; ok is false when no
+// row carries coverage evidence (none was ingested).
+func exercisedCount(m rtm.Matrix) (ex, dem int, ok bool) {
+	for _, r := range m.Rows {
+		if r.Evidence != "" {
+			ok = true
+		}
+		if r.Status.IsDemonstrated() {
+			dem++
+		}
+		if r.Status == rtm.StatusExercised {
+			ex++
+		}
+	}
+	return ex, dem, ok
+}
+
+// renderRowCoverage prints, under a row with coverage evidence, what ran:
+// who exercised it, or why a demonstrated row is not exercised, and how much
+// of its enforcers ran.
+func renderRowCoverage(io *IO, r rtm.Row) {
+	if r.Evidence == "" {
+		return
+	}
+	switch {
+	case r.Status == rtm.StatusExercised:
+		io.printf("    exercised by %s\n", strings.Join(r.ExercisedBy, ", "))
+	case r.Status == rtm.StatusDemonstrated && r.CoverageReason != "":
+		io.printf("    not exercised: %s\n", r.CoverageReason)
+	}
+	if ec := r.EnforcerCoverage; ec != nil {
+		io.printf("    enforcer lines: %.1f%% (%d/%d) over %s; evidence %s\n", ec.Percent, ec.Hit, ec.Lines, ec.Over, r.Evidence)
+	} else {
+		io.printf("    evidence %s\n", r.Evidence)
 	}
 }

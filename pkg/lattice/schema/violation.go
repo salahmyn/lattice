@@ -140,6 +140,14 @@ const (
 	// CodeBRDBelowLevel: a criterion or scenario is below validate.require_level.
 	CodeBRDBelowLevel = "BRD_BELOW_LEVEL"
 
+	// Coverage (rnd/0009). All four are off unless the workspace has a
+	// coverage: block (or sets their severity), and each fires only on
+	// ingested data, stating the evidence it rests on.
+	CodeVerifierMissesEnforcer = "VERIFIER_MISSES_ENFORCER" // no verifier's run executed any enforcer (warning)
+	CodeVerifierUnproven       = "VERIFIER_UNPROVEN"        // a verifier has no per-test coverage (info)
+	CodeCoverageStale          = "COVERAGE_STALE"           // coverage is of another commit, or a dirty tree (warning)
+	CodeCoverageBelowFloor     = "COVERAGE_BELOW_FLOOR"     // a feature, invariant or tier is under its declared floor (warning)
+
 	// Council approval (v0.12).
 	CodeBRDCouncilUnreviewed = "BRD_COUNCIL_UNREVIEWED" // a council approval its human has not acknowledged (info)
 	CodeBRDCouncilInvalid    = "BRD_COUNCIL_INVALID"

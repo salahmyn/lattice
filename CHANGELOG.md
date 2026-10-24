@@ -58,6 +58,46 @@ All notable changes to Lattice are documented in this file.
 - **`backprop` documents its ledger writes**: every run records a check run,
   as `validate` does. The help and the user guide now say so and point to
   `lattice impact` for a read-only report.
+- **Coverage ingest and the `exercised` level** (docs/rnd/0009, phase 1):
+  Lattice can now tell a verifier that runs its enforcer from one that only
+  passes, for example with the guard stubbed. See the user guide, section 4f.
+  - `lattice results ingest` reads coverage reports next to test reports,
+    told apart by content: LCOV, `go test -coverprofile`, istanbul
+    `coverage-final.json`, coverage.py JSON (with `--show-contexts`, every
+    test's lines from one run), cobertura and clover XML, and a JSON or CSV
+    export of Postgres `pg_stat_user_functions` call counts.
+    `--per-test <dir>` reads one report per test, named by its slug;
+    `--per-file <dir>` one per test file. One run gets one commit stamp and
+    one ledger event. The result goes to
+    `lattice/.cache/results/coverage.json`: the commit, a dirty flag, the
+    source reports with their hashes, per-symbol lines, and per test the
+    symbols it executed.
+  - Reports map onto symbols by line extent. The declaration line is not
+    evidence, a function record decides whether a function ran, and a file a
+    report does not list has no data unless it is in the report's `include`
+    set.
+  - `lattice results tests --verifiers [--lang] [--runner] [--json]` lists
+    each verifier with its report slug and its runner's filter (Go `-run`,
+    Node `--test-name-pattern`, vitest/Jest `-t`, Deno `--filter`, pytest node
+    ids and `-k`, PHPUnit `--filter`, `pg_prove` files), so CI can collect
+    per-test coverage in parallel. Lattice does not run tests.
+  - A new top rung in the RTM, `exercised`: demonstrated, and for every
+    invariant behind the criterion, a verifier's own per-test run executed an
+    enforcer. Only per-test coverage promotes. An exercised row counts as
+    demonstrated everywhere, so existing counts do not change. Rows carry
+    `evidence`, `enforcer_coverage`, `exercised_by` and `coverage_reason`;
+    summaries carry `exercised`. `lattice rtm` shows why a demonstrated row
+    is not exercised.
+  - New findings, all off until `config.yaml` has a `coverage:` block:
+    `VERIFIER_MISSES_ENFORCER` (warning), `COVERAGE_STALE` (warning),
+    `VERIFIER_UNPROVEN` (info), and `COVERAGE_BELOW_FLOOR` (warning) for each
+    declared floor (`coverage.floors: {feature, invariant, tier}`). Each fires
+    only on ingested data and states its evidence basis.
+  - `validate.require_level` accepts `exercised`, and a per-tier form:
+    `{default: demonstrated, tier: {3: exercised}}`. The tier-2+
+    `MUTATION_REQUIRED_TIER` gate is unchanged.
+  - `examples/coverage-prototype/` is a Node sample workspace with real
+    coverage files, where one verifier stubs its guard.
 
 ### Behaviour changes to plan for
 

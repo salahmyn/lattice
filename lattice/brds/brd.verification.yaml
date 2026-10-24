@@ -6,6 +6,7 @@ business_problem: A rule that is declared but never enforced or tested reads as 
 business_goals:
   - Every declared invariant has an enforcer and a verifier, or validate fails.
   - A criterion reads demonstrated only when its verifiers passed on the commit.
+  - A criterion reads exercised only when a verifier's own run executed its enforcer.
 user_scenarios:
   - id: US-1
     actor: maintainer
@@ -89,9 +90,46 @@ success_criteria:
   - id: SC-24
     statement: An app that exits inside its boot window fails the run.
     maps_to_invariant: runsclean:INV-2
+  - id: SC-25
+    statement: A report is read as coverage by its content (LCOV, Go profile, istanbul, coverage.py, cobertura, clover, Postgres call counts); anything else is a test report.
+    maps_to_invariant: coverage:INV-1
+  - id: SC-26
+    statement: A symbol's coverage is its instrumented lines after its declaration line, and a function record at the declaration decides whether it executed.
+    maps_to_invariant: coverage:INV-2
+  - id: SC-27
+    statement: A file absent from a report has no data, unless the run measured it or it is inside the report's include set, where it ran no line.
+    maps_to_invariant: coverage:INV-3
+  - id: SC-28
+    statement: Per-test reports are kept for verifier tests only unless only_verifiers is false, and a source that holds every test of one run is kept whole.
+    maps_to_invariant: coverage:INV-4
+  - id: SC-29
+    statement: VERIFIER_MISSES_ENFORCER fires only when every verifier has evidence and none executed an enforcer; a verifier without per-test evidence is VERIFIER_UNPROVEN, never a pass.
+    maps_to_invariant: coverage:INV-5
+  - id: SC-30
+    statement: COVERAGE_STALE fires when the coverage was ingested at another commit than the graph's, or from a dirty tree.
+    maps_to_invariant: coverage:INV-6
+  - id: SC-31
+    statement: COVERAGE_BELOW_FLOOR fires only for a declared floor, and an invariant is measured over its verifiers' own runs when each has per-test data, else over the suite, saying which.
+    maps_to_invariant: coverage:INV-7
+  - id: SC-32
+    statement: With no coverage ingested no coverage finding fires, and every finding states the evidence basis it rests on.
+    maps_to_invariant: coverage:INV-8
+  - id: SC-33
+    statement: A criterion is exercised only when it is demonstrated and a verifier's own per-test coverage executed an enforcer of every invariant behind it; per-file and suite coverage never promote.
+    maps_to_invariant: rtm:INV-8
+  - id: SC-34
+    statement: The coverage codes are off unless the workspace has a coverage block or sets their severity, and a declared floor turns on COVERAGE_BELOW_FLOOR.
+    maps_to_invariant: validation:INV-11
+  - id: SC-35
+    statement: require_level accepts a level per criterion tier, and a criterion must reach the level of its tier.
+    maps_to_invariant: validation:INV-12
+  - id: SC-36
+    statement: The test list gives each test the filter its runner takes to run it alone, and the slug its per-test coverage report is named by.
+    maps_to_invariant: results:INV-5
 out_of_scope:
   - Reading go test -json directly; reports are converted to JUnit first.
 implements_via:
+  - coverage
   - mutation
   - results
   - rtm

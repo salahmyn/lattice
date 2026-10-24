@@ -1,0 +1,17 @@
+{
+  "format": "pg_stat_user_functions",
+  "runs": [
+    {
+      "test": "supabase/tests/wallet_test.sql::a debit lowers the balance",
+      "functions": [
+        {"schema": "public", "function": "debit", "calls": 1},
+        {"schema": "public", "function": "debit_v1", "calls": 0}
+      ]
+    },
+    {
+      "file": "supabase/tests/wallet_test.sql",
+      "functions": [{"schema": "public", "function": "debit", "calls": 3}],
+      "before": [{"schema": "public", "function": "debit", "calls": 1}]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+id: fees
+version: 1
+status: production
+purpose: |
+  Computes the fee charged on a withdrawal.
+owners:
+  business: payments
+  engineering: wallet-eng
+implements_brd: brd.wallet
+invariants:
+  - id: INV-1
+    statement: A fee never exceeds five percent of the amount.

@@ -73,13 +73,13 @@ func TestRequireLevel(t *testing.T) {
 		{"demonstrated", Options{}, "brd.x:SC-1 brd.x:SC-2 brd.x:SC-3 brd.x:US-1"},
 	} {
 		cfg := config.Default()
-		cfg.Validate.RequireLevel = tc.level
+		cfg.Validate.RequireLevel = config.RequireLevel{Default: tc.level}
 		if got := belowLevel(Validate(levelGraph(), cfg, tc.opts)); got != tc.want {
 			t.Errorf("require_level %s: BRD_BELOW_LEVEL = %q, want %q", tc.level, got, tc.want)
 		}
 	}
 	cfg := config.Default()
-	cfg.Validate.RequireLevel = "shipped"
+	cfg.Validate.RequireLevel = config.RequireLevel{Default: "shipped"}
 	if !codes(Validate(levelGraph(), cfg, Options{}))[schema.CodeValidatePolicy] {
 		t.Error("an unknown require_level should raise VALIDATE_POLICY")
 	}

@@ -1,0 +1,27 @@
+id: coverage
+version: 1
+status: production
+purpose: |
+  Ingests test coverage beside test results and maps it onto symbols by line extent,
+  so Lattice can tell a verifier that runs its enforcer from one that only passes.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.verification
+invariants:
+  - id: INV-1
+    statement: A report is read as coverage by its content (LCOV, Go profile, istanbul, coverage.py, cobertura, clover, Postgres call counts); anything else is a test report.
+  - id: INV-2
+    statement: A symbol's coverage is its instrumented lines after its declaration line, and a function record at the declaration decides whether it executed.
+  - id: INV-3
+    statement: A file absent from a report has no data, unless the run measured it or it is inside the report's include set, where it ran no line.
+  - id: INV-4
+    statement: Per-test reports are kept for verifier tests only unless only_verifiers is false, and a source that holds every test of one run is kept whole.
+  - id: INV-5
+    statement: VERIFIER_MISSES_ENFORCER fires only when every verifier has evidence and none executed an enforcer; a verifier without per-test evidence is VERIFIER_UNPROVEN, never a pass.
+  - id: INV-6
+    statement: COVERAGE_STALE fires when the coverage was ingested at another commit than the graph's, or from a dirty tree.
+  - id: INV-7
+    statement: COVERAGE_BELOW_FLOOR fires only for a declared floor, and an invariant is measured over its verifiers' own runs when each has per-test data, else over the suite, saying which.
+  - id: INV-8
+    statement: With no coverage ingested no coverage finding fires, and every finding states the evidence basis it rests on.

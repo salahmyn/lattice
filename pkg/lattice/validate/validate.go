@@ -10,8 +10,10 @@ import (
 	"strings"
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/coverage"
 	"github.com/salahmyn/lattice/pkg/lattice/lease"
 	"github.com/salahmyn/lattice/pkg/lattice/ledger"
+	"github.com/salahmyn/lattice/pkg/lattice/rtm"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
@@ -100,6 +102,24 @@ type Options struct {
 	// run never reads clean while a meaning question is open. nil means
 	// no flag store.
 	FlagsOf func(unit string) []string
+
+	// Coverage is the ingested coverage set bound to the graph (rnd/0009).
+	// nil means none was ingested: no coverage finding fires and nothing is
+	// exercised.
+	Coverage *coverage.Index
+}
+
+// rtmOptions are the RTM options every rule shares, so validation and
+// `lattice rtm` compute the same statuses.
+func (c *corpus) rtmOptions() rtm.Options {
+	o := rtm.Options{
+		MutationThreshold: c.cfg.MutationTesting.Thresholds.Default,
+		ResultOf:          c.opts.ResultOf,
+	}
+	if c.opts.Coverage != nil {
+		o.Coverage = c.opts.Coverage
+	}
+	return o
 }
 
 // Validate runs all rules and returns the complete, sorted violation set,
@@ -133,10 +153,12 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 			v = append(v, checkEntryPoints(kg)...)
 			v = append(v, c.checkAMA()...)     // v0.7 — AMA structural checks
 			v = append(v, c.checkMeaning()...) // v0.8 δ — meaning fidelity
+			// rnd/0009 — coverage findings, only on ingested data.
+			v = append(v, coverage.Findings(kg, c.opts.Coverage, cfg.CoverageConfig())...)
 		}
 	}
 
-	v = applySeverity(v, cfg.Validate.Severity)
+	v = applySeverityWith(v, cfg.Validate.Severity, severityDefaults(cfg))
 	sortViolations(v)
 	return dedupe(v)
 }

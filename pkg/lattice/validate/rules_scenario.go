@@ -22,10 +22,7 @@ import (
 func (c *corpus) checkScenarios() []schema.Violation {
 	var v []schema.Violation
 
-	matrix := rtm.Build(c.kg, rtm.Options{
-		MutationThreshold: c.cfg.MutationTesting.Thresholds.Default,
-		ResultOf:          c.opts.ResultOf,
-	})
+	matrix := rtm.Build(c.kg, c.rtmOptions())
 
 	brdLoc := func(brdID string) *schema.Location {
 		for i := range c.kg.BRDs {
@@ -82,7 +79,7 @@ func (c *corpus) checkScenarios() []schema.Violation {
 		// exercises no declared entry point, so it asserts pure logic, not
 		// a user-reachable path. Only meaningful once a verifier resolves.
 		if !s.TouchesEntryPoint &&
-			(s.Status == rtm.StatusVerified || s.Status == rtm.StatusDemonstrated || s.Status == rtm.StatusFailing) {
+			(s.Status == rtm.StatusVerified || s.Status.IsDemonstrated() || s.Status == rtm.StatusFailing) {
 			v = append(v, schema.Violation{
 				Code: schema.CodeScenarioNoEntryPoint, Severity: schema.SeverityInfo,
 				Message: fmt.Sprintf("BRD %q scenario %s is verified at pure-logic altitude — no entry point in verified_by",

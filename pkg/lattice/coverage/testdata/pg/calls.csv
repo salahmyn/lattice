@@ -1,0 +1,4 @@
+file,test,schema,function,calls,calls_before
+,supabase/tests/wallet_test.sql::a debit lowers the balance,public,debit,1,
+,supabase/tests/wallet_test.sql::a debit lowers the balance,public,debit_v1,0,
+supabase/tests/wallet_test.sql,,public,debit,3,1

@@ -35,6 +35,26 @@ a `severity`, a `message`, a `location`, and — for actionable ones — a
   `CRITERION_INVARIANT_NARROWER` — meaning-fidelity signals; see
   [[verifying-meaning]]. Fix by strengthening, never by remapping.
 
+## Coverage codes (opt-in: a `coverage:` block in config.yaml)
+
+Each fires only on ingested coverage (`lattice results ingest`) and states
+its evidence basis: `per_test`, `per_file` or `suite`.
+
+- `VERIFIER_MISSES_ENFORCER` (warning) — no verifier's run executed any
+  enforcer: the test passes without the guard running (a stub, an early
+  return). Make the verifier call the real enforcer; do not untag the test.
+- `VERIFIER_UNPROVEN` (info) — a verifier has no per-test coverage, so
+  whether it runs the enforcer is unknown. Collect it: `lattice results tests
+  --verifiers` lists the runner filter and report slug per test.
+- `COVERAGE_STALE` (warning) — the coverage is of another commit, or a dirty
+  tree. Re-run the tests on a clean checkout and re-ingest.
+- `COVERAGE_BELOW_FLOOR` (warning) — a feature, invariant or criterion tier
+  is under its declared floor. Add tests for the unrun lines; lowering the
+  floor is the owner's call, not yours.
+
+A row reads `exercised` when it is demonstrated and a verifier's own
+per-test run executed an enforcer; only per-test coverage promotes to it.
+
 ## Governance codes (v0.8.1)
 
 - `CRITERION_FLAGGED` (info) — an open meaning flag on the unit. Not yours to

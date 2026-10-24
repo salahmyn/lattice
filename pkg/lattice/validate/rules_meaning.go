@@ -35,10 +35,7 @@ func (c *corpus) checkMeaning() []schema.Violation {
 		kindOf[s.FQN] = strings.ToLower(s.Kind)
 	}
 
-	matrix := rtm.Build(c.kg, rtm.Options{
-		MutationThreshold: c.cfg.MutationTesting.Thresholds.Default,
-		ResultOf:          c.opts.ResultOf,
-	})
+	matrix := rtm.Build(c.kg, c.rtmOptions())
 
 	brdByID := map[string]*schema.BRD{}
 	for i := range c.kg.BRDs {

@@ -2,7 +2,7 @@ id: ep.cli.results
 version: 1
 status: production
 kind: cli
-purpose: Ingest test results so the RTM can say DEMONSTRATED, not just declared
+purpose: Ingest test results and coverage so the RTM can say DEMONSTRATED and EXERCISED, not just declared
 owners:
   business: lattice-maintainers
   engineering: lattice-core
@@ -15,3 +15,4 @@ flow:
   - feature: cli
   - feature: steering
   - feature: results
+  - feature: coverage

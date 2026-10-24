@@ -56,7 +56,9 @@ func newValidateCommand(io *IO) *cobra.Command {
 			}
 			cfg, _ := config.Load(ws.LatticeDir)
 			if requireLevel != "" {
-				cfg.Validate.RequireLevel = requireLevel
+				// The flag replaces the default level; per-tier levels from
+				// config.yaml still apply.
+				cfg.Validate.RequireLevel.Default = requireLevel
 			}
 
 			// v0.8 — fold ingested results (γ) and active leases (§5) into
@@ -73,6 +75,7 @@ func newValidateCommand(io *IO) *cobra.Command {
 				Leases:        activeLeases,
 				LedgerEntries: entries,
 				FlagsOf:       flagReasons(flags.OpenByUnit(ws.LatticeDir)),
+				Coverage:      coverageIndex(ws, kg),
 			})
 			violations = append(violations, ambiguousResults(kg, set)...)
 			kg.Violations = violations
@@ -123,7 +126,7 @@ func newValidateCommand(io *IO) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&review, "review", false, "manifest-only mode: skip code-coupled checks")
 	cmd.Flags().StringVar(&failOn, "fail-on", "", "lowest severity that fails the run: error (default), warning or info")
-	cmd.Flags().StringVar(&requireLevel, "require-level", "", "truth level every BRD criterion and scenario must reach: verified or demonstrated")
+	cmd.Flags().StringVar(&requireLevel, "require-level", "", "truth level every BRD criterion and scenario must reach: verified, demonstrated or exercised (replaces the default; per-tier levels in config.yaml still apply)")
 	return cmd
 }
 

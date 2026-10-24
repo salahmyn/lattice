@@ -42,6 +42,9 @@ type Config struct {
 	Autonomy        Autonomy        `yaml:"autonomy,omitempty"`     // v0.8 — agent steering
 	Runtime         Runtime         `yaml:"runtime,omitempty"`      // v0.8 — V0 runs-clean gate
 	Validate        ValidatePolicy  `yaml:"validate,omitempty"`
+	// Coverage (rnd/0009) is opt-in: nil when config.yaml has no coverage:
+	// block, which keeps every coverage finding off.
+	Coverage *Coverage `yaml:"coverage,omitempty"`
 }
 
 // ValidatePolicy tunes `lattice validate` for a workspace: how severe each
@@ -61,10 +64,11 @@ type ValidatePolicy struct {
 	// adr on each of its entries.
 	AllowlistKinds map[string]AllowlistKind `yaml:"allowlist_kinds,omitempty"`
 	// RequireLevel is the truth level every BRD success criterion and user
-	// scenario must reach: verified or demonstrated. Below it, validate
-	// raises BRD_BELOW_LEVEL (error). Empty means no level is required.
-	// `lattice validate --require-level` overrides it.
-	RequireLevel string `yaml:"require_level,omitempty"`
+	// scenario must reach: verified, demonstrated or exercised, either one
+	// level or a default plus per-tier levels. Below it, validate raises
+	// BRD_BELOW_LEVEL (error). Empty means no level is required.
+	// `lattice validate --require-level` replaces the default level.
+	RequireLevel RequireLevel `yaml:"require_level,omitempty"`
 }
 
 // AllowlistKind is one class of accepted finding (generated, debt, ...).

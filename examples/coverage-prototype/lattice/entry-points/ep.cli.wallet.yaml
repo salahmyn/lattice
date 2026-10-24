@@ -1,0 +1,13 @@
+id: ep.cli.wallet
+version: 1
+status: production
+kind: cli
+purpose: Withdraw from or deposit to an account from the command line.
+trigger:
+  command: wallet
+handler:
+  symbol: src.cli.main
+  file: src/cli.js
+flow:
+  - feature: wallet
+  - feature: fees

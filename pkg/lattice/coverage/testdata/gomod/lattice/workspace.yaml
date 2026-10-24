@@ -1,0 +1,2 @@
+# Coverage fixture: a Go wallet with real go test -coverprofile output.
+mode: embedded

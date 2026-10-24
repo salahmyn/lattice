@@ -4,7 +4,7 @@ status: production
 purpose: |
   The requirements traceability matrix: BRD criterion to invariant to enforcer and
   verifier, on the truth ladder phantom, unenforced, unverified, failing, partial,
-  verified, demonstrated.
+  verified, demonstrated, exercised.
 owners:
   business: lattice-maintainers
   engineering: lattice-core
@@ -24,3 +24,5 @@ invariants:
     statement: A BRD summary reports the worst status of its criteria.
   - id: INV-7
     statement: An invariant verifiable only by structural check or mutation is not unverified for lack of a test.
+  - id: INV-8
+    statement: A criterion is exercised only when it is demonstrated and a verifier's own per-test coverage executed an enforcer of every invariant behind it; per-file and suite coverage never promote.

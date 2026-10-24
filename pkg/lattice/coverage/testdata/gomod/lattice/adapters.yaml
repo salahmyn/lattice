@@ -1,0 +1,9 @@
+adapters:
+  go:
+    enabled: true
+  python:
+    enabled: false
+  typescript:
+    enabled: false
+  php:
+    enabled: false

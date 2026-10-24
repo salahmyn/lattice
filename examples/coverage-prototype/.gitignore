@@ -1,0 +1,4 @@
+# Rebuilt by `lattice extract`, `lattice results ingest` and `lattice validate`.
+lattice/lattice.json
+lattice/.cache/
+lattice/.ledger/

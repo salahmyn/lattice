@@ -1,0 +1,13 @@
+id: wallet
+version: 1
+status: production
+purpose: |
+  Holds a balance and the deposits and withdrawals that move it.
+owners:
+  business: payments
+  engineering: wallet-eng
+invariants:
+  - id: INV-1
+    statement: A withdrawal never takes the balance below zero.
+  - id: INV-2
+    statement: A deposit amount is positive.

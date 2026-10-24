@@ -18,3 +18,4 @@ flow:
   - feature: graph
   - feature: rtm
   - feature: results
+  - feature: coverage
