@@ -89,20 +89,20 @@ func (s Status) Severity() int {
 // criterion has no maps_to_invariant; PhantomRef holds the bad ref
 // when the lookup misses.
 type Row struct {
-	BRDID         string  `json:"brd_id"`
-	BRDTitle      string  `json:"brd_title,omitempty"`
-	CriterionID   string  `json:"criterion_id"`
-	Statement     string  `json:"statement"`
-	MapsTo        string  `json:"maps_to,omitempty"`
-	FeatureID     string  `json:"feature_id,omitempty"`
-	InvariantID   string  `json:"invariant_id,omitempty"`
-	Invariant     string  `json:"invariant,omitempty"`
-	Enforcers     []string `json:"enforcers,omitempty"`  // symbol FQNs
-	Verifiers     []string `json:"verifiers,omitempty"`  // test FQNs
-	MutationScore float64 `json:"mutation_score,omitempty"`
-	HasMutation   bool    `json:"has_mutation,omitempty"`
-	Status        Status  `json:"status"`
-	StatusReason  string  `json:"status_reason,omitempty"`
+	BRDID         string   `json:"brd_id"`
+	BRDTitle      string   `json:"brd_title,omitempty"`
+	CriterionID   string   `json:"criterion_id"`
+	Statement     string   `json:"statement"`
+	MapsTo        string   `json:"maps_to,omitempty"`
+	FeatureID     string   `json:"feature_id,omitempty"`
+	InvariantID   string   `json:"invariant_id,omitempty"`
+	Invariant     string   `json:"invariant,omitempty"`
+	Enforcers     []string `json:"enforcers,omitempty"` // symbol FQNs
+	Verifiers     []string `json:"verifiers,omitempty"` // test FQNs
+	MutationScore float64  `json:"mutation_score,omitempty"`
+	HasMutation   bool     `json:"has_mutation,omitempty"`
+	Status        Status   `json:"status"`
+	StatusReason  string   `json:"status_reason,omitempty"`
 
 	// Tier is the pinned criticality of the criterion (v0.8.1):
 	// 1 default, 2 auth/permissions/data-loss, 3 money/regulatory.
@@ -114,6 +114,19 @@ type Row struct {
 	// the computed status — it is never hidden behind a green row.
 	Flagged bool     `json:"flagged,omitempty"`
 	Flags   []string `json:"flags,omitempty"`
+}
+
+// Ref names the invariant that decided the row's status: the only one
+// for a criterion mapped to one, the worst of several otherwise. It falls
+// back to MapsTo when no ref parsed.
+func (r Row) Ref() string {
+	switch {
+	case r.FeatureID != "" && r.InvariantID != "":
+		return r.FeatureID + ":" + r.InvariantID
+	case r.FeatureID != "":
+		return r.FeatureID
+	}
+	return r.MapsTo
 }
 
 // BRDSummary rolls up every Row for one BRD into a verification ratio.
@@ -269,7 +282,7 @@ func Build(kg schema.KnowledgeGraph, opts Options) Matrix {
 				BRDTitle:    b.Title,
 				CriterionID: sc.ID,
 				Statement:   sc.Statement,
-				MapsTo:      sc.MapsToInvariant,
+				MapsTo:      sc.MapsToInvariant.String(),
 				Tier:        sc.EffectiveTier(),
 			}
 			classify(&row, sc, featByID, enforcers, verifiers, mutation, mutationOK, opts)
@@ -483,13 +496,51 @@ func classify(
 		return
 	}
 
-	if strings.TrimSpace(sc.MapsToInvariant) == "" {
+	if len(sc.MapsToInvariant) == 0 {
 		row.Status = StatusUnmapped
 		row.StatusReason = "success criterion has no `maps_to_invariant`"
 		return
 	}
 
-	feature, inv, ok := splitInvariantRef(sc.MapsToInvariant)
+	// A criterion mapped to several invariants holds only when all of
+	// them do: each ref is walked on its own and the worst one decides.
+	// Enforcers and verifiers are the union, for display.
+	var statements []string
+	decided := false
+	for _, ref := range sc.MapsToInvariant {
+		var r Row
+		classifyRef(&r, ref, featByID, enforcers, verifiers, mutation, mutationOK, opts)
+		if r.Invariant != "" {
+			statements = append(statements, r.Invariant)
+		}
+		row.Enforcers = appendNew(row.Enforcers, r.Enforcers)
+		row.Verifiers = appendNew(row.Verifiers, r.Verifiers)
+		if decided && r.Status.Severity() >= row.Status.Severity() {
+			continue
+		}
+		decided = true
+		row.FeatureID, row.InvariantID = r.FeatureID, r.InvariantID
+		row.MutationScore, row.HasMutation = r.MutationScore, r.HasMutation
+		row.Status, row.StatusReason = r.Status, r.StatusReason
+		if len(sc.MapsToInvariant) > 1 && r.StatusReason != "" {
+			row.StatusReason = ref + ": " + r.StatusReason
+		}
+	}
+	row.Invariant = strings.Join(statements, " ")
+}
+
+// classifyRef walks one `<feature.id>:<INV-N>` ref: the invariant, its
+// enforcers and verifiers, mutation evidence and ingested results.
+func classifyRef(
+	row *Row,
+	ref string,
+	featByID map[string]*schema.Manifest,
+	enforcers, verifiers map[invKey][]string,
+	mutation map[invKey]float64,
+	mutationOK map[invKey]bool,
+	opts Options,
+) {
+	feature, inv, ok := splitInvariantRef(ref)
 	row.FeatureID = feature
 	row.InvariantID = inv
 	if !ok {
@@ -554,6 +605,23 @@ func classify(
 		return
 	}
 	row.Status = StatusVerified
+}
+
+// appendNew appends the entries of add not already in list.
+func appendNew(list, add []string) []string {
+	for _, s := range add {
+		dup := false
+		for _, have := range list {
+			if have == s {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			list = append(list, s)
+		}
+	}
+	return list
 }
 
 // applyOverlays folds the v0.8.1 cross-cutting state onto a computed

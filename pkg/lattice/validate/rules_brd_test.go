@@ -202,7 +202,7 @@ func TestBRDCriterionPhantomInvariant(t *testing.T) {
 			Title: "x", BusinessProblem: "p",
 			ImplementsVia: []string{"checkout"},
 			SuccessCriteria: []schema.BRDCriterion{
-				{ID: "SC-1", Statement: "x", MapsToInvariant: "checkout:INV-NOPE"},
+				{ID: "SC-1", Statement: "x", MapsToInvariant: schema.InvariantRefs{"checkout:INV-NOPE"}},
 			},
 			Approval: &schema.BRDApproval{ApprovedBy: "x", ApprovedVersion: 1},
 		}},
@@ -223,7 +223,7 @@ func TestBRDCriterionUnverifiedWarning(t *testing.T) {
 			Title: "x", BusinessProblem: "p",
 			ImplementsVia: []string{"checkout"},
 			SuccessCriteria: []schema.BRDCriterion{
-				{ID: "SC-1", Statement: "x", MapsToInvariant: "checkout:INV-1"},
+				{ID: "SC-1", Statement: "x", MapsToInvariant: schema.InvariantRefs{"checkout:INV-1"}},
 			},
 			Approval: &schema.BRDApproval{ApprovedBy: "x", ApprovedVersion: 1},
 		}},
@@ -245,7 +245,7 @@ func TestBRDCriterionVerifiedNoViolation(t *testing.T) {
 			Title: "x", BusinessProblem: "p",
 			ImplementsVia: []string{"checkout"},
 			SuccessCriteria: []schema.BRDCriterion{
-				{ID: "SC-1", Statement: "x", MapsToInvariant: "checkout:INV-1"},
+				{ID: "SC-1", Statement: "x", MapsToInvariant: schema.InvariantRefs{"checkout:INV-1"}},
 			},
 			Approval: &schema.BRDApproval{ApprovedBy: "x", ApprovedVersion: 1},
 		}},

@@ -19,7 +19,7 @@ func governanceFixture() schema.KnowledgeGraph {
 		BRDs: []schema.BRD{{
 			ID: "brd.teams.core", Status: schema.BRDApproved, Title: "Teams",
 			SuccessCriteria: []schema.BRDCriterion{
-				{ID: "SC-1", Statement: "only owners delete teams", Tier: 2, MapsToInvariant: "teams:INV-1"},
+				{ID: "SC-1", Statement: "only owners delete teams", Tier: 2, MapsToInvariant: schema.InvariantRefs{"teams:INV-1"}},
 			},
 		}},
 	}
