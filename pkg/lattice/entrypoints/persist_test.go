@@ -18,7 +18,7 @@ func TestMergePersistedWins(t *testing.T) {
 		ID:      "ep.http.post.refunds",
 		Kind:    schema.EntryPointKindHTTP,
 		Purpose: "detector-fallback purpose",
-		Flow: []schema.FlowStep{{Feature: "checkout.refund"}},
+		Flow:    []schema.FlowStep{{Feature: "checkout.refund"}},
 	}}
 	persisted := []schema.EntryPoint{{
 		ID:      "ep.http.post.refunds",
@@ -42,7 +42,7 @@ func TestSaveAndLoadEntryPoint(t *testing.T) {
 	dir := t.TempDir()
 	ep := schema.EntryPoint{
 		ID: "ep.cli.app.reminder", Kind: schema.EntryPointKindCLI,
-		Status:  schema.StatusProposal, Version: 1,
+		Status: schema.StatusProposal, Version: 1,
 		Trigger: schema.Trigger{Command: "app:reminder"},
 		Handler: schema.Handler{Symbol: `App\Console\ReminderCmd::handle`},
 		Purpose: "Sends a daily merchant reminder.",
@@ -73,5 +73,38 @@ func TestLoadEntryPointsMissingDir(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("expected empty slice, got %v", got)
+	}
+}
+
+// A file that does not parse, or has no id, is reported instead of dropped.
+func TestLoadEntryPointsReport(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"ok.yaml":   "id: http.get.ok\nkind: http_route\n",
+		"bad.yaml":  "id: http.get.admin\nkind: http_route\npurpose: The console at /admin: totals\n",
+		"noid.yaml": "kind: cron\n",
+		"notes.txt": "ignored",
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	eps, problems, err := LoadEntryPointsReport(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(eps) != 1 || eps[0].ID != "http.get.ok" {
+		t.Errorf("eps = %+v", eps)
+	}
+	got := map[string]LoadProblem{}
+	for _, p := range problems {
+		got[filepath.Base(p.Path)] = p
+	}
+	if p, ok := got["bad.yaml"]; !ok || p.Line != 3 {
+		t.Errorf("bad.yaml problem = %+v (want line 3)", p)
+	}
+	if _, ok := got["noid.yaml"]; !ok || len(problems) != 2 {
+		t.Errorf("problems = %+v", problems)
 	}
 }

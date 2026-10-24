@@ -76,6 +76,11 @@ All notable changes to Lattice are documented in this file.
   handler inside a React component) are symbols enclosed by it. Unannotated
   ones stay out of the graph. `// @module-feature x` on one line works like
   the JSDoc form (line comments never carry symbol tags).
+- **A malformed entry-point file is an error, not a silent gap**: a
+  persisted entry point whose YAML does not parse (for example an unquoted
+  `: ` inside a value) or that has no `id` was skipped without a word; the
+  only symptoms were downstream (`FEATURE_UNREACHED`, a missing entry point).
+  It now raises `ENTRYPOINT_PARSE_ERROR` (error) with the file and line.
 - **Result lookup is deterministic**: when several report cases match a
   verifier, the most specific match wins (the longest shared path), and equal
   matches resolve to the worst outcome. Before, two files with the same test

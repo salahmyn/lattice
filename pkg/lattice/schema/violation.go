@@ -128,6 +128,7 @@ const (
 	// β — entry-point journey coverage.
 	CodeFeatureUnreached    = "FEATURE_UNREACHED"     // production feature on no entry-point flow
 	CodeScenarioNoEntryPoint = "SCENARIO_NO_ENTRYPOINT" // scenario verified only at pure-logic altitude
+	CodeEntryPointParse      = "ENTRYPOINT_PARSE_ERROR" // a persisted entry-point file could not be used
 
 	// γ — demonstration (ingested test results).
 	CodeVerifierFailing = "VERIFIER_FAILING" // an ingested result for a @verifies test is red
