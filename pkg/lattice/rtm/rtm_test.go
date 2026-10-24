@@ -15,7 +15,7 @@ func fixture() schema.KnowledgeGraph {
 			ID: "brd.checkout", Title: "Checkout", Status: schema.BRDApproved, Version: 1,
 			SuccessCriteria: []schema.BRDCriterion{
 				{ID: "SC-1", Statement: "Refund never exceeds charge",
-					MapsToInvariant: "checkout:INV-1"},
+					MapsToInvariant: schema.InvariantRefs{"checkout:INV-1"}},
 			},
 		}},
 		Features: []schema.Manifest{{
@@ -71,7 +71,7 @@ func TestUnverified(t *testing.T) {
 
 func TestPhantomFeature(t *testing.T) {
 	kg := fixture()
-	kg.BRDs[0].SuccessCriteria[0].MapsToInvariant = "nonexistent:INV-1"
+	kg.BRDs[0].SuccessCriteria[0].MapsToInvariant = schema.InvariantRefs{"nonexistent:INV-1"}
 	row := Build(kg, Options{}).Rows[0]
 	if row.Status != StatusPhantom {
 		t.Errorf("status=%q, want phantom (missing feature)", row.Status)
@@ -80,7 +80,7 @@ func TestPhantomFeature(t *testing.T) {
 
 func TestPhantomInvariant(t *testing.T) {
 	kg := fixture()
-	kg.BRDs[0].SuccessCriteria[0].MapsToInvariant = "checkout:INV-NOPE"
+	kg.BRDs[0].SuccessCriteria[0].MapsToInvariant = schema.InvariantRefs{"checkout:INV-NOPE"}
 	row := Build(kg, Options{}).Rows[0]
 	if row.Status != StatusPhantom {
 		t.Errorf("status=%q, want phantom (missing invariant)", row.Status)
@@ -89,10 +89,60 @@ func TestPhantomInvariant(t *testing.T) {
 
 func TestUnmapped(t *testing.T) {
 	kg := fixture()
-	kg.BRDs[0].SuccessCriteria[0].MapsToInvariant = ""
+	kg.BRDs[0].SuccessCriteria[0].MapsToInvariant = nil
 	row := Build(kg, Options{}).Rows[0]
 	if row.Status != StatusUnmapped {
 		t.Errorf("status=%q, want unmapped", row.Status)
+	}
+}
+
+// A criterion mapped to several invariants holds only when all of them
+// do: the worst one decides its status and is named in the reason, and
+// the enforcers and verifiers are the union.
+func TestCriterionMappedToSeveralInvariants(t *testing.T) {
+	several := func() schema.KnowledgeGraph {
+		kg := fixture()
+		kg.Features[0].Invariants = append(kg.Features[0].Invariants,
+			schema.Invariant{ID: "INV-2", Statement: "a refund is issued once"})
+		kg.Symbols = append(kg.Symbols, schema.GraphSymbol{
+			FQN: "Checkout\\Ledger", Feature: "checkout", EnforcesInvariants: []string{"INV-2"}})
+		kg.Tests = append(kg.Tests, schema.GraphSymbol{
+			FQN: "Tests\\Checkout\\LedgerTest", IsTest: true, Verifies: []string{"checkout:INV-2"}})
+		kg.BRDs[0].SuccessCriteria[0].MapsToInvariant = schema.InvariantRefs{"checkout:INV-1", "checkout:INV-2"}
+		return kg
+	}
+
+	row := Build(several(), Options{}).Rows[0]
+	if row.Status != StatusVerified || len(row.Enforcers) != 2 || len(row.Verifiers) != 2 {
+		t.Errorf("both verified: status %q, enforcers %v, verifiers %v", row.Status, row.Enforcers, row.Verifiers)
+	}
+	if row.MapsTo != "checkout:INV-1, checkout:INV-2" || row.Invariant != "refund <= charge a refund is issued once" {
+		t.Errorf("maps_to %q, invariant %q", row.MapsTo, row.Invariant)
+	}
+
+	kg := several()
+	kg.Tests = kg.Tests[:1] // INV-2 loses its only test
+	row = Build(kg, Options{}).Rows[0]
+	if row.Status != StatusUnverified || row.Ref() != "checkout:INV-2" ||
+		row.StatusReason != "checkout:INV-2: no test verifies INV-2" {
+		t.Errorf("one unverified: status %q, ref %q, reason %q", row.Status, row.Ref(), row.StatusReason)
+	}
+
+	// Results: one red verifier fails the criterion, all green demonstrate it.
+	results := map[string]bool{"Tests\\Checkout\\RefundTest": true, "Tests\\Checkout\\LedgerTest": false}
+	resultOf := func(fqn string) (bool, bool) { p, ok := results[fqn]; return p, ok }
+	if row = Build(several(), Options{ResultOf: resultOf}).Rows[0]; row.Status != StatusFailing || row.Ref() != "checkout:INV-2" {
+		t.Errorf("one failing: status %q, ref %q", row.Status, row.Ref())
+	}
+	results["Tests\\Checkout\\LedgerTest"] = true
+	if row = Build(several(), Options{ResultOf: resultOf}).Rows[0]; row.Status != StatusDemonstrated {
+		t.Errorf("all passing: status %q, reason %q", row.Status, row.StatusReason)
+	}
+
+	kg = several()
+	kg.BRDs[0].SuccessCriteria[0].MapsToInvariant = append(kg.BRDs[0].SuccessCriteria[0].MapsToInvariant, "checkout:INV-9")
+	if row = Build(kg, Options{}).Rows[0]; row.Status != StatusPhantom || row.Ref() != "checkout:INV-9" {
+		t.Errorf("one phantom: status %q, ref %q", row.Status, row.Ref())
 	}
 }
 
@@ -122,7 +172,7 @@ func TestSummaryWorstStatusRollup(t *testing.T) {
 	// Add a second SC that's broken; summary worst-status should
 	// surface the broken one, not the verified one.
 	kg.BRDs[0].SuccessCriteria = append(kg.BRDs[0].SuccessCriteria, schema.BRDCriterion{
-		ID: "SC-2", Statement: "x", MapsToInvariant: "ghost:INV-1",
+		ID: "SC-2", Statement: "x", MapsToInvariant: schema.InvariantRefs{"ghost:INV-1"},
 	})
 	m := Build(kg, Options{})
 	if len(m.Summaries) != 1 || m.Summaries[0].WorstStatus != StatusPhantom {
@@ -136,9 +186,9 @@ func TestSummaryWorstStatusRollup(t *testing.T) {
 func TestComputeCoverage(t *testing.T) {
 	kg := fixture()
 	kg.BRDs[0].SuccessCriteria = append(kg.BRDs[0].SuccessCriteria,
-		schema.BRDCriterion{ID: "SC-2", Statement: "x"},     // unmapped
-		schema.BRDCriterion{ID: "SC-3", Statement: "x",      // phantom
-			MapsToInvariant: "nope:INV-1"},
+		schema.BRDCriterion{ID: "SC-2", Statement: "x"}, // unmapped
+		schema.BRDCriterion{ID: "SC-3", Statement: "x", // phantom
+			MapsToInvariant: schema.InvariantRefs{"nope:INV-1"}},
 	)
 	c := ComputeCoverage(Build(kg, Options{}))
 	if c.TotalCriteria != 3 || c.VerifiedCriteria != 1 {

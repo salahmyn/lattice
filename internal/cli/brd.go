@@ -116,7 +116,7 @@ func newBRDShowCommand(io *IO) *cobra.Command {
 				io.printf("Success criteria:\n")
 				for _, sc := range b.SuccessCriteria {
 					io.printf("  %s — %s", sc.ID, sc.Statement)
-					if sc.MapsToInvariant != "" {
+					if len(sc.MapsToInvariant) > 0 {
 						io.printf(" (maps to %s)", sc.MapsToInvariant)
 					}
 					io.printf("\n")

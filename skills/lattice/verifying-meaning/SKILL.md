@@ -24,7 +24,13 @@ full, imply the criterion?**
   link is wired and *wrong*.
 - **Fix by strengthening, not remapping.** Widen the invariant statement, or
   add invariants until their *union* covers the SC, then map the SC to the
-  set. Never weaken the SC to match a convenient invariant.
+  set: `maps_to_invariant: [checkout.refund:INV-1, checkout.refund:INV-2]`.
+  The criterion then holds only when every invariant in the set does. Never
+  weaken the SC to match a convenient invariant.
+- **Split a compound invariant.** An invariant that joins several separate
+  guards ("A, and B, and C") is enforced as soon as any one of them carries
+  `@enforces`, so a lost tag on one guard goes unnoticed. Give each guard its
+  own invariant and map the criterion to all of them.
 - **A success_criterion with no `maps_to_invariant`, or a `user_scenario`
   with no `verified_by`, is unmeant until you link it** — orientation, not an
   error, but the next thing to do. (Exception: a criterion that already IS an
