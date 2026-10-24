@@ -328,6 +328,7 @@ func scaffold(root string, mode workspace.Mode) (initResult, error) {
 		filepath.Join(latticeDir, "context.yaml"):         defaultContextYAML,
 		filepath.Join(latticeDir, "mutation-scores.json"): "{}\n",
 		filepath.Join(root, ".gitignore"):                 defaultGitignore,
+		filepath.Join(root, ".gitattributes"):             defaultGitattributes,
 	}
 	for full, content := range files {
 		if _, err := os.Stat(full); err == nil {
@@ -472,6 +473,12 @@ const defaultContextYAML = `# C4 Level-1 (System Context): the people and extern
 
 const defaultGitignore = `# Lattice runtime cache
 lattice/.cache/
+`
+
+// defaultGitattributes lets parallel branches merge the append-only ledger
+// without conflicts: git keeps both sides' lines.
+const defaultGitattributes = `# Lattice ledger: append-only, so a merge keeps both sides' lines
+lattice/.ledger/ledger.jsonl merge=union
 `
 
 // --- v0.7 AMA scaffold templates ---------------------------------

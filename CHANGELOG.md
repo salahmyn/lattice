@@ -48,6 +48,14 @@ All notable changes to Lattice are documented in this file.
   untracked paths its ignore rules exclude (every `.gitignore`, nested files
   and negations included) and skips them; tracked files are always scanned.
   Outside a git work tree nothing changes.
+- **Repeated check runs no longer churn the ledger**: `validate`,
+  `results ingest`, `runs-clean` and `backprop` append a check-run entry only
+  when its outcome differs from the latest entry for the same unit and actor.
+  Before, every run appended a line to the tracked ledger, so parallel
+  branches conflicted on it.
+- **`init` makes the ledger merge cleanly**: it writes
+  `lattice/.ledger/ledger.jsonl merge=union` to `.gitattributes` (when the
+  file does not exist yet), so git keeps both sides' lines on a merge.
 - **`validate` counts info findings as info**: the text output printed info
   findings as `warn` and the summary (and `--json` `warnings`) counted them
   as warnings, while `--json` gave their severity as `info`. Text, summary

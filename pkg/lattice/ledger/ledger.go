@@ -111,6 +111,29 @@ func Record(latticeDir string, e Entry) error {
 	return nil
 }
 
+// RecordChange appends e unless the latest entry for the same event and
+// unit already says the same thing (same actor and evidence). Repeated
+// check runs with an unchanged outcome then leave the ledger untouched, so
+// re-running a check on parallel branches adds no lines to merge; a run
+// whose outcome changed is still recorded. It reports whether it appended.
+func RecordChange(latticeDir string, e Entry) (bool, error) {
+	entries, err := Load(latticeDir)
+	if err != nil {
+		return false, err
+	}
+	for i := len(entries) - 1; i >= 0; i-- {
+		prev := entries[i]
+		if prev.Event != e.Event || prev.Unit != e.Unit {
+			continue
+		}
+		if prev.Actor == e.Actor && prev.Evidence == e.Evidence {
+			return false, nil
+		}
+		break
+	}
+	return true, Record(latticeDir, e)
+}
+
 // RecordAll appends many entries in one open. Used by rebuild.
 func RecordAll(latticeDir string, entries []Entry) error {
 	for _, e := range entries {
