@@ -4,6 +4,8 @@ package cli
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -40,6 +42,7 @@ type extractSummary struct {
 
 func newExtractCommand(io *IO) *cobra.Command {
 	var withCodeGraph, withMutation, review bool
+	var indexRoots []string
 	cmd := &cobra.Command{
 		Use:   "extract",
 		Short: "Extract the knowledge graph and write lattice.json",
@@ -52,7 +55,14 @@ func newExtractCommand(io *IO) *cobra.Command {
 			if review {
 				ws.Review = true
 			}
-			summary, err := runExtract(cmd.Context(), ws, withCodeGraph)
+			if len(indexRoots) > 0 && !withCodeGraph {
+				return io.fail("BAD_FLAG", "--index-root needs --with-code-graph", nil)
+			}
+			roots, err := resolveIndexRoots(ws, indexRoots)
+			if err != nil {
+				return io.fail("BAD_FLAG", err.Error(), nil)
+			}
+			summary, err := runExtract(cmd.Context(), ws, buildOptions{codeGraph: withCodeGraph, indexRoots: roots})
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
@@ -80,13 +90,77 @@ func newExtractCommand(io *IO) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&withCodeGraph, "with-code-graph", false, "run SCIP indexers before extraction")
+	cmd.Flags().StringArrayVar(&indexRoots, "index-root", nil,
+		"with --with-code-graph: run the indexers in this directory instead of the code root (repeatable; relative to the code root), e.g. a monorepo package with its own tsconfig.json")
 	cmd.Flags().BoolVar(&withMutation, "with-mutation", false, "enrich with mutation scores")
 	cmd.Flags().BoolVar(&review, "review", false, "manifest-only mode: do not parse source code")
 	return cmd
 }
 
-// buildGraph runs extraction and graph building without writing to disk.
+// indexRoot is one --index-root directory and the code root it lies in.
+type indexRoot struct {
+	codeRoot string
+	dir      string
+}
+
+// resolveIndexRoots resolves each --index-root against the available code
+// roots: a relative directory is joined to the first code root that holds
+// it, an absolute one must lie inside one. Anything else is an error, so a
+// typo never silently falls back to indexing from the root.
+func resolveIndexRoots(ws *workspace.Workspace, dirs []string) ([]indexRoot, error) {
+	var out []indexRoot
+	for _, d := range dirs {
+		found := false
+		for _, r := range ws.CodeRoots {
+			if !r.Available {
+				continue
+			}
+			abs := d
+			if !filepath.IsAbs(abs) {
+				abs = filepath.Join(r.Abs, d)
+			}
+			abs = filepath.Clean(abs)
+			rel, err := filepath.Rel(r.Abs, abs)
+			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				continue
+			}
+			if st, err := os.Stat(abs); err != nil || !st.IsDir() {
+				continue
+			}
+			out = append(out, indexRoot{codeRoot: r.Abs, dir: abs})
+			found = true
+			break
+		}
+		if !found {
+			return nil, fmt.Errorf("--index-root %s: not a directory inside a code root", d)
+		}
+	}
+	return out, nil
+}
+
+// buildOptions tunes buildGraphWith.
+type buildOptions struct {
+	// codeGraph runs the SCIP indexers into the cache first.
+	codeGraph bool
+	// indexRoots, when set, are where the indexers run instead of each
+	// code root (extract --index-root).
+	indexRoots []indexRoot
+	// readOnly skips everything that writes: no LLM labeling of entry
+	// points (whose labels are persisted to lattice/entry-points/) and no
+	// indexer run.
+	readOnly bool
+}
+
+// buildGraph runs extraction and graph building without writing the graph
+// to disk. With an LLM configured it labels and persists entry points that
+// have no purpose yet; use buildGraphWith(readOnly) when nothing may change.
 func buildGraph(ctx context.Context, ws *workspace.Workspace, withCodeGraph bool) (schema.KnowledgeGraph, error) {
+	return buildGraphWith(ctx, ws, buildOptions{codeGraph: withCodeGraph})
+}
+
+// buildGraphWith is buildGraph with explicit options.
+func buildGraphWith(ctx context.Context, ws *workspace.Workspace, opts buildOptions) (schema.KnowledgeGraph, error) {
+	withCodeGraph := opts.codeGraph && !opts.readOnly
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -98,9 +172,24 @@ func buildGraph(ctx context.Context, ws *workspace.Workspace, withCodeGraph bool
 
 	if withCodeGraph && !ws.Review {
 		cfg, _ := config.Load(ws.LatticeDir)
-		for _, root := range ws.CodeRoots {
-			if root.Available {
-				scip.Orchestrate(ctx, root.Abs, ws.SCIPDir(), reg, cfg.Subprocess.DefaultTimeoutDuration())
+		timeout := cfg.Subprocess.DefaultTimeoutDuration()
+		if len(opts.indexRoots) > 0 {
+			byRoot := map[string][]string{}
+			var order []string
+			for _, ir := range opts.indexRoots {
+				if _, ok := byRoot[ir.codeRoot]; !ok {
+					order = append(order, ir.codeRoot)
+				}
+				byRoot[ir.codeRoot] = append(byRoot[ir.codeRoot], ir.dir)
+			}
+			for _, root := range order {
+				scip.OrchestrateRoots(ctx, root, byRoot[root], ws.SCIPDir(), reg, timeout)
+			}
+		} else {
+			for _, root := range ws.CodeRoots {
+				if root.Available {
+					scip.Orchestrate(ctx, root.Abs, ws.SCIPDir(), reg, timeout)
+				}
 			}
 		}
 	}
@@ -160,7 +249,7 @@ func buildGraph(ctx context.Context, ws *workspace.Workspace, withCodeGraph bool
 			// feature and entry-point prose.
 			cfg, _ := config.Load(ws.LatticeDir)
 			provider := agentic.FromConfig(cfg.Agentic.LLM)
-			if agentic.Enabled(provider) {
+			if agentic.Enabled(provider) && !opts.readOnly {
 				skip := map[string]bool{}
 				for _, p := range persisted {
 					if p.Purpose != "" {
@@ -189,8 +278,8 @@ func buildGraph(ctx context.Context, ws *workspace.Workspace, withCodeGraph bool
 }
 
 // runExtract performs extraction + graph build and writes the knowledge graph.
-func runExtract(ctx context.Context, ws *workspace.Workspace, withCodeGraph bool) (extractSummary, error) {
-	kg, err := buildGraph(ctx, ws, withCodeGraph)
+func runExtract(ctx context.Context, ws *workspace.Workspace, opts buildOptions) (extractSummary, error) {
+	kg, err := buildGraphWith(ctx, ws, opts)
 	if err != nil {
 		return extractSummary{}, err
 	}

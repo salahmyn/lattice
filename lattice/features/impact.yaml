@@ -1,0 +1,20 @@
+id: impact
+version: 1
+status: production
+purpose: |
+  A read-only change-impact report for a pull request: the symbols a change touches,
+  the grounded criteria above their enforcers, enforcement it removes, and the
+  manifest fields it changes.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.intent
+invariants:
+  - id: INV-1
+    statement: lattice impact writes nothing; the ledger, the flags, every tracked file and git's index are unchanged after a run.
+  - id: INV-2
+    statement: A symbol counts as changed only when a changed hunk overlaps its own lines and its text differs; a symbol that only shifted or moved is not changed.
+  - id: INV-3
+    statement: An enforcer that stops enforcing its invariant is reported, including a dropped @enforces tag on a symbol whose own lines are unchanged.
+  - id: INV-4
+    statement: The manifest diff names every changed field the schema has, matching list items by their id.

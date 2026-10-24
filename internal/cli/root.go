@@ -66,6 +66,7 @@ func NewRootCommand() *cobra.Command {
 		newFlagCommand(io),
 		newCRCommand(io),
 		newBackpropCommand(io),
+		newImpactCommand(io),
 		newSweepCommand(io),
 		newDemonstrateCommand(io),
 	)

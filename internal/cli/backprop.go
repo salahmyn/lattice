@@ -39,7 +39,13 @@ grounded criteria sit above. Outcomes:
                   with --flag each is flagged until a human clears it
 
 The scan never edits a requirement. Narrowing a criterion is never an
-amendment — escalate it to a CR (lattice cr propose).`,
+amendment — escalate it to a CR (lattice cr propose).
+
+Every run records a check run in the ledger (lattice/.ledger/ledger.jsonl),
+as validate does: one entry for "no doc impact", or one per affected
+criterion. A run whose actor and outcome repeat the latest entry for the
+same unit adds nothing. For a report that writes nothing, such as a
+pull-request comment, use lattice impact --since <ref>.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			kg, ws, err := graphFor(io, cmd, false)
 			if err != nil {

@@ -5,9 +5,13 @@ package extract
 import (
 	"bytes"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
+
+	"github.com/salahmyn/lattice/pkg/lattice/adapters"
+	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
 // scanFilter decides which paths under one code root are parsed: git-ignored
@@ -47,6 +51,27 @@ func (f scanFilter) skipDir(rel string) bool {
 // @enforces extraction:INV-2
 func (f scanFilter) skipFile(rel string) bool {
 	return f.ignored[rel] || f.excluded(rel)
+}
+
+// Scans reports whether extraction would parse the file at rel, a slash
+// path relative to root: an adapter handles it, no directory on the way is
+// one the walk prunes (node_modules, vendor, the lattice/ directory, …) and
+// no exclude glob matches. Git-ignore rules are not consulted, so callers
+// ask about tracked files, which git never ignores.
+func Scans(w *workspace.Workspace, reg *adapters.Registry, root workspace.CodeRoot, rel string) bool {
+	if reg.For(rel) == nil {
+		return false
+	}
+	f := scanFilter{exclude: w.Exclude}
+	parts := strings.Split(rel, "/")
+	dir := root.Abs
+	for i, name := range parts[:len(parts)-1] {
+		dir = filepath.Join(dir, name)
+		if skipDirs[name] || dir == w.LatticeDir || f.skipDir(strings.Join(parts[:i+1], "/")) {
+			return false
+		}
+	}
+	return !f.skipFile(rel)
 }
 
 // @enforces extraction:INV-2

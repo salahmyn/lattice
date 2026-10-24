@@ -20,6 +20,44 @@ All notable changes to Lattice are documented in this file.
   `implements_brd`, or one naming another BRD, or a feature's
   `implements_brd` naming a BRD that does not list it.
   `lattice brd link <brd> <feature>` writes both halves.
+- **`lattice impact`, a read-only change-impact report**:
+  `lattice impact --since <ref> [--format text|markdown|json]
+  [--max-symbols N] [--include-drafts=true]` compares
+  merge-base(`<ref>`, HEAD) with the working tree and names the base commit
+  it used. It replaces the glue of `backprop --json`, per-symbol
+  `blast-radius` and hand-written manifest diffs in a PR comment job.
+  - **Changed code by line range**: the symbols whose own lines a hunk
+    touches, on the base or the working-tree side. A symbol that only
+    shifted, or moved with its text unchanged, is not changed.
+  - **Affected criteria with detail**: each criterion whose invariant has a
+    changed enforcer, with its invariants and the enforcers that changed.
+    Approved BRDs come first; draft and proposed ones have their own
+    section (`--include-drafts=false` hides it). Direct-wired criteria
+    count.
+  - **Removed enforcement**: an enforcer deleted, its `@enforces` tag
+    dropped (the tag sits above the symbol, so a line-range test alone
+    misses it), or its file deleted or moved out of the scanned tree. The
+    base side is parsed from `git cat-file` with the same adapters; nothing
+    is checked out.
+  - **Manifest diff, field by field**, for features, BRDs and entry points:
+    added, removed, renamed (paired by id) and changed, walked generically
+    over each schema struct so no field is left out.
+  - **Code roll-up** (optional): the SCIP blast radius of each changed
+    enforcer, rolled up to modules, test files and entry points, capped by
+    `--max-symbols` (default 50). Without a code graph it says so and the
+    report still succeeds.
+  - It writes nothing: no ledger entry, no flag, no tracked file, and git
+    runs on a private copy of the index so `.git/index` is left alone too.
+    The markdown form starts with `<!-- lattice-impact -->` so a job can
+    update its own sticky comment.
+- **`extract --with-code-graph --index-root <dir>`**: runs the SCIP
+  indexers in a directory instead of the code root (repeatable), for a
+  monorepo with a `tsconfig.json` per package and none at the root. The
+  runs are merged into one index per language with paths relative to the
+  code root. Without the flag nothing changes.
+- **`backprop` documents its ledger writes**: every run records a check run,
+  as `validate` does. The help and the user guide now say so and point to
+  `lattice impact` for a read-only report.
 
 ### Behaviour changes to plan for
 

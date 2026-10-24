@@ -1,0 +1,16 @@
+id: ep.cli.impact
+version: 1
+status: production
+kind: cli
+purpose: Read-only change-impact report for a pull request
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: lattice impact
+handler:
+  symbol: internal.cli.newImpactCommand
+  file: internal/cli/impact.go
+flow:
+  - feature: impact
+  - feature: cli
