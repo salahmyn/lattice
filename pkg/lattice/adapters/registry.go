@@ -39,6 +39,11 @@ func (r *Registry) For(path string) LanguageAdapter {
 	return nil
 }
 
+// Adapters returns the registered adapters in registration order.
+func (r *Registry) Adapters() []LanguageAdapter {
+	return append([]LanguageAdapter(nil), r.adapters...)
+}
+
 // ByName returns the adapter with the given language name, or nil.
 func (r *Registry) ByName(name string) LanguageAdapter {
 	for _, a := range r.adapters {

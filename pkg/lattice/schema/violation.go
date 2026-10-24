@@ -139,7 +139,11 @@ const (
 
 	// Council approval (v0.12).
 	CodeBRDCouncilUnreviewed = "BRD_COUNCIL_UNREVIEWED" // a council approval its human has not acknowledged (info)
-	CodeBRDCouncilInvalid    = "BRD_COUNCIL_INVALID"    // a council approval no pinned mandate, floor or vote supports (error)
+	CodeBRDCouncilInvalid    = "BRD_COUNCIL_INVALID"
+
+	// CodeSQLTagDropped: a later migration redefines a function, policy or
+	// trigger without tags an earlier definition carried (warning).
+	CodeSQLTagDropped = "SQL_TAG_DROPPED"    // a council approval no pinned mandate, floor or vote supports (error)
 
 	// δ — meaning fidelity (does the wired link mean what was asked?).
 	CodeCriterionInvariantNarrower = "CRITERION_INVARIANT_NARROWER" // invariant does not entail its criterion (assisted)

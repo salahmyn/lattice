@@ -75,12 +75,14 @@ func newResultsCommand(io *IO) *cobra.Command {
 
 func newResultsIngestCommand(io *IO) *cobra.Command {
 	return &cobra.Command{
-		Use:   "ingest <junit.xml>...",
-		Short: "Parse junit/pytest/phpunit/Playwright XML reports into lattice/.cache/results",
-		Long: "Parse one or more JUnit-family XML reports into lattice/.cache/results,\n" +
-			"replacing the previous set. Pass every report of the run together (unit\n" +
-			"and e2e): a verifier with no result cannot count as demonstrated, and a\n" +
-			"failure in any report wins over a pass.",
+		Use:   "ingest <report>...",
+		Short: "Parse JUnit XML or TAP (pgTAP) reports into lattice/.cache/results",
+		Long: "Parse one or more reports into lattice/.cache/results, replacing the\n" +
+			"previous set: JUnit-family XML (junit, pytest, phpunit, Playwright) or a\n" +
+			"TAP stream (a .tap file, e.g. pgTAP output from pg_prove --verbose).\n" +
+			"Pass every report of the run together (unit, e2e, database): a verifier\n" +
+			"with no result cannot count as demonstrated, and a failure in any report\n" +
+			"wins over a pass.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ws, err := openWorkspace(io)

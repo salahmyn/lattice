@@ -174,6 +174,7 @@ func jsTestKey(classname, name string) string {
 	ext := path.Ext(classname)
 	switch ext {
 	case ".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs":
+	case ".sql", ".pg": // pgTAP: the postgres adapter keys assertions the same way
 	default:
 		return ""
 	}
@@ -350,18 +351,23 @@ func worse(a, b Outcome) bool {
 	return rank[a] < rank[b]
 }
 
-// Ingest parses one or more XML reports into a single Set and writes it to
-// the lattice cache, replacing any earlier set. commit stamps which commit
-// the run covers. Pass every report of the run together (unit, e2e, ...):
-// a verifier with no result in the set cannot count as demonstrated.
-func Ingest(latticeDir, commit string, xmlPaths ...string) (Set, error) {
+// Ingest parses one or more reports (JUnit XML or a TAP stream) into a single
+// Set and writes it to the lattice cache, replacing any earlier set. commit
+// stamps which commit the run covers. Pass every report of the run together
+// (unit, e2e, database, ...): a verifier with no result in the set cannot
+// count as demonstrated.
+func Ingest(latticeDir, commit string, paths ...string) (Set, error) {
 	set := Set{Commit: commit, Results: map[string]Outcome{}, Cases: map[string]string{}}
-	for _, p := range xmlPaths {
+	for _, p := range paths {
 		data, err := os.ReadFile(p)
 		if err != nil {
 			return Set{}, err
 		}
-		one, err := ParseJUnit(data)
+		parse := ParseJUnit
+		if isTAP(p, data) {
+			parse = ParseTAP
+		}
+		one, err := parse(data)
 		if err != nil {
 			return Set{}, fmt.Errorf("%s: %w", p, err)
 		}
@@ -405,4 +411,79 @@ func Load(latticeDir string) Set {
 		return Set{Results: map[string]Outcome{}}
 	}
 	return set
+}
+
+// isTAP reports whether a report is a TAP stream rather than JUnit XML: a
+// .tap file, or content that does not start with '<'.
+func isTAP(p string, data []byte) bool {
+	if strings.EqualFold(path.Ext(p), ".tap") {
+		return true
+	}
+	trimmed := strings.TrimSpace(string(data))
+	return trimmed != "" && trimmed[0] != '<'
+}
+
+var (
+	// pg_prove --verbose prints "<file> .." before each file's TAP.
+	reTAPFile = regexp.MustCompile(`^(\S+\.(?:sql|pg))\s+\.\.`)
+	// TAP 14 names a nested stream "# Subtest: <name>".
+	reTAPSubtest   = regexp.MustCompile(`^\s*#\s*Subtest:\s*(.+?)\s*$`)
+	reTAPResult    = regexp.MustCompile(`^\s*(not\s+)?ok\b\s*(?:\d+)?\s*(?:-\s*)?(.*)$`)
+	reTAPDirective = regexp.MustCompile(`(?i)\s#\s*(SKIP|TODO)\b.*$`)
+)
+
+// ParseTAP reads a TAP stream, such as pgTAP output from pg_prove --verbose or
+// psql. Each "ok N - description" line is a case; the file comes from
+// pg_prove's "<file> .." header or a TAP 14 "# Subtest: <file>". A SKIP or
+// TODO directive counts as a skip, so a known-broken test never reads as a
+// pass. Lines with no description cannot be joined and are left out.
+func ParseTAP(data []byte) (Set, error) {
+	set := Set{Results: map[string]Outcome{}, Cases: map[string]string{}}
+	file, seen := "", 0
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimRight(line, "\r")
+		if m := reTAPFile.FindStringSubmatch(line); m != nil {
+			file = m[1]
+			continue
+		}
+		if m := reTAPSubtest.FindStringSubmatch(line); m != nil {
+			if ext := path.Ext(m[1]); ext == ".sql" || ext == ".pg" {
+				file = m[1]
+			}
+			continue
+		}
+		m := reTAPResult.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		o := Pass
+		if m[1] != "" {
+			o = Fail
+		}
+		desc := m[2]
+		if d := reTAPDirective.FindString(desc); d != "" {
+			o = Skip
+			desc = strings.TrimSuffix(desc, d)
+		}
+		desc = strings.TrimSpace(strings.ReplaceAll(desc, `\#`, "#"))
+		if desc == "" || path.Ext(desc) == ".sql" { // a file's summary line
+			continue
+		}
+		seen++
+		id := file + "::" + desc
+		keys := keysFor(file, desc)
+		if file == "" {
+			keys = append(keys, normalize("test."+slugify(desc)))
+		}
+		for _, k := range keys {
+			record(set.Results, k, o)
+			if _, ok := set.Cases[k]; !ok {
+				set.Cases[k] = id
+			}
+		}
+	}
+	if seen == 0 {
+		return set, fmt.Errorf("parse tap: no test lines with a description")
+	}
+	return set, nil
 }

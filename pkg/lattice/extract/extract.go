@@ -299,16 +299,46 @@ func parseSources(ctx context.Context, w *workspace.Workspace, reg *adapters.Reg
 			viol = append(viol, *r.viol)
 			continue
 		}
-		for _, d := range r.mod.Diagnostics {
+		modules = append(modules, r.mod)
+	}
+	modules = resolveAcrossFiles(reg, modules)
+	for _, mod := range modules {
+		for _, d := range mod.Diagnostics {
 			viol = append(viol, schema.Violation{
 				Code: diagnosticCode(d.Code), Severity: diagnosticSeverity(d.Code),
 				Message:  d.Message,
-				Location: &schema.Location{File: r.mod.File, Line: d.Line},
+				Location: &schema.Location{File: mod.File, Line: d.Line},
 			})
 		}
-		modules = append(modules, r.mod)
 	}
 	return modules, viol
+}
+
+// resolveAcrossFiles hands each adapter that resolves definitions across
+// files (adapters.Resolver, e.g. migrations applied in order) its modules.
+// Module order is kept.
+func resolveAcrossFiles(reg *adapters.Registry, modules []ir.Module) []ir.Module {
+	for _, ad := range reg.Adapters() {
+		res, ok := ad.(adapters.Resolver)
+		if !ok {
+			continue
+		}
+		var idx []int
+		var mine []ir.Module
+		for i, m := range modules {
+			if m.Language == ad.Name() {
+				idx = append(idx, i)
+				mine = append(mine, m)
+			}
+		}
+		if len(mine) == 0 {
+			continue
+		}
+		for j, m := range res.Resolve(mine) {
+			modules[idx[j]] = m
+		}
+	}
+	return modules
 }
 
 func availableRootCount(w *workspace.Workspace) int {
@@ -352,7 +382,7 @@ func isYAML(path string) bool {
 // warning: the code still builds a graph, but a link the author meant is
 // missing from it.
 func diagnosticSeverity(code string) schema.Severity {
-	if code == schema.CodeAnnotationOrphaned {
+	if code == schema.CodeAnnotationOrphaned || code == schema.CodeSQLTagDropped {
 		return schema.SeverityWarning
 	}
 	return schema.SeverityError
@@ -360,7 +390,7 @@ func diagnosticSeverity(code string) schema.Severity {
 
 func diagnosticCode(code string) string {
 	switch code {
-	case schema.CodeAnnotationArgNotLiteral, schema.CodeAnnotationOrphaned:
+	case schema.CodeAnnotationArgNotLiteral, schema.CodeAnnotationOrphaned, schema.CodeSQLTagDropped:
 		return code
 	default:
 		return schema.CodeAdapterParseError

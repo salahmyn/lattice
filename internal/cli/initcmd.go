@@ -426,6 +426,12 @@ adapters:
     enabled: true
   php:
     enabled: true
+  # PostgreSQL migrations and pgTAP tests are opt-in (a repo's .sql files are
+  # often seed data or dumps). Globs are relative to the code root.
+  # postgres:
+  #   enabled: true
+  #   migrations: ["supabase/migrations/*.sql"]
+  #   tests: ["supabase/tests/**/*.sql"]
 `
 
 const defaultMCPYAML = `# MCP server configuration (consumed by @salahmyn/mcp-server).

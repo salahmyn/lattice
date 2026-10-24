@@ -79,3 +79,21 @@ func TestAttributionCountsTopLevelCode(t *testing.T) {
 		t.Errorf("attribution = %+v, want 1/2 with src/i18n.ts unattributed", at)
 	}
 }
+
+// A migration is change history: its symbols are attributed by their own
+// tags, and the file is not a module to attribute.
+func TestAttributionSkipsChangeHistory(t *testing.T) {
+	kg := schema.KnowledgeGraph{
+		Modules: []schema.GraphModule{
+			{File: "db/migrations/0001.sql", ChangeHistory: true, SymbolFQNs: []string{"sql.public.refund"}},
+			{File: "src/cart.ts", Feature: "cart", SymbolFQNs: []string{"src.cart.total"}},
+		},
+		Symbols: []schema.GraphSymbol{
+			{FQN: "sql.public.refund", Kind: "function"},
+			{FQN: "src.cart.total", Kind: "function", Feature: "cart"},
+		},
+	}
+	if at := ComputeAttribution(kg); at.TotalModules != 1 || at.AttributedModules != 1 {
+		t.Errorf("attribution = %+v, want 1/1 (the migration left out)", at)
+	}
+}

@@ -44,6 +44,15 @@ type AnnotationSuggestion struct {
 	Confidence float64       `json:"confidence,omitempty"`
 }
 
+// Resolver is implemented by an adapter whose files define symbols across
+// each other, e.g. database migrations where a later file redefines or
+// drops what an earlier one created. Extraction calls Resolve once with all
+// the adapter's modules (same order and length in, same out) after every
+// file is parsed and before diagnostics are reported.
+type Resolver interface {
+	Resolve(modules []ir.Module) []ir.Module
+}
+
 // LanguageAdapter parses one language's source into Lattice IR and supplies
 // the per-language command lines for SCIP indexing and mutation testing.
 type LanguageAdapter interface {

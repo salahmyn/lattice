@@ -77,6 +77,7 @@ type GraphModule struct {
 	Language           string   `json:"language"`
 	LineCount          int      `json:"line_count,omitempty"` // v0.7 — for FILE_LINE_CAP
 	HasCode            bool     `json:"has_code,omitempty"`   // top-level runtime code outside any symbol
+	ChangeHistory      bool     `json:"change_history,omitempty"` // a migration: attributed per symbol, not as a module
 	Feature            string   `json:"feature,omitempty"`
 	EnforcesInvariants []string `json:"enforces_invariants,omitempty"`
 	DependsOnFeatures  []string `json:"depends_on_features,omitempty"`
@@ -167,7 +168,7 @@ func (kg KnowledgeGraph) Attribution() []ModuleAttribution {
 	out := make([]ModuleAttribution, 0, len(kg.Modules))
 	for _, m := range kg.Modules {
 		a := ModuleAttribution{File: m.File, Attributed: m.Feature != ""}
-		if nonProductFile(m.File) {
+		if nonProductFile(m.File) || m.ChangeHistory {
 			out = append(out, a) // ProductionSymbols stays 0
 			continue
 		}
