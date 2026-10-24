@@ -4,6 +4,33 @@ All notable changes to Lattice are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`adapters.yaml` is strict**: an adapter block outside `adapters:` (for
+  example `postgres:` at the top level) or a misspelt adapter name was
+  ignored without a word, so a language silently went unscanned. Both are
+  now errors that name the fix.
+- **Structural rules skip migrations**: `FILE_LINE_CAP`, `METHOD_LINE_CAP`
+  and `FEATURE_NOT_COLOCATED` no longer count database migrations. An
+  applied migration cannot be split, and a feature that owns rules in the
+  database next to its code is not sprawling.
+- **`validate` text output separates the line**: a finding's line now reads
+  `(line 463)` after the message instead of being glued onto it.
+- **Node's built-in test runner reports can be ingested**:
+  `node --test --test-reporter=junit` writes its `<testcase>` elements
+  directly under `<testsuites>`, so `lattice results ingest` failed with
+  `expected element type <testsuite>`. These cases are now read, and since
+  the runner names no file (classname `test`), a case titled
+  `every tool description follows the template` joins the TypeScript
+  adapter's `….test.every-tool-description-follows-the-template` by its tail.
+  Only titles with a space get this key. A title shared by two files stays
+  ambiguous and is not demonstrated.
+- **`results ingest` counts test cases, not lookup keys**: each case is
+  indexed under several keys, so the summary, the `--json` `total` and the
+  ledger entry overstated a run (339 `go test` cases read "674 pass").
+  `results ingest` and `results show` now count each case once (a case
+  that failed in any report counts as a failure), via `results.Set.Tally`.
+
 ### Added
 
 - **Go adapter** (on by default, `go` in `adapters.yaml`): Lattice now reads

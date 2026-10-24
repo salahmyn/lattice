@@ -342,3 +342,81 @@ func TestIngestTAPAndJUnit(t *testing.T) {
 		t.Errorf("junit case = %q, %v", o, ok)
 	}
 }
+
+// Tally counts report cases, not the several keys each case is indexed
+// under: two Go tests (a same-named one in another package), a subtest, a
+// TAP assertion, and a case that passed in one report and failed in another
+// are five cases, and the case that failed anywhere counts as a failure.
+func TestTallyCountsCases(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	unit := write("unit.xml", `<testsuites>
+<testsuite name="a"><testcase classname="example.com/m/pkg/a" name="TestLookup"/>
+<testcase classname="example.com/m/pkg/a" name="TestLookup/a_failure_wins"><skipped/></testcase>
+<testcase classname="tests.shared" name="test_flaky"/></testsuite>
+<testsuite name="b"><testcase classname="example.com/m/pkg/b" name="TestLookup"/></testsuite>
+</testsuites>`)
+	rerun := write("rerun.xml", `<testsuite name="s"><testcase classname="tests.shared" name="test_flaky"><failure/></testcase></testsuite>`)
+	tap := write("db.tap", "supabase/tests/a_test.sql ..\nok 1 - db rule holds\n")
+	set, err := Ingest(dir, "abc", unit, rerun, tap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases, pass, fail, skip := set.Tally()
+	if cases != 5 || pass != 3 || fail != 1 || skip != 1 {
+		t.Errorf("Tally = %d cases (%d pass, %d fail, %d skip), want 5 (3, 1, 1); %d keys",
+			cases, pass, fail, skip, len(set.Results))
+	}
+	// A set saved before case ids were recorded can only count its keys.
+	old := Set{Results: map[string]Outcome{"a": Pass, "b": Fail}}
+	if cases, pass, fail, _ := old.Tally(); cases != 2 || pass != 1 || fail != 1 {
+		t.Errorf("legacy Tally = %d, %d, %d", cases, pass, fail)
+	}
+}
+
+// nodeJUnit is what Node's built-in runner writes with
+// `node --test --test-reporter=junit` (Node 22): top-level test() calls are
+// <testcase> elements directly under <testsuites>, classname "test", and no
+// file path anywhere.
+const nodeJUnit = `<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="every tool description follows the template" time="0.009942" classname="test"/>
+	<testcase name="tool names are unique and namespaced" time="0.000261" classname="test">
+		<failure type="testCodeFailure" message="duplicate tool name"/>
+	</testcase>
+	<testcase name="tools invoke the CLI against the sample project" time="0.000644" classname="test">
+		<skipped type="skipped" message="true"/>
+	</testcase>
+	<!-- tests 3 -->
+</testsuites>`
+
+// A Node runner report parses, and its cases join the TypeScript adapter's
+// test FQNs (<module>.test.<slug of the title>) although it names no file.
+func TestParseNodeRunnerJUnit(t *testing.T) {
+	set, err := ParseJUnit([]byte(nodeJUnit))
+	if err != nil {
+		t.Fatalf("ParseJUnit: %v", err)
+	}
+	for ref, want := range map[string]Outcome{
+		"lattice-mcp.test.descriptions.test.test.every-tool-description-follows-the-template":    Pass,
+		"lattice-mcp.test.descriptions.test.test.tool-names-are-unique-and-namespaced":           Fail,
+		"lattice-mcp.test.integration.test.test.tools-invoke-the-cli-against-the-sample-project": Skip,
+	} {
+		if got, ok := set.Lookup(ref); !ok || got != want {
+			t.Errorf("Lookup(%s) = %q, %v; want %q", ref, got, ok, want)
+		}
+	}
+	// The title key is for test() titles only: an identifier-style name
+	// gets none, so a Go or pytest case cannot pick up a TypeScript FQN.
+	for _, k := range keysFor("pkg", "test_valid") {
+		if k == "test.test-valid" {
+			t.Errorf("identifier-style name got a title key: %v", keysFor("pkg", "test_valid"))
+		}
+	}
+}

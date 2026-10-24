@@ -165,7 +165,7 @@ func renderValidate(io *IO, r validateReport) {
 			}
 			line := ""
 			if v.Location != nil && v.Location.Line > 0 {
-				line = ":" + strconv.Itoa(v.Location.Line)
+				line = " (line " + strconv.Itoa(v.Location.Line) + ")"
 			}
 			io.printf("  %s %-32s %s%s\n", mark, v.Code, v.Message, line)
 			if v.NextAction != nil && v.NextAction.Kind != "" {
