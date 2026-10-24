@@ -13,6 +13,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/coverage"
 	"github.com/salahmyn/lattice/pkg/lattice/lease"
 	"github.com/salahmyn/lattice/pkg/lattice/ledger"
+	"github.com/salahmyn/lattice/pkg/lattice/reach"
 	"github.com/salahmyn/lattice/pkg/lattice/rtm"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
@@ -107,6 +108,11 @@ type Options struct {
 	// nil means none was ingested: no coverage finding fires and nothing is
 	// exercised.
 	Coverage *coverage.Index
+
+	// Reach is the classified call graph (rnd/0009, phase 2). nil means
+	// none was built: no reachability finding fires, and FEATURE_UNREACHED
+	// keeps its flow-based rule.
+	Reach *reach.Result
 }
 
 // rtmOptions are the RTM options every rule shares, so validation and
@@ -155,6 +161,14 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 			v = append(v, c.checkMeaning()...) // v0.8 δ — meaning fidelity
 			// rnd/0009 — coverage findings, only on ingested data.
 			v = append(v, coverage.Findings(kg, c.opts.Coverage, cfg.CoverageConfig())...)
+			// rnd/0009 phase 2 — reachability and suite overlap, off until
+			// enabled in validate.severity.
+			var ran reach.Executed
+			if c.opts.Coverage != nil {
+				ran = c.opts.Coverage
+			}
+			v = append(v, reach.Findings(kg, c.opts.Reach, ran)...)
+			v = append(v, reach.SuiteOverlap(kg, cfg.CoverageConfig())...)
 		}
 	}
 
