@@ -104,7 +104,7 @@ func (p *pyParser) addClass(n *sitter.Node, anns []ir.Annotation) {
 	fqn := p.modulePath + "." + name
 	sym := ir.Symbol{
 		Name: name, FQN: fqn, Kind: ir.KindClass,
-		File: p.mod.File, Line: line(n), Annotations: anns,
+		File: p.mod.File, Line: line(n), EndLine: endLine(n), Annotations: anns,
 		BaseClasses: p.baseClasses(n), IsTest: p.testFile,
 		Exported: isPublicName(name),
 	}
@@ -140,7 +140,7 @@ func (p *pyParser) addFunction(n *sitter.Node, anns []ir.Annotation, enclosingFQ
 	isTest := p.testFile || strings.HasPrefix(name, "test_") || hasVerifyAnnotation(anns)
 	p.mod.Symbols = append(p.mod.Symbols, ir.Symbol{
 		Name: name, FQN: fqn, Kind: kind,
-		File: p.mod.File, Line: line(n), EnclosingFQN: enclosingFQN,
+		File: p.mod.File, Line: line(n), EndLine: endLine(n), EnclosingFQN: enclosingFQN,
 		Annotations: anns, IsTest: isTest, Exported: isPublicName(name),
 	})
 }
@@ -271,6 +271,8 @@ func (p *pyParser) diag(n *sitter.Node, msg string) {
 // --- shared small helpers ---
 
 func line(n *sitter.Node) int { return int(n.StartPoint().Row) + 1 }
+
+func endLine(n *sitter.Node) int { return int(n.EndPoint().Row) + 1 }
 
 func firstChildOfType(n *sitter.Node, t string) *sitter.Node {
 	for i := 0; i < int(n.NamedChildCount()); i++ {

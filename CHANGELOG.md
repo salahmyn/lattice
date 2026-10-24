@@ -37,6 +37,13 @@ All notable changes to Lattice are documented in this file.
 - **Orphaned annotations are reported**: an annotation that attaches to no
   symbol (above an object literal, a bare statement, or at the end of a block)
   now raises `ANNOTATION_ORPHANED` (warning) instead of vanishing.
+- **Method length is the declaration's own extent**: symbols now carry
+  `end_line`, and `METHOD_LINE_CAP` measures from it. Before, a symbol ran to
+  the next symbol's start or the end of the file, so a short function last in
+  its file was reported at the file's length.
+- **`e2e/` is test code**: files under an `e2e/` (or `__e2e__/`) directory,
+  or named `*.e2e.*`, are test files in every adapter. Browser and device
+  scripts no longer count as production code.
 - **Result lookup is deterministic**: when several report cases match a
   verifier, the most specific match wins (the longest shared path), and equal
   matches resolve to the worst outcome. Before, two files with the same test
@@ -44,6 +51,10 @@ All notable changes to Lattice are documented in this file.
 
 ### Changed
 
+- **Line caps need opting in**: `FILE_LINE_CAP` and `METHOD_LINE_CAP` run
+  under `architecture.ama_mode`, or when the workspace sets `file_line_cap` /
+  `method_line_cap`. AMA's 150/25 defaults fired on nearly every component of
+  a project that never chose AMA. Files holding only tests are skipped.
 - **`lattice results ingest` takes several reports**: `ingest unit.xml
   e2e.xml` merges them into one set, a failure in any report winning.
   Previously each call replaced the set, so unit and e2e results could not

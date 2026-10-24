@@ -93,7 +93,7 @@ func (p *phpParser) addClass(n *sitter.Node, namespace string, kind ir.SymbolKin
 	fqn := qualify(namespace, name)
 	sym := ir.Symbol{
 		Name: name, FQN: fqn, Kind: kind,
-		File: p.mod.File, Line: line(n), IsTest: p.testFile,
+		File: p.mod.File, Line: line(n), EndLine: endLine(n), IsTest: p.testFile,
 		Annotations: p.declAttributes(n),
 		BaseClasses: p.baseClasses(n, namespace),
 		Exported:    true, // top-level classes/traits/interfaces are public
@@ -113,7 +113,7 @@ func (p *phpParser) addClass(n *sitter.Node, namespace string, kind ir.SymbolKin
 			}
 			p.mod.Symbols = append(p.mod.Symbols, ir.Symbol{
 				Name: mname, FQN: fqn + "::" + mname, Kind: ir.KindMethod,
-				File: p.mod.File, Line: line(c), EnclosingFQN: fqn,
+				File: p.mod.File, Line: line(c), EndLine: endLine(c), EnclosingFQN: fqn,
 				Annotations: p.declAttributes(c),
 				IsTest:      p.testFile,
 				Exported:    phpMethodExported(c, p.src),
@@ -129,7 +129,7 @@ func (p *phpParser) addSymbol(name string, kind ir.SymbolKind, namespace, enclos
 	}
 	p.mod.Symbols = append(p.mod.Symbols, ir.Symbol{
 		Name: name, FQN: qualify(namespace, name), Kind: kind,
-		File: p.mod.File, Line: line(n), EnclosingFQN: enclosing,
+		File: p.mod.File, Line: line(n), EndLine: endLine(n), EnclosingFQN: enclosing,
 		Annotations: p.declAttributes(n), IsTest: p.testFile,
 		Exported: true, // top-level functions are public
 	})
@@ -285,6 +285,8 @@ func (p *phpParser) fieldText(n *sitter.Node, field string) string {
 // --- helpers ---
 
 func line(n *sitter.Node) int { return int(n.StartPoint().Row) + 1 }
+
+func endLine(n *sitter.Node) int { return int(n.EndPoint().Row) + 1 }
 
 func qualify(namespace, name string) string {
 	name = strings.TrimPrefix(name, "\\")

@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
@@ -169,5 +170,70 @@ func TestMixedCommandQuerySuppressedByCommandKind(t *testing.T) {
 	kg := schema.KnowledgeGraph{Features: []schema.Manifest{f}}
 	if codes(Validate(kg, cfg, Options{}))[schema.CodeMixedCommandQuery] {
 		t.Error("MIXED_COMMAND_QUERY should not fire when capability.kind is command")
+	}
+}
+
+// Without ama_mode or an explicit cap, the line caps stay silent: AMA's
+// 150/25 defaults are noise for a project that never chose AMA.
+func TestLineCapsNeedOptIn(t *testing.T) {
+	kg := schema.KnowledgeGraph{
+		Modules: []schema.GraphModule{{File: "src/Big.tsx", LineCount: 900, SymbolFQNs: []string{"src.Big.Page"}}},
+		Symbols: []schema.GraphSymbol{{FQN: "src.Big.Page", Kind: "function", File: "src/Big.tsx", Line: 1, EndLine: 400}},
+	}
+	got := codes(Validate(kg, config.Default(), Options{}))
+	if got[schema.CodeFileLineCap] || got[schema.CodeMethodLineCap] {
+		t.Errorf("line caps fired without opt-in: %v", got)
+	}
+	cfg := config.Default()
+	cfg.Architecture.AMAMode = true
+	got = codes(Validate(kg, cfg, Options{}))
+	if !got[schema.CodeFileLineCap] || !got[schema.CodeMethodLineCap] {
+		t.Errorf("line caps should fire under ama_mode: %v", got)
+	}
+}
+
+// A short function that is last in its file is measured by its own end
+// line, not by the distance to the end of the file.
+func TestMethodLineCapUsesEndLine(t *testing.T) {
+	cfg := config.Default()
+	cfg.Architecture.MethodLineCap = 25
+	kg := schema.KnowledgeGraph{
+		Modules: []schema.GraphModule{{File: "src/hooks.ts", LineCount: 200}},
+		Symbols: []schema.GraphSymbol{
+			{FQN: "src.hooks.useClock", Kind: "function", File: "src/hooks.ts", Line: 10, EndLine: 60},
+			{FQN: "src.hooks.useDuration", Kind: "function", File: "src/hooks.ts", Line: 190, EndLine: 196},
+		},
+	}
+	var flagged []string
+	for _, v := range Validate(kg, cfg, Options{}) {
+		if v.Code == schema.CodeMethodLineCap {
+			flagged = append(flagged, v.Message)
+		}
+	}
+	if len(flagged) != 1 || !strings.Contains(flagged[0], "useClock") || !strings.Contains(flagged[0], "~51 lines") {
+		t.Errorf("METHOD_LINE_CAP = %v, want only useClock at ~51 lines", flagged)
+	}
+}
+
+// A file holding only tests is not held to the file cap.
+func TestFileLineCapSkipsTestFiles(t *testing.T) {
+	cfg := config.Default()
+	cfg.Architecture.FileLineCap = 100
+	kg := schema.KnowledgeGraph{
+		Modules: []schema.GraphModule{
+			{File: "src/cart.test.ts", LineCount: 400, SymbolFQNs: []string{"src.cart.test.test.adds"}},
+			{File: "src/cart.ts", LineCount: 400, SymbolFQNs: []string{"src.cart.total"}},
+		},
+		Symbols: []schema.GraphSymbol{{FQN: "src.cart.total", Kind: "function", File: "src/cart.ts", Line: 1, EndLine: 5}},
+		Tests:   []schema.GraphSymbol{{FQN: "src.cart.test.test.adds", Kind: "function", File: "src/cart.test.ts", Line: 1, IsTest: true}},
+	}
+	var files []string
+	for _, v := range Validate(kg, cfg, Options{}) {
+		if v.Code == schema.CodeFileLineCap {
+			files = append(files, v.Location.File)
+		}
+	}
+	if len(files) != 1 || files[0] != "src/cart.ts" {
+		t.Errorf("FILE_LINE_CAP files = %v, want [src/cart.ts]", files)
 	}
 }

@@ -292,7 +292,7 @@ func (p *tsParser) addClass(n *sitter.Node, anns []ir.Annotation, exported bool)
 	fqn := p.modulePath + "." + name
 	p.mod.Symbols = append(p.mod.Symbols, ir.Symbol{
 		Name: name, FQN: fqn, Kind: ir.KindClass,
-		File: p.mod.File, Line: line(n), Annotations: anns,
+		File: p.mod.File, Line: line(n), EndLine: endLine(n), Annotations: anns,
 		BaseClasses: p.extends(n), IsTest: p.testFile, Exported: exported,
 	})
 
@@ -337,7 +337,7 @@ func (p *tsParser) addSymbol(name string, kind ir.SymbolKind, enclosingFQN strin
 	}
 	p.mod.Symbols = append(p.mod.Symbols, ir.Symbol{
 		Name: name, FQN: fqn, Kind: kind,
-		File: p.mod.File, Line: line(n), EnclosingFQN: enclosingFQN,
+		File: p.mod.File, Line: line(n), EndLine: endLine(n), EnclosingFQN: enclosingFQN,
 		Annotations: anns, IsTest: p.testFile || hasVerify(anns), Exported: exported,
 	})
 	return true
@@ -354,7 +354,7 @@ func (p *tsParser) addTestSymbol(desc string, n *sitter.Node, anns []ir.Annotati
 	p.testCounts[base]++
 	p.mod.Symbols = append(p.mod.Symbols, ir.Symbol{
 		Name: desc, FQN: fqn, Kind: ir.KindFunction,
-		File: p.mod.File, Line: line(n), Annotations: anns,
+		File: p.mod.File, Line: line(n), EndLine: endLine(n), Annotations: anns,
 		IsTest: true, Exported: false,
 	})
 }
@@ -484,6 +484,8 @@ func (p *tsParser) firstStringArg(args *sitter.Node) string {
 // --- helpers ---
 
 func line(n *sitter.Node) int { return int(n.StartPoint().Row) + 1 }
+
+func endLine(n *sitter.Node) int { return int(n.EndPoint().Row) + 1 }
 
 // exportedDecl unwraps the declaration inside an export_statement.
 func exportedDecl(n *sitter.Node) *sitter.Node {

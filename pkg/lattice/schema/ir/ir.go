@@ -37,6 +37,7 @@ type Symbol struct {
 	Kind         SymbolKind `json:"kind"`
 	File         string     `json:"file"`
 	Line         int        `json:"line"`
+	EndLine      int        `json:"end_line,omitempty"`      // last line of the declaration, when the adapter knows it
 	EnclosingFQN string     `json:"enclosing_fqn,omitempty"` // for methods
 	BaseClasses  []string   `json:"base_classes,omitempty"`  // FQNs of bases
 	IsTest       bool       `json:"is_test"`
