@@ -80,7 +80,7 @@ func newValidateCommand(io *IO) *cobra.Command {
 			if err != nil {
 				return io.fail("VALIDATE_FAILED", err.Error(), nil)
 			}
-			allow, bad := validate.LoadAllowlist(ws.LatticeDir, cfg.Validate.AllowlistPath())
+			allow, bad := validate.LoadAllowlist(ws.LatticeDir, cfg.Validate)
 			open, accepted := allow.Apply(append(violations, bad...))
 
 			report := validateReport{Violations: open, Allowlisted: accepted, FailOn: threshold,

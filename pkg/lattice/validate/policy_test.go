@@ -3,6 +3,7 @@ package validate
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
@@ -112,7 +113,7 @@ func TestAllowlist(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "allowlist.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	al, bad := LoadAllowlist(dir, "allowlist.yaml")
+	al, bad := LoadAllowlist(dir, config.ValidatePolicy{})
 	if len(bad) != 2 || len(al.Entries) != 3 {
 		t.Fatalf("want 2 schema errors and 3 entries, got %d / %d: %+v", len(bad), len(al.Entries), bad)
 	}
@@ -141,8 +142,71 @@ func TestAllowlist(t *testing.T) {
 		t.Errorf("open: stale=%d schema=%d sc6=%d, want 1 2 1 (%+v)", stale, schemaErrs, sc6, open)
 	}
 
-	empty, none := LoadAllowlist(t.TempDir(), "allowlist.yaml")
+	empty, none := LoadAllowlist(t.TempDir(), config.ValidatePolicy{})
 	if len(empty.Entries) != 0 || none != nil {
 		t.Error("a missing allowlist is empty, not an error")
+	}
+}
+
+// A misspelt key is a schema error, not an empty allowlist: `allow:` for
+// `entries:` used to load nothing, so ALLOWLIST_STALE could never fire.
+func TestAllowlistRejectsUnknownKeys(t *testing.T) {
+	for name, body := range map[string]string{
+		"top level": "allow:\n  - code: X\n    subject: a\n    reason: r\n",
+		"entry":     "entries:\n  - code: X\n    subjects: a\n    reason: r\n",
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "allowlist.yaml"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		al, bad := LoadAllowlist(dir, config.ValidatePolicy{})
+		if len(bad) != 1 || bad[0].Code != schema.CodeAllowlistSchema || len(al.Entries) != 0 {
+			t.Errorf("%s: want one ALLOWLIST_SCHEMA and no entries, got %+v / %+v", name, bad, al.Entries)
+		}
+	}
+}
+
+// Kinds form a closed set when configured, a kind can require an ADR, and an
+// ADR must exist. Accepted findings carry the entry's kind and ADR.
+func TestAllowlistKindsAndADR(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "lattice")
+	if err := os.MkdirAll(filepath.Join(root, "docs", "adr"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "docs", "adr", "0001-sql.md"), []byte("# SQL"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `entries:
+  - {code: BRD_CRITERION_UNMAPPED, subject: "brd.a:SC-1", kind: sql-out-of-scope, adr: docs/adr/0001-sql.md, reason: enforced in SQL}
+  - {code: BRD_CRITERION_UNMAPPED, subject: "brd.a:SC-2", kind: sql-out-of-scope, reason: no adr}
+  - {code: BRD_CRITERION_UNMAPPED, subject: "brd.a:SC-3", kind: sql-out-of-scope, adr: docs/adr/missing.md, reason: missing adr}
+  - {code: BRD_CRITERION_UNMAPPED, subject: "brd.a:SC-4", kind: someday, reason: unknown kind}
+  - {code: UNATTRIBUTED_MODULE, file: "src/gen/**", kind: generated, reason: generated}
+`
+	if err := os.WriteFile(filepath.Join(dir, "allowlist.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := config.ValidatePolicy{AllowlistKinds: map[string]config.AllowlistKind{
+		"generated": {}, "sql-out-of-scope": {RequireADR: true},
+	}}
+	al, bad := LoadAllowlist(dir, p)
+	if len(al.Entries) != 2 || len(bad) != 3 {
+		t.Fatalf("want 2 entries and 3 schema errors, got %d / %+v", len(al.Entries), bad)
+	}
+	for i, want := range []string{"requires an adr", "does not exist", "not one of validate.allowlist_kinds"} {
+		if !strings.Contains(bad[i].Message, want) {
+			t.Errorf("schema error %d = %q, want it to say %q", i, bad[i].Message, want)
+		}
+	}
+	_, accepted := al.Apply([]schema.Violation{
+		{Code: "BRD_CRITERION_UNMAPPED", Severity: schema.SeverityInfo, Subject: "brd.a:SC-1"},
+		{Code: "UNATTRIBUTED_MODULE", Severity: schema.SeverityWarning, Location: &schema.Location{File: "src/gen/api.ts"}},
+	})
+	if len(accepted) != 2 || accepted[0].Kind != "sql-out-of-scope" || accepted[0].ADR != "docs/adr/0001-sql.md" || accepted[1].Kind != "generated" {
+		t.Errorf("accepted = %+v, want kind and adr carried", accepted)
 	}
 }

@@ -2,6 +2,24 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **A misspelt allowlist key is an error**: the allowlist was decoded
+  leniently, so `allow:` instead of `entries:` (or a misspelt entry field)
+  loaded an empty list with no finding, and `ALLOWLIST_STALE` could never
+  fire. Unknown keys now raise `ALLOWLIST_SCHEMA`.
+
+### Added
+
+- **Allowlist entries carry `kind` and `adr`**: an entry may classify its gap
+  (`kind: generated`, `debt`, ...) and name the decision record behind it
+  (`adr:`, a path relative to the directory holding `lattice/`, or a URL; it
+  must exist). `validate.allowlist_kinds` in `config.yaml` makes the kinds a
+  closed set, and `require_adr: true` on a kind makes its entries name an
+  ADR. Accepted findings in `--json` carry `kind` and `adr`.
+
 ## [0.10.0] — 2026-10-24
 
 ### Fixed

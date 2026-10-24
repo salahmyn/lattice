@@ -1,14 +1,18 @@
 package validate
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"gopkg.in/yaml.v3"
 
+	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
@@ -104,12 +108,16 @@ func Fails(f schema.Violation, threshold schema.Severity) bool {
 // AllowEntry accepts one known finding. Code and Reason are required, and at
 // least one selector (Subject, File, Feature) so an entry never silences a
 // whole rule by accident; use subject: "**" to do that on purpose. Subject
-// and File are doublestar globs.
+// and File are doublestar globs. Kind classifies the entry (generated, debt,
+// ...); ADR names the decision record behind it, a path relative to the
+// directory holding lattice/ (or a URL), which must exist.
 type AllowEntry struct {
 	Code    string `yaml:"code" json:"code"`
 	Subject string `yaml:"subject,omitempty" json:"subject,omitempty"`
 	File    string `yaml:"file,omitempty" json:"file,omitempty"`
 	Feature string `yaml:"feature,omitempty" json:"feature,omitempty"`
+	Kind    string `yaml:"kind,omitempty" json:"kind,omitempty"`
+	ADR     string `yaml:"adr,omitempty" json:"adr,omitempty"`
 	Reason  string `yaml:"reason" json:"reason"`
 	Note    string `yaml:"note,omitempty" json:"note,omitempty"`
 }
@@ -120,10 +128,15 @@ type Allowlist struct {
 	Entries []AllowEntry `yaml:"entries" json:"entries"`
 }
 
-// LoadAllowlist reads the allowlist at rel (relative to latticeDir). A
-// missing file is an empty allowlist. Malformed entries come back as
-// ALLOWLIST_SCHEMA errors and are left out.
-func LoadAllowlist(latticeDir, rel string) (Allowlist, []schema.Violation) {
+// allowlistKeys names the keys an allowlist accepts, for schema errors.
+const allowlistKeys = "the file takes `entries:`; an entry takes code, subject, file, feature, kind, adr, reason, note"
+
+// LoadAllowlist reads the workspace's allowlist (validate.allowlist,
+// relative to latticeDir). A missing file is an empty allowlist. An unknown
+// key, or a malformed entry, comes back as an ALLOWLIST_SCHEMA error; bad
+// entries are left out.
+func LoadAllowlist(latticeDir string, p config.ValidatePolicy) (Allowlist, []schema.Violation) {
+	rel := p.AllowlistPath()
 	al := Allowlist{Path: rel}
 	data, err := os.ReadFile(filepath.Join(latticeDir, rel))
 	if os.IsNotExist(err) {
@@ -135,13 +148,17 @@ func LoadAllowlist(latticeDir, rel string) (Allowlist, []schema.Violation) {
 			Message: "cannot read allowlist: " + err.Error(), Location: loc}}
 	}
 	var raw Allowlist
-	if err := yaml.Unmarshal(data, &raw); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true) // a misspelt key must not load as an empty allowlist
+	if err := dec.Decode(&raw); err != nil && err != io.EOF {
 		return al, []schema.Violation{{Code: schema.CodeAllowlistSchema, Severity: schema.SeverityError,
-			Message: "cannot parse allowlist: " + err.Error(), Location: loc}}
+			Message: "cannot parse allowlist: " + err.Error() + " (" + allowlistKeys + ")", Location: loc}}
 	}
+	root := filepath.Dir(latticeDir)
 	var bad []schema.Violation
 	for i, e := range raw.Entries {
 		var why string
+		kind, known := p.AllowlistKinds[e.Kind]
 		switch {
 		case strings.TrimSpace(e.Code) == "":
 			why = "has no code"
@@ -153,6 +170,12 @@ func LoadAllowlist(latticeDir, rel string) (Allowlist, []schema.Violation) {
 			why = fmt.Sprintf("subject %q is not a valid glob", e.Subject)
 		case e.File != "" && !doublestar.ValidatePattern(e.File):
 			why = fmt.Sprintf("file %q is not a valid glob", e.File)
+		case len(p.AllowlistKinds) > 0 && !known:
+			why = fmt.Sprintf("has kind %q, not one of validate.allowlist_kinds (%s)", e.Kind, strings.Join(sortedKeys(p.AllowlistKinds), ", "))
+		case kind.RequireADR && strings.TrimSpace(e.ADR) == "":
+			why = fmt.Sprintf("has kind %q, which requires an adr", e.Kind)
+		case e.ADR != "" && !isURL(e.ADR) && !fileExists(filepath.Join(root, filepath.FromSlash(e.ADR))):
+			why = fmt.Sprintf("names adr %q, which does not exist", e.ADR)
 		}
 		if why != "" {
 			bad = append(bad, schema.Violation{Code: schema.CodeAllowlistSchema, Severity: schema.SeverityError,
@@ -187,10 +210,31 @@ func (e AllowEntry) matches(f schema.Violation) bool {
 	return e.Feature == "" || e.Feature == f.FeatureID
 }
 
-// Accepted is a finding an allowlist entry accepted, with the entry's reason.
+func sortedKeys(m map[string]config.AllowlistKind) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func isURL(s string) bool {
+	return strings.HasPrefix(s, "https://") || strings.HasPrefix(s, "http://")
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// Accepted is a finding an allowlist entry accepted, with the entry's
+// reason, kind and decision record.
 type Accepted struct {
 	schema.Violation
 	Reason string `json:"reason"`
+	Kind   string `json:"kind,omitempty"`
+	ADR    string `json:"adr,omitempty"`
 }
 
 // Apply splits findings into those still open and those an entry accepts.
@@ -214,7 +258,8 @@ func (al Allowlist) Apply(v []schema.Violation) (open []schema.Violation, accept
 			continue
 		}
 		used[hit] = true
-		accepted = append(accepted, Accepted{Violation: f, Reason: al.Entries[hit].Reason})
+		e := al.Entries[hit]
+		accepted = append(accepted, Accepted{Violation: f, Reason: e.Reason, Kind: e.Kind, ADR: e.ADR})
 	}
 	for i, e := range al.Entries {
 		if used[i] {
