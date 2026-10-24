@@ -280,3 +280,82 @@ func TestPlaywrightSpec(t *testing.T) {
 		t.Errorf("@verifies not attached inside test.describe: %v", verified)
 	}
 }
+
+const tsxComponentSample = `import { useState } from 'react';
+
+/** @feature kids.profiles */
+export function ProfilePicker({ kids }: { kids: string[] }) {
+  const [sel, setSel] = useState<string | null>(null);
+  return <ul>{kids.map((k) => <li key={k} onClick={() => setSel(k)}>{k}</li>)}</ul>;
+}
+
+/** @capability kids.profiles:pick */
+export const KidBadge = ({ name }: { name: string }) => <span className="badge">{name}</span>;
+`
+
+// TestTSXComponents: a .tsx file is parsed with the tsx grammar, so React
+// function components are symbols and their annotations attach.
+func TestTSXComponents(t *testing.T) {
+	mod, err := New().Parse(context.Background(), "src/kid/ProfilePicker.tsx", []byte(tsxComponentSample))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := map[string]string{}
+	for _, s := range mod.Symbols {
+		for _, a := range s.Annotations {
+			got[s.Name] = a.Kind
+		}
+	}
+	if got["ProfilePicker"] != "feature" || got["KidBadge"] != "capability" {
+		t.Errorf("component annotations = %v, want ProfilePicker:feature KidBadge:capability", got)
+	}
+	if len(mod.Diagnostics) != 0 {
+		t.Errorf("unexpected diagnostics: %+v", mod.Diagnostics)
+	}
+}
+
+// TestTSStillParsesTypeAssertions: .ts keeps the TypeScript grammar, where
+// <T>expr is a type assertion rather than JSX.
+func TestTSStillParsesTypeAssertions(t *testing.T) {
+	src := "/** @feature cart */\nexport function total(x: unknown) { return <number>x + 1; }\n"
+	mod, err := New().Parse(context.Background(), "src/cart.ts", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(mod.Symbols) != 1 || mod.Symbols[0].Name != "total" || len(mod.Symbols[0].Annotations) != 1 {
+		t.Errorf("symbols = %+v", mod.Symbols)
+	}
+}
+
+// TestOrphanedAnnotations: an annotation that attaches to no symbol is
+// reported instead of silently dropped.
+func TestOrphanedAnnotations(t *testing.T) {
+	src := `/** @feature cart */
+export const LIMITS = { max: 3 };
+
+/** @verifies cart:INV-1 */
+console.log('not a test');
+
+/** @capability cart:total */
+export function total() { return 1; }
+
+/** @enforces cart:INV-2 */
+`
+	mod, err := New().Parse(context.Background(), "src/cart.ts", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var lines []int
+	for _, d := range mod.Diagnostics {
+		if d.Code != "ANNOTATION_ORPHANED" {
+			t.Errorf("unexpected diagnostic %+v", d)
+		}
+		lines = append(lines, d.Line)
+	}
+	if len(lines) != 3 || lines[0] != 2 || lines[1] != 5 || lines[2] != 10 {
+		t.Errorf("orphan lines = %v, want [2 5 10] (diagnostics %+v)", lines, mod.Diagnostics)
+	}
+	if len(mod.Symbols) != 1 || mod.Symbols[0].Name != "total" || len(mod.Symbols[0].Annotations) != 1 {
+		t.Errorf("total should keep its own annotation only: %+v", mod.Symbols)
+	}
+}

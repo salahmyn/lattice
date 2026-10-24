@@ -300,7 +300,7 @@ func parseSources(ctx context.Context, w *workspace.Workspace, reg *adapters.Reg
 		}
 		for _, d := range r.mod.Diagnostics {
 			viol = append(viol, schema.Violation{
-				Code: diagnosticCode(d.Code), Severity: schema.SeverityError,
+				Code: diagnosticCode(d.Code), Severity: diagnosticSeverity(d.Code),
 				Message:  d.Message,
 				Location: &schema.Location{File: r.mod.File, Line: d.Line},
 			})
@@ -347,10 +347,20 @@ func isYAML(path string) bool {
 
 // diagnosticCode maps an adapter diagnostic code to a known validation code,
 // defaulting to ADAPTER_PARSE_ERROR.
+// diagnosticSeverity grades an adapter diagnostic. An orphaned annotation is a
+// warning: the code still builds a graph, but a link the author meant is
+// missing from it.
+func diagnosticSeverity(code string) schema.Severity {
+	if code == schema.CodeAnnotationOrphaned {
+		return schema.SeverityWarning
+	}
+	return schema.SeverityError
+}
+
 func diagnosticCode(code string) string {
 	switch code {
-	case schema.CodeAnnotationArgNotLiteral:
-		return schema.CodeAnnotationArgNotLiteral
+	case schema.CodeAnnotationArgNotLiteral, schema.CodeAnnotationOrphaned:
+		return code
 	default:
 		return schema.CodeAdapterParseError
 	}
