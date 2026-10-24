@@ -65,7 +65,21 @@ type GraphSymbol struct {
 	Roles                []string              `json:"roles,omitempty"`
 	Verifies             []string              `json:"verifies,omitempty"`
 	SuppressedInvariants []SuppressedInvariant `json:"suppressed_invariants,omitempty"`
+	// Reach is the symbol's static reach class (docs/rnd/0009): entry (a
+	// root reaches it), test_only (only tests do), unreached, or unknown
+	// (no roots, no reference data for its language, or reached only
+	// through a reference the call graph could not resolve). Set on
+	// runtime symbols only; validate folds in runtime coverage on top.
+	Reach string `json:"reach,omitempty"`
 }
+
+// Reach classes (GraphSymbol.Reach).
+const (
+	ReachEntry     = "entry"
+	ReachTestOnly  = "test_only"
+	ReachUnreached = "unreached"
+	ReachUnknown   = "unknown"
+)
 
 // SuppressedInvariant records an explicit, reasoned suppression.
 type SuppressedInvariant struct {

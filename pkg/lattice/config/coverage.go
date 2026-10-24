@@ -25,6 +25,38 @@ type Coverage struct {
 	// Floors are minimum line-coverage percentages. Declaring one turns on
 	// COVERAGE_BELOW_FLOOR for it.
 	Floors CoverageFloors `yaml:"floors,omitempty"`
+	// Roots are code the runtime reaches by a convention the call graph
+	// cannot see (a route table, a framework hook, a library's exported
+	// API), added to the automatic roots of the reachability check.
+	Roots []CoverageRoot `yaml:"roots,omitempty"`
+	// Suites group test files for SUITE_OVERLAP: suite name -> globs over
+	// the graph's file paths. Unset, each top-level test directory (tests/,
+	// e2e/, ...) is one suite.
+	Suites map[string][]string `yaml:"suites,omitempty"`
+	// Overlap is the Jaccard index at or above which two suites overlap
+	// (SUITE_OVERLAP). 0 means the default, 0.8.
+	Overlap float64 `yaml:"overlap,omitempty"`
+}
+
+// CoverageRoot declares one root of the reachability check: a symbol (an
+// FQN, or a glob over FQNs) or a file (a glob over the graph's file paths,
+// whose top-level code and exported symbols become roots). Reason says why
+// the runtime reaches it.
+type CoverageRoot struct {
+	Symbol string `yaml:"symbol,omitempty"`
+	File   string `yaml:"file,omitempty"`
+	Reason string `yaml:"reason,omitempty"`
+}
+
+// DefaultOverlap is the suite-overlap threshold when coverage.overlap is unset.
+const DefaultOverlap = 0.8
+
+// OverlapOrDefault returns coverage.overlap, or DefaultOverlap when unset.
+func (c Coverage) OverlapOrDefault() float64 {
+	if c.Overlap <= 0 {
+		return DefaultOverlap
+	}
+	return c.Overlap
 }
 
 // CoverageReport locates one coverage report and says how to read its paths.

@@ -222,3 +222,86 @@ func enclosingEndLine(occ *scippb.Occurrence) int {
 	}
 	return 0
 }
+
+// NewCorpus wraps already-parsed indexes in a corpus.
+func NewCorpus(indexes ...*scippb.Index) *Corpus {
+	return &Corpus{indexes: indexes}
+}
+
+// Def is where a SCIP symbol is defined: its document and 1-based line.
+type Def struct {
+	Symbol string
+	File   string
+	Line   int
+}
+
+// ResolvedRef is one reference occurrence of the corpus with both ends
+// located: Caller is the innermost definition that encloses the reference
+// (bounded by its enclosing_range, as BuildCallGraph attributes it), or
+// zero for top-level code; Callee is the referenced symbol's definition.
+type ResolvedRef struct {
+	File   string
+	Line   int
+	Caller Def
+	Callee Def
+}
+
+// References returns every reference whose symbol the corpus defines,
+// ordered by file and line. References to symbols defined outside the
+// corpus (the standard library, dependencies) and to local symbols are
+// left out: they are not code of the workspace.
+// @enforces scip:INV-1
+func (c *Corpus) References() []ResolvedRef {
+	if c == nil {
+		return nil
+	}
+	defs := map[string]Def{}
+	for _, idx := range c.indexes {
+		for _, doc := range idx.Documents {
+			for _, occ := range doc.Occurrences {
+				if occ.SymbolRoles&definitionRole == 0 || strings.HasPrefix(occ.Symbol, "local ") {
+					continue
+				}
+				if _, ok := defs[occ.Symbol]; !ok {
+					defs[occ.Symbol] = Def{Symbol: occ.Symbol, File: doc.RelativePath, Line: occurrenceLine(occ)}
+				}
+			}
+		}
+	}
+	var out []ResolvedRef
+	for _, idx := range c.indexes {
+		for _, doc := range idx.Documents {
+			byLine := definitionsByLine(doc)
+			for _, occ := range doc.Occurrences {
+				if occ.SymbolRoles&definitionRole != 0 {
+					continue
+				}
+				callee, ok := defs[occ.Symbol]
+				if !ok {
+					continue
+				}
+				ln := occurrenceLine(occ)
+				r := ResolvedRef{File: doc.RelativePath, Line: ln, Callee: callee}
+				if caller := mostRecentDef(byLine, ln); caller != "" {
+					if caller == occ.Symbol {
+						continue
+					}
+					r.Caller = Def{Symbol: caller, File: doc.RelativePath}
+					for _, d := range byLine {
+						if d.symbol == caller && d.line <= ln {
+							r.Caller.Line = d.line
+						}
+					}
+				}
+				out = append(out, r)
+			}
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].File != out[j].File {
+			return out[i].File < out[j].File
+		}
+		return out[i].Line < out[j].Line
+	})
+	return out
+}
