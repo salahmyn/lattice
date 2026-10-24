@@ -6,10 +6,38 @@ All notable changes to Lattice are documented in this file.
 
 ### Fixed
 
+- **Modules with top-level code are production code**: a module counted for
+  attribution (and `UNATTRIBUTED_MODULE`) only when it declared a function,
+  method, class, trait or const symbol. An entry file whose only statement is
+  `createRoot(...).render(...)`, or a module of plain value consts, was
+  invisible: removing its `@module-feature` still read 100%. The TypeScript
+  adapter now records `has_code` on a module with top-level runtime code
+  (anything but imports, comments, type declarations, directives and
+  re-exports; never on test files), and such a module is production code.
+- **A misspelt allowlist key is an error**: the allowlist was decoded
+  leniently, so `allow:` instead of `entries:` (or a misspelt entry field)
+  loaded an empty list with no finding, and `ALLOWLIST_STALE` could never
+  fire. Unknown keys now raise `ALLOWLIST_SCHEMA`.
 - **`brd approve` is recorded in the ledger**: an approval is a gate
   decision, but the command wrote only the BRD's `approval` block, so which
   identity ran it (`--actor` / `LATTICE_ACTOR`) was kept nowhere. It now
   appends a `gate` entry with the actor, the BRD and the approver.
+
+### Added
+
+- **Allowlist entries carry `kind` and `adr`**: an entry may classify its gap
+  (`kind: generated`, `debt`, ...) and name the decision record behind it
+  (`adr:`, a path relative to the directory holding `lattice/`, or a URL; it
+  must exist). `validate.allowlist_kinds` in `config.yaml` makes the kinds a
+  closed set, and `require_adr: true` on a kind makes its entries name an
+  ADR. Accepted findings in `--json` carry `kind` and `adr`.
+- **`validate.require_level`**: `verified` or `demonstrated` (or
+  `lattice validate --require-level`). Every BRD success criterion and user
+  scenario below the level raises `BRD_BELOW_LEVEL` (error), with the
+  subject `brd.<id>:SC-N` / `brd.<id>:US-N` for the allowlist. Before, the
+  RTM computed each one's level but nothing failed on it: a verified
+  criterion raised no finding and an unmapped one only an info, so a gate
+  on "every criterion demonstrated" had to be scripted.
 
 ## [0.10.0] — 2026-10-24
 

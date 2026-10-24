@@ -172,6 +172,16 @@ validate:
     BRD_SCENARIO_UNMAPPED: warning
 ```
 
+To gate on the truth level, set `require_level` (or pass
+`--require-level`): every BRD success criterion and user scenario below it
+raises `BRD_BELOW_LEVEL` (error), with the subject `brd.<id>:SC-N` or
+`brd.<id>:US-N` for the allowlist.
+
+```yaml
+validate:
+  require_level: demonstrated   # or verified
+```
+
 `UNATTRIBUTED_MODULE` (off unless set) flags a production module with no
 `@module-feature` and no feature on any of its symbols, so a coverage figure
 over annotated code cannot hide the code nobody annotated.
@@ -190,7 +200,32 @@ entries:
 
 Accepted findings are listed apart and never fail the run. An entry that
 matches no finding is reported as `ALLOWLIST_STALE` (error), so the list
-only shrinks as gaps close.
+only shrinks as gaps close. An unknown key (`allow:` for `entries:`, a
+misspelt entry field) is an `ALLOWLIST_SCHEMA` error, never an empty list.
+
+An entry may say what kind of gap it is and which decision record stands
+behind it. `adr` is a path relative to the directory holding `lattice/` (or
+a URL), and it must exist. To make kinds a closed set, list them in
+`config.yaml`; a kind can require an ADR:
+
+```yaml
+validate:
+  allowlist_kinds:
+    generated: {}
+    debt: {}
+    sql-out-of-scope: {require_adr: true}
+```
+
+```yaml
+entries:
+  - code: BRD_CRITERION_UNMAPPED
+    subject: brd.billing:SC-5
+    kind: sql-out-of-scope
+    adr: docs/adr/0012-sql-invariants.md
+    reason: enforced by a database constraint
+```
+
+`--json` carries each accepted finding's `reason`, `kind` and `adr`.
 
 ### Step 5 — Evolve safely
 
