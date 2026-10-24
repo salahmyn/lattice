@@ -1,13 +1,13 @@
 package cli
 
 import (
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/salahmyn/lattice/pkg/lattice/flags"
 	"github.com/salahmyn/lattice/pkg/lattice/ledger"
+	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
 // newFlagCommand manages open meaning flags (v0.8.1). A flag marks a
@@ -115,7 +115,7 @@ func newFlagClearCommand(io *IO) *cobra.Command {
 			// Clearing is the human meaning gate. An agent actor naming
 			// itself here is exactly the self-approval the flag exists to
 			// prevent.
-			if strings.HasPrefix(strings.ToLower(by), "agent") {
+			if schema.IsAgentActor(by) {
 				return io.fail("FLAG_CLEAR_HUMAN_ONLY",
 					"flags are cleared by humans — pass --by <human>, not an agent actor", nil)
 			}

@@ -130,12 +130,18 @@ func (c *corpus) checkBRDs() []schema.Violation {
 			})
 		}
 
-		// BRD_UNAPPROVED_LLM — LLM-generated BRD still in draft.
-		if b.Provenance.Source == schema.BRDSourceLLMFromCode &&
-			(b.Status == schema.BRDDraft || b.Status == "") {
+		// BRD_UNAPPROVED_LLM — a machine-written BRD still in draft:
+		// LLM-regenerated, or authored by an agent whatever its source
+		// says (`brd new` run by an agent records source: human).
+		if b.MachineWritten() && (b.Status == schema.BRDDraft || b.Status == "") {
+			msg := fmt.Sprintf("BRD %q was LLM-regenerated and still draft — needs human review", b.ID)
+			if b.Provenance.Source != schema.BRDSourceLLMFromCode {
+				msg = fmt.Sprintf("BRD %q was written by %s and still draft — needs human review",
+					b.ID, b.Provenance.AuthoredBy)
+			}
 			v = append(v, schema.Violation{
 				Code: schema.CodeBRDUnapprovedLLM, Severity: schema.SeverityWarning,
-				Message:  fmt.Sprintf("BRD %q was LLM-regenerated and still draft — needs human review", b.ID),
+				Message:  msg,
 				Location: loc,
 				NextAction: &schema.NextAction{
 					Kind:   "edit_brd",

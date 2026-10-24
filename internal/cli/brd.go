@@ -131,6 +131,8 @@ func newBRDShowCommand(io *IO) *cobra.Command {
 			if b.Provenance.Source == schema.BRDSourceLLMFromCode {
 				io.printf("\nProvenance: LLM-regenerated %s — needs human review\n",
 					b.Provenance.GeneratedAt)
+			} else if b.MachineWritten() {
+				io.printf("\nProvenance: written by %s — needs human review\n", b.Provenance.AuthoredBy)
 			}
 			if b.Approval != nil {
 				io.printf("\nApproved by %s on %s (v%d)\n",
@@ -176,6 +178,10 @@ regeneration path instead.`,
 				OutOfScope: []string{"TODO: what this BRD deliberately does not cover"},
 				Provenance: schema.BRDProvenance{Source: schema.BRDSourceHuman, AuthoredBy: io.actor()},
 			}
+			// An agent's scaffold is a machine-written draft: flag it for
+			// review, as from-code does (BRD_UNAPPROVED_LLM keys on the
+			// author too).
+			b.HumanReviewRequired = schema.IsAgentActor(b.Provenance.AuthoredBy)
 			path, err := brd.Save(ws.BRDsDir(), b)
 			if err != nil {
 				return io.fail("BRD_SAVE_FAILED", err.Error(), nil)

@@ -475,6 +475,8 @@ func approvalActions(brds []schema.BRD, auto config.Autonomy) []nextAction {
 		}
 		if b.Provenance.Source == schema.BRDSourceLLMFromCode {
 			action = "drafted from code by an LLM: " + action
+		} else if b.MachineWritten() {
+			action = "written by " + b.Provenance.AuthoredBy + ": " + action
 		}
 		out = append(out, nextAction{
 			Unit: b.ID, Level: "awaiting-approval", Severity: 6,

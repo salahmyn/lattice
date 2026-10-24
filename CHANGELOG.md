@@ -6,6 +6,17 @@ All notable changes to Lattice are documented in this file.
 
 ### Fixed
 
+- **A BRD an agent drafts needs review like an LLM draft**: `lattice brd
+  new` run by an agent (`--actor agent:…`) recorded `source: human`, so
+  `BRD_UNAPPROVED_LLM` never fired for it and a `fail_on: warning` gate let
+  an unreviewed agent draft through.
+  - The rule now also fires for a draft whose `provenance.authored_by` is an
+    agent, and names the author.
+  - `brd new` sets `human_review_required: true` for an agent.
+  - `brd show` and `next` say who wrote it.
+  - An agent is an actor starting with `agent`, the test that already gates
+    deciding a CR and clearing a flag.
+
 - **`adapters.yaml` is strict**: an adapter block outside `adapters:` (for
   example `postgres:` at the top level) or a misspelt adapter name was
   ignored without a word, so a language silently went unscanned. Both are
