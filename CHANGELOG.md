@@ -67,10 +67,19 @@ All notable changes to Lattice are documented in this file.
   detected as "javascript, low confidence". Detection now reads the
   workspace packages (listed as `packages`), so TypeScript and the framework
   are recognised.
+- **`lattice next` on an empty workspace**: it said "every unit is
+  demonstrated" when nothing was declared; it now says nothing is declared
+  yet and how to start (`--json` carries `empty: true`).
 - **Result lookup is deterministic**: when several report cases match a
   verifier, the most specific match wins (the longest shared path), and equal
   matches resolve to the worst outcome. Before, two files with the same test
   title gave a pass or a fail depending on map order.
+
+### Added
+
+- **`lattice next` ranks BRD approvals**: draft and proposed BRDs appear
+  after every unit that needs work, as `awaiting-approval`, with the human
+  approval step (an agent never approves).
 - **`lattice coverage` works without `lattice import`**: it refused to run
   unless an import session existed, and documentation coverage counted only
   accepted import candidates, so a hand-written workspace read 0%. Coverage
@@ -91,6 +100,15 @@ All notable changes to Lattice are documented in this file.
   handler inside a React component) are symbols enclosed by it. Unannotated
   ones stay out of the graph. `// @module-feature x` on one line works like
   the JSDoc form (line comments never carry symbol tags).
+- **A malformed entry-point file is an error, not a silent gap**: a
+  persisted entry point whose YAML does not parse (for example an unquoted
+  `: ` inside a value) or that has no `id` was skipped without a word; the
+  only symptoms were downstream (`FEATURE_UNREACHED`, a missing entry point).
+  It now raises `ENTRYPOINT_PARSE_ERROR` (error) with the file and line.
+- **Result lookup is deterministic**: when several report cases match a
+  verifier, the most specific match wins (the longest shared path), and equal
+  matches resolve to the worst outcome. Before, two files with the same test
+  title gave a pass or a fail depending on map order.
 - **Result lookup is deterministic and refuses to guess**: when several
   report cases match a verifier, the most specific match wins (the longest
   shared path). When two different cases match equally (the same short test
