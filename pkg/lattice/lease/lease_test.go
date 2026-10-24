@@ -31,6 +31,7 @@ func TestAcquireReleaseRoundTrip(t *testing.T) {
 	}
 }
 
+// @verifies leases:INV-1, brd.agent_coordination:US-1
 func TestAcquireConflict(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
@@ -46,6 +47,7 @@ func TestAcquireConflict(t *testing.T) {
 	}
 }
 
+// @verifies leases:INV-2, brd.agent_coordination:US-1
 func TestExpiry(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
@@ -63,6 +65,7 @@ func TestExpiry(t *testing.T) {
 	}
 }
 
+// @verifies leases:INV-3
 func TestOverlapsCrossActor(t *testing.T) {
 	a := Lease{Unit: "todo.add", Actor: "A", Scope: []string{"src/Core/Contracts/"}}
 	b := Lease{Unit: "todo.list", Actor: "B", Scope: []string{"src/Core/Contracts/TodoStore.ts"}}
@@ -77,6 +80,7 @@ func TestOverlapsCrossActor(t *testing.T) {
 	}
 }
 
+// @verifies leases:INV-3
 func TestOverlapsSameActorExcluded(t *testing.T) {
 	// Two leases by the same actor on the same scope never conflict.
 	a := Lease{Unit: "todo.add", Actor: "A", Scope: []string{"src/Core/Contracts/"}}

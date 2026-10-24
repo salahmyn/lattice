@@ -69,12 +69,13 @@ func TestSaveForceOverwrites(t *testing.T) {
 	}
 }
 
+// @verifies brds:INV-6
 func TestFeaturesByBRDUnionsForwardAndReverse(t *testing.T) {
 	brds := []schema.BRD{{
 		ID: "brd.x", ImplementsVia: []string{"a"},
 	}}
 	features := []schema.Manifest{
-		{ID: "a"}, // forward link from BRD
+		{ID: "a"},                         // forward link from BRD
 		{ID: "b", ImplementsBRD: "brd.x"}, // reverse link from feature
 	}
 	got := FeaturesByBRD(brds, features)

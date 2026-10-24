@@ -1,5 +1,7 @@
 package entrypoints
 
+// @module-feature entrypoints
+
 import (
 	"path/filepath"
 	"sort"

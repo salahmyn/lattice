@@ -20,3 +20,7 @@ jobs:
       - run: go vet ./...
       # The PostgreSQL store contract runs only when LATTICE_TEST_PG_DSN is set.
       - run: go test ./...
+      # Lattice describes its own codebase (lattice/, see docs/rnd/0008):
+      # a broken link or an invariant left unenforced or unverified fails here.
+      - run: go build -o dist/lattice ./cmd/lattice
+      - run: dist/lattice extract && dist/lattice validate

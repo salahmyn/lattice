@@ -1,0 +1,12 @@
+id: sweep
+version: 1
+status: production
+purpose: |
+  The forbidden-move sweep: no verifier disappears without a change request retiring it.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.verification
+invariants:
+  - id: INV-1
+    statement: A verifier in the baseline that is gone from the current graph is reported.

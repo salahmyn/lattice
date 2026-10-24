@@ -8,6 +8,8 @@
 // block; it runs the project's own commands and never guesses a stack.
 package runsclean
 
+// @module-feature runsclean
+
 import (
 	"context"
 	"fmt"
@@ -54,6 +56,7 @@ const (
 // Run executes the V0 sequence in root per rt. It stops at the first
 // failing stage (a broken install makes later stages meaningless) but
 // runs all probes once the app is up.
+// @enforces runsclean:INV-1
 func Run(ctx context.Context, root string, rt config.Runtime) Report {
 	rep := Report{Root: root, Pass: true}
 
@@ -108,6 +111,7 @@ func bootWait(rt config.Runtime) time.Duration {
 // bootApp starts the boot command in its own process group, waits the
 // boot window, and reports failure if the process died inside it. The
 // returned stop function terminates the whole group.
+// @enforces runsclean:INV-2
 func bootApp(ctx context.Context, root, cmd string, wait time.Duration) (StepResult, func(), error) {
 	c := exec.CommandContext(ctx, "sh", "-c", cmd)
 	c.Dir = root

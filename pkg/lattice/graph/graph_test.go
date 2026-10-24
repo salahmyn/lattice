@@ -28,6 +28,7 @@ func sampleInput() Input {
 	}
 }
 
+// @verifies graph:INV-2
 func TestBuildResolvesChildrenAndImplementations(t *testing.T) {
 	kg := Build(sampleInput(), Options{})
 
@@ -99,6 +100,7 @@ func TestBuildSurfacesAndErrors(t *testing.T) {
 	}
 }
 
+// @verifies graph:INV-1
 func TestBuildIsDeterministic(t *testing.T) {
 	opts := Options{}
 	a, err := Marshal(Build(sampleInput(), opts))

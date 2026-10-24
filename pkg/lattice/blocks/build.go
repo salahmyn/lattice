@@ -1,5 +1,7 @@
 package blocks
 
+// @module-feature blocks
+
 import (
 	"fmt"
 	"sort"
@@ -37,6 +39,7 @@ type Result struct {
 
 // Build computes the block graph. It is a pure function of its inputs: the same
 // inputs give the same result in the same order.
+// @enforces blocks:INV-1
 func Build(in Inputs) Result {
 	g := &graph{blocks: map[string]*schema.Block{}, edges: map[[3]string]*schema.BlockEdge{}}
 	byType := map[string][]Judgment{}

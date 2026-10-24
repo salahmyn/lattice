@@ -3,6 +3,8 @@
 // the graph as a pure function of those inputs.
 package blocks
 
+// @module-feature blocks
+
 import (
 	"encoding/json"
 	"fmt"
@@ -112,6 +114,7 @@ func Parse(f File) (c *Catalogue, ok bool, err error) {
 
 // ParseAll parses every file of one source. It returns the catalogues and the
 // paths that were JSON but not catalogues. A node id may appear in one file only.
+// @enforces blocks:INV-3
 func ParseAll(files []File) ([]*Catalogue, []string, error) {
 	var cats []*Catalogue
 	var skipped []string

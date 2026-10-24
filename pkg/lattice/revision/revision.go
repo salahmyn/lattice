@@ -5,6 +5,8 @@
 // deleted, so an idea isn't re-litigated from zero later).
 package revision
 
+// @module-feature revision
+
 import (
 	"fmt"
 	"io/fs"
@@ -102,6 +104,7 @@ func Save(latticeDir string, r schema.Revision) (string, error) {
 // RetirementCovered reports whether unit (a test FQN or symbol) is
 // covered by a retirement item of any *approved* revision. Test/code
 // deletion is legal only against such an item.
+// @enforces revision:INV-1
 func RetirementCovered(revs []schema.Revision, unit string) (string, bool) {
 	for _, r := range revs {
 		if r.Status != schema.RevisionApproved && r.Status != schema.RevisionReconverged {

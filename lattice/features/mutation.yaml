@@ -1,0 +1,9 @@
+id: mutation
+version: 1
+status: production
+purpose: |
+  Mutation testing scoped to invariant-enforcing code, mapping survivors to invariants.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.verification

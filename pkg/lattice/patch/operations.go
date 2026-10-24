@@ -1,5 +1,7 @@
 package patch
 
+// @module-feature patch
+
 import (
 	"fmt"
 	"time"

@@ -1,5 +1,7 @@
 package ui
 
+// @module-feature ui
+
 import (
 	"context"
 	"net/http"
@@ -154,11 +156,11 @@ func (s *Server) pageSearch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.render(w, "search.html", pageData{
-		Title:    "Search",
-		Active:   "search",
-		JSONHref: "/api/v1/search?q=" + q,
+		Title:       "Search",
+		Active:      "search",
+		JSONHref:    "/api/v1/search?q=" + q,
 		Breadcrumbs: []crumb{{Label: "Overview", Href: "/"}, {Label: "Search"}},
-		Body:     map[string]interface{}{"Query": q, "Hits": hits},
+		Body:        map[string]interface{}{"Query": q, "Hits": hits},
 	})
 }
 

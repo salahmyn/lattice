@@ -1,0 +1,12 @@
+id: revision
+version: 1
+status: production
+purpose: |
+  Change requests against grounded intent: propose, price the impact, decide, reconverge.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.intent
+invariants:
+  - id: INV-1
+    statement: Only an approved change request legalizes retiring a verifier.

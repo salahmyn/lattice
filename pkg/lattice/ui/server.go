@@ -4,6 +4,8 @@
 // docs/v0.4.0-ui-proposal.md for the design.
 package ui
 
+// @module-feature ui
+
 import (
 	"context"
 	"crypto/subtle"
@@ -236,6 +238,7 @@ func (s *Server) routes() *http.ServeMux {
 // scriptlet hit /api/v1/* with X-Lattice-Token while a human's
 // browser uses standard Basic auth — same deployment, two auth
 // paths, no extra config plumbing.
+// @enforces ui:INV-1
 func (s *Server) withMiddleware(h http.Handler) http.Handler {
 	hasToken := strings.TrimSpace(s.opts.Token) != ""
 	hasBasic := strings.TrimSpace(s.opts.BasicAuthUser) != "" && strings.TrimSpace(s.opts.BasicAuthPass) != ""

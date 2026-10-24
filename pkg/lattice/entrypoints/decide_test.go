@@ -46,6 +46,7 @@ func TestDecideAcceptFlipStatus(t *testing.T) {
 // TestDecideRejectArchive proves reject moves the manifest under
 // .rejected/ (preserving the directory shape) and that LoadEntryPoints
 // no longer returns it — but the bytes are recoverable.
+// @verifies entrypoints:INV-3
 func TestDecideRejectArchive(t *testing.T) {
 	dir := t.TempDir()
 	ep := schema.EntryPoint{

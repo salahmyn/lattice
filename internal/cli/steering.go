@@ -1,5 +1,7 @@
 package cli
 
+// @module-feature steering
+
 import (
 	"fmt"
 	"sort"
@@ -455,6 +457,7 @@ func rankActions(m rtm.Matrix, leasedBy map[string]string, me string) []nextActi
 // after every unit that needs work: approval is the last step, and only a
 // person (or a mandate a person granted) takes it, never the agent reading
 // this list.
+// @enforces steering:INV-1, steering:INV-2
 func approvalActions(brds []schema.BRD, auto config.Autonomy) []nextAction {
 	council := auto.CouncilMayApprove() && hasBRDMandate(auto)
 	var out []nextAction

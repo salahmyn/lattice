@@ -17,6 +17,7 @@ func run(t *testing.T, dir string, args ...string) {
 	}
 }
 
+// @verifies blocks:INV-2
 func TestReadGitReadsTheRefNotTheWorkingTree(t *testing.T) {
 	repo := t.TempDir()
 	run(t, repo, "git", "init", "-q")

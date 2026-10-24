@@ -1,0 +1,14 @@
+id: runsclean
+version: 1
+status: production
+purpose: |
+  Gate zero: clean install, build, boot and smoke probes before anything is demonstrated.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.verification
+invariants:
+  - id: INV-1
+    statement: A failing step stops the run and reports the output tail.
+  - id: INV-2
+    statement: An app that exits inside its boot window fails the run.

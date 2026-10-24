@@ -1,5 +1,7 @@
 package postgres
 
+// @module-feature adapters.postgres
+
 import "strings"
 
 // comment is one SQL comment ("-- ..." or "/* ... */") outside any statement.

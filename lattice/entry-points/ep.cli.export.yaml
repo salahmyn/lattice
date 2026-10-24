@@ -1,0 +1,17 @@
+id: ep.cli.export
+version: 1
+status: production
+kind: cli
+purpose: "Write views of the workspace as files"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice export"
+handler:
+  symbol: internal.cli.newExportCommand
+  file: internal/cli/exportcmd.go
+flow:
+  - feature: cli
+  - feature: views
+  - feature: store

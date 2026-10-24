@@ -7,6 +7,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/blocks"
 )
 
+// @verifies cli:INV-1
 func TestSetTopLevelKeepsTheRest(t *testing.T) {
 	src := "# the cart kit\nid: new-cart\ntype: initiative\nstatus: proposed # under review\nmap:\n  system: {title: Cart kit}\n  blocking: [G-TAX]\n"
 	out, err := setTopLevel([]byte(src), "status", "paused")

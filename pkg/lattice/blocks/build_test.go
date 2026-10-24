@@ -96,6 +96,7 @@ func TestBuildEdges(t *testing.T) {
 	}
 }
 
+// @verifies blocks:INV-1
 func TestBuildIsDeterministic(t *testing.T) {
 	a, _ := json.Marshal(Build(shopInputs(t)))
 	for i := 0; i < 5; i++ {

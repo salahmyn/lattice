@@ -1,5 +1,7 @@
 package views
 
+// @module-feature views
+
 import (
 	"fmt"
 	"path/filepath"
@@ -162,6 +164,7 @@ func buildC4Model(ws *workspace.Workspace, kg schema.KnowledgeGraph, ctx schema.
 // c4Relationships derives component relationships from feature dependencies
 // and surface emit/consume pairs, plus external event producers for events
 // consumed but never emitted.
+// @enforces views:INV-1
 func c4Relationships(kg schema.KnowledgeGraph) ([]c4Rel, []string) {
 	seen := map[string]bool{}
 	var rels []c4Rel

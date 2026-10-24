@@ -3,6 +3,8 @@
 // MCP server are peers over one engine.
 package lattice
 
+// @module-feature library
+
 import (
 	"context"
 	"path/filepath"

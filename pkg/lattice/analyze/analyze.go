@@ -1,5 +1,7 @@
 package analyze
 
+// @module-feature analysis
+
 import (
 	"context"
 	"fmt"

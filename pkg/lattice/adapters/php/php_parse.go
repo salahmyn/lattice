@@ -1,5 +1,7 @@
 package php
 
+// @module-feature adapters.php
+
 import (
 	"context"
 	"path/filepath"
@@ -85,6 +87,7 @@ func (p *phpParser) walk(node *sitter.Node, namespace string) {
 }
 
 // addClass records a class/trait/interface symbol and its methods.
+// @enforces adapters.php:INV-1
 func (p *phpParser) addClass(n *sitter.Node, namespace string, kind ir.SymbolKind) {
 	name := p.fieldText(n, "name")
 	if name == "" {
@@ -288,6 +291,7 @@ func line(n *sitter.Node) int { return int(n.StartPoint().Row) + 1 }
 
 func endLine(n *sitter.Node) int { return int(n.EndPoint().Row) + 1 }
 
+// @enforces adapters.php:INV-1
 func qualify(namespace, name string) string {
 	name = strings.TrimPrefix(name, "\\")
 	if namespace == "" {

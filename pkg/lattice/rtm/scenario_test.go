@@ -57,6 +57,7 @@ func TestScenarioDemonstratedWithGreenResult(t *testing.T) {
 	}
 }
 
+// @verifies rtm:INV-3
 func TestScenarioFailingWithRedResult(t *testing.T) {
 	m := Build(scenarioFixture(), Options{
 		ResultOf: func(fqn string) (bool, bool) { return false, true },
@@ -79,6 +80,7 @@ func TestScenarioUnmappedAndJourneyZero(t *testing.T) {
 	}
 }
 
+// @verifies rtm:INV-3
 func TestCriterionDemonstratedFoldsResults(t *testing.T) {
 	// The SC-1 verifier passing on the commit upgrades verified→demonstrated.
 	m := Build(fixture(), Options{

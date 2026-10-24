@@ -1,0 +1,12 @@
+id: ui
+version: 1
+status: production
+purpose: |
+  The local web UI and JSON API over the knowledge graph.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.adoption
+invariants:
+  - id: INV-1
+    statement: A loopback-bound server refuses a request whose Host is not a loopback name.

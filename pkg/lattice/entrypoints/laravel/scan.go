@@ -1,5 +1,7 @@
 package laravel
 
+// @module-feature entrypoints
+
 import (
 	"regexp"
 	"strings"
@@ -19,6 +21,7 @@ type Route struct {
 // kept in a variable and mounted later (->group($fn), Route::<macro>($fn)),
 // and only/except on resources. It does not run PHP: routes built from
 // variables or loops are not seen.
+// @enforces entrypoints:INV-4
 func ScanRoutes(body, mount string) []Route {
 	var out []Route
 	for _, r := range scanFile(body, parseUseStatements(body), mount) {

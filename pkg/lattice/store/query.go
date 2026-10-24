@@ -1,5 +1,7 @@
 package store
 
+// @module-feature store
+
 import (
 	"regexp"
 	"sort"

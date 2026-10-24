@@ -61,6 +61,7 @@ func TestOpenStandaloneReviewMode(t *testing.T) {
 	}
 }
 
+// @verifies workspace:INV-1
 func TestOpenNotInitialized(t *testing.T) {
 	if _, err := Open(t.TempDir()); err == nil {
 		t.Error("expected an error opening a directory with no lattice/")
@@ -143,6 +144,7 @@ func TestStorage(t *testing.T) {
 	}
 }
 
+// @verifies workspace:INV-2
 func TestExcludeGlobs(t *testing.T) {
 	root := t.TempDir()
 	writeLatticeDir(t, filepath.Join(root, "lattice"), "mode: embedded\nexclude:\n  - \"apps/legacy/**\"\n  - \"**/*.generated.ts\"\n")

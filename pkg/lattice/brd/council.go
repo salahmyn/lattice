@@ -1,5 +1,7 @@
 package brd
 
+// @module-feature brds.council
+
 import (
 	"errors"
 	"fmt"
@@ -100,6 +102,7 @@ func MarkOverturned(latticeDir, id string, version int, o Overturn) error {
 // an earlier vote by the same seat. The seat must belong to the council,
 // the verdict must be approve or changes, and the reason is required: a
 // vote without a reason gives the human nothing to read.
+// @enforces brds.council:INV-5
 func RecordVote(latticeDir string, b schema.BRD, council config.Council, v schema.BRDCouncilVote) error {
 	if !contains(council.Seats, v.Seat) {
 		return fmt.Errorf("seat %q is not on the council (%s)", v.Seat, strings.Join(council.Seats, ", "))
@@ -153,6 +156,7 @@ var regulatedKinds = map[schema.BRDConstraintKind]bool{
 // HumanOnly reports why a BRD is outside any council's reach: a tier-3
 // (money or regulatory) criterion, or a regulatory, legal or financial
 // constraint. Empty means a council may decide it.
+// @enforces brds.council:INV-2
 func HumanOnly(b schema.BRD) []string {
 	var why []string
 	for _, c := range b.SuccessCriteria {
@@ -215,6 +219,7 @@ func RecheckApproval(b schema.BRD, auto config.Autonomy) []string {
 	return out
 }
 
+// @enforces brds.council:INV-1, brds.council:INV-3, brds.council:INV-4
 func assess(b schema.BRD, auto config.Autonomy, mandateID string, votes []schema.BRDCouncilVote, today string, checkMode bool) CouncilVerdict {
 	var out CouncilVerdict
 	block := func(format string, args ...any) { out.Blockers = append(out.Blockers, fmt.Sprintf(format, args...)) }

@@ -1,5 +1,7 @@
 package schema
 
+// @module-feature schema
+
 // InitiativeStatus is the lifecycle state of an initiative.
 type InitiativeStatus string
 

@@ -1,5 +1,7 @@
 package validate
 
+// @module-feature validation
+
 import (
 	"fmt"
 	"path"
@@ -102,8 +104,8 @@ func (c *corpus) checkCrossFeatureImport() []schema.Violation {
 			}
 			seen[e] = true
 			v = append(v, schema.Violation{
-				Code:     schema.CodeCrossFeatureImport,
-				Severity: severity,
+				Code:      schema.CodeCrossFeatureImport,
+				Severity:  severity,
 				FeatureID: sym.Feature,
 				Message: fmt.Sprintf("feature %q crosses into feature %q (file %s) — AMA bans direct feature-to-feature imports",
 					sym.Feature, dst, sym.File),
@@ -173,6 +175,7 @@ func (c *corpus) checkFeatureColocation() []schema.Violation {
 // LineCount exceeds the configured cap (default 150). One row per
 // over-limit file — the operator wants to know where to refactor,
 // not get one rolled-up count.
+// @enforces validation:INV-10
 func (c *corpus) checkFileLineCap() []schema.Violation {
 	cap := c.cfg.Architecture.EffectiveFileLineCap()
 	tests := map[string]bool{}
@@ -222,6 +225,7 @@ func onlyTests(mod schema.GraphModule, tests map[string]bool) bool {
 // symbol's start line, with the module LineCount as the bound for the
 // last symbol (which over-reports a short function at the end of a
 // file). Test symbols live in kg.Tests and are never measured.
+// @enforces validation:INV-10
 func (c *corpus) checkMethodLineCap() []schema.Violation {
 	cap := c.cfg.Architecture.EffectiveMethodLineCap()
 
@@ -259,9 +263,9 @@ func (c *corpus) checkMethodLineCap() []schema.Violation {
 				continue
 			}
 			v = append(v, schema.Violation{
-				Code:     schema.CodeMethodLineCap,
-				Severity: schema.SeverityWarning,
-				Subject:  sym.FQN,
+				Code:      schema.CodeMethodLineCap,
+				Severity:  schema.SeverityWarning,
+				Subject:   sym.FQN,
 				FeatureID: sym.Feature,
 				Message: fmt.Sprintf("symbol %s is ~%d lines (cap %d) — AMA recommends splitting",
 					sym.FQN, footprint, cap),

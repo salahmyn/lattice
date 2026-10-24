@@ -2,6 +2,8 @@
 // blast-radius queries over the resulting indexes.
 package scip
 
+// @module-feature scip
+
 import (
 	"context"
 	"os"

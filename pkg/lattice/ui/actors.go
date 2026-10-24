@@ -1,5 +1,7 @@
 package ui
 
+// @module-feature ui
+
 import (
 	"net/http"
 	"sort"
@@ -32,8 +34,8 @@ func (s *Server) pageActors(w http.ResponseWriter, r *http.Request) {
 	// Per-actor row: how many EPs they touch. Cheap to compute and
 	// gives the listing a sortable signal beyond just the actor name.
 	type row struct {
-		Actor       schema.Actor
-		EPCount     int
+		Actor        schema.Actor
+		EPCount      int
 		FeatureCount int
 	}
 	rows := make([]row, 0, len(ctx.Actors))
@@ -44,9 +46,9 @@ func (s *Server) pageActors(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Actor.ID < rows[j].Actor.ID })
 
 	s.render(w, "actors.html", pageData{
-		Title:    "Actors",
-		Active:   "actors",
-		JSONHref: "/api/v1/actors",
+		Title:       "Actors",
+		Active:      "actors",
+		JSONHref:    "/api/v1/actors",
 		Breadcrumbs: []crumb{{Label: "Overview", Href: "/"}, {Label: "Actors"}},
 		Body: map[string]interface{}{
 			"Rows":            rows,

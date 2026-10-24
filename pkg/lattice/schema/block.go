@@ -1,5 +1,7 @@
 package schema
 
+// @module-feature schema
+
 // Block is the one primitive of the block graph (rnd/0003): a controlled logic
 // path with inputs, decisions and outputs. Blocks nest through Parent. Features,
 // invariants and entry points are converted into blocks at build time.

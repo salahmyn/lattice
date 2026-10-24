@@ -1,5 +1,7 @@
 package ui
 
+// @module-feature ui
+
 import (
 	"bytes"
 	"context"

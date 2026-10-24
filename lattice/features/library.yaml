@@ -1,0 +1,9 @@
+id: library
+version: 1
+status: production
+purpose: |
+  The public Go API for embedding Lattice, a peer of the CLI over one engine.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.adoption

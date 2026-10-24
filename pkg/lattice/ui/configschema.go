@@ -1,5 +1,7 @@
 package ui
 
+// @module-feature ui
+
 import (
 	"encoding/json"
 	"io"
@@ -22,9 +24,9 @@ import (
 // the config package automatically surfaces in the UI form with no
 // template change — the schema-driven goal from the design doc.
 type FieldSpec struct {
-	Path     string      `json:"path"`               // dotted: "agentic.llm.enabled"
-	Label    string      `json:"label"`              // human-readable
-	Kind     string      `json:"kind"`               // bool | string | int | duration | string_slice | struct
+	Path     string      `json:"path"`  // dotted: "agentic.llm.enabled"
+	Label    string      `json:"label"` // human-readable
+	Kind     string      `json:"kind"`  // bool | string | int | duration | string_slice | struct
 	Value    interface{} `json:"value"`
 	Children []FieldSpec `json:"children,omitempty"` // only for kind=struct
 }

@@ -1,5 +1,7 @@
 package ui
 
+// @module-feature ui
+
 import (
 	"net/http"
 	"sort"
@@ -41,9 +43,9 @@ func (s *Server) pageBRDs(w http.ResponseWriter, r *http.Request) {
 	})
 
 	s.render(w, "brds.html", pageData{
-		Title:    "BRDs",
-		Active:   "brds",
-		JSONHref: "/api/v1/brds",
+		Title:       "BRDs",
+		Active:      "brds",
+		JSONHref:    "/api/v1/brds",
 		Breadcrumbs: []crumb{{Label: "Overview", Href: "/"}, {Label: "BRDs"}},
 		Body: map[string]interface{}{
 			"Total": len(rows),

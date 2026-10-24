@@ -9,6 +9,8 @@
 // regex pass — and ships immediately on a tree-sitter-less code root.
 package laravel
 
+// @module-feature entrypoints
+
 import (
 	"context"
 	"fmt"

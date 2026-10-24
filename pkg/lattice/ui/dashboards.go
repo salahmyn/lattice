@@ -1,5 +1,7 @@
 package ui
 
+// @module-feature ui
+
 import (
 	"net/http"
 	"sort"
@@ -53,9 +55,9 @@ func (s *Server) pageCoverage(w http.ResponseWriter, r *http.Request) {
 		return pkgs[i].Package < pkgs[j].Package
 	})
 	s.render(w, "coverage.html", pageData{
-		Title:    "Coverage",
-		Active:   "coverage",
-		JSONHref: "/api/v1/coverage",
+		Title:       "Coverage",
+		Active:      "coverage",
+		JSONHref:    "/api/v1/coverage",
 		Breadcrumbs: []crumb{{Label: "Overview", Href: "/"}, {Label: "Coverage"}},
 		Body: map[string]interface{}{
 			"Discovery":     payload.Discovery,
@@ -105,11 +107,11 @@ func (s *Server) computeCoverage(r *http.Request) (coveragePayload, error) {
 // natural "issues to triage" structure — exactly the CLI's --json output
 // re-shaped.
 type validationPayload struct {
-	OK         bool                            `json:"ok"`
-	Errors     int                             `json:"errors"`
-	Warnings   int                             `json:"warnings"`
-	ByCode     map[string][]schema.Violation   `json:"by_code"`
-	Violations []schema.Violation              `json:"violations"`
+	OK         bool                          `json:"ok"`
+	Errors     int                           `json:"errors"`
+	Warnings   int                           `json:"warnings"`
+	ByCode     map[string][]schema.Violation `json:"by_code"`
+	Violations []schema.Violation            `json:"violations"`
 }
 
 func (s *Server) apiValidation(w http.ResponseWriter, r *http.Request) {
@@ -141,9 +143,9 @@ func (s *Server) pageValidation(w http.ResponseWriter, r *http.Request) {
 		return codes[i] < codes[j]
 	})
 	s.render(w, "validation.html", pageData{
-		Title:    "Validation",
-		Active:   "validation",
-		JSONHref: "/api/v1/validation",
+		Title:       "Validation",
+		Active:      "validation",
+		JSONHref:    "/api/v1/validation",
 		Breadcrumbs: []crumb{{Label: "Overview", Href: "/"}, {Label: "Validation"}},
 		Body: map[string]interface{}{
 			"OK":       payload.OK,

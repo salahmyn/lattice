@@ -1,0 +1,19 @@
+id: results
+version: 1
+status: production
+purpose: |
+  Ingests test reports (JUnit, TAP) so a verifier that passed on the commit can make
+  a criterion demonstrated.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.verification
+invariants:
+  - id: INV-1
+    statement: A failure in any report wins over a pass for the same case.
+  - id: INV-2
+    statement: A ref that matches several report cases equally well is ambiguous and resolves to no outcome.
+  - id: INV-3
+    statement: Among matching cases the most specific match wins.
+  - id: INV-4
+    statement: A table-driven test passes only when every row passed.

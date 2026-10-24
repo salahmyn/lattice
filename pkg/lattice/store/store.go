@@ -2,6 +2,8 @@
 // graph, in files or in PostgreSQL, behind one interface (spec §6).
 package store
 
+// @module-feature store
+
 import (
 	"context"
 	"errors"

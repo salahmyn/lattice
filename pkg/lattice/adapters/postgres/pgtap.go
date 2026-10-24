@@ -1,5 +1,7 @@
 package postgres
 
+// @module-feature adapters.postgres
+
 import (
 	"fmt"
 	"regexp"

@@ -1,5 +1,7 @@
 package ui
 
+// @module-feature ui
+
 import (
 	"context"
 	"encoding/json"
@@ -33,14 +35,14 @@ func (s *Server) pageOnboarding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, "onboarding.html", pageData{
-		Title:    "Onboarding",
-		Active:   "onboarding",
-		JSONHref: "/api/v1/onboarding",
+		Title:       "Onboarding",
+		Active:      "onboarding",
+		JSONHref:    "/api/v1/onboarding",
 		Breadcrumbs: []crumb{{Label: "Overview", Href: "/"}, {Label: "Onboarding"}},
 		Body: map[string]interface{}{
-			"State":       state,
-			"Steps":       allSteps(state.Step),
-			"StepLabel":   stepLabel(state.Step),
+			"State":     state,
+			"Steps":     allSteps(state.Step),
+			"StepLabel": stepLabel(state.Step),
 		},
 	})
 }
@@ -75,10 +77,10 @@ func (s *Server) apiOnboardingPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		ProjectMetadata   *onboarding.ProjectMetadata `json:"project_metadata,omitempty"`
-		CodeRoots         []string                    `json:"code_roots,omitempty"`
-		InstallPackage    string                      `json:"install_package,omitempty"`
-		Action            string                      `json:"action,omitempty"` // "advance" | "install" | "finish"
+		ProjectMetadata *onboarding.ProjectMetadata `json:"project_metadata,omitempty"`
+		CodeRoots       []string                    `json:"code_roots,omitempty"`
+		InstallPackage  string                      `json:"install_package,omitempty"`
+		Action          string                      `json:"action,omitempty"` // "advance" | "install" | "finish"
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSONError(w, err, http.StatusBadRequest)

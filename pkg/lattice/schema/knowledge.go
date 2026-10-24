@@ -1,5 +1,7 @@
 package schema
 
+// @module-feature schema
+
 import "strings"
 
 // KnowledgeGraph is the single artifact Lattice emits as lattice.json.
@@ -75,8 +77,8 @@ type SuppressedInvariant struct {
 type GraphModule struct {
 	File               string   `json:"file"`
 	Language           string   `json:"language"`
-	LineCount          int      `json:"line_count,omitempty"` // v0.7 — for FILE_LINE_CAP
-	HasCode            bool     `json:"has_code,omitempty"`   // top-level runtime code outside any symbol
+	LineCount          int      `json:"line_count,omitempty"`     // v0.7 — for FILE_LINE_CAP
+	HasCode            bool     `json:"has_code,omitempty"`       // top-level runtime code outside any symbol
 	ChangeHistory      bool     `json:"change_history,omitempty"` // a migration: attributed per symbol, not as a module
 	Feature            string   `json:"feature,omitempty"`
 	EnforcesInvariants []string `json:"enforces_invariants,omitempty"`
@@ -160,6 +162,7 @@ var behaviourKinds = map[string]bool{
 // Attribution classifies every module of the graph. A module is attributed
 // by its @module-feature or by a feature on any of its symbols. It is the
 // one definition behind UNATTRIBUTED_MODULE and `lattice coverage`.
+// @enforces schema:INV-1
 func (kg KnowledgeGraph) Attribution() []ModuleAttribution {
 	sym := map[string]GraphSymbol{}
 	for _, s := range kg.Symbols {

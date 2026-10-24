@@ -10,6 +10,8 @@
 // behaves exactly as it did in v0.7.
 package results
 
+// @module-feature results
+
 import (
 	"encoding/json"
 	"encoding/xml"
@@ -135,6 +137,7 @@ func collect(s junitSuite, out map[string]Outcome, cases map[string]string) {
 
 // record stores an outcome under a key. A failure anywhere wins over a pass
 // under the same key, across cases, projects and reports.
+// @enforces results:INV-1
 func record(out map[string]Outcome, k string, o Outcome) {
 	if prev, ok := out[k]; ok && prev == Fail {
 		return
@@ -255,6 +258,7 @@ func normalize(s string) string {
 // same-titled case in another file. Equally specific matches resolve
 // to the worst outcome (fail, then skip, then pass), so the answer
 // never depends on map order and a failure is never hidden.
+// @enforces results:INV-2
 func (s Set) Lookup(ref string) (Outcome, bool) {
 	o, found, ambiguous := s.lookup(ref)
 	if len(ambiguous) > 0 {
@@ -271,6 +275,7 @@ func (s Set) Ambiguous(ref string) []string {
 	return ambiguous
 }
 
+// @enforces results:INV-2, results:INV-3
 func (s Set) lookup(ref string) (Outcome, bool, []string) {
 	if len(s.Results) == 0 {
 		return "", false, nil
@@ -331,6 +336,7 @@ func (s Set) lookup(ref string) (Outcome, bool, []string) {
 // fills the placeholders is a row of it; among those, the rows with the
 // longest shared path to the ref (the same file) count. The test is
 // demonstrated only when every row passed, so the worst outcome wins.
+// @enforces results:INV-4
 func (s Set) lookupTemplate(key string) (Outcome, bool) {
 	lastDot := strings.LastIndex(key, ".")
 	last := key[lastDot+1:]

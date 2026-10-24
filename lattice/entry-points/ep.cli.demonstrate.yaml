@@ -1,0 +1,19 @@
+id: ep.cli.demonstrate
+version: 1
+status: production
+kind: cli
+purpose: "QAE sign-off: V0 + V4 + V5 + V10 + sweep, executed now, ledgered"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice demonstrate"
+handler:
+  symbol: internal.cli.newDemonstrateCommand
+  file: internal/cli/demonstrate.go
+flow:
+  - feature: cli
+  - feature: runsclean
+  - feature: sweep
+  - feature: rtm
+  - feature: results

@@ -1,5 +1,7 @@
 package schema
 
+// @module-feature schema
+
 // TaskStatus is the workflow state of a task.
 type TaskStatus string
 

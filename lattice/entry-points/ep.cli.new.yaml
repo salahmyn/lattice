@@ -1,0 +1,17 @@
+id: ep.cli.new
+version: 1
+status: production
+kind: cli
+purpose: "Scaffold a manifest, initiative, task, or ADR"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice new"
+handler:
+  symbol: internal.cli.newNewCommand
+  file: internal/cli/new.go
+flow:
+  - feature: cli
+  - feature: schema
+  - feature: workspace

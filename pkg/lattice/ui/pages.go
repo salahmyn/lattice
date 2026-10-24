@@ -1,5 +1,7 @@
 package ui
 
+// @module-feature ui
+
 import (
 	"bytes"
 	"net/http"
@@ -65,9 +67,9 @@ func (s *Server) pageOverview(w http.ResponseWriter, r *http.Request) {
 		Active:   "overview",
 		JSONHref: "/api/v1/overview",
 		Body: map[string]interface{}{
-			"Workspace":  s.ws,
-			"KG":         kg,
-			"EPsByKind":  byKind,
+			"Workspace":    s.ws,
+			"KG":           kg,
+			"EPsByKind":    byKind,
 			"OrderedKinds": orderedKinds(byKind),
 		},
 	})
@@ -82,11 +84,11 @@ func (s *Server) pageFeatures(w http.ResponseWriter, r *http.Request) {
 	features := append([]schema.Manifest(nil), kg.Features...)
 	sort.Slice(features, func(i, j int) bool { return features[i].ID < features[j].ID })
 	s.render(w, "features.html", pageData{
-		Title:    "Features",
-		Active:   "features",
-		JSONHref: "/api/v1/features",
+		Title:       "Features",
+		Active:      "features",
+		JSONHref:    "/api/v1/features",
 		Breadcrumbs: []crumb{{Label: "Overview", Href: "/"}, {Label: "Features"}},
-		Body:     features,
+		Body:        features,
 	})
 }
 
@@ -141,9 +143,9 @@ func (s *Server) pageEntryPoints(w http.ResponseWriter, r *http.Request) {
 		sort.Slice(byKind[k], func(i, j int) bool { return byKind[k][i].ID < byKind[k][j].ID })
 	}
 	s.render(w, "entrypoints.html", pageData{
-		Title:    "Entry points",
-		Active:   "entry-points",
-		JSONHref: "/api/v1/entry-points",
+		Title:       "Entry points",
+		Active:      "entry-points",
+		JSONHref:    "/api/v1/entry-points",
 		Breadcrumbs: []crumb{{Label: "Overview", Href: "/"}, {Label: "Entry points"}},
 		Body: map[string]interface{}{
 			"ByKind":       byKind,

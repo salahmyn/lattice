@@ -1,0 +1,15 @@
+id: workspace
+version: 1
+status: production
+purpose: |
+  The lattice/ workspace: embedded or standalone layout, code roots, excludes, storage
+  and the config files.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.adoption
+invariants:
+  - id: INV-1
+    statement: Opening a directory with no lattice/ workspace fails.
+  - id: INV-2
+    statement: A workspace with an invalid exclude glob fails to open.

@@ -1,0 +1,16 @@
+id: ep.cli.serve
+version: 1
+status: production
+kind: cli
+purpose: "Serve the Lattice web UI on http://host:port"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice serve"
+handler:
+  symbol: internal.cli.newServeCommand
+  file: internal/cli/serve.go
+flow:
+  - feature: cli
+  - feature: ui

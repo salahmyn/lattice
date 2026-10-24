@@ -1,5 +1,7 @@
 package patch
 
+// @module-feature patch
+
 import "strings"
 
 // UnifiedDiff returns a minimal unified diff between two texts, computed with

@@ -1,5 +1,7 @@
 package extract
 
+// @module-feature extraction
+
 import (
 	"bytes"
 	"os/exec"
@@ -42,10 +44,12 @@ func (f scanFilter) skipDir(rel string) bool {
 }
 
 // skipFile reports whether the file at rel is left out.
+// @enforces extraction:INV-2
 func (f scanFilter) skipFile(rel string) bool {
 	return f.ignored[rel] || f.excluded(rel)
 }
 
+// @enforces extraction:INV-2
 func (f scanFilter) excluded(rel string) bool {
 	for _, g := range f.exclude {
 		if ok, _ := doublestar.Match(strings.TrimPrefix(g, "./"), rel); ok {

@@ -1,5 +1,7 @@
 package ui
 
+// @module-feature ui
+
 import (
 	"net/http"
 
@@ -27,9 +29,9 @@ func (s *Server) pageRTM(w http.ResponseWriter, r *http.Request) {
 	})
 	coverage := rtm.ComputeCoverage(matrix)
 	s.render(w, "rtm.html", pageData{
-		Title:    "Requirements traceability",
-		Active:   "rtm",
-		JSONHref: "/api/v1/rtm",
+		Title:       "Requirements traceability",
+		Active:      "rtm",
+		JSONHref:    "/api/v1/rtm",
 		Breadcrumbs: []crumb{{Label: "Overview", Href: "/"}, {Label: "RTM"}},
 		Body: map[string]interface{}{
 			"Matrix":   matrix,

@@ -1,5 +1,7 @@
 package graph
 
+// @module-feature graph
+
 import (
 	"bytes"
 	"encoding/json"

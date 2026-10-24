@@ -1,5 +1,7 @@
 package validate
 
+// @module-feature validation
+
 import (
 	"fmt"
 	"strings"
@@ -16,6 +18,8 @@ import (
 //	                                  recorded vote (e.g. a hand-written block)
 //	BRD_COUNCIL_UNREVIEWED  (info)  — the human the council acted for has not
 //	                                  acknowledged the decision yet
+//
+// @enforces brds.council:INV-6
 func (c *corpus) checkCouncil() []schema.Violation {
 	var v []schema.Violation
 	for i := range c.kg.BRDs {

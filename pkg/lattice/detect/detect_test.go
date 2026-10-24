@@ -26,9 +26,9 @@ func scaffold(t *testing.T, files map[string]string) string {
 
 func TestDetectLaravel(t *testing.T) {
 	root := scaffold(t, map[string]string{
-		"composer.json":     `{"require": {"laravel/framework": "^10.0", "php": "^8.2"}}`,
-		"artisan":           "",
-		"bootstrap/app.php": "",
+		"composer.json":       `{"require": {"laravel/framework": "^10.0", "php": "^8.2"}}`,
+		"artisan":             "",
+		"bootstrap/app.php":   "",
 		"app/Http/Kernel.php": "",
 	})
 	d := Detect(root)
@@ -89,8 +89,8 @@ func TestDetectNoLanguage(t *testing.T) {
 
 func TestDetectGo(t *testing.T) {
 	root := scaffold(t, map[string]string{
-		"go.mod":       "module example.com/x\n\ngo 1.22\n",
-		"main.go":      "package main",
+		"go.mod":        "module example.com/x\n\ngo 1.22\n",
+		"main.go":       "package main",
 		"cmd/x/main.go": "package main",
 	})
 	d := Detect(root)
@@ -113,6 +113,7 @@ func TestInstallCommandShape(t *testing.T) {
 	}
 }
 
+// @verifies onboarding:INV-2
 func TestDetectPicksHighestScoreOnMultiManifest(t *testing.T) {
 	// A repo with both go.mod and package.json — go wins (15) over
 	// JS-without-typescript (8). Keeps tied scores from masking the

@@ -1,5 +1,7 @@
 package golang
 
+// @module-feature adapters.go
+
 import (
 	"context"
 	"fmt"
@@ -72,6 +74,7 @@ type goParser struct {
 // packagePath is the FQN prefix of a file's symbols: its directory, dotted
 // (pkg/lattice/results -> pkg.lattice.results). A file at the code root has
 // no directory, so the package name stands in for it.
+// @enforces adapters.go:INV-2
 func packagePath(file, pkgName string) string {
 	dir := path.Dir(strings.ReplaceAll(file, "\\", "/"))
 	dir = strings.Trim(strings.TrimPrefix(dir, "./"), "/")
@@ -118,6 +121,7 @@ const (
 // Module tags are routed to the module wherever they appear. handle reports
 // whether it recorded a symbol carrying the annotations; annotations it does
 // not take are reported as orphaned.
+// @enforces adapters.go:INV-1
 func (p *goParser) walkList(parent *sitter.Node, handle func(n *sitter.Node, anns []ir.Annotation) bool) {
 	if parent == nil {
 		return
@@ -162,6 +166,7 @@ func (p *goParser) walkList(parent *sitter.Node, handle func(n *sitter.Node, ann
 // adapter does: an @feature or @verifies the graph never sees must not look
 // declared. at is the node that followed (or holds) the annotations; nil
 // means the end of the block.
+// @enforces adapters.go:INV-1
 func (p *goParser) orphan(anns []ir.Annotation, at *sitter.Node, why int) {
 	if len(anns) == 0 {
 		return
@@ -377,6 +382,7 @@ func (p *goParser) walkTestBody(block *sitter.Node, idx int, named bool) {
 }
 
 // addSubtest records one t.Run call. It always takes the annotations.
+// @enforces adapters.go:INV-2
 func (p *goParser) addSubtest(call *sitter.Node, anns []ir.Annotation, idx int, named bool) bool {
 	args := call.ChildByFieldName("arguments")
 	title, literal := stringLiteral(args.NamedChild(0), p.src)
@@ -421,6 +427,7 @@ func (p *goParser) uniqueSubtest(parent, sub string) string {
 
 // rewriteSubtest mirrors go test's rewrite of a subtest name: spaces become
 // underscores and unprintable runes are escaped.
+// @enforces adapters.go:INV-2
 func rewriteSubtest(s string) string {
 	var b strings.Builder
 	for _, r := range s {
@@ -546,6 +553,7 @@ var surfaceTypes = map[string]bool{
 // codes), except @surface, whose space-separated fields start with an
 // interaction type, and a "reason:" text. A line that reads as prose is not
 // parsed for tags at all.
+// @enforces adapters.go:INV-4
 func tagLike(ann ir.Annotation) bool {
 	if ann.Kind == "surface" {
 		if len(ann.Args) == 0 {

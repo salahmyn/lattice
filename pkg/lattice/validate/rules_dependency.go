@@ -1,5 +1,7 @@
 package validate
 
+// @module-feature validation
+
 import (
 	"fmt"
 	"sort"
@@ -49,6 +51,7 @@ func (c *corpus) checkDependencies() []schema.Violation {
 }
 
 // dependencyCycles detects cycles in the depends_on graph.
+// @enforces validation:INV-2
 func (c *corpus) dependencyCycles() []schema.Violation {
 	const (
 		white = 0

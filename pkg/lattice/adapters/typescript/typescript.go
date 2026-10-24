@@ -2,6 +2,8 @@
 // JavaScript source. Annotations are JSDoc tags; decorators are not supported.
 package typescript
 
+// @module-feature adapters.typescript
+
 import (
 	"context"
 	"path/filepath"

@@ -1,5 +1,7 @@
 package mutation
 
+// @module-feature mutation
+
 import (
 	"encoding/json"
 	"path/filepath"

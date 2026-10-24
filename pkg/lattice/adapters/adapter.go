@@ -6,6 +6,8 @@
 // adapter and registering it.
 package adapters
 
+// @module-feature adapters
+
 import (
 	"context"
 	"errors"

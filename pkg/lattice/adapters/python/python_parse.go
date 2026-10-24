@@ -1,5 +1,7 @@
 package python
 
+// @module-feature adapters.python
+
 import (
 	"context"
 	"path/filepath"
@@ -188,6 +190,7 @@ func (p *pyParser) decoratorAnnotation(dec *sitter.Node) (ir.Annotation, bool) {
 }
 
 // callAnnotation extracts an annotation from a call expression.
+// @enforces adapters.python:INV-1
 func (p *pyParser) callAnnotation(call *sitter.Node) (ir.Annotation, bool) {
 	fn := call.ChildByFieldName("function")
 	if fn == nil || fn.Type() != "identifier" {

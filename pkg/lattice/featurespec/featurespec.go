@@ -10,6 +10,8 @@
 // guarantees the schema fields exist.
 package featurespec
 
+// @module-feature views
+
 import (
 	"fmt"
 	"sort"
@@ -28,6 +30,7 @@ const WordCap = 500
 // Sections that have no content are omitted entirely (no "Invariants:
 // none" filler), so the spec stays compact for small features and
 // only grows as the manifest does.
+// @enforces views:INV-2
 func Render(m schema.Manifest) string {
 	var b strings.Builder
 

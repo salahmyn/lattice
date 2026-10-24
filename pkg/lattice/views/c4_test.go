@@ -90,6 +90,7 @@ func TestC4ContextWithActorsAndExternals(t *testing.T) {
 	}
 }
 
+// @verifies views:INV-1
 func TestRenderC4ExternalEvent(t *testing.T) {
 	ws := &workspace.Workspace{
 		LatticeDir: "/proj/lattice",

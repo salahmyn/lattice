@@ -1,5 +1,7 @@
 package importer
 
+// @module-feature importer
+
 import (
 	"context"
 	"os"
@@ -98,6 +100,7 @@ var inscribeKinds = map[ir.SymbolKind]bool{
 // PlanInscribe works out which inline `@feature` annotations to insert. It
 // annotates each accepted feature's top-level symbols, skipping any symbol
 // that already carries a feature annotation — so a re-run is a no-op.
+// @enforces importer:INV-4
 func PlanInscribe(modules []ir.Module, reg *adapters.Registry, accepted []FeatureSymbols) (InscribePlan, error) {
 	wanted := map[string]string{}
 	for _, fs := range accepted {
@@ -151,6 +154,7 @@ func PlanInscribe(modules []ir.Module, reg *adapters.Registry, accepted []Featur
 // ApplyInscribe writes the planned annotations into source. Each touched file
 // is re-parsed after modification; a file whose edit breaks parsing is left
 // untouched and reported, never half-written.
+// @enforces importer:INV-3
 func ApplyInscribe(ctx context.Context, plan InscribePlan, reg *adapters.Registry, absPath func(string) string) InscribeResult {
 	byFile := map[string][]InscribeEdit{}
 	for _, e := range plan.Edits {

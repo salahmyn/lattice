@@ -1,0 +1,16 @@
+# Language adapter activation.
+adapters:
+  python:
+    enabled: true
+  typescript:
+    enabled: true
+  php:
+    enabled: true
+  go:
+    enabled: true
+  # PostgreSQL migrations and pgTAP tests are opt-in (a repo's .sql files are
+  # often seed data or dumps). Globs are relative to the code root.
+  # postgres:
+  #   enabled: true
+  #   migrations: ["supabase/migrations/*.sql"]
+  #   tests: ["supabase/tests/**/*.sql"]

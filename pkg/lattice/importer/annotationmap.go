@@ -1,5 +1,7 @@
 package importer
 
+// @module-feature importer
+
 import (
 	"os"
 	"sort"
@@ -20,7 +22,7 @@ const annotationMapVersion = 1
 // requires a giant code-mod PR.
 type AnnotationMap struct {
 	Version  int                    `yaml:"version"`
-	Features []AnnotationMapFeature  `yaml:"features"`
+	Features []AnnotationMapFeature `yaml:"features"`
 }
 
 // AnnotationMapFeature maps one feature id to its implementing symbol FQNs,

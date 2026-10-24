@@ -3,6 +3,8 @@
 // supports --json for machine-readable output.
 package cli
 
+// @module-feature cli
+
 import (
 	"encoding/json"
 	"fmt"

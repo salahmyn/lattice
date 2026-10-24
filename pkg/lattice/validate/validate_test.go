@@ -43,6 +43,7 @@ func TestValidateCleanFeature(t *testing.T) {
 	}
 }
 
+// @verifies validation:INV-1
 func TestValidateUnverifiedAndUnenforced(t *testing.T) {
 	kg := schema.KnowledgeGraph{
 		Features: []schema.Manifest{{
@@ -60,6 +61,7 @@ func TestValidateUnverifiedAndUnenforced(t *testing.T) {
 	}
 }
 
+// @verifies validation:INV-2
 func TestValidateDependencyCycle(t *testing.T) {
 	kg := schema.KnowledgeGraph{
 		Features: []schema.Manifest{
@@ -74,6 +76,7 @@ func TestValidateDependencyCycle(t *testing.T) {
 	}
 }
 
+// @verifies validation:INV-3
 func TestValidateBadIDFormat(t *testing.T) {
 	kg := schema.KnowledgeGraph{
 		Features: []schema.Manifest{{

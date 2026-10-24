@@ -1,5 +1,7 @@
 package cli
 
+// @module-feature cli
+
 import (
 	"context"
 	"fmt"
@@ -43,13 +45,13 @@ func newImportCommand(io *IO) *cobra.Command {
 }
 
 type importStatus struct {
-	Status                string  `json:"status"`
+	Status                string   `json:"status"`
 	Scopes                []string `json:"scopes,omitempty"`
-	Candidates            int     `json:"candidates"`
-	Accepted              int     `json:"accepted"`
-	Rejected              int     `json:"rejected"`
-	DiscoveryCoverage     float64 `json:"discovery_coverage"`
-	DocumentationCoverage float64 `json:"documentation_coverage"`
+	Candidates            int      `json:"candidates"`
+	Accepted              int      `json:"accepted"`
+	Rejected              int      `json:"rejected"`
+	DiscoveryCoverage     float64  `json:"discovery_coverage"`
+	DocumentationCoverage float64  `json:"documentation_coverage"`
 }
 
 func newImportScanCommand(io *IO) *cobra.Command {
@@ -337,7 +339,7 @@ func newImportUndoCommand(io *IO) *cobra.Command {
 			}
 			if io.JSON {
 				return io.printJSON(map[string]interface{}{
-					"candidate":        candID,
+					"candidate":         candID,
 					"previous_decision": prev,
 					"removed_manifest":  removed,
 				})

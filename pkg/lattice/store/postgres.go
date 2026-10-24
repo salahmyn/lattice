@@ -1,5 +1,7 @@
 package store
 
+// @module-feature store
+
 import (
 	"context"
 	"encoding/json"
@@ -43,6 +45,7 @@ CREATE TABLE IF NOT EXISTS {s}.flows (ord int NOT NULL, id text PRIMARY KEY, dat
 `
 
 // OpenPostgres connects and creates the schema's tables when missing.
+// @enforces store:INV-2
 func OpenPostgres(ctx context.Context, dsn, sch string) (*Postgres, error) {
 	if !schemaName.MatchString(sch) {
 		return nil, fmt.Errorf("schema %q is not a lower-case SQL identifier", sch)

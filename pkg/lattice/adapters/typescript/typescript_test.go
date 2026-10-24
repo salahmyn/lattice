@@ -113,6 +113,7 @@ it('checks quantity', checksQuantity);
 
 // TestDetectsRoutesAndNoDoubleCount covers HTTP route auto-detection and the
 // rule that it("desc", namedFn) does not create a duplicate test symbol.
+// @verifies adapters.typescript:INV-3
 func TestDetectsRoutesAndNoDoubleCount(t *testing.T) {
 	mod, err := New().Parse(context.Background(), "src/index.ts", []byte(tsRouteSample))
 	if err != nil {
@@ -329,6 +330,7 @@ func TestTSStillParsesTypeAssertions(t *testing.T) {
 
 // TestOrphanedAnnotations: an annotation that attaches to no symbol is
 // reported instead of silently dropped.
+// @verifies adapters.typescript:INV-1
 func TestOrphanedAnnotations(t *testing.T) {
 	src := `/** @feature cart */
 export default 42;
@@ -455,6 +457,7 @@ func TestAnnotationTargets(t *testing.T) {
 
 // A line comment never carries symbol tags: a stray // @capability must not
 // re-attribute the declaration below it.
+// @verifies adapters.typescript:INV-2
 func TestLineCommentIgnoresSymbolTags(t *testing.T) {
 	src := "// @capability cart:total\nexport function total() { return 1; }\n"
 	mod, err := New().Parse(context.Background(), "src/cart.ts", []byte(src))
@@ -468,6 +471,7 @@ func TestLineCommentIgnoresSymbolTags(t *testing.T) {
 
 // TestEachTests: it.each / test.each / describe.each are tests; their FQN
 // marks each title placeholder with "_" so results can join every row.
+// @verifies adapters.typescript:INV-4
 func TestEachTests(t *testing.T) {
 	src := `describe('library', () => {
   /** @verifies parent.library_ui:INV-1 */
@@ -519,6 +523,7 @@ func TestIsTestFile(t *testing.T) {
 // A file has top-level code when something runs at load: a render call or a
 // plain value const. Imports, type declarations, directives and re-exports
 // run nothing, and a test file never counts.
+// @verifies adapters.typescript:INV-5
 func TestHasTopLevelCode(t *testing.T) {
 	for _, tc := range []struct {
 		path, src string

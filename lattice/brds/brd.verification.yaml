@@ -1,0 +1,106 @@
+id: brd.verification
+version: 1
+status: draft
+title: Prove which rules hold, not just which are declared
+business_problem: A rule that is declared but never enforced or tested reads as covered. Lattice checks every invariant for an enforcer and a verifier, folds in test results, and reports what is demonstrated on the commit.
+business_goals:
+  - Every declared invariant has an enforcer and a verifier, or validate fails.
+  - A criterion reads demonstrated only when its verifiers passed on the commit.
+user_scenarios:
+  - id: US-1
+    actor: maintainer
+    narrative: A maintainer ingests the unit and end-to-end reports of one run together.
+    given:
+      - a case that passed in one report and failed in another
+    when:
+      - both reports are ingested in one run
+    then:
+      - the case reads failed, and the other cases keep their outcome
+success_criteria:
+  - id: SC-1
+    statement: An invariant no symbol enforces is UNENFORCED_INVARIANT, and one no test verifies is UNVERIFIED_INVARIANT.
+    maps_to_invariant: validation:INV-1
+  - id: SC-2
+    statement: A depends_on cycle is DEPENDS_ON_CYCLE.
+    maps_to_invariant: validation:INV-2
+  - id: SC-3
+    statement: A feature id outside the dotted lowercase grammar is MANIFEST_ID_FORMAT.
+    maps_to_invariant: validation:INV-3
+  - id: SC-4
+    statement: UNATTRIBUTED_MODULE is off unless the workspace turns it on.
+    maps_to_invariant: validation:INV-4
+  - id: SC-5
+    statement: A severity override applies per code; off drops the finding and an unknown severity name is VALIDATE_POLICY.
+    maps_to_invariant: validation:INV-5
+  - id: SC-6
+    statement: A run fails only on findings at or above the fail_on threshold; off is not a threshold.
+    maps_to_invariant: validation:INV-6
+  - id: SC-7
+    statement: An allowlist with an unknown key is ALLOWLIST_SCHEMA, and an entry that matches no finding is ALLOWLIST_STALE.
+    maps_to_invariant: validation:INV-7
+  - id: SC-8
+    statement: A BRD below the required truth level is BRD_BELOW_LEVEL.
+    maps_to_invariant: validation:INV-8
+  - id: SC-9
+    statement: An invariant whose enforcers are all non-guard symbols is ENFORCER_NOT_GUARD.
+    maps_to_invariant: validation:INV-9
+  - id: SC-10
+    statement: FILE_LINE_CAP and METHOD_LINE_CAP apply only with ama_mode or an explicit cap, and never to test files.
+    maps_to_invariant: validation:INV-10
+  - id: SC-11
+    statement: A criterion whose maps_to_invariant names a missing feature or invariant is phantom.
+    maps_to_invariant: rtm:INV-1
+  - id: SC-12
+    statement: A mapped invariant with no enforcer is unenforced, and with an enforcer but no verifier is unverified.
+    maps_to_invariant: rtm:INV-2
+  - id: SC-13
+    statement: Any red result among a criterion's verifiers makes it failing; it is demonstrated only when every verifier has a passing result.
+    maps_to_invariant: rtm:INV-3
+  - id: SC-14
+    statement: A mutation score below the threshold makes a wired criterion partial.
+    maps_to_invariant: rtm:INV-4
+  - id: SC-15
+    statement: The lite profile caps demonstrated at verified, and an open flag rides alongside a status without replacing it.
+    maps_to_invariant: rtm:INV-5
+  - id: SC-16
+    statement: A BRD summary reports the worst status of its criteria.
+    maps_to_invariant: rtm:INV-6
+  - id: SC-17
+    statement: An invariant verifiable only by structural check or mutation is not unverified for lack of a test.
+    maps_to_invariant: rtm:INV-7
+  - id: SC-18
+    statement: A failure in any report wins over a pass for the same case.
+    maps_to_invariant: results:INV-1
+  - id: SC-19
+    statement: A ref that matches several report cases equally well is ambiguous and resolves to no outcome.
+    maps_to_invariant: results:INV-2
+  - id: SC-20
+    statement: Among matching cases the most specific match wins.
+    maps_to_invariant: results:INV-3
+  - id: SC-21
+    statement: A table-driven test passes only when every row passed.
+    maps_to_invariant: results:INV-4
+  - id: SC-22
+    statement: A verifier in the baseline that is gone from the current graph is reported.
+    maps_to_invariant: sweep:INV-1
+  - id: SC-23
+    statement: A failing step stops the run and reports the output tail.
+    maps_to_invariant: runsclean:INV-1
+  - id: SC-24
+    statement: An app that exits inside its boot window fails the run.
+    maps_to_invariant: runsclean:INV-2
+out_of_scope:
+  - Reading go test -json directly; reports are converted to JUnit first.
+implements_via:
+  - mutation
+  - results
+  - rtm
+  - runsclean
+  - structural_checks
+  - sweep
+  - validation
+provenance:
+  source: llm_from_code
+  generated_at: "2026-10-24"
+  authored_by: agent:lattice-on-lattice
+human_review_required: true

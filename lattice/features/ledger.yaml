@@ -1,0 +1,14 @@
+id: ledger
+version: 1
+status: production
+purpose: |
+  The append-only ledger of truth-level transitions and gate decisions.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.agent_coordination
+invariants:
+  - id: INV-1
+    statement: Entries are appended and read back in order; a missing ledger reads as empty.
+  - id: INV-2
+    statement: A check run whose actor and outcome match the latest entry for its unit appends nothing.

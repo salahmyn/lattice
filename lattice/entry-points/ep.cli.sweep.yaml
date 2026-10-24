@@ -1,0 +1,17 @@
+id: ep.cli.sweep
+version: 1
+status: production
+kind: cli
+purpose: "Forbidden-move sweep: no verifier disappears without a CR retirement item"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice sweep"
+handler:
+  symbol: internal.cli.newSweepCommand
+  file: internal/cli/backprop.go
+flow:
+  - feature: cli
+  - feature: sweep
+  - feature: revision

@@ -1,0 +1,13 @@
+id: agentic
+version: 1
+status: production
+purpose: |
+  LLM-backed capabilities (annotation suggestion, narration, decomposition) behind
+  providers, with deterministic fallbacks.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.agent_coordination
+invariants:
+  - id: INV-1
+    statement: The default or mixed audience adds no tone instruction to a prompt.

@@ -1,0 +1,18 @@
+id: ep.cli.next
+version: 1
+status: production
+kind: cli
+purpose: "Rank the highest-value next actions by weakest link"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice next"
+handler:
+  symbol: internal.cli.newNextCommand
+  file: internal/cli/steering.go
+flow:
+  - feature: cli
+  - feature: steering
+  - feature: rtm
+  - feature: leases

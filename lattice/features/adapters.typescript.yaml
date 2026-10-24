@@ -1,0 +1,21 @@
+id: adapters.typescript
+version: 1
+status: production
+purpose: |
+  Reads TypeScript and JavaScript: declarations, JSDoc tags, Jest/Vitest/Playwright/Deno
+  test calls and framework routes.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.code_graph
+invariants:
+  - id: INV-1
+    statement: A JSDoc tag that attaches to no function, class, const or test raises ANNOTATION_ORPHANED.
+  - id: INV-2
+    statement: A one-line // comment carries module tags only, never symbol tags.
+  - id: INV-3
+    statement: it("title", namedFn) registers an existing function and creates no duplicate test symbol.
+  - id: INV-4
+    statement: A table test (it.each) is named by its title template, so its result joins every row.
+  - id: INV-5
+    statement: A module with top-level runtime code is runtime code even when it declares no symbol; imports, type declarations, directives and re-exports are not.

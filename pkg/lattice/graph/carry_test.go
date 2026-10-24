@@ -8,6 +8,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
+// @verifies graph:INV-3
 func TestCarryBlocksKeepsRefreshOutput(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "lattice.json")
 	old := schema.KnowledgeGraph{

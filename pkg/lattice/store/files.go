@@ -1,5 +1,7 @@
 package store
 
+// @module-feature store
+
 import (
 	"context"
 	"crypto/sha256"
@@ -118,6 +120,7 @@ func (f *Files) Get(_ context.Context, kind, id string) (Record, error) {
 	return fr.Record, nil
 }
 
+// @enforces store:INV-1
 func (f *Files) Put(ctx context.Context, r Record) (Record, error) {
 	if err := checkRecord(r); err != nil {
 		return Record{}, err

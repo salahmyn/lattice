@@ -9,6 +9,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 )
 
+// @verifies runsclean:INV-1
 func TestInstallFailureStopsTheRun(t *testing.T) {
 	rep := Run(context.Background(), t.TempDir(), config.Runtime{
 		CleanInstall: "echo broken-lockfile && false",
@@ -39,6 +40,7 @@ func TestPassWithoutBootSkipsBootAndProbes(t *testing.T) {
 	}
 }
 
+// @verifies runsclean:INV-2
 func TestBootExitingInsideWindowFails(t *testing.T) {
 	rep := Run(context.Background(), t.TempDir(), config.Runtime{
 		Boot:       "true", // exits immediately

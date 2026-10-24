@@ -3,6 +3,8 @@
 // detector framework is genuinely cross-framework, not Laravel-only.
 package fastapi
 
+// @module-feature entrypoints
+
 import (
 	"context"
 	"os"

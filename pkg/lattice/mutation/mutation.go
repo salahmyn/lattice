@@ -2,6 +2,8 @@
 // invariant-enforcing code, and maps surviving mutants back to invariants.
 package mutation
 
+// @module-feature mutation
+
 import (
 	"context"
 	"os/exec"

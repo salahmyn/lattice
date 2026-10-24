@@ -10,6 +10,7 @@ import (
 
 // Draft and proposed BRDs are ranked as awaiting a human approval; approved
 // and superseded ones are not, and the action never tells an agent to approve.
+// @verifies steering:INV-1
 func TestApprovalActions(t *testing.T) {
 	brds := []schema.BRD{
 		{ID: "brd.b", Status: schema.BRDDraft, Provenance: schema.BRDProvenance{Source: schema.BRDSourceLLMFromCode}},
@@ -39,6 +40,7 @@ func TestApprovalActions(t *testing.T) {
 
 // In council mode with a brd_approve mandate, next points at the council
 // path, except for BRDs that stay human-only.
+// @verifies steering:INV-2
 func TestApprovalActionsCouncil(t *testing.T) {
 	auto := config.Autonomy{DefaultMode: "council", Mandates: []config.Mandate{{ID: "m", Grants: config.GrantBRDApprove}}}
 	brds := []schema.BRD{

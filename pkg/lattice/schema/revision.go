@@ -1,5 +1,7 @@
 package schema
 
+// @module-feature schema
+
 // Revision is a change request (CR) against grounded business intent —
 // the only legitimate path for changing an approved BRD criterion,
 // scope, tier, or decision. Grounded artifacts are never edited in

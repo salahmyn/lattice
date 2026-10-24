@@ -1,0 +1,16 @@
+id: ep.cli.lattice-mcp
+version: 1
+status: production
+kind: cli
+purpose: "Run the MCP server over stdio, exposing the lattice CLI to MCP hosts"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice-mcp"
+handler:
+  symbol: lattice-mcp.src.index.main
+  file: lattice-mcp/src/index.ts
+flow:
+  - feature: mcp
+  - feature: cli

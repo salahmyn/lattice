@@ -1,0 +1,21 @@
+id: importer
+version: 1
+status: production
+purpose: |
+  Adopts an existing codebase: discovers feature candidates, drafts and reviews them,
+  inscribes annotations, and reports coverage.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.adoption
+invariants:
+  - id: INV-1
+    statement: Discovery clusters symbols by directory and gives the same candidates for the same code.
+  - id: INV-2
+    statement: Candidates whose ids collide get distinct feature ids.
+  - id: INV-3
+    statement: An inscribe edit that breaks the file's parse is rejected and the file is left untouched.
+  - id: INV-4
+    statement: Inscribe skips a symbol that already carries a feature annotation.
+  - id: INV-5
+    statement: promote-parents creates a manifest for every missing ancestor of a dotted feature id.

@@ -8,6 +8,8 @@
 // UI, MCP, and validation passes.
 package rtm
 
+// @module-feature rtm
+
 import (
 	"sort"
 	"strings"
@@ -461,6 +463,7 @@ func classifyScenario(
 
 // classify computes the row's Status + supporting fields. Pulled out
 // so the rules read top-to-bottom in worst-first order.
+// @enforces rtm:INV-1, rtm:INV-2, rtm:INV-4
 func classify(
 	row *Row,
 	sc schema.BRDCriterion,
@@ -628,6 +631,7 @@ func appendNew(list, add []string) []string {
 // status: the lite-profile ceiling (demonstrated caps to verified —
 // lite's honest top is "wired") and open meaning flags (attached
 // alongside the status, never replacing it).
+// @enforces rtm:INV-5
 func applyOverlays(status *Status, reason *string, flagged *bool, flagList *[]string, unit string, opts Options) {
 	if opts.ProfileLite && *status == StatusDemonstrated {
 		*status = StatusVerified
@@ -643,6 +647,7 @@ func applyOverlays(status *Status, reason *string, flagged *bool, flagList *[]st
 
 // resultStatus folds ingested results over a verifier set. decided is
 // false when no result moves the needle (keep StatusVerified).
+// @enforces rtm:INV-3
 func resultStatus(verifiers []string, resultOf func(string) (bool, bool)) (Status, string, bool) {
 	if resultOf == nil {
 		return "", "", false
@@ -673,6 +678,7 @@ func resultStatus(verifiers []string, resultOf func(string) (bool, bool)) (Statu
 // verifiable_by that does NOT include "test". In that case, the
 // absence of a verifying test isn't unverified — the invariant is
 // verified by structural check / mutation alone.
+// @enforces rtm:INV-7
 func hasStructuralOrMutationOnly(inv *schema.Invariant) bool {
 	methods := inv.EffectiveVerifiableBy()
 	for _, m := range methods {
@@ -685,6 +691,7 @@ func hasStructuralOrMutationOnly(inv *schema.Invariant) bool {
 
 // worstFor returns the worst (lowest-severity) status across a BRD's
 // rows. An empty BRD (no SCs) is treated as Unmapped.
+// @enforces rtm:INV-6
 func worstFor(s *BRDSummary) Status {
 	if s.Total == 0 {
 		return StatusUnmapped

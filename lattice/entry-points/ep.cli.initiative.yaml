@@ -1,0 +1,17 @@
+id: ep.cli.initiative
+version: 1
+status: production
+kind: cli
+purpose: "Inspect initiatives"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice initiative"
+handler:
+  symbol: internal.cli.newInitiativeCommand
+  file: internal/cli/initiative.go
+flow:
+  - feature: cli
+  - feature: store
+  - feature: blocks

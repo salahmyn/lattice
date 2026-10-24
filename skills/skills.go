@@ -4,6 +4,8 @@
 // "runs" them.
 package skills
 
+// @module-feature skills
+
 import (
 	"embed"
 	"io/fs"

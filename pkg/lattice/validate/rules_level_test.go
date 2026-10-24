@@ -56,6 +56,7 @@ func belowLevel(v []schema.Violation) string {
 
 // Without require_level nothing gates on the truth level; with it, every
 // criterion and scenario below the level is an error naming its subject.
+// @verifies validation:INV-8
 func TestRequireLevel(t *testing.T) {
 	onlyT1 := Options{ResultOf: func(fqn string) (bool, bool) { return true, fqn == "T1" }}
 	if got := belowLevel(Validate(levelGraph(), config.Default(), onlyT1)); got != "" {

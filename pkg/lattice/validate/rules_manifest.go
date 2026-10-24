@@ -1,5 +1,7 @@
 package validate
 
+// @module-feature validation
+
 import (
 	"fmt"
 	"strings"
@@ -8,6 +10,7 @@ import (
 )
 
 // checkManifests runs the manifest-integrity rules.
+// @enforces validation:INV-3
 func (c *corpus) checkManifests() []schema.Violation {
 	var v []schema.Violation
 	seenID := map[string]string{} // id -> first source path

@@ -19,6 +19,8 @@
 // above select plan(...) for every assertion in the file.
 package postgres
 
+// @module-feature adapters.postgres
+
 import (
 	"context"
 	"fmt"
@@ -320,6 +322,7 @@ func parseDefinitions(mod *ir.Module, stmts []statement) {
 // name ("refunds:INV-1" names refunds) when it has no @feature: a migration
 // spans features, so its symbols carry their own attribution. Refs to BRD
 // criteria (brd.<id>:SC-N) and refs naming several features imply nothing.
+// @enforces adapters.postgres:INV-2
 func withImpliedFeature(anns []ir.Annotation) []ir.Annotation {
 	feature := ""
 	for _, a := range anns {
@@ -376,6 +379,7 @@ func orphan(mod *ir.Module, anns []ir.Annotation, st statement) {
 // only on the effective definition. A redefinition that loses tags an earlier
 // definition carried raises SQL_TAG_DROPPED on the effective one, because a
 // reader of the older file would believe the rule still holds.
+// @enforces adapters.postgres:INV-1
 func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 	order := make([]int, 0, len(mods))
 	for i := range mods {

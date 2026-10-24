@@ -71,6 +71,7 @@ func TestParseSymbolsAndAnnotations(t *testing.T) {
 	}
 }
 
+// @verifies adapters.python:INV-1
 func TestParseNonLiteralDiagnostic(t *testing.T) {
 	src := "SOME_CONST = 1\n\n@feature(SOME_CONST)\ndef f():\n    pass\n"
 	mod, err := New().Parse(context.Background(), "src/x.py", []byte(src))

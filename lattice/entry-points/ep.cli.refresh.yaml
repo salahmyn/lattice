@@ -1,0 +1,17 @@
+id: ep.cli.refresh
+version: 1
+status: production
+kind: cli
+purpose: "Rebuild the block graph from the workspace's sources and judgments"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice refresh"
+handler:
+  symbol: internal.cli.newRefreshCommand
+  file: internal/cli/refresh.go
+flow:
+  - feature: cli
+  - feature: blocks
+  - feature: store

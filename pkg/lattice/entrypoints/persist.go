@@ -1,5 +1,7 @@
 package entrypoints
 
+// @module-feature entrypoints
+
 import (
 	"os"
 	"path/filepath"
@@ -40,6 +42,7 @@ var yamlLine = regexp.MustCompile(`line (\d+)`)
 // LoadEntryPointsReport is LoadEntryPoints that also returns the files it
 // could not use (a YAML error, or no id), so a dropped entry point is a
 // finding instead of a silent gap in the graph.
+// @enforces entrypoints:INV-2
 func LoadEntryPointsReport(entryPointsDir string) ([]schema.EntryPoint, []LoadProblem, error) {
 	out := []schema.EntryPoint{}
 	var problems []LoadProblem
@@ -113,6 +116,7 @@ func SaveEntryPoint(entryPointsDir string, ep schema.EntryPoint) (string, error)
 // persisted version when the IDs match (so a labelled purpose isn't
 // lost when the detector re-emits the same trigger). Detector-only
 // EPs come through unchanged.
+// @enforces entrypoints:INV-1
 func Merge(detected, persisted []schema.EntryPoint) []schema.EntryPoint {
 	byID := map[string]schema.EntryPoint{}
 	for _, ep := range detected {

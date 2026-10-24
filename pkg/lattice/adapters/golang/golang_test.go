@@ -237,6 +237,7 @@ func build() {
 // TestProseIsNotATag checks that a wrapped doc comment line that happens to
 // start with "@" reads as prose, not as a tag, while real tags on the same
 // symbol still parse.
+// @verifies adapters.go:INV-4
 func TestProseIsNotATag(t *testing.T) {
 	mod := parse(t, "a/a.go", goProseSample)
 	s := byFQN(mod)["a.build"]
@@ -274,6 +275,7 @@ func init() {}
 // @feature a.e
 `
 
+// @verifies adapters.go:INV-1
 func TestOrphanedAnnotations(t *testing.T) {
 	mod := parse(t, "a/a.go", goOrphanSample)
 	d := orphans(mod)
@@ -338,6 +340,7 @@ func helper(t *testing.T) {
 func BenchmarkLookup(b *testing.B) {}
 `
 
+// @verifies adapters.go:INV-2
 func TestTestSymbolsAndSubtests(t *testing.T) {
 	mod := parse(t, "pkg/lattice/results/results_test.go", goTestSample)
 	syms := byFQN(mod)
@@ -443,6 +446,7 @@ const junitReport = `<?xml version="1.0" encoding="UTF-8"?>
 // subtests resolve to their go test JUnit cases, and only to them: a
 // same-named test in another package neither joins nor makes the lookup
 // ambiguous.
+// @verifies adapters.go:INV-2, brd.code_graph:US-1
 func TestGoTestResultsJoin(t *testing.T) {
 	mod := parse(t, "pkg/lattice/results/results_test.go", goTestSample)
 	set, err := results.ParseJUnit([]byte(junitReport))
@@ -477,6 +481,7 @@ func TestGoTestResultsJoin(t *testing.T) {
 	}
 }
 
+// @verifies adapters.go:INV-3
 func TestResolveKeepsFQNsUnique(t *testing.T) {
 	a := parse(t, "a/open_linux.go", "package a\n\ntype T struct{}\n\nfunc (T) M() {}\n\nfunc Open() {}\n")
 	b := parse(t, "a/open_windows.go", "package a\n\ntype T struct{}\n\nfunc (T) M() {}\n\nfunc Open() {}\n\nfunc Other() {}\n")

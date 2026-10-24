@@ -1,5 +1,7 @@
 package views
 
+// @module-feature views
+
 import (
 	"fmt"
 	"os"

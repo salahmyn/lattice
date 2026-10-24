@@ -1,5 +1,7 @@
 package cli
 
+// @module-feature cli
+
 import (
 	"bytes"
 	"context"
@@ -190,6 +192,7 @@ func newInitiativeStatusCommand(io *IO) *cobra.Command {
 
 // setTopLevel sets one top-level scalar of a YAML mapping, keeping the rest of
 // the document (comments included) as written.
+// @enforces cli:INV-1
 func setTopLevel(body []byte, key, value string) ([]byte, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(body, &doc); err != nil {

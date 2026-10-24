@@ -11,6 +11,8 @@
 // wedges the fleet.
 package lease
 
+// @module-feature leases
+
 import (
 	"fmt"
 	"os"
@@ -43,6 +45,7 @@ type Lease struct {
 }
 
 // IsActive reports whether the lease has not yet expired, as of now.
+// @enforces leases:INV-2
 func (l Lease) IsActive(now time.Time) bool {
 	if l.Expires == "" {
 		return true
@@ -64,6 +67,7 @@ func fileName(unit string) string {
 // Acquire writes a lease for unit held by actor with the given TTL and
 // scope. It fails if a *different* actor already holds an active lease on
 // the unit; the same actor re-acquiring refreshes the TTL.
+// @enforces leases:INV-1
 func Acquire(latticeDir, unit, actor, commit string, ttl time.Duration, scope []string, now time.Time) (Lease, error) {
 	if strings.TrimSpace(unit) == "" {
 		return Lease{}, fmt.Errorf("lease: unit is required")
@@ -155,6 +159,7 @@ type Overlap struct {
 
 // Overlaps returns every pair of active leases held by *different* actors
 // whose scopes intersect. Two leases by the same actor never conflict.
+// @enforces leases:INV-3
 func Overlaps(leases []Lease) []Overlap {
 	var out []Overlap
 	for i := 0; i < len(leases); i++ {

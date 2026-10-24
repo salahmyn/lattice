@@ -1,5 +1,7 @@
 package cli
 
+// @module-feature cli
+
 import (
 	"fmt"
 	"os"
@@ -59,10 +61,10 @@ spec prints to stdout.`,
 				}
 				if io.JSON {
 					return io.printJSON(map[string]interface{}{
-						"feature":   args[0],
-						"path":      outPath,
+						"feature":    args[0],
+						"path":       outPath,
 						"word_count": words,
-						"over_cap":  words > featurespec.WordCap,
+						"over_cap":   words > featurespec.WordCap,
 					})
 				}
 				io.printf("wrote %s (%d words)\n", outPath, words)

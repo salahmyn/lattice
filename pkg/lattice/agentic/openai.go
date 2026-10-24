@@ -1,5 +1,7 @@
 package agentic
 
+// @module-feature agentic
+
 import (
 	"bytes"
 	"context"

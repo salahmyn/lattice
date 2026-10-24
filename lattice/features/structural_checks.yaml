@@ -1,0 +1,10 @@
+id: structural_checks
+version: 1
+status: production
+purpose: |
+  Runs structural-invariant checks as subprocesses that read scope as JSON and report
+  findings as JSON.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.verification

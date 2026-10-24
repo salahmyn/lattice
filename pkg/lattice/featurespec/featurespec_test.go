@@ -111,6 +111,7 @@ func TestRenderCapabilitiesIncludesKindWhenSet(t *testing.T) {
 	}
 }
 
+// @verifies views:INV-2
 func TestRenderIsDeterministic(t *testing.T) {
 	m := minimal()
 	m.Surface = []schema.Surface{

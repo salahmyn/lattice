@@ -5,6 +5,8 @@
 // reads what's emitted here through the KnowledgeGraph.
 package brd
 
+// @module-feature brds
+
 import (
 	"fmt"
 	"io/fs"
@@ -130,6 +132,7 @@ func ByStatus(brds []schema.BRD) map[schema.BRDStatus][]schema.BRD {
 // declare `implements_brd: <id>` *or* are listed in BRD.ImplementsVia.
 // The forward and reverse links are unioned so either side is
 // authoritative.
+// @enforces brds:INV-6
 func FeaturesByBRD(brds []schema.BRD, features []schema.Manifest) map[string][]string {
 	out := map[string]map[string]bool{}
 	for _, b := range brds {

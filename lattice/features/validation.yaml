@@ -1,0 +1,31 @@
+id: validation
+version: 1
+status: production
+purpose: |
+  Checks the graph against Lattice's rules and reports findings with a next action,
+  under the workspace's severity policy and allowlist.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.verification
+invariants:
+  - id: INV-1
+    statement: An invariant no symbol enforces is UNENFORCED_INVARIANT, and one no test verifies is UNVERIFIED_INVARIANT.
+  - id: INV-2
+    statement: A depends_on cycle is DEPENDS_ON_CYCLE.
+  - id: INV-3
+    statement: A feature id outside the dotted lowercase grammar is MANIFEST_ID_FORMAT.
+  - id: INV-4
+    statement: UNATTRIBUTED_MODULE is off unless the workspace turns it on.
+  - id: INV-5
+    statement: A severity override applies per code; off drops the finding and an unknown severity name is VALIDATE_POLICY.
+  - id: INV-6
+    statement: A run fails only on findings at or above the fail_on threshold; off is not a threshold.
+  - id: INV-7
+    statement: An allowlist with an unknown key is ALLOWLIST_SCHEMA, and an entry that matches no finding is ALLOWLIST_STALE.
+  - id: INV-8
+    statement: A BRD below the required truth level is BRD_BELOW_LEVEL.
+  - id: INV-9
+    statement: An invariant whose enforcers are all non-guard symbols is ENFORCER_NOT_GUARD.
+  - id: INV-10
+    statement: FILE_LINE_CAP and METHOD_LINE_CAP apply only with ama_mode or an explicit cap, and never to test files.

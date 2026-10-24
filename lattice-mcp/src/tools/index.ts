@@ -2,6 +2,8 @@
 // CLI subcommand. Descriptions follow a strict template (purpose, when-to-call,
 // returns, common errors) enforced by a build-time test.
 
+// @module-feature mcp
+
 import { z, type ZodRawShape } from "zod";
 
 /** ToolInput is the parsed argument object passed to a tool's toArgs. */
@@ -24,7 +26,10 @@ export interface ToolDef {
   toArgs: (input: ToolInput) => CliInvocation;
 }
 
-/** renderDescription builds the templated description string for a tool. */
+/**
+ * renderDescription builds the templated description string for a tool.
+ * @enforces mcp:INV-1
+ */
 export function renderDescription(def: ToolDef): string {
   const when = def.whenToCall.map((w) => `  - ${w}`).join("\n");
   const errs = def.commonErrors.map((e) => `  - ${e}`).join("\n");

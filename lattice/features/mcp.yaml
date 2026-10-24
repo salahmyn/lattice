@@ -1,0 +1,12 @@
+id: mcp
+version: 1
+status: production
+purpose: |
+  The MCP server: exposes the lattice CLI to MCP hosts over stdio.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.adoption
+invariants:
+  - id: INV-1
+    statement: 'Every tool description follows the template: name and summary, when to call, returns, common errors.'

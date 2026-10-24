@@ -1,5 +1,7 @@
 package schema
 
+// @module-feature schema
+
 // TargetKind identifies what artifact a patch edits.
 type TargetKind string
 

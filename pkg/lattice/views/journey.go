@@ -1,5 +1,7 @@
 package views
 
+// @module-feature views
+
 import (
 	"fmt"
 	"sort"
@@ -14,9 +16,9 @@ import (
 // struct different ways — CLI as markdown, UI as a single mermaid
 // graph.
 type Journey struct {
-	BRDID       string             `json:"brd_id"`
-	BRDTitle    string             `json:"brd_title,omitempty"`
-	Features    []string           `json:"features"`
+	BRDID       string              `json:"brd_id"`
+	BRDTitle    string              `json:"brd_title,omitempty"`
+	Features    []string            `json:"features"`
 	EntryPoints []schema.EntryPoint `json:"entry_points"`
 	// Mermaid is the rendered diagram. Computed by RenderJourney so the
 	// MCP / API surface gives an agent the same picture the UI shows.

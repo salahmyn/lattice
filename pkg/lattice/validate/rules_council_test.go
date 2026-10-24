@@ -53,6 +53,7 @@ func TestCouncilApprovalAwaitingReview(t *testing.T) {
 	}
 }
 
+// @verifies brds.council:INV-6
 func TestCouncilApprovalInvalid(t *testing.T) {
 	for name, edit := range map[string]func(*schema.KnowledgeGraph, *config.Config){
 		"mandate not pinned": func(_ *schema.KnowledgeGraph, cfg *config.Config) { cfg.Autonomy.Mandates = nil },

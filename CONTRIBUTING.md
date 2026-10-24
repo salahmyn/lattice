@@ -55,3 +55,26 @@ Dependabot's own `dependabot/…` branches are the only exception.
 Subjects are short and say what changed. Prefix with the area touched,
 `area: …` (`views: …`, `blocks: …`) or `type(area): …`
 (`fix(typescript): …`); keep the same style within a branch.
+
+## Lattice on Lattice
+
+The `lattice/` directory is Lattice's own workspace: features,
+invariants, entry points and BRDs that describe this codebase (see
+`docs/rnd/0008-lattice-on-lattice.md`). CI runs `lattice extract` and
+`lattice validate` on it, and a validate error fails the build.
+
+- A new production `.go` file starts with `// @module-feature <feature>`
+  after its `package` clause, so attribution stays at 100%. CI does not
+  fail on a missing tag, but `lattice coverage` shows it.
+- A guard that holds an invariant carries `// @enforces <feature>:INV-N`,
+  and the test that checks it carries `// @verifies <feature>:INV-N`.
+  Renaming or deleting either one can fail CI.
+- Check locally before pushing:
+
+  ```sh
+  go build -o dist/lattice ./cmd/lattice
+  dist/lattice extract && dist/lattice validate
+  ```
+
+- The BRDs under `lattice/brds/` are agent-written drafts. Only a human
+  approves them (`lattice brd approve <id> --by <email>`).

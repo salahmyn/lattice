@@ -1,0 +1,139 @@
+id: brd.code_graph
+version: 1
+status: draft
+title: Read any codebase into one knowledge graph
+business_problem: Engineers and agents cannot see which code implements which intent without re-reading the repository. Lattice reads the code in every language it supports into one graph of features, symbols, tests and entry points.
+business_goals:
+  - Every production module of a supported language is attributed to a feature.
+  - A test's result joins its test symbol with no per-repository configuration.
+user_scenarios:
+  - id: US-1
+    actor: maintainer
+    narrative: A maintainer runs go test, converts the report to JUnit and ingests it; each Go test and subtest gets its own outcome.
+    given:
+      - a Go package with tests and t.Run subtests
+    when:
+      - go test runs through gotestsum and the JUnit report is ingested
+    then:
+      - each test and subtest joins exactly its own case, and a same-named test in another package does not interfere
+success_criteria:
+  - id: SC-1
+    statement: A path under a test directory (tests/, __tests__/, e2e/, testdata/, ...), an end-to-end file or a test-support module is test code.
+    maps_to_invariant: adapters:INV-1
+  - id: SC-2
+    statement: The registry hands a file to the enabled adapter that owns its extension; a disabled adapter handles nothing.
+    maps_to_invariant: adapters:INV-2
+  - id: SC-3
+    statement: A tag attaches only through the doc comment directly above a declaration; a tag after a blank line, trailing code, inside a function body or on init raises ANNOTATION_ORPHANED.
+    maps_to_invariant: adapters.go:INV-1
+  - id: SC-4
+    statement: Go tests and t.Run subtests are named as go test names them, so a gotestsum or go-junit-report case joins its test and only that test.
+    maps_to_invariant: adapters.go:INV-2
+  - id: SC-5
+    statement: 'A name Go allows twice in one directory keeps a unique FQN: the first file in path order keeps it, a later one is suffixed with its file stem.'
+    maps_to_invariant: adapters.go:INV-3
+  - id: SC-6
+    statement: A comment line that starts with a tag name but reads as prose is not a tag.
+    maps_to_invariant: adapters.go:INV-4
+  - id: SC-7
+    statement: A JSDoc tag that attaches to no function, class, const or test raises ANNOTATION_ORPHANED.
+    maps_to_invariant: adapters.typescript:INV-1
+  - id: SC-8
+    statement: A one-line // comment carries module tags only, never symbol tags.
+    maps_to_invariant: adapters.typescript:INV-2
+  - id: SC-9
+    statement: it("title", namedFn) registers an existing function and creates no duplicate test symbol.
+    maps_to_invariant: adapters.typescript:INV-3
+  - id: SC-10
+    statement: A table test (it.each) is named by its title template, so its result joins every row.
+    maps_to_invariant: adapters.typescript:INV-4
+  - id: SC-11
+    statement: A module with top-level runtime code is runtime code even when it declares no symbol; imports, type declarations, directives and re-exports are not.
+    maps_to_invariant: adapters.typescript:INV-5
+  - id: SC-12
+    statement: An annotation argument that is not a string literal raises ANNOTATION_ARG_NOT_LITERAL.
+    maps_to_invariant: adapters.python:INV-1
+  - id: SC-13
+    statement: A PHP symbol's FQN is its namespace-qualified name, with methods joined by ::.
+    maps_to_invariant: adapters.php:INV-1
+  - id: SC-14
+    statement: 'Migrations apply in filename order: the last create or replace is the effective definition and a drop removes the symbol.'
+    maps_to_invariant: adapters.postgres:INV-1
+  - id: SC-15
+    statement: A feature-qualified @enforces attributes the database symbol to that feature.
+    maps_to_invariant: adapters.postgres:INV-2
+  - id: SC-16
+    statement: Extraction never descends into agent state, the lattice directory or a linked git worktree; the code root itself is always scanned and submodules still are.
+    maps_to_invariant: extraction:INV-1
+  - id: SC-17
+    statement: A git-ignored or exclude-matched file is not parsed.
+    maps_to_invariant: extraction:INV-2
+  - id: SC-18
+    statement: An adapter that resolves definitions across files sees all of its modules, in order, before diagnostics are reported.
+    maps_to_invariant: extraction:INV-3
+  - id: SC-19
+    statement: Building the graph from the same inputs gives byte-identical output.
+    maps_to_invariant: graph:INV-1
+  - id: SC-20
+    statement: A feature's children are its immediate dotted sub-features, and its implementations are the symbols attributed to it.
+    maps_to_invariant: graph:INV-2
+  - id: SC-21
+    statement: A re-extract keeps the block graph a refresh wrote; an absent or unparseable graph carries nothing.
+    maps_to_invariant: graph:INV-3
+  - id: SC-22
+    statement: A sharded graph loads back to the graph it was written from.
+    maps_to_invariant: graph:INV-4
+  - id: SC-23
+    statement: A module is production code for attribution when it holds a non-test behaviour symbol or top-level code; type-only, config, test and migration modules are not.
+    maps_to_invariant: schema:INV-1
+  - id: SC-24
+    statement: A reference is attributed to the closest definition above it in the same document.
+    maps_to_invariant: scip:INV-1
+  - id: SC-25
+    statement: A persisted entry point wins over a detected one with the same id; the detector only fills what the persisted one leaves empty.
+    maps_to_invariant: entrypoints:INV-1
+  - id: SC-26
+    statement: An entry-point file that cannot be used (a YAML error, no id) is reported with its line, never silently dropped.
+    maps_to_invariant: entrypoints:INV-2
+  - id: SC-27
+    statement: A rejected entry point is archived and no longer contributes to the graph.
+    maps_to_invariant: entrypoints:INV-3
+  - id: SC-28
+    statement: Laravel route groups and mounts prefix the routes they contain.
+    maps_to_invariant: entrypoints:INV-4
+  - id: SC-29
+    statement: Building the block graph from the same inputs gives identical output.
+    maps_to_invariant: blocks:INV-1
+  - id: SC-30
+    statement: Reading a source at a git ref reads the committed tree, not the working tree.
+    maps_to_invariant: blocks:INV-2
+  - id: SC-31
+    statement: A block id declared in two catalogue files is an error naming the first file.
+    maps_to_invariant: blocks:INV-3
+  - id: SC-32
+    statement: A new record never overwrites the file of another record.
+    maps_to_invariant: store:INV-1
+  - id: SC-33
+    statement: A Postgres connection error never echoes the DSN's password.
+    maps_to_invariant: store:INV-2
+out_of_scope:
+  - A SCIP indexer and a mutation runner for Go.
+implements_via:
+  - adapters
+  - adapters.go
+  - adapters.php
+  - adapters.postgres
+  - adapters.python
+  - adapters.typescript
+  - blocks
+  - entrypoints
+  - extraction
+  - graph
+  - schema
+  - scip
+  - store
+provenance:
+  source: llm_from_code
+  generated_at: "2026-10-24"
+  authored_by: agent:lattice-on-lattice
+human_review_required: true

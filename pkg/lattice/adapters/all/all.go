@@ -3,6 +3,8 @@
 // (each adapter imports `adapters`).
 package all
 
+// @module-feature adapters
+
 import (
 	"github.com/salahmyn/lattice/pkg/lattice/adapters"
 	"github.com/salahmyn/lattice/pkg/lattice/adapters/golang"
@@ -15,6 +17,7 @@ import (
 
 // Registry returns a registry containing every built-in adapter that is
 // enabled in the given adapters configuration.
+// @enforces adapters:INV-2
 func Registry(cfg config.AdaptersConfig) *adapters.Registry {
 	r := adapters.NewRegistry()
 	if cfg.IsEnabled("python") {

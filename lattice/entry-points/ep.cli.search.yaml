@@ -1,0 +1,16 @@
+id: ep.cli.search
+version: 1
+status: production
+kind: cli
+purpose: "Search features, capabilities, and invariants"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice search"
+handler:
+  symbol: internal.cli.newSearchCommand
+  file: internal/cli/search.go
+flow:
+  - feature: cli
+  - feature: graph

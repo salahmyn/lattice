@@ -1,0 +1,26 @@
+id: rtm
+version: 1
+status: production
+purpose: |
+  The requirements traceability matrix: BRD criterion to invariant to enforcer and
+  verifier, on the truth ladder phantom, unenforced, unverified, failing, partial,
+  verified, demonstrated.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.verification
+invariants:
+  - id: INV-1
+    statement: A criterion whose maps_to_invariant names a missing feature or invariant is phantom.
+  - id: INV-2
+    statement: A mapped invariant with no enforcer is unenforced, and with an enforcer but no verifier is unverified.
+  - id: INV-3
+    statement: Any red result among a criterion's verifiers makes it failing; it is demonstrated only when every verifier has a passing result.
+  - id: INV-4
+    statement: A mutation score below the threshold makes a wired criterion partial.
+  - id: INV-5
+    statement: The lite profile caps demonstrated at verified, and an open flag rides alongside a status without replacing it.
+  - id: INV-6
+    statement: A BRD summary reports the worst status of its criteria.
+  - id: INV-7
+    statement: An invariant verifiable only by structural check or mutation is not unverified for lack of a test.

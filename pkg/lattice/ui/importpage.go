@@ -1,5 +1,7 @@
 package ui
 
+// @module-feature ui
+
 import (
 	"encoding/json"
 	"net/http"
@@ -16,8 +18,8 @@ import (
 // everything the UI needs to render one row of the review table.
 type importCandidateRow struct {
 	importer.Candidate
-	Decision string `json:"decision"` // "" | "accepted" | "rejected"
-	Mode     string `json:"mode,omitempty"`     // deterministic | llm | cached | fallback (v0.2.1)
+	Decision  string `json:"decision"`             // "" | "accepted" | "rejected"
+	Mode      string `json:"mode,omitempty"`       // deterministic | llm | cached | fallback (v0.2.1)
 	FeatureID string `json:"feature_id,omitempty"` // when a draft exists, the labeled feature
 }
 
@@ -62,15 +64,15 @@ func (s *Server) pageImport(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.render(w, "import.html", pageData{
-		Title:    "Import session",
-		Active:   "import",
-		JSONHref: "/api/v1/import/candidates",
+		Title:       "Import session",
+		Active:      "import",
+		JSONHref:    "/api/v1/import/candidates",
 		Breadcrumbs: []crumb{{Label: "Overview", Href: "/"}, {Label: "Import session"}},
 		Body: map[string]interface{}{
-			"Rows":         filtered,
-			"Total":        len(rows),
-			"Counts":       counts,
-			"Filter":       map[string]string{"package": pkg, "decision": decision, "mode": mode},
+			"Rows":          filtered,
+			"Total":         len(rows),
+			"Counts":        counts,
+			"Filter":        map[string]string{"package": pkg, "decision": decision, "mode": mode},
 			"SessionStatus": sessStatus,
 		},
 	})

@@ -1,0 +1,17 @@
+id: ep.cli.results
+version: 1
+status: production
+kind: cli
+purpose: "Ingest test results so the RTM can say DEMONSTRATED, not just declared"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice results"
+handler:
+  symbol: internal.cli.newResultsCommand
+  file: internal/cli/steering.go
+flow:
+  - feature: cli
+  - feature: steering
+  - feature: results

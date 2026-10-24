@@ -1,0 +1,23 @@
+id: brds.council
+version: 1
+status: production
+purpose: |
+  Council approval: in council mode and under a pinned brd_approve mandate, a council
+  of agent seats may approve a BRD version for the human who delegated it.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.intent
+invariants:
+  - id: INV-1
+    statement: A council approves a version only when every seat has voted approve.
+  - id: INV-2
+    statement: A BRD with a tier-3 criterion, or a regulatory, legal or financial constraint, stays human-only.
+  - id: INV-3
+    statement: No seat is held by the author of the version, and no agent holds two seats.
+  - id: INV-4
+    statement: A council approval needs council mode and a pinned, unexpired mandate that covers the BRD's tier and names the delegating human.
+  - id: INV-5
+    statement: Votes belong to one version, one per seat; a vote on an overturned version or from a seat off the council is refused.
+  - id: INV-6
+    statement: A council approval that no pinned mandate, floor or unanimous vote supports is BRD_COUNCIL_INVALID.

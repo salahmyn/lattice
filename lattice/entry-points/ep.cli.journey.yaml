@@ -1,0 +1,17 @@
+id: ep.cli.journey
+version: 1
+status: production
+kind: cli
+purpose: "Show every entry point that touches a BRD's features"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice journey"
+handler:
+  symbol: internal.cli.newJourneyCommand
+  file: internal/cli/journey.go
+flow:
+  - feature: cli
+  - feature: views
+  - feature: entrypoints

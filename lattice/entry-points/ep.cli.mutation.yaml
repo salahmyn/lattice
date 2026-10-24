@@ -1,0 +1,16 @@
+id: ep.cli.mutation
+version: 1
+status: production
+kind: cli
+purpose: "Mutation testing of invariant-enforcing code"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice mutation"
+handler:
+  symbol: internal.cli.newMutationCommand
+  file: internal/cli/mutation.go
+flow:
+  - feature: cli
+  - feature: mutation

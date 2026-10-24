@@ -11,6 +11,8 @@
 // candidates.json, so a re-scan reconciles rather than churns.
 package importer
 
+// @module-feature importer
+
 import (
 	"bytes"
 	"crypto/sha256"

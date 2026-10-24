@@ -1,5 +1,7 @@
 package importer
 
+// @module-feature importer
+
 import (
 	"fmt"
 	"path"
@@ -50,6 +52,7 @@ type dirGroup struct {
 
 // Discover runs Stage 1: it clusters the parsed modules into feature
 // candidates and reports discovery coverage. It is deterministic.
+// @enforces importer:INV-1
 func Discover(modules []ir.Module, opts Options) CandidatesFile {
 	groups := groupByDirectory(modules, opts)
 
@@ -127,6 +130,7 @@ func FilterByScopes(cf CandidatesFile, scopes []string) CandidatesFile {
 }
 
 // groupByDirectory buckets every in-scope symbol by its source directory.
+// @enforces importer:INV-1
 func groupByDirectory(modules []ir.Module, opts Options) map[string]*dirGroup {
 	groups := make(map[string]*dirGroup)
 	for _, m := range modules {

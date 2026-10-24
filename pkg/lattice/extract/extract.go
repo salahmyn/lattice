@@ -3,6 +3,8 @@
 // parsed source IR of the workspace's code roots.
 package extract
 
+// @module-feature extraction
+
 import (
 	"context"
 	"io/fs"
@@ -50,6 +52,7 @@ var skipDirs = map[string]bool{
 // a file pointing into another repository's .git/worktrees/. Such a directory
 // is a second checkout of the code, so scanning it double-counts every symbol.
 // Submodules (gitdir under .git/modules/) are not matched.
+// @enforces extraction:INV-1
 func isLinkedWorktree(dir string) bool {
 	b, err := os.ReadFile(filepath.Join(dir, ".git"))
 	if err != nil {
@@ -65,6 +68,7 @@ func isLinkedWorktree(dir string) bool {
 
 // skipDir reports whether the walk of a code root should not descend into
 // dir. The root itself is never skipped, so a workspace may live in a worktree.
+// @enforces extraction:INV-1
 func skipDir(root, dir, name, latticeDir string) bool {
 	if dir == root {
 		return false
@@ -317,6 +321,7 @@ func parseSources(ctx context.Context, w *workspace.Workspace, reg *adapters.Reg
 // resolveAcrossFiles hands each adapter that resolves definitions across
 // files (adapters.Resolver, e.g. migrations applied in order) its modules.
 // Module order is kept.
+// @enforces extraction:INV-3
 func resolveAcrossFiles(reg *adapters.Registry, modules []ir.Module) []ir.Module {
 	for _, ad := range reg.Adapters() {
 		res, ok := ad.(adapters.Resolver)

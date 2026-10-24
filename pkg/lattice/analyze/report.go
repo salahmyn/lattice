@@ -3,6 +3,8 @@
 // proposal impact report.
 package analyze
 
+// @module-feature analysis
+
 // FindingLevel classifies an analysis finding.
 type FindingLevel string
 

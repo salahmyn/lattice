@@ -1,5 +1,7 @@
 package validate
 
+// @module-feature validation
+
 import (
 	"fmt"
 	"strings"
@@ -20,6 +22,7 @@ var requiredLevels = map[string]rtm.Status{
 // "every criterion demonstrated" could not fail a run. BRD_BELOW_LEVEL
 // (error) names each unit below the level; known gaps go in the allowlist
 // under their subject (brd.<id>:SC-N, brd.<id>:US-N).
+// @enforces validation:INV-8
 func (c *corpus) checkRequiredLevel() []schema.Violation {
 	name := strings.ToLower(strings.TrimSpace(c.cfg.Validate.RequireLevel))
 	if name == "" {

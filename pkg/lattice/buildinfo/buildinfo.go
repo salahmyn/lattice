@@ -1,6 +1,8 @@
 // Package buildinfo carries version metadata stamped in at link time.
 package buildinfo
 
+// @module-feature cli
+
 // These are overridden via -ldflags -X at build time (see .github/workflows/release.yml).
 var (
 	Version = "0.9.0"

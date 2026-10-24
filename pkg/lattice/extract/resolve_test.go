@@ -35,6 +35,7 @@ func (r *resolvingAdapter) Resolve(mods []ir.Module) []ir.Module {
 
 // A Resolver sees only its own language's modules, once, and the module
 // order of the whole set is kept.
+// @verifies extraction:INV-3
 func TestResolveAcrossFiles(t *testing.T) {
 	fake := &resolvingAdapter{}
 	reg := adapters.NewRegistry(fake)

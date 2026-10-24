@@ -28,7 +28,7 @@ func TestSaveLoadRoundtrip(t *testing.T) {
 			Language: detect.LanguagePHP, Framework: detect.FrameworkLaravel,
 			Confidence: "high", CodeRoots: []string{"app", "Modules"},
 		},
-		ProjectMetadata: ProjectMetadata{Title: "Demo", BusinessOwner: "x"},
+		ProjectMetadata:   ProjectMetadata{Title: "Demo", BusinessOwner: "x"},
 		PackagesInstalled: []string{"sourcegraph/scip-php"},
 	}
 	if err := Save(dir, state); err != nil {
@@ -49,6 +49,7 @@ func TestSaveLoadRoundtrip(t *testing.T) {
 	}
 }
 
+// @verifies onboarding:INV-1
 func TestNextStepLinearity(t *testing.T) {
 	cases := []struct{ in, want Step }{
 		{StepProjectMetadata, StepConfirmRoots},

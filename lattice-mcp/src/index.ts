@@ -2,6 +2,8 @@
 // Lattice MCP server. A long-running process that exposes the lattice CLI to
 // MCP hosts (Claude Desktop, IDE extensions, agent runtimes) over stdio.
 
+// @module-feature mcp
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 

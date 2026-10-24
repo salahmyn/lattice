@@ -1,5 +1,7 @@
 package agentic
 
+// @module-feature agentic
+
 import (
 	"strings"
 
@@ -14,6 +16,7 @@ import (
 // call ToneContract(cfg) and prepend the result to their base system
 // prompt. One config knob, one place to render it, all agentic capabilities
 // shift voice together.
+// @enforces agentic:INV-1
 func ToneContract(t config.Tone) string {
 	var lines []string
 	switch strings.ToLower(strings.TrimSpace(t.Audience)) {

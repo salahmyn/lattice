@@ -9,6 +9,8 @@
 // driving the UI when the user finishes.
 package onboarding
 
+// @module-feature onboarding
+
 import (
 	"fmt"
 	"os"
@@ -87,11 +89,11 @@ type State struct {
 // past the init moment — the user-visible decisions, not the evidence
 // trail. The full detect.Detection is recomputable any time.
 type DetectedSummary struct {
-	Language    detect.Language  `yaml:"language,omitempty"`
-	Framework   detect.Framework `yaml:"framework,omitempty"`
-	Confidence  string           `yaml:"confidence,omitempty"`
-	CodeRoots   []string         `yaml:"code_roots,omitempty"`
-	NeedsPackages []NeedsPackage `yaml:"needs_packages,omitempty"`
+	Language      detect.Language  `yaml:"language,omitempty"`
+	Framework     detect.Framework `yaml:"framework,omitempty"`
+	Confidence    string           `yaml:"confidence,omitempty"`
+	CodeRoots     []string         `yaml:"code_roots,omitempty"`
+	NeedsPackages []NeedsPackage   `yaml:"needs_packages,omitempty"`
 }
 
 // NeedsPackage is a flattened detect.Package — same fields, kept here
@@ -113,7 +115,7 @@ type ProjectMetadata struct {
 	Title            string `yaml:"title,omitempty"             json:"title,omitempty"`
 	BusinessOwner    string `yaml:"business_owner,omitempty"    json:"business_owner,omitempty"`
 	EngineeringOwner string `yaml:"engineering_owner,omitempty" json:"engineering_owner,omitempty"`
-	ToneAudience     string `yaml:"tone_audience,omitempty"     json:"tone_audience,omitempty"`      // business | product | engineering | mixed
+	ToneAudience     string `yaml:"tone_audience,omitempty"     json:"tone_audience,omitempty"`       // business | product | engineering | mixed
 	ToneReadingLevel string `yaml:"tone_reading_level,omitempty" json:"tone_reading_level,omitempty"` // simple | intermediate | expert
 }
 
@@ -176,6 +178,7 @@ func FromDetection(d detect.Detection, scope Scope) State {
 
 // NextStep advances `step` linearly through the wizard. Used by the
 // UI's "Continue" handler after each step is submitted.
+// @enforces onboarding:INV-1
 func NextStep(current Step) Step {
 	switch current {
 	case StepProjectMetadata:

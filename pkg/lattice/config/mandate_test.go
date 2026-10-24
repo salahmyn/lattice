@@ -37,6 +37,7 @@ func TestMandateCovers(t *testing.T) {
 
 // A brd_approve mandate covers tiers up to tier_max (default 1), never tier
 // 3, and nothing after it expires.
+// @verifies brds.council:INV-4
 func TestMandateCoversBRD(t *testing.T) {
 	m := Mandate{ID: "m", Grants: GrantBRDApprove, TierMax: 2, Expires: "2027-01-01"}
 	for _, tc := range []struct {

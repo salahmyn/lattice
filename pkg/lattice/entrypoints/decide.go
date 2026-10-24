@@ -1,5 +1,7 @@
 package entrypoints
 
+// @module-feature entrypoints
+
 import (
 	"fmt"
 	"os"
@@ -35,6 +37,7 @@ type DecideResult struct {
 // than delete — means a reviewer can recover a wrong call without
 // re-running extract, and Merge() will skip rejected files because
 // they're under a hidden directory the walker ignores.
+// @enforces entrypoints:INV-3
 func Decide(entryPointsDir, id, decision string) (DecideResult, error) {
 	res := DecideResult{ID: id, Decision: decision}
 	relPath := filepath.FromSlash(strings.ReplaceAll(id, ".", "/")) + ".yaml"

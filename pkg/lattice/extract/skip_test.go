@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// @verifies extraction:INV-1
 func TestSkipDir(t *testing.T) {
 	root := t.TempDir()
 	mk := func(rel, gitFile string) string {
@@ -46,6 +47,7 @@ func TestSkipDir(t *testing.T) {
 	}
 }
 
+// @verifies extraction:INV-1
 func TestSkipDirRootWorktree(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, ".git"), []byte("gitdir: /repo/.git/worktrees/wt\n"), 0o644); err != nil {
@@ -56,6 +58,7 @@ func TestSkipDirRootWorktree(t *testing.T) {
 	}
 }
 
+// @verifies extraction:INV-2
 func TestScanFilter(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")

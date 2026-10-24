@@ -1,0 +1,77 @@
+id: brd.intent
+version: 1
+status: draft
+title: Keep business intent and its approval traceable
+business_problem: Business requirements drift from the code and get approved without anyone checking the code behind them. Lattice keeps BRDs linked to features and gates their approval on a human or a mandated council.
+business_goals:
+  - Every BRD links to features that exist.
+  - No agent-written BRD becomes source of truth without a human or a mandated council.
+user_scenarios:
+  - id: US-1
+    actor: delegating human
+    narrative: The human a council acted for overturns its approval; the version is locked and a revised version can be reviewed again.
+    given:
+      - a council seat has voted on a BRD version
+    when:
+      - the delegating human overturns the version
+    then:
+      - no seat may vote on that version again
+      - a revised version starts a fresh review
+success_criteria:
+  - id: SC-1
+    statement: A BRD whose implements_via names a missing feature is BRD_PHANTOM_FEATURE.
+    maps_to_invariant: brds:INV-1
+  - id: SC-2
+    statement: An llm_from_code BRD that is not approved is BRD_UNAPPROVED_LLM.
+    maps_to_invariant: brds:INV-2
+  - id: SC-3
+    statement: A BRD edited after its approved version is BRD_DRIFT.
+    maps_to_invariant: brds:INV-3
+  - id: SC-4
+    statement: A BRD id must start with brd. and follow the dotted id grammar.
+    maps_to_invariant: brds:INV-4
+  - id: SC-5
+    statement: A criterion that maps to an invariant its feature does not declare is BRD_CRITERION_PHANTOM_INVARIANT.
+    maps_to_invariant: brds:INV-5
+  - id: SC-6
+    statement: A BRD's features are the union of its implements_via and the features that name it in implements_brd.
+    maps_to_invariant: brds:INV-6
+  - id: SC-7
+    statement: A BRD regenerated from code is a draft with provenance llm_from_code and needs human review.
+    maps_to_invariant: brds:INV-7
+  - id: SC-8
+    statement: A council approves a version only when every seat has voted approve.
+    maps_to_invariant: brds.council:INV-1
+  - id: SC-9
+    statement: A BRD with a tier-3 criterion, or a regulatory, legal or financial constraint, stays human-only.
+    maps_to_invariant: brds.council:INV-2
+  - id: SC-10
+    statement: No seat is held by the author of the version, and no agent holds two seats.
+    maps_to_invariant: brds.council:INV-3
+  - id: SC-11
+    statement: A council approval needs council mode and a pinned, unexpired mandate that covers the BRD's tier and names the delegating human.
+    maps_to_invariant: brds.council:INV-4
+  - id: SC-12
+    statement: Votes belong to one version, one per seat; a vote on an overturned version or from a seat off the council is refused.
+    maps_to_invariant: brds.council:INV-5
+  - id: SC-13
+    statement: A council approval that no pinned mandate, floor or unanimous vote supports is BRD_COUNCIL_INVALID.
+    maps_to_invariant: brds.council:INV-6
+  - id: SC-14
+    statement: Only an approved change request legalizes retiring a verifier.
+    maps_to_invariant: revision:INV-1
+  - id: SC-15
+    statement: Clearing a flag needs an identity and an open flag on the unit.
+    maps_to_invariant: flags:INV-1
+out_of_scope:
+  - Regulatory, legal and financial constraints, which only a human may add.
+implements_via:
+  - brds
+  - brds.council
+  - flags
+  - revision
+provenance:
+  source: llm_from_code
+  generated_at: "2026-10-24"
+  authored_by: agent:lattice-on-lattice
+human_review_required: true
