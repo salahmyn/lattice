@@ -18,6 +18,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -36,6 +37,11 @@ const (
 type Set struct {
 	Commit  string             `json:"commit,omitempty"`
 	Results map[string]Outcome `json:"results"`
+	// Cases maps each key to the report case it came from
+	// ("<classname>::<name>"). One case is indexed under several keys;
+	// Cases tells "one case seen through two keys" from "two different
+	// cases", which is what makes a lookup ambiguous.
+	Cases map[string]string `json:"cases,omitempty"`
 }
 
 // cacheFile is the on-disk location of the ingested set, relative to the
@@ -72,12 +78,12 @@ type junitOutcome struct {
 // ParseJUnit reads a junit-family XML report and returns a normalized
 // Set. A top-level <testsuite> (no <testsuites> wrapper) is accepted too.
 func ParseJUnit(data []byte) (Set, error) {
-	set := Set{Results: map[string]Outcome{}}
+	set := Set{Results: map[string]Outcome{}, Cases: map[string]string{}}
 
 	var suites junitSuites
 	if err := xml.Unmarshal(data, &suites); err == nil && len(suites.Suites) > 0 {
 		for _, s := range suites.Suites {
-			collect(s, set.Results)
+			collect(s, set.Results, set.Cases)
 		}
 		return set, nil
 	}
@@ -90,13 +96,13 @@ func ParseJUnit(data []byte) (Set, error) {
 	if single.XMLName.Local != "testsuite" {
 		return set, fmt.Errorf("parse junit xml: no <testsuites> or <testsuite> root")
 	}
-	collect(single, set.Results)
+	collect(single, set.Results, set.Cases)
 	return set, nil
 }
 
 // collect walks a suite (and nested suites) recording one Outcome per
 // case under every key normalize emits.
-func collect(s junitSuite, out map[string]Outcome) {
+func collect(s junitSuite, out map[string]Outcome, cases map[string]string) {
 	for _, c := range s.Cases {
 		o := Pass
 		switch {
@@ -105,12 +111,19 @@ func collect(s junitSuite, out map[string]Outcome) {
 		case c.Skipped != nil:
 			o = Skip
 		}
+		id := strings.TrimSpace(c.Classname) + "::" + strings.TrimSpace(c.Name)
 		for _, k := range keysFor(c.Classname, c.Name) {
 			record(out, k, o)
+			if prev, ok := cases[k]; ok && prev != id {
+				// Two cases share this key (the same test in two projects or
+				// files): keep the first id; the outcome already merged.
+				continue
+			}
+			cases[k] = id
 		}
 	}
 	for _, nested := range s.Suites {
-		collect(nested, out)
+		collect(nested, out, cases)
 	}
 }
 
@@ -221,21 +234,38 @@ func normalize(s string) string {
 // to the worst outcome (fail, then skip, then pass), so the answer
 // never depends on map order and a failure is never hidden.
 func (s Set) Lookup(ref string) (Outcome, bool) {
-	if len(s.Results) == 0 {
+	o, found, ambiguous := s.lookup(ref)
+	if len(ambiguous) > 0 {
 		return "", false
+	}
+	return o, found
+}
+
+// Ambiguous returns the distinct report cases a ref matches equally well
+// when they are more than one, else nil. Lookup refuses such a ref (it is
+// not demonstrated) rather than guess which case is its verifier.
+func (s Set) Ambiguous(ref string) []string {
+	_, _, ambiguous := s.lookup(ref)
+	return ambiguous
+}
+
+func (s Set) lookup(ref string) (Outcome, bool, []string) {
+	if len(s.Results) == 0 {
+		return "", false, nil
 	}
 	key := normalize(ref)
 	if o, ok := s.Results[key]; ok {
-		return o, true
+		return o, true, nil
 	}
 	if o, ok := s.lookupTemplate(key); ok {
-		return o, ok
+		return o, ok, nil
 	}
 	last := key
 	if i := strings.LastIndex(key, "."); i >= 0 {
 		last = key[i+1:]
 	}
 	best, bestScore, found := Outcome(""), 0, false
+	tied := map[string]bool{} // case ids at the best score
 	for k, o := range s.Results {
 		score := 0
 		switch {
@@ -248,11 +278,29 @@ func (s Set) Lookup(ref string) (Outcome, bool) {
 		default:
 			continue
 		}
-		if !found || score > bestScore || (score == bestScore && worse(o, best)) {
+		if !found || score > bestScore {
 			best, bestScore, found = o, score, true
+			tied = map[string]bool{}
+		} else if score == bestScore && worse(o, best) {
+			best = o
+		}
+		if score == bestScore {
+			id := s.Cases[k]
+			if id == "" {
+				id = k // a set ingested before case ids were recorded
+			}
+			tied[id] = true
 		}
 	}
-	return best, found
+	if len(tied) > 1 && len(s.Cases) > 0 {
+		ids := make([]string, 0, len(tied))
+		for id := range tied {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		return "", false, ids
+	}
+	return best, found, nil
 }
 
 // lookupTemplate resolves a table-driven test (it.each / test.each), whose
@@ -307,7 +355,7 @@ func worse(a, b Outcome) bool {
 // the run covers. Pass every report of the run together (unit, e2e, ...):
 // a verifier with no result in the set cannot count as demonstrated.
 func Ingest(latticeDir, commit string, xmlPaths ...string) (Set, error) {
-	set := Set{Commit: commit, Results: map[string]Outcome{}}
+	set := Set{Commit: commit, Results: map[string]Outcome{}, Cases: map[string]string{}}
 	for _, p := range xmlPaths {
 		data, err := os.ReadFile(p)
 		if err != nil {
@@ -319,6 +367,9 @@ func Ingest(latticeDir, commit string, xmlPaths ...string) (Set, error) {
 		}
 		for k, o := range one.Results {
 			record(set.Results, k, o)
+			if _, ok := set.Cases[k]; !ok {
+				set.Cases[k] = one.Cases[k]
+			}
 		}
 	}
 	if err := Save(latticeDir, set); err != nil {

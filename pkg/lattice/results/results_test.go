@@ -238,3 +238,32 @@ func TestLookupEachRows(t *testing.T) {
 		t.Errorf("python lookup: (%s,%v)", got, ok)
 	}
 }
+
+// A ref that only shares its title with cases from different files is
+// ambiguous: the lookup refuses rather than guess, and Ambiguous names them.
+// One case seen through several of its own keys is not ambiguous.
+func TestLookupRefusesAmbiguous(t *testing.T) {
+	const report = `<testsuites>
+<testsuite name="a"><testcase classname="cart.LimitTest" name="test_valid"/></testsuite>
+<testsuite name="b"><testcase classname="pay.CardTest" name="test_valid"><failure/></testcase></testsuite>
+<testsuite name="c"><testcase classname="tv.PairTest" name="test_pairs"/></testsuite>
+</testsuites>`
+	set, err := ParseJUnit([]byte(report))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o, ok := set.Lookup("src.wallet.WalletTest.test_valid"); ok {
+		t.Errorf("ambiguous ref resolved to %s", o)
+	}
+	if got := set.Ambiguous("src.wallet.WalletTest.test_valid"); len(got) != 2 {
+		t.Errorf("Ambiguous = %v, want the two cases", got)
+	}
+	// A path that singles one out still resolves.
+	if o, ok := set.Lookup("tests.pay.CardTest.test_valid"); !ok || o != Fail {
+		t.Errorf("qualified ref: (%s,%v)", o, ok)
+	}
+	// One case only, matched through its bare-name and qualified keys.
+	if o, ok := set.Lookup("src.tv.other.test_pairs"); !ok || o != Pass || set.Ambiguous("src.tv.other.test_pairs") != nil {
+		t.Errorf("single case: (%s,%v) ambiguous=%v", o, ok, set.Ambiguous("src.tv.other.test_pairs"))
+	}
+}
