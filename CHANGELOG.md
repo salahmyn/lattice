@@ -2,6 +2,49 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **Go adapter** (on by default, `go` in `adapters.yaml`): Lattice now reads
+  `.go` files, including its own engine.
+  - Functions, methods, struct and named types, and interfaces are symbols,
+    named by package directory (`pkg/lattice/results` → `pkg.lattice.results`):
+    `pkg.lattice.results.Lookup`, `pkg.lattice.results.Set.Lookup`. A
+    package-level `const` or `var` is a symbol only when tagged. `Exported`
+    follows Go's upper-case rule; a `var` initializer or an `init` function
+    marks the file as runtime code (`has_code`).
+  - Tags go in the doc comment directly above a declaration
+    (`// @enforces feature:INV-1`), with the TypeScript tag names; module tags
+    (`// @module-feature x`) in the package comment. A tag separated from its
+    declaration by a blank line, trailing code, inside a function body or on
+    `init` raises `ANNOTATION_ORPHANED`. A wrapped doc line that starts with
+    `@` but reads as prose is not a tag.
+  - Functions in `_test.go` files are tests. A `t.Run("name", ...)` subtest
+    is a test of its own, named as `go test` names it
+    (`pkg.lattice.results.TestLookup.a_failure_wins`), so a tag above the call
+    verifies that subtest. Tags above a table test's `t.Run(tc.name, ...)` or
+    its `for` loop attach to the enclosing test.
+  - JUnit reports of `go test` (gotestsum, go-junit-report) join these FQNs
+    with no configuration: the case `<import path>` / `TestLookup/a_failure_wins`
+    ends in the test's FQN.
+  - Names Go allows twice in one directory (files for different builds, an
+    external test package) stay unique: a later file's symbol is
+    `<fqn>@<file stem>`.
+  - No SCIP indexer or mutation runner yet.
+
+### Behaviour changes to plan for
+
+- **Repositories with `.go` files start seeing Go modules.** The Go adapter
+  is on by default, so `extract` now parses them: coverage denominators grow,
+  and with `UNATTRIBUTED_MODULE` raised to an error, each untagged Go
+  production file fails `validate`. Exclude what is not product code
+  (`exclude:` in `workspace.yaml`), or switch the adapter off in
+  `adapters.yaml` (`go: {enabled: false}`). `vendor/` is never scanned;
+  files under `testdata/` are test code. Comments that start a line with
+  `@enforces x:INV-1` and the other tag names now attach to the declaration
+  below them.
+
 ## [0.12.0] — 2026-10-24
 
 ### Added

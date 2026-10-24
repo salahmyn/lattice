@@ -56,7 +56,8 @@ type Resolver interface {
 // LanguageAdapter parses one language's source into Lattice IR and supplies
 // the per-language command lines for SCIP indexing and mutation testing.
 type LanguageAdapter interface {
-	// Name is the canonical language name ("python", "typescript", "php").
+	// Name is the canonical language name ("python", "typescript", "php",
+	// "go").
 	Name() string
 
 	// FileExtensions lists the extensions this adapter owns, including the dot.

@@ -61,7 +61,7 @@ cd lattice-mcp && npm install && npm run build
 | **Manifest** | One YAML file under `lattice/features/` declaring one feature. |
 | **Capability** | A named behavior of a feature, with prose rules. |
 | **Invariant** | A constraint a feature must always hold (`INV-1`). |
-| **Annotation** | A decorator / JSDoc tag / PHP attribute linking code to a manifest. |
+| **Annotation** | A decorator / JSDoc tag / PHP attribute / Go doc-comment tag linking code to a manifest. |
 | **Initiative** | Coordinated work proposing manifest changes, split into tasks. |
 | **Knowledge graph** | `lattice.json` — the fused, queryable graph of all of the above. |
 
@@ -130,8 +130,8 @@ invariants:
 
 ### Step 3 — Annotate the code
 
-Link the implementing code to the manifest. (Python / TypeScript / PHP — see
-[annotations.md](annotations.md).) TypeScript example:
+Link the implementing code to the manifest. (Python / TypeScript / PHP / Go —
+see [annotations.md](annotations.md).) TypeScript example:
 
 ```typescript
 /**
@@ -401,6 +401,39 @@ lattice results ingest db.tap unit.xml e2e.xml
 
 A `.tap` file, or any report that does not start with `<`, is read as TAP.
 A `# SKIP` or `# TODO` line counts as a skip.
+
+---
+
+## 4e. Go
+
+The Go adapter is on by default (`go` in `lattice/adapters.yaml`). Tags go in
+the doc comment directly above a declaration, with the TypeScript tag names;
+module tags go in the package comment. See [annotations.md](annotations.md#go).
+
+```go
+// @enforces checkout.refund:INV-1
+func Settle(r Refund) error { ... }
+
+func TestSettle(t *testing.T) {
+    // @verifies checkout.refund:INV-1
+    t.Run("rejects a double refund", func(t *testing.T) { ... })
+}
+```
+
+Symbols are named by package directory (`pkg.checkout.refund.Settle`), tests
+and subtests as `go test` names them
+(`pkg.checkout.refund.TestSettle.rejects_a_double_refund`). A JUnit report of
+`go test` therefore joins without configuration:
+
+```sh
+gotestsum --junitfile unit.xml ./...     # or: go test -v ./... | go-junit-report > unit.xml
+lattice results ingest unit.xml
+```
+
+Lattice does not read `go test -json` directly; convert it to JUnit first.
+The join assumes `go.mod` sits at the code root, so the package directory is
+the tail of the import path. There is no Go SCIP indexer or mutation runner
+yet.
 
 ## 5. Day-to-day commands
 

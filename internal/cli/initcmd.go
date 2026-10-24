@@ -17,13 +17,13 @@ import (
 )
 
 type initResult struct {
-	Path        string                `json:"path"`
-	LatticeDir  string                `json:"lattice_dir"`
-	Mode        string                `json:"mode"`
-	Created     []string              `json:"created"`
-	AlreadyInit bool                  `json:"already_initialized"`
-	Detected    *detect.Detection     `json:"detected,omitempty"`
-	Onboarding  *onboarding.State     `json:"onboarding,omitempty"`
+	Path        string            `json:"path"`
+	LatticeDir  string            `json:"lattice_dir"`
+	Mode        string            `json:"mode"`
+	Created     []string          `json:"created"`
+	AlreadyInit bool              `json:"already_initialized"`
+	Detected    *detect.Detection `json:"detected,omitempty"`
+	Onboarding  *onboarding.State `json:"onboarding,omitempty"`
 }
 
 func newInitCommand(io *IO) *cobra.Command {
@@ -159,9 +159,9 @@ func scaffoldAMA(root, latticeDir string) ([]string, error) {
 	// describe the AMA invariants; they're harmless to commit and
 	// give an AI agent the AMA rules without re-reading docs.
 	codeFiles := map[string]string{
-		filepath.Join(root, "src", "Core", "Contracts", "README.md"):  amaCoreContractsREADME,
+		filepath.Join(root, "src", "Core", "Contracts", "README.md"):   amaCoreContractsREADME,
 		filepath.Join(root, "src", "Core", "SharedUtils", "README.md"): amaCoreSharedUtilsREADME,
-		filepath.Join(root, "src", "Features", "README.md"):           amaFeaturesREADME,
+		filepath.Join(root, "src", "Features", "README.md"):            amaFeaturesREADME,
 	}
 	for full, content := range codeFiles {
 		if _, err := os.Stat(full); err == nil {
@@ -425,6 +425,8 @@ adapters:
   typescript:
     enabled: true
   php:
+    enabled: true
+  go:
     enabled: true
   # PostgreSQL migrations and pgTAP tests are opt-in (a repo's .sql files are
   # often seed data or dumps). Globs are relative to the code root.
