@@ -18,6 +18,10 @@ All notable changes to Lattice are documented in this file.
   leniently, so `allow:` instead of `entries:` (or a misspelt entry field)
   loaded an empty list with no finding, and `ALLOWLIST_STALE` could never
   fire. Unknown keys now raise `ALLOWLIST_SCHEMA`.
+- **`brd approve` is recorded in the ledger**: an approval is a gate
+  decision, but the command wrote only the BRD's `approval` block, so which
+  identity ran it (`--actor` / `LATTICE_ACTOR`) was kept nowhere. It now
+  appends a `gate` entry with the actor, the BRD and the approver.
 
 ### Added
 
