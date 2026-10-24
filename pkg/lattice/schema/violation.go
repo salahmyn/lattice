@@ -134,6 +134,9 @@ const (
 	// γ — demonstration (ingested test results).
 	CodeVerifierFailing = "VERIFIER_FAILING" // an ingested result for a @verifies test is red
 
+	// CodeBRDBelowLevel: a criterion or scenario is below validate.require_level.
+	CodeBRDBelowLevel = "BRD_BELOW_LEVEL"
+
 	// δ — meaning fidelity (does the wired link mean what was asked?).
 	CodeCriterionInvariantNarrower = "CRITERION_INVARIANT_NARROWER" // invariant does not entail its criterion (assisted)
 	CodeInvariantUnfalsifiable     = "INVARIANT_UNFALSIFIABLE"      // enforcer has no reachable violating path

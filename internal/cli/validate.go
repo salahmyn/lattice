@@ -31,7 +31,7 @@ type validateReport struct {
 
 func newValidateCommand(io *IO) *cobra.Command {
 	var review bool
-	var failOn string
+	var failOn, requireLevel string
 	cmd := &cobra.Command{
 		Use:   "validate",
 		Short: "Extract and validate the workspace",
@@ -53,6 +53,9 @@ func newValidateCommand(io *IO) *cobra.Command {
 				return io.fail("VALIDATE_FAILED", err.Error(), nil)
 			}
 			cfg, _ := config.Load(ws.LatticeDir)
+			if requireLevel != "" {
+				cfg.Validate.RequireLevel = requireLevel
+			}
 
 			// v0.8 — fold ingested results (γ) and active leases (§5) into
 			// the run so validation agrees with rtm/coverage and flags
@@ -118,6 +121,7 @@ func newValidateCommand(io *IO) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&review, "review", false, "manifest-only mode: skip code-coupled checks")
 	cmd.Flags().StringVar(&failOn, "fail-on", "", "lowest severity that fails the run: error (default), warning or info")
+	cmd.Flags().StringVar(&requireLevel, "require-level", "", "truth level every BRD criterion and scenario must reach: verified or demonstrated")
 	return cmd
 }
 
