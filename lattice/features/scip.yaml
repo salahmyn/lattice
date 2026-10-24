@@ -1,5 +1,5 @@
 id: scip
-version: 1
+version: 2
 status: production
 purpose: |
   Reads SCIP indexes into a call graph for blast radius and flow tracing.
@@ -9,4 +9,4 @@ owners:
 implements_brd: brd.code_graph
 invariants:
   - id: INV-1
-    statement: A reference is attributed to the closest definition above it in the same document.
+    statement: A reference is attributed to the innermost definition that encloses it in the same document; with no recorded extent, to the closest definition above it.

@@ -15,12 +15,12 @@ import (
 // transitively.
 //
 // SCIP does not directly encode caller→callee edges. We reconstruct
-// them with a per-file "most recent definition wins" heuristic: for
-// any reference occurrence at line L in file F, the caller is the
-// function/method whose definition starts closest before L on the
-// same file. This is the standard SCIP-without-AST trick and is
-// accurate for the dominant case (one definition per body, no
-// nested closures larger than the parent body).
+// them per file: for any reference occurrence at line L in file F, the
+// caller is the innermost definition whose extent contains L. A
+// definition's extent is its `enclosing_range` when the indexer records
+// one. Without it we fall back to "most recent definition wins": the
+// definition that starts closest before L, the standard SCIP-without-AST
+// trick, which credits top-level code after a function to that function.
 type CallGraph struct {
 	// callees maps the SCIP symbol moniker of a callerto the set of
 	// SCIP symbol monikers it references inside its body.
@@ -161,10 +161,12 @@ func normaliseFQN(s string) string {
 
 // definitionsByLine returns the (line, symbol) pairs for every
 // function/method/class definition in doc, sorted by line ascending.
-// The line is 1-based.
+// Lines are 1-based; endLine is the last line of the definition's
+// enclosing_range, or 0 when the indexer did not record one.
 type defAt struct {
-	line   int
-	symbol string
+	line    int
+	endLine int
+	symbol  string
 }
 
 func definitionsByLine(doc *scippb.Document) []defAt {
@@ -173,15 +175,18 @@ func definitionsByLine(doc *scippb.Document) []defAt {
 		if occ.SymbolRoles&definitionRole == 0 {
 			continue
 		}
-		out = append(out, defAt{line: occurrenceLine(occ), symbol: occ.Symbol})
+		out = append(out, defAt{line: occurrenceLine(occ), endLine: enclosingEndLine(occ), symbol: occ.Symbol})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].line < out[j].line })
 	return out
 }
 
-// mostRecentDef returns the symbol of the definition whose start
-// line is the largest one ≤ targetLine. Used to attribute a
-// reference to its enclosing function.
+// mostRecentDef returns the symbol of the innermost definition that
+// encloses targetLine: the latest-starting definition at or before it
+// whose extent reaches it. A definition with no recorded extent is taken
+// to reach it, the "most recent definition wins" fallback. It returns ""
+// when no definition encloses the line, as for top-level code. Used to
+// attribute a reference to its enclosing function.
 // @enforces scip:INV-1
 func mostRecentDef(defs []defAt, targetLine int) string {
 	if len(defs) == 0 {
@@ -197,8 +202,23 @@ func mostRecentDef(defs []defAt, targetLine int) string {
 			hi = mid
 		}
 	}
-	if lo == 0 {
-		return ""
+	for i := lo - 1; i >= 0; i-- {
+		if d := defs[i]; d.endLine == 0 || d.endLine >= targetLine {
+			return d.symbol
+		}
 	}
-	return defs[lo-1].symbol
+	return ""
+}
+
+// enclosingEndLine is the 1-based last line of a definition's
+// enclosing_range ([startLine, startChar, endLine, endChar], or
+// [line, startChar, endChar] on one line), or 0 when it has none.
+func enclosingEndLine(occ *scippb.Occurrence) int {
+	switch r := occ.EnclosingRange; len(r) {
+	case 4:
+		return int(r[2]) + 1
+	case 3:
+		return int(r[0]) + 1
+	}
+	return 0
 }

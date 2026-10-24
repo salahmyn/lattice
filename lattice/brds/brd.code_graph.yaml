@@ -87,7 +87,7 @@ success_criteria:
     statement: A module is production code for attribution when it holds a non-test behaviour symbol or top-level code; type-only, config, test and migration modules are not.
     maps_to_invariant: schema:INV-1
   - id: SC-24
-    statement: A reference is attributed to the closest definition above it in the same document.
+    statement: A reference is attributed to the innermost definition that encloses it in the same document; with no recorded extent, to the closest definition above it.
     maps_to_invariant: scip:INV-1
   - id: SC-25
     statement: A persisted entry point wins over a detected one with the same id; the detector only fills what the persisted one leaves empty.

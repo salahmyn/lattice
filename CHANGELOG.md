@@ -6,6 +6,15 @@ All notable changes to Lattice are documented in this file.
 
 ### Fixed
 
+- **SCIP flow tracing credits code to the function that contains it**:
+  the call graph gave each reference to the nearest definition above it,
+  without checking where that definition ends. Top-level code after a
+  function counted as that function's calls, and a function's own calls
+  after a nested definition went to the nested one, so entry-point flows
+  could list features they never reach. A definition's `enclosing_range`
+  now bounds it when the indexer records one. Without it, the old rule
+  still applies.
+
 - **A BRD an agent drafts needs review like an LLM draft**: `lattice brd
   new` run by an agent (`--actor agent:…`) recorded `source: human`, so
   `BRD_UNAPPROVED_LLM` never fired for it and a `fail_on: warning` gate let
