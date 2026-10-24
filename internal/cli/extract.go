@@ -85,8 +85,26 @@ func newExtractCommand(io *IO) *cobra.Command {
 	return cmd
 }
 
-// buildGraph runs extraction and graph building without writing to disk.
+// buildOptions tunes buildGraphWith.
+type buildOptions struct {
+	// codeGraph runs the SCIP indexers into the cache first.
+	codeGraph bool
+	// readOnly skips everything that writes: no LLM labeling of entry
+	// points (whose labels are persisted to lattice/entry-points/) and no
+	// indexer run.
+	readOnly bool
+}
+
+// buildGraph runs extraction and graph building without writing the graph
+// to disk. With an LLM configured it labels and persists entry points that
+// have no purpose yet; use buildGraphWith(readOnly) when nothing may change.
 func buildGraph(ctx context.Context, ws *workspace.Workspace, withCodeGraph bool) (schema.KnowledgeGraph, error) {
+	return buildGraphWith(ctx, ws, buildOptions{codeGraph: withCodeGraph})
+}
+
+// buildGraphWith is buildGraph with explicit options.
+func buildGraphWith(ctx context.Context, ws *workspace.Workspace, opts buildOptions) (schema.KnowledgeGraph, error) {
+	withCodeGraph := opts.codeGraph && !opts.readOnly
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -160,7 +178,7 @@ func buildGraph(ctx context.Context, ws *workspace.Workspace, withCodeGraph bool
 			// feature and entry-point prose.
 			cfg, _ := config.Load(ws.LatticeDir)
 			provider := agentic.FromConfig(cfg.Agentic.LLM)
-			if agentic.Enabled(provider) {
+			if agentic.Enabled(provider) && !opts.readOnly {
 				skip := map[string]bool{}
 				for _, p := range persisted {
 					if p.Purpose != "" {

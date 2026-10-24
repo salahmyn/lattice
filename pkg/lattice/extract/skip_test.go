@@ -5,6 +5,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/salahmyn/lattice/pkg/lattice/adapters"
+	"github.com/salahmyn/lattice/pkg/lattice/adapters/golang"
+	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
 // @verifies extraction:INV-1
@@ -112,5 +116,28 @@ func TestScanFilter(t *testing.T) {
 	plain := newScanFilter(t.TempDir(), []string{"legacy/**"})
 	if plain.skipFile("src/schema.gen.ts") || !plain.skipFile("legacy/old.ts") {
 		t.Error("non-git root: only the exclude glob should apply")
+	}
+}
+
+// Scans answers for one path what the walk decides for the tree: an
+// adapter must own it, and no pruned directory or exclude glob may cover it.
+// @verifies extraction:INV-1, extraction:INV-2
+func TestScans(t *testing.T) {
+	root := t.TempDir()
+	w := &workspace.Workspace{LatticeDir: filepath.Join(root, "lattice"), Exclude: []string{"legacy/**"}}
+	cr := workspace.CodeRoot{Name: "default", Abs: root, Available: true}
+	reg := adapters.NewRegistry(golang.New())
+	for rel, want := range map[string]bool{
+		"pkg/a.go":               true,
+		"pkg/a.txt":              false, // no adapter
+		"vendor/x/a.go":          false, // pruned directory
+		"web/node_modules/a.go":  false,
+		"lattice/features/a.go":  false, // the workspace itself
+		"legacy/a.go":            false, // exclude glob
+		".claude/worktrees/a.go": false,
+	} {
+		if got := Scans(w, reg, cr, rel); got != want {
+			t.Errorf("Scans(%q) = %v, want %v", rel, got, want)
+		}
 	}
 }

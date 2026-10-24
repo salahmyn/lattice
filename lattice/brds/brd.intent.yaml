@@ -69,6 +69,7 @@ implements_via:
   - brds
   - brds.council
   - flags
+  - impact
   - revision
 provenance:
   source: llm_from_code
