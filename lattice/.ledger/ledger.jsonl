@@ -1,0 +1,2 @@
+{"at":"2026-10-24T10:48:58Z","event":"check-run","actor":"agent:lattice-on-lattice","unit":"workspace","evidence":"results ingest: 674 pass, 0 fail, 0 skip @ ba16bffd"}
+{"at":"2026-10-24T10:48:58Z","event":"check-run","actor":"agent:lattice-on-lattice","unit":"workspace","evidence":"validate: 0 error(s), 5 warning(s), 6 info, 0 allowlisted"}
