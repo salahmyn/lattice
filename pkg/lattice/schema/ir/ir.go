@@ -87,6 +87,10 @@ type Module struct {
 	// that can tell it apart from imports and type declarations; never set
 	// on test files.
 	HasCode           bool         `json:"has_code,omitempty"`
+	// ChangeHistory marks a file that records changes rather than holding
+	// code, such as a database migration: its symbols are attributed by
+	// their own tags, and the file itself is not a module to attribute.
+	ChangeHistory     bool         `json:"change_history,omitempty"`
 	ModuleAnnotations []Annotation `json:"module_annotations,omitempty"`
 	Symbols           []Symbol     `json:"symbols,omitempty"`
 	Surfaces          []Surface    `json:"surfaces,omitempty"`

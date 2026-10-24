@@ -267,3 +267,74 @@ func TestLookupRefusesAmbiguous(t *testing.T) {
 		t.Errorf("single case: (%s,%v) ambiguous=%v", o, ok, set.Ambiguous("src.tv.other.test_pairs"))
 	}
 }
+
+// pg_prove --verbose output: each file's TAP follows a "<file> .." header,
+// and an assertion joins its postgres-adapter FQN by file and description.
+func TestParseTAP(t *testing.T) {
+	tap := `supabase/tests/refunds_test.sql ..
+1..4
+ok 1 - a refund is recorded once
+not ok 2 - a second refund is rejected
+# Failed test 2: "a second refund is rejected"
+ok 3 - pending refunds expire # SKIP needs pg_cron
+ok 4 # nothing to join
+ok
+supabase/tests/feeds_test.sql ..
+1..1
+ok 1 - a parent reads only own feeds
+ok
+All tests successful.`
+	set, err := ParseTAP([]byte(tap))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for fqn, want := range map[string]Outcome{
+		"supabase.tests.refunds_test.test.a-refund-is-recorded-once":   Pass,
+		"supabase.tests.refunds_test.test.a-second-refund-is-rejected": Fail,
+		"supabase.tests.refunds_test.test.pending-refunds-expire":      Skip,
+		"supabase.tests.feeds_test.test.a-parent-reads-only-own-feeds": Pass,
+	} {
+		if got, ok := set.Lookup(fqn); !ok || got != want {
+			t.Errorf("Lookup(%s) = %q, %v; want %q", fqn, got, ok, want)
+		}
+	}
+}
+
+// A bare TAP stream (psql -f) has no file header: cases still join by the
+// description slug, and the same description in two files would be refused
+// as ambiguous by the usual rule.
+func TestParseTAPWithoutFile(t *testing.T) {
+	set, err := ParseTAP([]byte("1..1\nok 1 - a refund is recorded once\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := set.Lookup("db.tests.refunds.test.a-refund-is-recorded-once"); !ok || got != Pass {
+		t.Errorf("Lookup = %q, %v; want pass", got, ok)
+	}
+	if _, err := ParseTAP([]byte("1..0\n")); err == nil {
+		t.Error("a stream with no described test lines is an error")
+	}
+}
+
+// Ingest reads TAP and JUnit reports of one run together.
+func TestIngestTAPAndJUnit(t *testing.T) {
+	dir := t.TempDir()
+	tapPath := filepath.Join(dir, "db.tap")
+	xmlPath := filepath.Join(dir, "unit.xml")
+	if err := os.WriteFile(tapPath, []byte("supabase/tests/a_test.sql ..\nok 1 - db rule holds\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(xmlPath, []byte(`<testsuite><testcase classname="src/cart.test.ts" name="adds"/></testsuite>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	set, err := Ingest(dir, "abc", tapPath, xmlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o, ok := set.Lookup("supabase.tests.a_test.test.db-rule-holds"); !ok || o != Pass {
+		t.Errorf("tap case = %q, %v", o, ok)
+	}
+	if o, ok := set.Lookup("src.cart.test.test.adds"); !ok || o != Pass {
+		t.Errorf("junit case = %q, %v", o, ok)
+	}
+}

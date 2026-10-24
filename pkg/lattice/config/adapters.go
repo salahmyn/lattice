@@ -20,7 +20,15 @@ type AdapterSettings struct {
 	Enabled         bool     `yaml:"enabled"`
 	IndexerCommand  []string `yaml:"indexer_command,omitempty"`
 	MutationCommand []string `yaml:"mutation_command,omitempty"`
+	// Migrations and Tests (postgres) are slash-path globs, relative to the
+	// code root, of migration files and pgTAP test files.
+	Migrations []string `yaml:"migrations,omitempty"`
+	Tests      []string `yaml:"tests,omitempty"`
 }
+
+// optInAdapters run only when adapters.yaml enables them explicitly: a
+// repository's .sql files are often seed data or dumps, not migrations.
+var optInAdapters = map[string]bool{"postgres": true}
 
 // DefaultAdapters returns all three v1.0 adapters enabled.
 func DefaultAdapters() AdaptersConfig {
@@ -36,7 +44,7 @@ func DefaultAdapters() AdaptersConfig {
 func (a AdaptersConfig) IsEnabled(name string) bool {
 	s, ok := a.Adapters[name]
 	if !ok {
-		return true
+		return !optInAdapters[name]
 	}
 	return s.Enabled
 }

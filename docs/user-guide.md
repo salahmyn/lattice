@@ -337,6 +337,71 @@ then must carry `X-Lattice-Token: <X>`.
 
 ---
 
+## 4d. Database rules (PostgreSQL)
+
+Rules a database enforces count like rules in application code: a function,
+a row-level security policy or a trigger can enforce an invariant, and a
+pgTAP assertion can verify it, up to `demonstrated`.
+
+The adapter is opt-in in `lattice/adapters.yaml`. Globs are relative to the
+code root:
+
+```yaml
+adapters:
+  postgres:
+    enabled: true
+    migrations: ["supabase/migrations/*.sql"]
+    tests: ["supabase/tests/**/*.sql"]
+```
+
+With no globs, files under a `migrations/` directory are migrations and
+files under a test directory are pgTAP tests. Any other `.sql` file is read
+as schema definitions.
+
+**Enforcement.** Tag the statement in a SQL comment directly above it:
+
+```sql
+-- @enforces refunds:INV-1
+create or replace function public.refund(p_payment uuid) returns void ...;
+
+-- @enforces refunds:INV-2
+create policy "Owners read own refunds" on public.refunds for select using (owner = auth.uid());
+```
+
+Symbols are `sql.<schema>.<function>`, `sql.policy.<schema>.<table>.<name>`
+and `sql.trigger.<schema>.<table>.<name>`. A feature-qualified `@enforces`
+attributes the symbol to that feature; `@feature` overrides it.
+
+**Migrations are applied in filename order.**
+- The last `create or replace` is the effective definition, and a
+  `drop` removes the symbol.
+- Tags count only on the effective definition. A redefinition that loses
+  a tag raises `SQL_TAG_DROPPED`, naming the older file, so a reader of an
+  outdated definition is not misled.
+- Migrations are change history, not modules: they are left out of
+  module attribution, and their symbols carry their own tags.
+
+**Verification.** pgTAP assertions are tests named by their description:
+
+```sql
+-- @verifies refunds:INV-1
+select throws_ok($$ select public.refund(...) $$, 'P0001', 'already refunded', 'a payment cannot be refunded twice');
+```
+
+`-- @verifies` above `select plan(...)` applies to every assertion in the
+file. An assertion without a description cannot be joined to a result; if
+it is tagged, Lattice says so.
+
+**Results.** Ingest the TAP stream together with the other reports:
+
+```sh
+pg_prove --verbose supabase/tests/*.sql > db.tap   # or capture `supabase test db`
+lattice results ingest db.tap unit.xml e2e.xml
+```
+
+A `.tap` file, or any report that does not start with `<`, is read as TAP.
+A `# SKIP` or `# TODO` line counts as a skip.
+
 ## 5. Day-to-day commands
 
 ```sh

@@ -6,6 +6,26 @@ All notable changes to Lattice are documented in this file.
 
 ### Added
 
+- **PostgreSQL adapter** (opt-in, `postgres` in `adapters.yaml`, with
+  `migrations` and `tests` globs): rules enforced in the database are traced
+  and demonstrated like application code.
+  - Functions, row-level security policies and triggers are symbols
+    (`sql.<schema>.<name>`, `sql.policy.<schema>.<table>.<name>`,
+    `sql.trigger.<schema>.<table>.<name>`), tagged in a SQL comment directly
+    above the statement (`-- @enforces feature:INV-N`). A feature-qualified
+    `@enforces` attributes the symbol to that feature.
+  - Migrations apply in filename order: the last `create or replace` wins, a
+    `drop` removes the symbol, and tags count only on the effective
+    definition. `SQL_TAG_DROPPED` (warning) reports a redefinition that
+    loses an earlier definition's tags. Migrations are left out of module
+    attribution (change history, not modules).
+  - pgTAP assertions are tests named `<file>.test.<slug of the description>`,
+    tagged `-- @verifies` above the assertion or above `select plan(...)`.
+  - `lattice results ingest` reads TAP streams (pg_prove `--verbose` output,
+    TAP 14 subtests; `# SKIP` / `# TODO` count as skips) next to JUnit.
+  - Adapters can now resolve definitions across files (`adapters.Resolver`),
+    run once after every file is parsed.
+
 - **Council approval of BRDs**: in council mode (`autonomy.default_mode:
   council`), and under a `brd_approve` mandate that a human pins in
   `config.yaml`, a council of agent seats may approve a BRD. Each seat
