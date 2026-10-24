@@ -1,9 +1,13 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -61,8 +65,39 @@ func LoadAdapters(latticeDir string) (AdaptersConfig, error) {
 	if err != nil {
 		return cfg, err
 	}
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return cfg, fmt.Errorf("%s: %w", path, err)
+	// Strict: an adapter block at the top level instead of under adapters:,
+	// or a misspelt adapter name, silently changes what is scanned.
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil && err != io.EOF {
+		return cfg, fmt.Errorf("%s: %w (adapters go under `adapters:`, e.g. adapters: {postgres: {enabled: true}})", path, err)
+	}
+	for name := range cfg.Adapters {
+		if !knownAdapter(name) {
+			return cfg, fmt.Errorf("%s: unknown adapter %q (known: %s)", path, name, strings.Join(KnownAdapters(), ", "))
+		}
 	}
 	return cfg, nil
+}
+
+// KnownAdapters lists the adapter names adapters.yaml accepts.
+func KnownAdapters() []string {
+	seen := map[string]bool{}
+	for name := range DefaultAdapters().Adapters {
+		seen[name] = true
+	}
+	for name := range optInAdapters {
+		seen[name] = true
+	}
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func knownAdapter(name string) bool {
+	_, def := DefaultAdapters().Adapters[name]
+	return def || optInAdapters[name]
 }

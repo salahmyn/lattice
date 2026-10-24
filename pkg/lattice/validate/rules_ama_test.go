@@ -237,3 +237,28 @@ func TestFileLineCapSkipsTestFiles(t *testing.T) {
 		t.Errorf("FILE_LINE_CAP files = %v, want [src/cart.ts]", files)
 	}
 }
+
+// Migrations are change history: the line caps and colocation skip them.
+func TestStructuralRulesSkipMigrations(t *testing.T) {
+	cfg := config.Default()
+	cfg.Architecture.FileLineCap = 100
+	cfg.Architecture.MethodLineCap = 10
+	f := amaFeature("refunds", "app/Refunds/A.php")
+	f.Implementations = append(f.Implementations, schema.Implementation{
+		Symbol: "sql.public.refund", File: "db/migrations/0001.sql", Line: 1, Language: "postgres",
+	})
+	kg := schema.KnowledgeGraph{
+		Features: []schema.Manifest{f},
+		Modules: []schema.GraphModule{{
+			File: "db/migrations/0001.sql", LineCount: 600, ChangeHistory: true,
+			SymbolFQNs: []string{"sql.public.refund"},
+		}},
+		Symbols: []schema.GraphSymbol{{FQN: "sql.public.refund", Kind: "function", File: "db/migrations/0001.sql", Line: 1, EndLine: 300}},
+	}
+	got := codes(Validate(kg, cfg, Options{}))
+	for _, c := range []string{schema.CodeFileLineCap, schema.CodeMethodLineCap, schema.CodeFeatureNotColocated} {
+		if got[c] {
+			t.Errorf("%s fired on a migration", c)
+		}
+	}
+}
