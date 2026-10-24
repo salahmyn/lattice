@@ -2,12 +2,12 @@ id: ep.cli.flag
 version: 1
 status: production
 kind: cli
-purpose: "Raise, list, and (humans only) clear meaning flags on units"
+purpose: Raise, list, and (humans only) clear meaning flags on units
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice flag"
+  command: lattice flag
 handler:
   symbol: internal.cli.newFlagCommand
   file: internal/cli/flag.go

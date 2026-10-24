@@ -2,12 +2,12 @@ id: ep.cli.ep
 version: 1
 status: production
 kind: cli
-purpose: "List, inspect, accept, or reject entry-point manifests"
+purpose: List, inspect, accept, or reject entry-point manifests
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice ep"
+  command: lattice ep
 handler:
   symbol: internal.cli.newEPCommand
   file: internal/cli/ep.go

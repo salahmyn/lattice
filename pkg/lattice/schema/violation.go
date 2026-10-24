@@ -92,6 +92,7 @@ const (
 	CodeBRDDrift          = "BRD_DRIFT"           // BRD.version != approval.approved_version (info)
 	CodeBRDUnapprovedLLM  = "BRD_UNAPPROVED_LLM"  // llm_from_code draft needs human sign-off
 	CodeFeatureBRDMissing = "FEATURE_BRD_MISSING" // feature.implements_brd names a missing BRD
+	CodeBRDLinkOneSided   = "BRD_LINK_ONE_SIDED"  // implements_via and implements_brd disagree (warning)
 
 	// RTM — Requirements Traceability Matrix (v0.6)
 	//

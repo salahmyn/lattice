@@ -6,6 +6,20 @@ All notable changes to Lattice are documented in this file.
 
 ### Added
 
+- **`lattice fmt [--check] [path...]`** rewrites feature manifests, BRDs
+  and entry points in canonical form: their schema's field order and a
+  2-space indent, as Lattice's own writers produce.
+  - Normalising a hand-written file becomes its own change, not noise in
+    the next `brd approve` or `brd link` diff.
+  - It never loses information. A file with a YAML comment, an anchor or
+    alias, or a key its schema does not know is skipped with the reason.
+  - `--check` writes nothing and exits non-zero when a file would change,
+    for CI.
+- **`BRD_LINK_ONE_SIDED`** (warning): the two halves of a BRD ↔ feature
+  link disagree. That is a BRD's `implements_via` naming a feature with no
+  `implements_brd`, or one naming another BRD, or a feature's
+  `implements_brd` naming a BRD that does not list it.
+  `lattice brd link <brd> <feature>` writes both halves.
 - **`lattice impact`, a read-only change-impact report**:
   `lattice impact --since <ref> [--format text|markdown|json]
   [--max-symbols N] [--include-drafts=true]` compares
@@ -44,6 +58,14 @@ All notable changes to Lattice are documented in this file.
 - **`backprop` documents its ledger writes**: every run records a check run,
   as `validate` does. The help and the user guide now say so and point to
   `lattice impact` for a read-only report.
+
+### Behaviour changes to plan for
+
+- **A half-made BRD link now warns.** Until now a feature listed in a BRD's
+  `implements_via` counted as linked without its own `implements_brd`.
+  It still counts as linked, but `BRD_LINK_ONE_SIDED` now warns. With
+  `fail_on: warning`, run `lattice brd link` for each finding, or lower
+  the code in `validate.severity`.
 
 ## [0.13.0] — 2026-10-24
 

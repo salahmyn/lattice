@@ -2,12 +2,12 @@ id: ep.cli.cr
 version: 1
 status: production
 kind: cli
-purpose: "Change requests against grounded intent (propose, price, decide, reconverge)"
+purpose: Change requests against grounded intent (propose, price, decide, reconverge)
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice cr"
+  command: lattice cr
 handler:
   symbol: internal.cli.newCRCommand
   file: internal/cli/cr.go

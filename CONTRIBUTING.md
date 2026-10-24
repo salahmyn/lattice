@@ -61,7 +61,9 @@ Subjects are short and say what changed. Prefix with the area touched,
 The `lattice/` directory is Lattice's own workspace: features,
 invariants, entry points and BRDs that describe this codebase (see
 `docs/rnd/0008-lattice-on-lattice.md`). CI runs `lattice extract` and
-`lattice validate` on it, and a validate error fails the build.
+`lattice validate` on it, and a validate error fails the build. CI also
+runs `lattice fmt --check`, so workspace YAML stays in canonical field
+order.
 
 - A new production `.go` file starts with `// @module-feature <feature>`
   after its `package` clause, so attribution stays at 100%. CI does not
@@ -74,6 +76,7 @@ invariants, entry points and BRDs that describe this codebase (see
   ```sh
   go build -o dist/lattice ./cmd/lattice
   dist/lattice extract && dist/lattice validate
+  dist/lattice fmt --check     # `dist/lattice fmt` fixes what it lists
   ```
 
 - The BRDs under `lattice/brds/` are agent-written drafts. Only a human

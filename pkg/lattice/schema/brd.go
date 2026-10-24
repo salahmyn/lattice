@@ -345,6 +345,7 @@ func IsAgentActor(actor string) bool {
 // a machine — regenerated from code by an LLM, or authored by an agent —
 // and so needs a human (or a council) to review it before it is the
 // source of truth.
+// @enforces brds:INV-7
 func (b BRD) MachineWritten() bool {
 	return b.Provenance.Source == BRDSourceLLMFromCode || IsAgentActor(b.Provenance.AuthoredBy)
 }

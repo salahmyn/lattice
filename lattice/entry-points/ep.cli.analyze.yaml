@@ -2,12 +2,12 @@ id: ep.cli.analyze
 version: 1
 status: production
 kind: cli
-purpose: "Conflict and impact analysis"
+purpose: Conflict and impact analysis
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice analyze"
+  command: lattice analyze
 handler:
   symbol: internal.cli.newAnalyzeCommand
   file: internal/cli/analyze.go

@@ -37,7 +37,7 @@ success_criteria:
     statement: A BRD's features are the union of its implements_via and the features that name it in implements_brd.
     maps_to_invariant: brds:INV-6
   - id: SC-7
-    statement: A BRD regenerated from code is a draft with provenance llm_from_code and needs human review.
+    statement: A machine-written draft BRD (regenerated from code by an LLM, or authored by an agent) needs human review.
     maps_to_invariant: brds:INV-7
   - id: SC-8
     statement: A council approves a version only when every seat has voted approve.
@@ -63,6 +63,9 @@ success_criteria:
   - id: SC-15
     statement: Clearing a flag needs an identity and an open flag on the unit.
     maps_to_invariant: flags:INV-1
+  - id: SC-16
+    statement: A BRD and a feature that disagree about their link (implements_via without implements_brd, or the reverse) raise BRD_LINK_ONE_SIDED.
+    maps_to_invariant: brds:INV-8
 out_of_scope:
   - Regulatory, legal and financial constraints, which only a human may add.
 implements_via:

@@ -2,12 +2,12 @@ id: ep.cli.task
 version: 1
 status: production
 kind: cli
-purpose: "Inspect tasks"
+purpose: Inspect tasks
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice task"
+  command: lattice task
 handler:
   symbol: internal.cli.newTaskCommand
   file: internal/cli/task.go

@@ -2,12 +2,12 @@ id: ep.cli.validate
 version: 1
 status: production
 kind: cli
-purpose: "Extract and validate the workspace"
+purpose: Extract and validate the workspace
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice validate"
+  command: lattice validate
 handler:
   symbol: internal.cli.newValidateCommand
   file: internal/cli/validate.go

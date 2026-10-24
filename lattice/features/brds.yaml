@@ -1,5 +1,5 @@
 id: brds
-version: 1
+version: 2
 status: production
 purpose: |
   Business Requirements Documents: the business intent above features, linked down
@@ -22,4 +22,6 @@ invariants:
   - id: INV-6
     statement: A BRD's features are the union of its implements_via and the features that name it in implements_brd.
   - id: INV-7
-    statement: A BRD regenerated from code is a draft with provenance llm_from_code and needs human review.
+    statement: A machine-written draft BRD (regenerated from code by an LLM, or authored by an agent) needs human review.
+  - id: INV-8
+    statement: A BRD and a feature that disagree about their link (implements_via without implements_brd, or the reverse) raise BRD_LINK_ONE_SIDED.

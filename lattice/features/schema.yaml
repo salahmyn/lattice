@@ -1,5 +1,5 @@
 id: schema
-version: 1
+version: 2
 status: production
 purpose: |
   The authoritative data model: manifests, BRDs, entry points, IR, the graph and
@@ -11,3 +11,5 @@ implements_brd: brd.code_graph
 invariants:
   - id: INV-1
     statement: A module is production code for attribution when it holds a non-test behaviour symbol or top-level code; type-only, config, test and migration modules are not.
+  - id: INV-2
+    statement: Canonical formatting never drops information; a file with a comment, an anchor or alias, or a key its schema does not know is skipped with the reason instead of rewritten.

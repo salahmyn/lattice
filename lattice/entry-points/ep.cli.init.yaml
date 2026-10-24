@@ -2,12 +2,12 @@ id: ep.cli.init
 version: 1
 status: production
 kind: cli
-purpose: "Scaffold a Lattice workspace (with interactive wizard)"
+purpose: Scaffold a Lattice workspace (with interactive wizard)
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice init"
+  command: lattice init
 handler:
   symbol: internal.cli.newInitCommand
   file: internal/cli/initcmd.go

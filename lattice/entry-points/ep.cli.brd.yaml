@@ -2,12 +2,12 @@ id: ep.cli.brd
 version: 1
 status: production
 kind: cli
-purpose: "Manage Business Requirements Documents (the layer above features)"
+purpose: Manage Business Requirements Documents (the layer above features)
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice brd"
+  command: lattice brd
 handler:
   symbol: internal.cli.newBRDCommand
   file: internal/cli/brd.go
