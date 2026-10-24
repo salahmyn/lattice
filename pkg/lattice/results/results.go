@@ -366,6 +366,39 @@ func (s Set) lookupTemplate(key string) (Outcome, bool) {
 	return best, found
 }
 
+// Tally counts the report cases in the set by outcome. One case is indexed
+// under several keys (see keysFor), so counting keys overstates a run; each
+// case is counted once, by its fully-qualified key, whose outcome is the
+// worst the case had across reports. A set saved before case ids were
+// recorded can only count its keys.
+func (s Set) Tally() (cases, pass, fail, skip int) {
+	count := func(o Outcome) {
+		cases++
+		switch o {
+		case Pass:
+			pass++
+		case Fail:
+			fail++
+		case Skip:
+			skip++
+		}
+	}
+	if len(s.Cases) == 0 {
+		for _, o := range s.Results {
+			count(o)
+		}
+		return
+	}
+	seen := map[string]bool{}
+	for _, id := range s.Cases {
+		if !seen[id] {
+			seen[id] = true
+			count(s.Results[normalize(id)])
+		}
+	}
+	return
+}
+
 // worse reports whether a is a worse outcome than b (fail < skip < pass).
 func worse(a, b Outcome) bool {
 	rank := map[Outcome]int{Fail: 0, Skip: 1, Pass: 2}

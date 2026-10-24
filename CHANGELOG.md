@@ -25,6 +25,11 @@ All notable changes to Lattice are documented in this file.
   adapter's `….test.every-tool-description-follows-the-template` by its tail.
   Only titles with a space get this key. A title shared by two files stays
   ambiguous and is not demonstrated.
+- **`results ingest` counts test cases, not lookup keys**: each case is
+  indexed under several keys, so the summary, the `--json` `total` and the
+  ledger entry overstated a run (339 `go test` cases read "674 pass").
+  `results ingest` and `results show` now count each case once (a case
+  that failed in any report counts as a failure), via `results.Set.Tally`.
 
 ### Added
 
