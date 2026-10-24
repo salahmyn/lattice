@@ -461,6 +461,22 @@ lattice skills list                    # shipped agent skills
 
 Add `--json` to any command for machine-readable output.
 
+### 5a. After a merge: `lattice backprop`
+
+`lattice backprop --since <ref>` diffs the files changed since `<ref>`
+against the graph and lists the grounded (approved-BRD) criteria whose
+enforcers moved. With `--flag` it raises a meaning flag on each one until a
+human clears it.
+
+`backprop` is a gate, so **every run records a check run in the ledger**
+(`lattice/.ledger/ledger.jsonl`), as `validate` does: one entry for "no doc
+impact", or one per affected criterion. A run whose actor and outcome repeat
+the latest entry for the same unit adds nothing. This is intended, and it
+means running `backprop` in CI on every pull request changes a tracked file.
+
+For a report that writes nothing, such as a pull-request comment, use
+`lattice impact` (below).
+
 ---
 
 ## 6. Using Lattice with an AI service
