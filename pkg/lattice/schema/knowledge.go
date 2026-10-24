@@ -131,3 +131,48 @@ type CodeGraph struct {
 	IndexedBy       string            `json:"indexed_by"`
 	LanguageIndexes map[string]string `json:"language_indexes,omitempty"`
 }
+
+// ModuleAttribution says whether one module is production code and whether
+// it belongs to a feature.
+type ModuleAttribution struct {
+	File string
+	// ProductionSymbols counts the module's non-test symbols that carry
+	// behaviour or state (functions, methods, classes, traits, consts).
+	// A module with none (tests only, or interfaces and type aliases only)
+	// is not production code for attribution.
+	ProductionSymbols int
+	Attributed        bool
+}
+
+// behaviourKinds are the symbol kinds that make a module production code.
+var behaviourKinds = map[string]bool{
+	"function": true, "method": true, "class": true, "trait": true, "const": true,
+}
+
+// Attribution classifies every module of the graph. A module is attributed
+// by its @module-feature or by a feature on any of its symbols. It is the
+// one definition behind UNATTRIBUTED_MODULE and `lattice coverage`.
+func (kg KnowledgeGraph) Attribution() []ModuleAttribution {
+	sym := map[string]GraphSymbol{}
+	for _, s := range kg.Symbols {
+		sym[s.FQN] = s
+	}
+	out := make([]ModuleAttribution, 0, len(kg.Modules))
+	for _, m := range kg.Modules {
+		a := ModuleAttribution{File: m.File, Attributed: m.Feature != ""}
+		for _, fqn := range m.SymbolFQNs {
+			s, ok := sym[fqn] // tests live in kg.Tests, so they are not found here
+			if !ok {
+				continue
+			}
+			if behaviourKinds[s.Kind] {
+				a.ProductionSymbols++
+			}
+			if s.Feature != "" {
+				a.Attributed = true
+			}
+		}
+		out = append(out, a)
+	}
+	return out
+}

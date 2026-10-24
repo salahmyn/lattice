@@ -77,14 +77,20 @@ func (s *Server) computeCoverage(r *http.Request) (coveragePayload, error) {
 		return coveragePayload{}, err
 	}
 	out := coveragePayload{}
+	var cfp *importer.CandidatesFile
+	var decisions map[string]string
 	cfPath := s.ws.ImportDir() + "/" + importer.CandidatesFileName
 	if cf, err := importer.LoadCandidates(cfPath); err == nil {
 		out.Discovery = cf.Coverage.Discovery
+		cfp = &cf
 		sessPath := s.ws.ImportDir() + "/" + importer.SessionFileName
 		if sess, err := importer.LoadSession(sessPath); err == nil {
-			out.Documentation = importer.ComputeDocumentation(cf, sess.Decisions)
+			decisions = sess.Decisions
 		}
 	}
+	// Documentation is measured on the graph, so a workspace written by hand
+	// (no import session) reads its real coverage instead of 0%.
+	out.Documentation = importer.ComputeDocumentationGraph(kg, cfp, decisions)
 	cfg, _ := config.Load(s.ws.LatticeDir)
 	violations := validate.Validate(kg, cfg, validate.Options{ReviewMode: s.ws.Review})
 	out.Verification = importer.ComputeVerification(kg.Features, violations)
