@@ -2,6 +2,7 @@ package coverage
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -157,6 +158,50 @@ func TestGoFixture(t *testing.T) {
 	got := subjects(Findings(kg, ix, config.Coverage{}))
 	if strings.Join(got, ",") != "VERIFIER_MISSES_ENFORCER wallet:INV-1" {
 		t.Errorf("findings = %v", got)
+	}
+}
+
+// A per-file directory names each report by its test file. The evidence
+// covers every test in the file, can show a miss, and never promotes.
+func TestPerFileDir(t *testing.T) {
+	kg := loadGraph(t, example)
+	dir := t.TempDir()
+	// A run of tests/wallet.test.js is stood in for by its two verifiers'
+	// real reports back to back (LCOV records of one file merge): the
+	// deposit guard ran, the overdraft guard did not.
+	file := append(read(t, filepath.Join(example, "coverage/per-test/rejects-an-overdraft.lcov")),
+		read(t, filepath.Join(example, "coverage/per-test/rejects-a-non-positive-deposit.lcov"))...)
+	if err := os.WriteFile(filepath.Join(dir, "wallet-test.lcov"), file, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "unrelated.lcov"), []byte("SF:x.js\nDA:1,1\nend_of_record\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	set, notes, err := Build(kg, []Input{{Path: dir, Basis: BasisPerFile, Include: []string{"src/**"}}}, Options{OnlyVerifiers: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set.PerFile["tests/wallet.test.js"]) == 0 || len(notes.Unmatched) != 1 {
+		t.Fatalf("per-file = %v, notes = %+v", set.PerFile, notes)
+	}
+	ix := NewIndex(set, kg)
+	if ran, b := ix.TestRan("tests.wallet.test.test.rejects-a-non-positive-deposit", "src.wallet.withdraw"); !ran || b != BasisPerFile {
+		t.Errorf("a test in the file gets the file's evidence: %v %s", ran, b)
+	}
+	m := rtm.Build(kg, rtm.Options{ResultOf: resultsOf(t, filepath.Join(example, "coverage/junit.xml")), Coverage: ix})
+	for _, r := range m.Rows {
+		if r.Status == rtm.StatusExercised {
+			t.Errorf("%s exercised on per-file evidence", r.Ref())
+		}
+	}
+	// No per-test data was ingested, so VERIFIER_UNPROVEN has nothing to
+	// rest on; the miss rests on the file's run and says so.
+	v := Findings(kg, ix, config.Coverage{})
+	if got := subjects(v); strings.Join(got, ",") != "VERIFIER_MISSES_ENFORCER wallet:INV-1" {
+		t.Errorf("findings = %v", got)
+	}
+	if m := messageOf(v, "VERIFIER_MISSES_ENFORCER", "wallet:INV-1"); !strings.Contains(m, "evidence: per_file") {
+		t.Errorf("basis: %q", m)
 	}
 }
 
