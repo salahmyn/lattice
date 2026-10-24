@@ -338,3 +338,44 @@ func TestIngestTAPAndJUnit(t *testing.T) {
 		t.Errorf("junit case = %q, %v", o, ok)
 	}
 }
+
+// nodeJUnit is what Node's built-in runner writes with
+// `node --test --test-reporter=junit` (Node 22): top-level test() calls are
+// <testcase> elements directly under <testsuites>, classname "test", and no
+// file path anywhere.
+const nodeJUnit = `<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testcase name="every tool description follows the template" time="0.009942" classname="test"/>
+	<testcase name="tool names are unique and namespaced" time="0.000261" classname="test">
+		<failure type="testCodeFailure" message="duplicate tool name"/>
+	</testcase>
+	<testcase name="tools invoke the CLI against the sample project" time="0.000644" classname="test">
+		<skipped type="skipped" message="true"/>
+	</testcase>
+	<!-- tests 3 -->
+</testsuites>`
+
+// A Node runner report parses, and its cases join the TypeScript adapter's
+// test FQNs (<module>.test.<slug of the title>) although it names no file.
+func TestParseNodeRunnerJUnit(t *testing.T) {
+	set, err := ParseJUnit([]byte(nodeJUnit))
+	if err != nil {
+		t.Fatalf("ParseJUnit: %v", err)
+	}
+	for ref, want := range map[string]Outcome{
+		"lattice-mcp.test.descriptions.test.test.every-tool-description-follows-the-template":    Pass,
+		"lattice-mcp.test.descriptions.test.test.tool-names-are-unique-and-namespaced":           Fail,
+		"lattice-mcp.test.integration.test.test.tools-invoke-the-cli-against-the-sample-project": Skip,
+	} {
+		if got, ok := set.Lookup(ref); !ok || got != want {
+			t.Errorf("Lookup(%s) = %q, %v; want %q", ref, got, ok, want)
+		}
+	}
+	// The title key is for test() titles only: an identifier-style name
+	// gets none, so a Go or pytest case cannot pick up a TypeScript FQN.
+	for _, k := range keysFor("pkg", "test_valid") {
+		if k == "test.test-valid" {
+			t.Errorf("identifier-style name got a title key: %v", keysFor("pkg", "test_valid"))
+		}
+	}
+}

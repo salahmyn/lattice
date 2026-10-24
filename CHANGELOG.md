@@ -33,6 +33,18 @@ All notable changes to Lattice are documented in this file.
     `<fqn>@<file stem>`.
   - No SCIP indexer or mutation runner yet.
 
+### Fixed
+
+- **Node's built-in test runner reports can be ingested**:
+  `node --test --test-reporter=junit` writes its `<testcase>` elements
+  directly under `<testsuites>`, so `lattice results ingest` failed with
+  `expected element type <testsuite>`. These cases are now read, and since
+  the runner names no file (classname `test`), a case titled
+  `every tool description follows the template` joins the TypeScript
+  adapter's `….test.every-tool-description-follows-the-template` by its tail.
+  Only titles with a space get this key. A title shared by two files stays
+  ambiguous and is not demonstrated.
+
 ### Behaviour changes to plan for
 
 - **Repositories with `.go` files start seeing Go modules.** The Go adapter
