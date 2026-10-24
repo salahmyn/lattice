@@ -47,6 +47,46 @@ func TestCallGraphMostRecentDef(t *testing.T) {
 	}
 }
 
+// With enclosing ranges, a reference goes to the innermost definition
+// that contains it: top-level code after a function is credited to no
+// one, and a reference after a nested definition goes back to its outer
+// one. A definition with no range keeps the most-recent rule.
+// @verifies scip:INV-1
+func TestCallGraphEnclosingRange(t *testing.T) {
+	def := func(start, end int32, sym string) *scippb.Occurrence {
+		o := occ(start, sym, true)
+		o.EnclosingRange = []int32{start, 0, end, 1}
+		return o
+	}
+	const (
+		a, b, inner, c = "ts . a().", "ts . b().", "ts . b().inner().", "ts . c()."
+		x, y, z, w, v  = "ts . x().", "ts . y().", "ts . z().", "ts . w().", "ts . v()."
+	)
+	doc := &scippb.Document{RelativePath: "app.ts", Occurrences: []*scippb.Occurrence{
+		def(0, 2, a),
+		occ(1, x, false), // in a
+		occ(4, y, false), // top-level code after a
+		def(10, 20, b),
+		def(12, 14, inner),
+		occ(13, z, false), // in inner
+		occ(16, w, false), // in b, after inner ended
+		occ(30, v, true),  // c below has no range: the fallback still applies
+		occ(25, c, true),
+		occ(28, v, false), // credited to c
+	}}
+	g := (&Corpus{indexes: []*scippb.Index{{Documents: []*scippb.Document{doc}}}}).BuildCallGraph()
+	for caller, want := range map[string][]string{a: {x}, inner: {z}, b: {w}, c: {v}} {
+		if got := g.CalleesOf(caller); !reflect.DeepEqual(got, want) {
+			t.Errorf("%s callees = %v, want %v", caller, got, want)
+		}
+	}
+	for _, callees := range g.callees {
+		if callees[y] {
+			t.Errorf("top-level reference %s was credited to a function: %v", y, g.callees)
+		}
+	}
+}
+
 // TestCallGraphTransitive proves BFS visits every reachable symbol
 // without revisiting and respects the depth cap so a deep service
 // chain can't blow up.
