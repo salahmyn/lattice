@@ -513,6 +513,66 @@ The contract that makes this reliable: every tool returns structured JSON, and
 every error carries a `next_action` — the agent branches on fields, never on
 prose.
 
+### 7b. Council approval of BRDs
+
+By default a human approves every BRD (`lattice brd approve <id> --by <email>`).
+A workspace can hand that step to a **council** of agents. The council reviews
+each BRD version, approves it or sends it back, and tells the human it acts for
+what it decided and why. The human reads the decision afterwards and can
+overturn it.
+
+Only a human turns this on, by pinning a mandate in `lattice/config.yaml`.
+Agents never create, widen or renew a mandate.
+
+```yaml
+autonomy:
+  default_mode: council            # no brd_approval human gate
+  mandates:
+    - id: m-brd-council
+      grants: brd_approve
+      delegated_by: owner@example.com
+      tier_max: 2                   # highest criterion tier the council may approve
+      expires: "2027-04-30"
+      council:
+        seats: [intent, evidence, risk]
+        quorum: unanimous
+```
+
+The flow for one BRD version:
+
+1. Each seat reviews the BRD with its own agent identity and votes:
+   `lattice brd vote <id> --seat intent --verdict approve --reason "..." --actor agent-intent`.
+   - `intent` checks that the BRD says what the features do.
+   - `evidence` checks that `lattice rtm` backs it.
+   - `risk` checks constraints, tiers and scope.
+2. `lattice brd decide <id> --summary "..."` counts the votes.
+   - If every seat approves, the BRD is `approved` at once, and the
+     `approval` block records the mandate, the human, the votes, the
+     summary and the engine's evidence (criteria and scenarios demonstrated).
+   - One `changes` vote sends the BRD back.
+   - Either way the decision is written to
+     `lattice/decisions/brd-council/<id>-v<N>.md` and to the ledger.
+3. The human reads the summary, then runs `lattice brd ack <id> --by <email>`.
+   Or `lattice brd overturn <id> --by <email> --reason "..."` sets the BRD
+   back to `proposed`. The council cannot decide that version again until
+   the BRD is revised.
+
+What a council can never do, whatever the mandate says:
+
+- **Approve money or regulation.** A BRD with a tier-3 criterion or a
+  regulatory, legal or financial constraint stays with a human.
+- **Review its own work.** No seat may be held by the agent that wrote the
+  version (`provenance.authored_by`, set from `--actor` by `brd new` and
+  `brd from-code`), and no agent may hold two seats.
+- **Outlive the version.** A new version voids the approval (`BRD_DRIFT`),
+  as for a human approval.
+
+`validate` reports `BRD_COUNCIL_UNREVIEWED` (info) for a decision the human
+has not acknowledged yet. It reports `BRD_COUNCIL_INVALID` (error) for a
+council approval that no pinned mandate, floor check or unanimous vote
+supports, such as a hand-written `approval` block. Switching council mode
+off later does not void the approvals it already gave.
+
 ---
 
 ## 8. Adopting an existing codebase

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
@@ -16,7 +17,7 @@ func TestApprovalActions(t *testing.T) {
 		{ID: "brd.c", Status: schema.BRDApproved},
 		{ID: "brd.d", Status: schema.BRDSuperseded},
 	}
-	got := approvalActions(brds)
+	got := approvalActions(brds, config.Autonomy{})
 	if len(got) != 2 || got[0].Unit != "brd.a" || got[1].Unit != "brd.b" {
 		t.Fatalf("approval actions = %+v, want brd.a then brd.b", got)
 	}
@@ -27,5 +28,22 @@ func TestApprovalActions(t *testing.T) {
 	}
 	if !strings.HasPrefix(got[1].Action, "drafted from code by an LLM") {
 		t.Errorf("llm_from_code BRD should say so: %q", got[1].Action)
+	}
+}
+
+// In council mode with a brd_approve mandate, next points at the council
+// path, except for BRDs that stay human-only.
+func TestApprovalActionsCouncil(t *testing.T) {
+	auto := config.Autonomy{DefaultMode: "council", Mandates: []config.Mandate{{ID: "m", Grants: config.GrantBRDApprove}}}
+	brds := []schema.BRD{
+		{ID: "brd.a", Status: schema.BRDProposed},
+		{ID: "brd.b", Status: schema.BRDProposed, SuccessCriteria: []schema.BRDCriterion{{ID: "SC-1", Tier: 3}}},
+	}
+	got := approvalActions(brds, auto)
+	if len(got) != 2 || !strings.Contains(got[0].Action, "lattice brd vote brd.a") {
+		t.Fatalf("brd.a should take the council path: %+v", got)
+	}
+	if !strings.HasPrefix(got[1].Action, "human-only (criterion SC-1 is tier 3") {
+		t.Errorf("brd.b should stay human-only: %q", got[1].Action)
 	}
 }

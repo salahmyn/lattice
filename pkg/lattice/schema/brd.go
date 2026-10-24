@@ -194,7 +194,52 @@ type BRDApproval struct {
 	ApprovedBy      string `yaml:"approved_by"`
 	ApprovedAt      string `yaml:"approved_at"` // ISO datetime
 	ApprovedVersion int    `yaml:"approved_version"`
+
+	// Mandate is set when a council approved under a human-pinned
+	// brd_approve mandate; ApprovedBy is then "council:<mandate>" and
+	// DelegatedBy names the human the council acted for.
+	Mandate     string              `yaml:"mandate,omitempty"`
+	DelegatedBy string              `yaml:"delegated_by,omitempty"`
+	Decision    *BRDCouncilDecision `yaml:"decision,omitempty"`
+	// HumanReview tracks the delegating human's read of a council
+	// decision: pending until `lattice brd ack`.
+	HumanReview HumanReviewState `yaml:"human_review,omitempty"`
+	ReviewedBy  string           `yaml:"reviewed_by,omitempty"`
+	ReviewedAt  string           `yaml:"reviewed_at,omitempty"`
 }
+
+// HumanReviewState is where a council decision stands with its human.
+type HumanReviewState string
+
+const (
+	HumanReviewPending      HumanReviewState = "pending"
+	HumanReviewAcknowledged HumanReviewState = "acknowledged"
+)
+
+// BRDCouncilDecision is what a council decided and why, kept on the BRD so
+// the approval carries its own explanation.
+type BRDCouncilDecision struct {
+	Outcome  string           `yaml:"outcome"` // approved
+	Summary  string           `yaml:"summary"`
+	Why      string           `yaml:"why,omitempty"`
+	Evidence string           `yaml:"evidence,omitempty"` // computed by the engine, e.g. "criteria 4/4 demonstrated"
+	Votes    []BRDCouncilVote `yaml:"votes"`
+}
+
+// BRDCouncilVote is one seat's review of one BRD version.
+type BRDCouncilVote struct {
+	Seat    string `yaml:"seat"`
+	Actor   string `yaml:"actor"`
+	Verdict string `yaml:"verdict"` // approve | changes
+	Reason  string `yaml:"reason"`
+	At      string `yaml:"at,omitempty"`
+}
+
+// Council vote verdicts.
+const (
+	VerdictApprove = "approve"
+	VerdictChanges = "changes"
+)
 
 // BRDProvenance records how the BRD came to exist. GeneratedAt is set
 // only for llm_from_code; the model field captures which LLM produced
@@ -203,4 +248,8 @@ type BRDProvenance struct {
 	Source      BRDProvenanceSource `yaml:"source,omitempty"`
 	GeneratedAt string              `yaml:"generated_at,omitempty"`
 	Model       string              `yaml:"model,omitempty"`
+	// AuthoredBy is the actor that wrote this version (--actor of the
+	// command that created or regenerated it). A council seat may not be
+	// held by the author of the version it reviews.
+	AuthoredBy string `yaml:"authored_by,omitempty"`
 }

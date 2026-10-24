@@ -137,6 +137,10 @@ const (
 	// CodeBRDBelowLevel: a criterion or scenario is below validate.require_level.
 	CodeBRDBelowLevel = "BRD_BELOW_LEVEL"
 
+	// Council approval (v0.12).
+	CodeBRDCouncilUnreviewed = "BRD_COUNCIL_UNREVIEWED" // a council approval its human has not acknowledged (info)
+	CodeBRDCouncilInvalid    = "BRD_COUNCIL_INVALID"    // a council approval no pinned mandate, floor or vote supports (error)
+
 	// δ — meaning fidelity (does the wired link mean what was asked?).
 	CodeCriterionInvariantNarrower = "CRITERION_INVARIANT_NARROWER" // invariant does not entail its criterion (assisted)
 	CodeInvariantUnfalsifiable     = "INVARIANT_UNFALSIFIABLE"      // enforcer has no reachable violating path

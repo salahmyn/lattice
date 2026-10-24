@@ -109,6 +109,7 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 	v = append(v, kg.Violations...) // parse errors carried from extraction
 	v = append(v, c.checkManifests()...)
 	v = append(v, c.checkBRDs()...)
+	v = append(v, c.checkCouncil()...)
 	v = append(v, c.checkScenarios()...)  // v0.8 α/β — scenario + reach
 	v = append(v, c.checkRequiredLevel()...)
 	v = append(v, c.checkDependencies()...)

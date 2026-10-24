@@ -32,6 +32,10 @@ func newBRDCommand(io *IO) *cobra.Command {
 		newBRDLinkCommand(io),
 		newBRDApproveCommand(io),
 		newBRDFromCodeCommand(io),
+		newBRDVoteCommand(io),
+		newBRDDecideCommand(io),
+		newBRDAckCommand(io),
+		newBRDOverturnCommand(io),
 	)
 	return cmd
 }
@@ -170,7 +174,7 @@ regeneration path instead.`,
 					{ID: "SC-1", Statement: "TODO: how we know it worked"},
 				},
 				OutOfScope: []string{"TODO: what this BRD deliberately does not cover"},
-				Provenance: schema.BRDProvenance{Source: schema.BRDSourceHuman},
+				Provenance: schema.BRDProvenance{Source: schema.BRDSourceHuman, AuthoredBy: io.actor()},
 			}
 			path, err := brd.Save(ws.BRDsDir(), b)
 			if err != nil {
@@ -425,6 +429,7 @@ Refuses to overwrite an existing BRD unless --force is set.`,
 				}
 				reached := reachedBy(f.ID, kg.EntryPoints)
 				b, _, ferr := brd.FromCode(cmd.Context(), f, reached, opts)
+				b.Provenance.AuthoredBy = io.actor() // a council seat may not review its own draft
 				if ferr != nil {
 					results = append(results, outcome{
 						Feature: f.ID, Skipped: true, Reason: ferr.Error(),

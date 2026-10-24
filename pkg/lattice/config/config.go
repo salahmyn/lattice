@@ -174,6 +174,43 @@ type Mandate struct {
 	TierMax int `yaml:"tier_max,omitempty"`
 	// Expires is an ISO date after which the mandate is void.
 	Expires string `yaml:"expires,omitempty"`
+	// DelegatedBy is the human the mandate acts for. A brd_approve mandate
+	// requires it: every council approval names the person it answers to.
+	DelegatedBy string `yaml:"delegated_by,omitempty"`
+	// Council configures a brd_approve mandate: the seats that each review
+	// a BRD version and the rule that turns their votes into a decision.
+	Council *Council `yaml:"council,omitempty"`
+}
+
+// Council is the panel of agent seats behind a brd_approve mandate.
+type Council struct {
+	// Seats names the reviews every BRD version needs, one agent each:
+	// e.g. intent (says what the features do), evidence (the RTM backs
+	// it), risk (constraints, tiers, scope).
+	Seats []string `yaml:"seats"`
+	// Quorum is how votes become a decision. Only "unanimous" (the
+	// default) is supported: one "changes" vote sends the BRD back.
+	Quorum string `yaml:"quorum,omitempty"`
+}
+
+// GrantBRDApprove is the mandate grant that lets a council approve BRDs.
+const GrantBRDApprove = "brd_approve"
+
+// CoversBRD reports whether the mandate lets a council approve a BRD whose
+// highest criterion tier is tier, on the given date. Tier 3 (money and
+// regulatory) is never delegable, whatever tier_max says.
+func (m Mandate) CoversBRD(tier int, today string) bool {
+	if m.Grants != GrantBRDApprove || tier >= 3 {
+		return false
+	}
+	if m.Expires != "" && today > m.Expires {
+		return false
+	}
+	max := m.TierMax
+	if max == 0 {
+		max = 1
+	}
+	return tier <= max
 }
 
 // Covers reports whether the mandate covers a gate of the given class
@@ -256,7 +293,30 @@ func BuiltinModes() map[string]AutonomyMode {
 			AutoMergeAt:     "demonstrated",
 			HumanGate:       []string{"correctly-meant"},
 		},
+		// council: agents advance code-level truth, and a council of agent
+		// seats approves BRDs under a human-pinned brd_approve mandate; the
+		// human reads each decision afterwards and may overturn it.
+		"council": {
+			AgentMayAdvance: []string{"declared", "wired", "demonstrated"},
+			HumanGate:       []string{"correctly-meant"},
+		},
 	}
+}
+
+// CouncilMayApprove reports whether the active mode lets a council approve
+// BRDs: a mode is active and does not keep brd_approval as a human gate.
+// With no mode set (the default) every approval is a human's.
+func (a Autonomy) CouncilMayApprove() bool {
+	m, ok := a.Mode()
+	if !ok {
+		return false
+	}
+	for _, g := range m.HumanGate {
+		if g == "brd_approval" {
+			return false
+		}
+	}
+	return true
 }
 
 // Mode resolves the active mode profile, falling back to the builtin of

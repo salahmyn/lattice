@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/salahmyn/lattice/pkg/lattice/brd"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/lease"
 	"github.com/salahmyn/lattice/pkg/lattice/ledger"
@@ -386,7 +387,7 @@ lease held by another actor are withheld so a fleet doesn't collide.`,
 			}
 			me := io.actor()
 
-			actions := append(rankActions(m, leasedBy, me), approvalActions(kg.BRDs)...)
+			actions := append(rankActions(m, leasedBy, me), approvalActions(kg.BRDs, cfg.Autonomy)...)
 			empty := len(m.Rows) == 0 && len(m.Scenarios) == 0 && len(kg.BRDs) == 0
 			if limit > 0 && len(actions) > limit {
 				actions = actions[:limit]
@@ -466,7 +467,8 @@ func rankActions(m rtm.Matrix, leasedBy map[string]string, me string) []nextActi
 // after every unit that needs work: approval is the last step, and only a
 // person (or a mandate a person granted) takes it, never the agent reading
 // this list.
-func approvalActions(brds []schema.BRD) []nextAction {
+func approvalActions(brds []schema.BRD, auto config.Autonomy) []nextAction {
+	council := auto.CouncilMayApprove() && hasBRDMandate(auto)
 	var out []nextAction
 	for _, b := range brds {
 		if b.Status != schema.BRDDraft && b.Status != schema.BRDProposed {
@@ -474,6 +476,15 @@ func approvalActions(brds []schema.BRD) []nextAction {
 		}
 		action := "a human reviews it against the code and `lattice rtm`, then runs `lattice brd approve " +
 			b.ID + " --by <email>`; an agent never approves"
+		if council {
+			if why := brd.HumanOnly(b); len(why) > 0 {
+				action = "human-only (" + strings.Join(why, "; ") + "): " + action
+			} else {
+				action = "each council seat reviews it and runs `lattice brd vote " + b.ID +
+					" --seat <seat> --verdict approve|changes --reason ...`, then `lattice brd decide " + b.ID +
+					" --summary ...`; the human it acts for reads the decision"
+			}
+		}
 		if b.Provenance.Source == schema.BRDSourceLLMFromCode {
 			action = "drafted from code by an LLM: " + action
 		}
@@ -537,4 +548,14 @@ func shortCommit(c string) string {
 		return "-"
 	}
 	return c
+}
+
+// hasBRDMandate reports whether a brd_approve mandate is pinned.
+func hasBRDMandate(auto config.Autonomy) bool {
+	for _, m := range auto.Mandates {
+		if m.Grants == config.GrantBRDApprove {
+			return true
+		}
+	}
+	return false
 }

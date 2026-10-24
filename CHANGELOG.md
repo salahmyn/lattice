@@ -4,6 +4,25 @@ All notable changes to Lattice are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Council approval of BRDs**: in council mode (`autonomy.default_mode:
+  council`), and under a `brd_approve` mandate that a human pins in
+  `config.yaml`, a council of agent seats may approve a BRD. Each seat
+  votes with a reason (`lattice brd vote`), and `lattice brd decide`
+  approves the version when every seat approves. The approval records the
+  mandate, the human it acts for, the votes, the summary and the engine's
+  evidence. The decision is written to
+  `lattice/decisions/brd-council/<id>-v<N>.md` and the ledger, for that
+  human to `lattice brd ack` or `lattice brd overturn`. Some BRDs stay
+  human-only: a tier-3 criterion, or a regulatory, legal or financial
+  constraint. No seat may be held by the agent that wrote the version
+  (`provenance.authored_by`), nor may one agent hold two seats.
+  `BRD_COUNCIL_UNREVIEWED` (info) lists decisions not yet acknowledged.
+  `BRD_COUNCIL_INVALID` (error) catches a council approval that no pinned
+  mandate, floor or unanimous vote supports. `lattice next` points at the
+  council path in council mode.
+
 ### Fixed
 
 - **An unquoted `: ` in the allowlist says how to fix it**: a value such as
