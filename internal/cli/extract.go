@@ -135,7 +135,21 @@ func buildGraph(ctx context.Context, ws *workspace.Workspace, withCodeGraph bool
 			detected := entrypoints.TraceWithSCIP(eps, kg.Features, scipCorpus)
 			// v0.3.1: merge with any EPs already persisted to disk so
 			// a human-authored purpose / status survives re-extracts.
-			persisted, _ := entrypoints.LoadEntryPoints(ws.EntryPointsDir())
+			persisted, problems, _ := entrypoints.LoadEntryPointsReport(ws.EntryPointsDir())
+			for _, pr := range problems {
+				rel, err := filepath.Rel(ws.LatticeDir, pr.Path)
+				if err != nil {
+					rel = pr.Path
+				}
+				kg.Violations = append(kg.Violations, schema.Violation{
+					Code: schema.CodeEntryPointParse, Severity: schema.SeverityError,
+					Subject:  filepath.ToSlash(rel),
+					Message:  "entry point not loaded: " + pr.Message,
+					Location: &schema.Location{File: filepath.ToSlash(rel), Line: pr.Line},
+					NextAction: &schema.NextAction{Kind: "edit_entry_point",
+						Detail: "fix the YAML (quote a value that contains \": \") so the entry point reaches the graph"},
+				})
+			}
 			merged := entrypoints.Merge(detected, persisted)
 
 			// v0.3.1: LLM-label EPs that don't yet carry a purpose.
@@ -234,4 +248,3 @@ func indexPaths(languages []string) map[string]string {
 	}
 	return paths
 }
-

@@ -3,7 +3,9 @@ package entrypoints
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -18,11 +20,31 @@ const EntryPointsDirName = "entry-points"
 
 // LoadEntryPoints reads every *.yaml under entryPointsDir (recursive)
 // into a slice. Missing directory returns an empty result, not an
-// error — most workspaces won't have any persisted EPs yet.
+// error — most workspaces won't have any persisted EPs yet. Files that
+// do not parse are skipped; LoadEntryPointsReport says which.
 func LoadEntryPoints(entryPointsDir string) ([]schema.EntryPoint, error) {
+	eps, _, err := LoadEntryPointsReport(entryPointsDir)
+	return eps, err
+}
+
+// LoadProblem is a persisted entry-point file that could not be used.
+type LoadProblem struct {
+	Path    string // absolute path of the file
+	Line    int    // 1-based line of a YAML error, when known
+	Message string
+}
+
+// yamlLine finds the "line N" a yaml.v3 error names.
+var yamlLine = regexp.MustCompile(`line (\d+)`)
+
+// LoadEntryPointsReport is LoadEntryPoints that also returns the files it
+// could not use (a YAML error, or no id), so a dropped entry point is a
+// finding instead of a silent gap in the graph.
+func LoadEntryPointsReport(entryPointsDir string) ([]schema.EntryPoint, []LoadProblem, error) {
 	out := []schema.EntryPoint{}
+	var problems []LoadProblem
 	if _, err := os.Stat(entryPointsDir); os.IsNotExist(err) {
-		return out, nil
+		return out, nil, nil
 	}
 	err := filepath.WalkDir(entryPointsDir, func(p string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -41,19 +63,27 @@ func LoadEntryPoints(entryPointsDir string) ([]schema.EntryPoint, error) {
 		}
 		data, err := os.ReadFile(p)
 		if err != nil {
+			problems = append(problems, LoadProblem{Path: p, Message: err.Error()})
 			return nil
 		}
 		var ep schema.EntryPoint
 		if err := yaml.Unmarshal(data, &ep); err != nil {
-			return nil // tolerate malformed files; validation surfaces them later
+			line := 0
+			if m := yamlLine.FindStringSubmatch(err.Error()); m != nil {
+				line, _ = strconv.Atoi(m[1])
+			}
+			problems = append(problems, LoadProblem{Path: p, Line: line, Message: err.Error()})
+			return nil
 		}
-		if ep.ID != "" {
-			out = append(out, ep)
+		if ep.ID == "" {
+			problems = append(problems, LoadProblem{Path: p, Message: "no id"})
+			return nil
 		}
+		out = append(out, ep)
 		return nil
 	})
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out, err
+	return out, problems, err
 }
 
 // SaveEntryPoint writes one EP to its canonical path under
