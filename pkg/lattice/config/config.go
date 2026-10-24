@@ -54,11 +54,20 @@ type ValidatePolicy struct {
 	// Allowlist is the allowlist file, relative to the lattice/ directory.
 	// Default allowlist.yaml.
 	Allowlist string `yaml:"allowlist,omitempty"`
+	// AllowlistKinds, when set, is the closed set of allowlist entry kinds:
+	// every entry must name one of them. A kind with require_adr needs an
+	// adr on each of its entries.
+	AllowlistKinds map[string]AllowlistKind `yaml:"allowlist_kinds,omitempty"`
 	// RequireLevel is the truth level every BRD success criterion and user
 	// scenario must reach: verified or demonstrated. Below it, validate
 	// raises BRD_BELOW_LEVEL (error). Empty means no level is required.
 	// `lattice validate --require-level` overrides it.
 	RequireLevel string `yaml:"require_level,omitempty"`
+}
+
+// AllowlistKind is one class of accepted finding (generated, debt, ...).
+type AllowlistKind struct {
+	RequireADR bool `yaml:"require_adr,omitempty"`
 }
 
 // AllowlistPath returns the allowlist file relative to the lattice/ dir.
