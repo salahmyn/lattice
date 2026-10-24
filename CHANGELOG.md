@@ -2,6 +2,15 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **`brd approve` is recorded in the ledger**: an approval is a gate
+  decision, but the command wrote only the BRD's `approval` block, so which
+  identity ran it (`--actor` / `LATTICE_ACTOR`) was kept nowhere. It now
+  appends a `gate` entry with the actor, the BRD and the approver.
+
 ## [0.10.0] — 2026-10-24
 
 ### Fixed

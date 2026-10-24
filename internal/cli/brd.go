@@ -12,6 +12,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/agentic"
 	"github.com/salahmyn/lattice/pkg/lattice/brd"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/ledger"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
@@ -297,6 +298,10 @@ re-approved.`,
 			if err != nil {
 				return io.fail("BRD_SAVE_FAILED", err.Error(), nil)
 			}
+			// An approval is a gate decision: the ledger keeps who signed
+			// (--by) and which identity ran the command (--actor).
+			appendLedgerEvent(io, ws, ledger.EventGate, b.ID,
+				fmt.Sprintf("brd approve v%d by %s", b.Version, approver))
 			if io.JSON {
 				return io.printJSON(map[string]string{"approved": path})
 			}
