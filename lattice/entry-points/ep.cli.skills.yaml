@@ -1,0 +1,16 @@
+id: ep.cli.skills
+version: 1
+status: production
+kind: cli
+purpose: "List and export shipped agent skills"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice skills"
+handler:
+  symbol: internal.cli.newSkillsCommand
+  file: internal/cli/skills.go
+flow:
+  - feature: cli
+  - feature: skills

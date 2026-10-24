@@ -1,5 +1,7 @@
 package agentic
 
+// @module-feature agentic
+
 import "strings"
 
 // extractJSON pulls the first JSON object or array out of an LLM reply,

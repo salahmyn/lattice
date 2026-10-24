@@ -6,6 +6,8 @@
 // suite.
 package sweep
 
+// @module-feature sweep
+
 import (
 	"encoding/json"
 	"os"
@@ -82,6 +84,7 @@ func Save(latticeDir string, b Baseline) error {
 
 // Disappeared returns baseline verifiers absent from the current
 // inventory — the candidates for TEST_RETIRED_ILLEGALLY.
+// @enforces sweep:INV-1
 func Disappeared(baseline Baseline, current []string) []string {
 	have := map[string]bool{}
 	for _, fqn := range current {

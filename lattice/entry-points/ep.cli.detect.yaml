@@ -1,0 +1,16 @@
+id: ep.cli.detect
+version: 1
+status: production
+kind: cli
+purpose: "Auto-detect language/framework and required SCIP packages"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice detect"
+handler:
+  symbol: internal.cli.newDetectCommand
+  file: internal/cli/detect.go
+flow:
+  - feature: cli
+  - feature: onboarding

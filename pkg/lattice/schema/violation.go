@@ -1,5 +1,7 @@
 package schema
 
+// @module-feature schema
+
 // Severity classifies how serious a violation is.
 type Severity string
 
@@ -81,15 +83,15 @@ const (
 	// FEATURE_NO_BRD is warning (never error); BRD_UNREFERENCED and
 	// BRD_DRIFT are info-level because a freshly-drafted BRD and a
 	// version-skew during proposal review are both legitimate states.
-	CodeBRDSchema           = "BRD_SCHEMA"            // parse / required-field error
-	CodeBRDIDFormat         = "BRD_ID_FORMAT"         // id must start with brd. and use the manifest-id grammar
-	CodeBRDIDDuplicate      = "BRD_ID_DUPLICATE"      // two BRDs share an id
-	CodeBRDPhantomFeature   = "BRD_PHANTOM_FEATURE"   // implements_via names a missing feature
-	CodeBRDUnreferenced     = "BRD_UNREFERENCED"      // BRD has no features yet (info)
-	CodeFeatureNoBRD        = "FEATURE_NO_BRD"        // feature lacks an upstream BRD (warning)
-	CodeBRDDrift            = "BRD_DRIFT"             // BRD.version != approval.approved_version (info)
-	CodeBRDUnapprovedLLM    = "BRD_UNAPPROVED_LLM"    // llm_from_code draft needs human sign-off
-	CodeFeatureBRDMissing   = "FEATURE_BRD_MISSING"   // feature.implements_brd names a missing BRD
+	CodeBRDSchema         = "BRD_SCHEMA"          // parse / required-field error
+	CodeBRDIDFormat       = "BRD_ID_FORMAT"       // id must start with brd. and use the manifest-id grammar
+	CodeBRDIDDuplicate    = "BRD_ID_DUPLICATE"    // two BRDs share an id
+	CodeBRDPhantomFeature = "BRD_PHANTOM_FEATURE" // implements_via names a missing feature
+	CodeBRDUnreferenced   = "BRD_UNREFERENCED"    // BRD has no features yet (info)
+	CodeFeatureNoBRD      = "FEATURE_NO_BRD"      // feature lacks an upstream BRD (warning)
+	CodeBRDDrift          = "BRD_DRIFT"           // BRD.version != approval.approved_version (info)
+	CodeBRDUnapprovedLLM  = "BRD_UNAPPROVED_LLM"  // llm_from_code draft needs human sign-off
+	CodeFeatureBRDMissing = "FEATURE_BRD_MISSING" // feature.implements_brd names a missing BRD
 
 	// RTM — Requirements Traceability Matrix (v0.6)
 	//
@@ -127,7 +129,7 @@ const (
 	CodeBRDScenarioUnmapped   = "BRD_SCENARIO_UNMAPPED"   // scenario declares no verified_by
 
 	// β — entry-point journey coverage.
-	CodeFeatureUnreached    = "FEATURE_UNREACHED"     // production feature on no entry-point flow
+	CodeFeatureUnreached     = "FEATURE_UNREACHED"      // production feature on no entry-point flow
 	CodeScenarioNoEntryPoint = "SCENARIO_NO_ENTRYPOINT" // scenario verified only at pure-logic altitude
 	CodeEntryPointParse      = "ENTRYPOINT_PARSE_ERROR" // a persisted entry-point file could not be used
 
@@ -143,7 +145,7 @@ const (
 
 	// CodeSQLTagDropped: a later migration redefines a function, policy or
 	// trigger without tags an earlier definition carried (warning).
-	CodeSQLTagDropped = "SQL_TAG_DROPPED"    // a council approval no pinned mandate, floor or vote supports (error)
+	CodeSQLTagDropped = "SQL_TAG_DROPPED" // a council approval no pinned mandate, floor or vote supports (error)
 
 	// δ — meaning fidelity (does the wired link mean what was asked?).
 	CodeCriterionInvariantNarrower = "CRITERION_INVARIANT_NARROWER" // invariant does not entail its criterion (assisted)
@@ -152,9 +154,9 @@ const (
 	CodeEnforcerNotGuard           = "ENFORCER_NOT_GUARD"           // @enforces symbol carries the tag but guards nothing
 
 	// §5/§6 — fleet coordination + attribution.
-	CodeLeaseScopeOverlap        = "LEASE_SCOPE_OVERLAP"        // two live leases claim overlapping paths
+	CodeLeaseScopeOverlap         = "LEASE_SCOPE_OVERLAP"         // two live leases claim overlapping paths
 	CodeConcurrentSurfaceConflict = "CONCURRENT_SURFACE_CONFLICT" // leased working sets diverge a shared contract surface
-	CodeUnattributedChange       = "UNATTRIBUTED_CHANGE"        // a transition with no actor under require_actor
+	CodeUnattributedChange        = "UNATTRIBUTED_CHANGE"         // a transition with no actor under require_actor
 
 	// v0.8.1 — lifecycle governance.
 	//

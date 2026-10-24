@@ -14,6 +14,8 @@
 // normalizes to a key ending in the FQN.
 package golang
 
+// @module-feature adapters.go
+
 import (
 	"context"
 	"fmt"
@@ -114,6 +116,7 @@ func renderArgs(args []interface{}) string {
 // The first declaration in path order keeps the FQN; a later one is named
 // <fqn>@<file stem>, and the symbols nested under it (methods of a renamed
 // type, subtests of a renamed test) move with it.
+// @enforces adapters.go:INV-3
 func (*Adapter) Resolve(modules []ir.Module) []ir.Module {
 	seen := map[string]bool{}
 	for i := range modules {

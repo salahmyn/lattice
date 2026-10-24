@@ -47,6 +47,7 @@ func TestLabelProducesValidSkeleton(t *testing.T) {
 	}
 }
 
+// @verifies importer:INV-2
 func TestLabelDisambiguatesCollidingIDs(t *testing.T) {
 	cf := CandidatesFile{Candidates: []Candidate{
 		{ID: "cand_a", Package: "src/billing", Symbols: []string{"a"}},

@@ -69,6 +69,7 @@ func TestFeatureUnreachedFiresForOrphan(t *testing.T) {
 	}
 }
 
+// @verifies validation:INV-9
 func TestEnforcerNotGuardFiresForTagOnly(t *testing.T) {
 	kg := v08Graph()
 	// Re-tag the enforcer as a class — a tag, not a guard.

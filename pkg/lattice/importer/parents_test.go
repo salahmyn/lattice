@@ -12,6 +12,7 @@ import (
 // TestPromoteParentsCreatesMissingAncestors mirrors the v0.2.0 dogfood
 // scenario: deeply-dotted LLM ids land on disk and verify cascades with
 // SUBFEATURE_PARENT_MISSING for every ancestor.
+// @verifies importer:INV-5
 func TestPromoteParentsCreatesMissingAncestors(t *testing.T) {
 	dir := t.TempDir()
 	// Three leaves and one already-declared mid-level ancestor.
@@ -52,6 +53,7 @@ func TestPromoteParentsCreatesMissingAncestors(t *testing.T) {
 
 // TestMissingAncestorsHandlesMultiLevelGaps covers the case where two
 // adjacent levels are both missing — the v0.2.0 cascade went up to 4 deep.
+// @verifies importer:INV-5
 func TestMissingAncestorsHandlesMultiLevelGaps(t *testing.T) {
 	got := missingAncestors(map[string]bool{
 		"core.traits.locker.run_once": true,

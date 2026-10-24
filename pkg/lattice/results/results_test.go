@@ -143,6 +143,7 @@ func TestLookupPlaywrightTitlePath(t *testing.T) {
 }
 
 // Two files with the same test title: the file path decides, not map order.
+// @verifies results:INV-3
 func TestLookupPrefersMostSpecificMatch(t *testing.T) {
 	const report = `<testsuites>
 <testsuite name="a"><testcase classname="cart/total.test.ts" name="rounds once"/></testsuite>
@@ -164,6 +165,7 @@ func TestLookupPrefersMostSpecificMatch(t *testing.T) {
 
 // One run, two reports: unit and e2e results land in one set, and a failure
 // in either report wins over a pass for the same case.
+// @verifies results:INV-1, brd.verification:US-1
 func TestIngestMergesReports(t *testing.T) {
 	dir := t.TempDir()
 	unit := filepath.Join(dir, "unit.xml")
@@ -200,6 +202,7 @@ func TestIngestMergesReports(t *testing.T) {
 }
 
 // A table-driven test (it.each) is demonstrated only when every row passed.
+// @verifies results:INV-4
 func TestLookupEachRows(t *testing.T) {
 	const report = `<testsuites>
 <testsuite name="src/parent/data.test.ts">
@@ -242,6 +245,7 @@ func TestLookupEachRows(t *testing.T) {
 // A ref that only shares its title with cases from different files is
 // ambiguous: the lookup refuses rather than guess, and Ambiguous names them.
 // One case seen through several of its own keys is not ambiguous.
+// @verifies results:INV-2
 func TestLookupRefusesAmbiguous(t *testing.T) {
 	const report = `<testsuites>
 <testsuite name="a"><testcase classname="cart.LimitTest" name="test_valid"/></testsuite>

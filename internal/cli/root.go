@@ -1,5 +1,7 @@
 package cli
 
+// @module-feature cli
+
 import (
 	"github.com/spf13/cobra"
 )

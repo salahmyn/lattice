@@ -1,5 +1,7 @@
 package typescript
 
+// @module-feature adapters.typescript
+
 import (
 	"context"
 	"fmt"
@@ -86,6 +88,7 @@ var typeOnlyNodes = map[string]bool{
 // re-exports (export { x } from, export * from). An entry file whose only
 // statement is a render() call, or a module of plain value consts, has code
 // even though it declares no function or class.
+// @enforces adapters.typescript:INV-5
 func hasTopLevelCode(root *sitter.Node) bool {
 	for i := 0; i < int(root.NamedChildCount()); i++ {
 		n := root.NamedChild(i)
@@ -172,6 +175,7 @@ func (p *tsParser) walkStatements(parent *sitter.Node) {
 // does not model (an object literal, a bare statement, or a file the grammar
 // could not parse) looked declared but never reached the graph. at is the
 // node that followed the annotations; nil means the end of the block.
+// @enforces adapters.typescript:INV-1
 func (p *tsParser) orphan(anns []ir.Annotation, at *sitter.Node) {
 	if len(anns) == 0 {
 		return
@@ -260,6 +264,7 @@ func (p *tsParser) handleCall(call *sitter.Node, anns []ir.Annotation) bool {
 // annotations. `it("desc", namedFn)` merely registers an already-captured
 // named function and is not duplicated. It reports whether a symbol carrying
 // the annotations was recorded.
+// @enforces adapters.typescript:INV-3
 func (p *tsParser) handleTestCall(call *sitter.Node, anns []ir.Annotation) bool {
 	fn := call.ChildByFieldName("function")
 	if fn == nil {
@@ -347,6 +352,7 @@ var eachPlaceholder = regexp.MustCompile(`%[sdifjoOp#]|\$\{[^}]*\}|\$[A-Za-z_][A
 // templateSlug slugs a table-test title, marking each placeholder with "_"
 // (which slugify never emits), so the result join can match every row:
 // "fails when the %s read fails" -> "fails-when-the-_-read-fails".
+// @enforces adapters.typescript:INV-4
 func templateSlug(title string) string {
 	if !eachPlaceholder.MatchString(title) {
 		return slugify(title)
@@ -620,6 +626,7 @@ func (p *tsParser) extends(n *sitter.Node) []string {
 // parseJSDoc turns a /** ... */ comment into annotations. Module-level tags
 // are routed straight to the module; the rest are returned for the next
 // declaration.
+// @enforces adapters.typescript:INV-2
 func (p *tsParser) parseJSDoc(n *sitter.Node) []ir.Annotation {
 	text := n.Content(p.src)
 	moduleOnly := false

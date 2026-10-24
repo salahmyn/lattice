@@ -1,0 +1,12 @@
+id: adapters.php
+version: 1
+status: production
+purpose: |
+  Reads PHP 8: namespaced classes, traits and methods with Lattice attributes.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.code_graph
+invariants:
+  - id: INV-1
+    statement: A PHP symbol's FQN is its namespace-qualified name, with methods joined by ::.

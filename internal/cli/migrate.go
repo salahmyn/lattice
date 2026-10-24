@@ -1,5 +1,7 @@
 package cli
 
+// @module-feature cli
+
 import (
 	"os"
 	"path/filepath"

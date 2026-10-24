@@ -1,0 +1,9 @@
+id: patch
+version: 1
+status: production
+purpose: |
+  Typed, atomic edits to Lattice artifacts, previewed before they are applied.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.adoption

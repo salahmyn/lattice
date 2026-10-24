@@ -1,0 +1,16 @@
+id: ep.cli.backprop
+version: 1
+status: production
+kind: cli
+purpose: "Scan a merged change's blast radius against grounded intent"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice backprop"
+handler:
+  symbol: internal.cli.newBackpropCommand
+  file: internal/cli/backprop.go
+flow:
+  - feature: cli
+  - feature: revision

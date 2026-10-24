@@ -1,0 +1,9 @@
+id: skills
+version: 1
+status: production
+purpose: |
+  The shipped agent skills, embedded in the binary and exported into a workspace.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.adoption

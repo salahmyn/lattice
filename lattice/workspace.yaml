@@ -1,0 +1,10 @@
+# Lattice workspace.
+#
+# embedded: this lattice/ directory lives inside a single code repository.
+# Lattice extracts source from the repository that contains lattice/.
+mode: embedded
+
+# Not product code: the sample project is a fixture for the docs and the
+# e2e tests (it carries its own lattice/ workspace).
+exclude:
+  - examples/**

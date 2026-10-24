@@ -5,6 +5,8 @@
 // field order, which gives canonical, diff-stable on-disk output.
 package schema
 
+// @module-feature schema
+
 import "strings"
 
 // InlineText collapses all internal whitespace (including newlines) in s to

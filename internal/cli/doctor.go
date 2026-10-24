@@ -1,5 +1,7 @@
 package cli
 
+// @module-feature cli
+
 import (
 	"os"
 	"os/exec"
@@ -31,15 +33,15 @@ type doctorReport struct {
 // once, instead of meeting the same error per-candidate during a 50-
 // minute draft pass.
 type llmProbe struct {
-	OK          bool   `json:"ok"`
-	Provider    string `json:"provider"`
-	Model       string `json:"model"`
-	BaseURL     string `json:"base_url,omitempty"`
-	Reply       string `json:"reply,omitempty"`
-	Tokens      int    `json:"tokens_used,omitempty"`
-	ElapsedMS   int64  `json:"elapsed_ms,omitempty"`
-	Error       string `json:"error,omitempty"`
-	Suggestion  string `json:"suggestion,omitempty"`
+	OK         bool   `json:"ok"`
+	Provider   string `json:"provider"`
+	Model      string `json:"model"`
+	BaseURL    string `json:"base_url,omitempty"`
+	Reply      string `json:"reply,omitempty"`
+	Tokens     int    `json:"tokens_used,omitempty"`
+	ElapsedMS  int64  `json:"elapsed_ms,omitempty"`
+	Error      string `json:"error,omitempty"`
+	Suggestion string `json:"suggestion,omitempty"`
 }
 
 // installHints maps an optional tool to its install instruction.

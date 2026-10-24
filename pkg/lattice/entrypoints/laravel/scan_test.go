@@ -39,6 +39,7 @@ Route::group(['prefix' => 'admin', 'middleware' => 'auth'], function () {
 $unused = function () { Route::get('never', 'NeverController@index'); };
 `
 
+// @verifies entrypoints:INV-4
 func TestScanRoutesFollowsGroupsAndMounts(t *testing.T) {
 	var got []string
 	lines := map[string]int{}

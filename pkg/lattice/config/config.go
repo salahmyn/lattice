@@ -2,6 +2,8 @@
 // the lattice/ directory.
 package config
 
+// @module-feature workspace
+
 import (
 	"fmt"
 	"os"
@@ -199,6 +201,7 @@ const GrantBRDApprove = "brd_approve"
 // CoversBRD reports whether the mandate lets a council approve a BRD whose
 // highest criterion tier is tier, on the given date. Tier 3 (money and
 // regulatory) is never delegable, whatever tier_max says.
+// @enforces brds.council:INV-4
 func (m Mandate) CoversBRD(tier int, today string) bool {
 	if m.Grants != GrantBRDApprove || tier >= 3 {
 		return false

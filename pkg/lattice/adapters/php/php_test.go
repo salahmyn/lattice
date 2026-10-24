@@ -24,6 +24,7 @@ final class RefundService
 }
 `
 
+// @verifies adapters.php:INV-1
 func TestParsePHP(t *testing.T) {
 	mod, err := New().Parse(context.Background(), "src/Checkout/Refund/RefundService.php", []byte(phpSample))
 	if err != nil {

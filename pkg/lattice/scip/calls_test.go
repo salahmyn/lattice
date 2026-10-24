@@ -16,22 +16,23 @@ func occ(line int32, sym string, isDef bool) *scippb.Occurrence {
 		roles = int32(scippb.SymbolRole_Definition)
 	}
 	return &scippb.Occurrence{
-		Range:        []int32{line, 0, line, 1},
-		Symbol:       sym,
-		SymbolRoles:  roles,
+		Range:       []int32{line, 0, line, 1},
+		Symbol:      sym,
+		SymbolRoles: roles,
 	}
 }
 
 // TestCallGraphMostRecentDef proves the "most recent definition wins"
 // heuristic correctly attributes a reference to the function it sits
 // inside, even when several functions are defined in the same file.
+// @verifies scip:INV-1
 func TestCallGraphMostRecentDef(t *testing.T) {
 	doc := &scippb.Document{
 		RelativePath: "ctrl.php",
 		Occurrences: []*scippb.Occurrence{
-			occ(0, "scip-php php . . . App.Ctrl#store().", true),  // def at line 1
+			occ(0, "scip-php php . . . App.Ctrl#store().", true),      // def at line 1
 			occ(5, "scip-php php . . . App.Service#charge().", false), // ref in store's body
-			occ(15, "scip-php php . . . App.Ctrl#show().", true),  // def at line 16
+			occ(15, "scip-php php . . . App.Ctrl#show().", true),      // def at line 16
 			occ(18, "scip-php php . . . App.Service#read().", false),  // ref in show's body
 		},
 	}

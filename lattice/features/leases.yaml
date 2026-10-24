@@ -1,0 +1,16 @@
+id: leases
+version: 1
+status: production
+purpose: |
+  Leases: an agent claims a unit of work so a fleet does not collide.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.agent_coordination
+invariants:
+  - id: INV-1
+    statement: Another actor cannot acquire a unit under an active lease; the holder may refresh it.
+  - id: INV-2
+    statement: An expired lease no longer holds its unit.
+  - id: INV-3
+    statement: Scopes overlap only across different actors.

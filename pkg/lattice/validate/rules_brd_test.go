@@ -17,6 +17,7 @@ func brdManifest(id string) schema.Manifest {
 	}
 }
 
+// @verifies brds:INV-1
 func TestBRDPhantomFeature(t *testing.T) {
 	kg := schema.KnowledgeGraph{
 		BRDs: []schema.BRD{{
@@ -32,6 +33,7 @@ func TestBRDPhantomFeature(t *testing.T) {
 	}
 }
 
+// @verifies brds:INV-1
 func TestBRDPhantomFeatureClean(t *testing.T) {
 	kg := schema.KnowledgeGraph{
 		BRDs: []schema.BRD{{
@@ -48,10 +50,11 @@ func TestBRDPhantomFeatureClean(t *testing.T) {
 	}
 }
 
+// @verifies brds:INV-4
 func TestBRDIDFormat(t *testing.T) {
 	kg := schema.KnowledgeGraph{
 		BRDs: []schema.BRD{{
-			ID: "checkout", // missing brd. prefix
+			ID:      "checkout", // missing brd. prefix
 			Version: 1, Status: schema.BRDDraft,
 			Title: "x", BusinessProblem: "p",
 		}},
@@ -72,6 +75,7 @@ func TestBRDDuplicate(t *testing.T) {
 	}
 }
 
+// @verifies brds:INV-3
 func TestBRDDriftAfterEdit(t *testing.T) {
 	kg := schema.KnowledgeGraph{
 		BRDs: []schema.BRD{{
@@ -87,6 +91,7 @@ func TestBRDDriftAfterEdit(t *testing.T) {
 	}
 }
 
+// @verifies brds:INV-2
 func TestBRDUnapprovedLLM(t *testing.T) {
 	kg := schema.KnowledgeGraph{
 		BRDs: []schema.BRD{{
@@ -160,6 +165,7 @@ func TestBRDCriterionUnmappedInfo(t *testing.T) {
 	}
 }
 
+// @verifies brds:INV-5
 func TestBRDCriterionPhantomInvariant(t *testing.T) {
 	kg := schema.KnowledgeGraph{
 		BRDs: []schema.BRD{{

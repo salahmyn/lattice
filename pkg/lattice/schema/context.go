@@ -1,5 +1,7 @@
 package schema
 
+// @module-feature schema
+
 import (
 	"fmt"
 	"os"

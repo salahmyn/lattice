@@ -1,0 +1,16 @@
+id: ep.cli.import
+version: 1
+status: production
+kind: cli
+purpose: "Adopt an existing codebase: discover feature candidates"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice import"
+handler:
+  symbol: internal.cli.newImportCommand
+  file: internal/cli/importcmd.go
+flow:
+  - feature: cli
+  - feature: importer

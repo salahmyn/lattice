@@ -4,6 +4,8 @@
 // new error-severity violations appear.
 package patch
 
+// @module-feature patch
+
 import (
 	"context"
 	"fmt"

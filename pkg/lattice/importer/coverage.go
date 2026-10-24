@@ -1,5 +1,7 @@
 package importer
 
+// @module-feature importer
+
 import (
 	"math"
 	"sort"
@@ -155,11 +157,11 @@ func ComputeVerification(features []schema.Manifest, violations []schema.Violati
 // uncovered; features attached to a draft/proposed BRD also count as
 // uncovered, because the adoption story is "business has signed off".
 type BRDCoverage struct {
-	TotalFeatures    int     `json:"total_features"`
-	CoveredFeatures  int     `json:"covered_features"`
-	Ratio            float64 `json:"ratio"`
-	TotalBRDs        int     `json:"total_brds"`
-	ApprovedBRDs     int     `json:"approved_brds"`
+	TotalFeatures   int     `json:"total_features"`
+	CoveredFeatures int     `json:"covered_features"`
+	Ratio           float64 `json:"ratio"`
+	TotalBRDs       int     `json:"total_brds"`
+	ApprovedBRDs    int     `json:"approved_brds"`
 }
 
 // ComputeBRD measures BRD coverage from features and BRDs. A feature

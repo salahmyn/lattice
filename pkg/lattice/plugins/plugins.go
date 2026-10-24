@@ -3,6 +3,8 @@
 // as JSON on stdin, and reads structured findings as JSON on stdout.
 package plugins
 
+// @module-feature structural_checks
+
 import (
 	"bytes"
 	"context"

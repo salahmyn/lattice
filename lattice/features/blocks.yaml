@@ -1,0 +1,16 @@
+id: blocks
+version: 1
+status: production
+purpose: |
+  The recursive block graph built from flow catalogues, judgments and evidence.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.code_graph
+invariants:
+  - id: INV-1
+    statement: Building the block graph from the same inputs gives identical output.
+  - id: INV-2
+    statement: Reading a source at a git ref reads the committed tree, not the working tree.
+  - id: INV-3
+    statement: A block id declared in two catalogue files is an error naming the first file.

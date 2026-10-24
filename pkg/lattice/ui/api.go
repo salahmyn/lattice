@@ -1,5 +1,7 @@
 package ui
 
+// @module-feature ui
+
 import (
 	"encoding/json"
 	"net/http"
@@ -12,13 +14,13 @@ import (
 // the same KnowledgeGraph every other view reads, so the UI never
 // disagrees with the CLI.
 type overviewPayload struct {
-	Mode            string `json:"mode"` // "embedded" | "standalone" | "review"
-	LatticeDir      string `json:"lattice_dir"`
-	CodeRoots       []root `json:"code_roots"`
-	Counts          counts `json:"counts"`
-	GeneratedAt     string `json:"generated_at,omitempty"`
-	SchemaVersion   string `json:"schema_version,omitempty"`
-	ReviewMode      bool   `json:"review_mode,omitempty"`
+	Mode          string `json:"mode"` // "embedded" | "standalone" | "review"
+	LatticeDir    string `json:"lattice_dir"`
+	CodeRoots     []root `json:"code_roots"`
+	Counts        counts `json:"counts"`
+	GeneratedAt   string `json:"generated_at,omitempty"`
+	SchemaVersion string `json:"schema_version,omitempty"`
+	ReviewMode    bool   `json:"review_mode,omitempty"`
 }
 
 type root struct {
@@ -28,12 +30,12 @@ type root struct {
 }
 
 type counts struct {
-	Features    int                `json:"features"`
-	EntryPoints int                `json:"entry_points"`
-	EPByKind    map[string]int     `json:"entry_points_by_kind,omitempty"`
-	Symbols     int                `json:"symbols"`
-	Tests       int                `json:"tests"`
-	Violations  int                `json:"violations"`
+	Features    int            `json:"features"`
+	EntryPoints int            `json:"entry_points"`
+	EPByKind    map[string]int `json:"entry_points_by_kind,omitempty"`
+	Symbols     int            `json:"symbols"`
+	Tests       int            `json:"tests"`
+	Violations  int            `json:"violations"`
 }
 
 func (s *Server) apiOverview(w http.ResponseWriter, r *http.Request) {

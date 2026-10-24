@@ -1,5 +1,7 @@
 package validate
 
+// @module-feature validation
+
 import (
 	"bytes"
 	"fmt"
@@ -57,6 +59,7 @@ func parseSeverity(name string) (sev schema.Severity, off, ok bool) {
 // applySeverity rewrites each finding's severity from the workspace's
 // overrides (falling back to defaultSeverity) and drops findings set off.
 // An unknown severity name is itself reported, and leaves the code as is.
+// @enforces validation:INV-4, validation:INV-5
 func applySeverity(v []schema.Violation, overrides map[string]string) []schema.Violation {
 	var out []schema.Violation
 	for code, name := range overrides {
@@ -89,6 +92,7 @@ func applySeverity(v []schema.Violation, overrides map[string]string) []schema.V
 }
 
 // FailOn parses a fail-on threshold (error, warning, info); empty means error.
+// @enforces validation:INV-6
 func FailOn(name string) (schema.Severity, error) {
 	if strings.TrimSpace(name) == "" {
 		return schema.SeverityError, nil
@@ -101,6 +105,7 @@ func FailOn(name string) (schema.Severity, error) {
 }
 
 // Fails reports whether a finding reaches the fail-on threshold.
+// @enforces validation:INV-6
 func Fails(f schema.Violation, threshold schema.Severity) bool {
 	return rank(f.Severity) <= rank(threshold)
 }
@@ -135,6 +140,7 @@ const allowlistKeys = "the file takes `entries:`; an entry takes code, subject, 
 // relative to latticeDir). A missing file is an empty allowlist. An unknown
 // key, or a malformed entry, comes back as an ALLOWLIST_SCHEMA error; bad
 // entries are left out.
+// @enforces validation:INV-7
 func LoadAllowlist(latticeDir string, p config.ValidatePolicy) (Allowlist, []schema.Violation) {
 	rel := p.AllowlistPath()
 	al := Allowlist{Path: rel}
@@ -247,6 +253,7 @@ type Accepted struct {
 // An entry that accepts nothing is stale: the gap it excused is gone, so it
 // comes back as an ALLOWLIST_STALE error and the list only ever shrinks.
 // Allowlist findings themselves are never accepted.
+// @enforces validation:INV-7
 func (al Allowlist) Apply(v []schema.Violation) (open []schema.Violation, accepted []Accepted) {
 	used := make([]bool, len(al.Entries))
 	for _, f := range v {

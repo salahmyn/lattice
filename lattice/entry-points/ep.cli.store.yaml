@@ -1,0 +1,17 @@
+id: ep.cli.store
+version: 1
+status: production
+kind: cli
+purpose: "Query and export the block graph in the workspace store"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice store"
+handler:
+  symbol: internal.cli.newStoreCommand
+  file: internal/cli/storecmd.go
+flow:
+  - feature: cli
+  - feature: store
+  - feature: blocks

@@ -13,6 +13,7 @@ import (
 // purpose on a persisted EP must NOT be overwritten by the detector
 // when the next extract runs. The detector's runtime-derived flow
 // data, however, fills in when the persisted EP is silent on flows.
+// @verifies entrypoints:INV-1
 func TestMergePersistedWins(t *testing.T) {
 	detected := []schema.EntryPoint{{
 		ID:      "ep.http.post.refunds",
@@ -77,6 +78,7 @@ func TestLoadEntryPointsMissingDir(t *testing.T) {
 }
 
 // A file that does not parse, or has no id, is reported instead of dropped.
+// @verifies entrypoints:INV-2
 func TestLoadEntryPointsReport(t *testing.T) {
 	dir := t.TempDir()
 	files := map[string]string{

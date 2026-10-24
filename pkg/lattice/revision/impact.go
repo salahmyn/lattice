@@ -1,5 +1,7 @@
 package revision
 
+// @module-feature revision
+
 import (
 	"sort"
 	"strings"

@@ -225,6 +225,7 @@ func graphContract(t *testing.T, st Store) {
 	}
 }
 
+// @verifies store:INV-1
 func TestFilesPutKeepsAnotherRecordsFile(t *testing.T) {
 	st := filesStore(t).(*Files)
 	dir := st.dir("judgment")
@@ -248,6 +249,7 @@ func TestFilesPutKeepsAnotherRecordsFile(t *testing.T) {
 	}
 }
 
+// @verifies store:INV-2
 func TestPostgresParseErrorHidesTheDSN(t *testing.T) {
 	_, err := OpenPostgres(context.Background(), "postgres://u@h/db?password=s3cret&sslmode=bogus", "lattice")
 	if err == nil || strings.Contains(err.Error(), "s3cret") {

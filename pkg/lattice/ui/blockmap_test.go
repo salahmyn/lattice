@@ -13,6 +13,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
+// @verifies brd.adoption:US-1
 func TestBlockMapServesTheStore(t *testing.T) {
 	dir := t.TempDir()
 	ws := &workspace.Workspace{LatticeDir: dir}
@@ -58,6 +59,7 @@ func TestBlockMapServesTheStore(t *testing.T) {
 	}
 }
 
+// @verifies brd.adoption:US-1
 func TestViewsServeAndExport(t *testing.T) {
 	ws := &workspace.Workspace{LatticeDir: t.TempDir()}
 	st := store.OpenFiles(ws)
@@ -124,6 +126,7 @@ func TestSaveDraft(t *testing.T) {
 	}
 }
 
+// @verifies ui:INV-1
 func TestLoopbackRefusesForeignHost(t *testing.T) {
 	srv := New(&workspace.Workspace{LatticeDir: t.TempDir()}, Options{Host: "127.0.0.1"})
 	for host, want := range map[string]int{"evil.test:7070": http.StatusForbidden, "127.0.0.1:7070": http.StatusServiceUnavailable, "localhost:7070": http.StatusServiceUnavailable, "[::1]:7070": http.StatusServiceUnavailable} {

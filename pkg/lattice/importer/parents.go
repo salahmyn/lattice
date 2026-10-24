@@ -1,5 +1,7 @@
 package importer
 
+// @module-feature importer
+
 import (
 	"fmt"
 	"os"
@@ -20,6 +22,7 @@ import (
 // manifests, which a human reviewer had to author by hand. PromoteParents
 // closes that loop deterministically — and is idempotent, so it's safe to
 // re-run after every accept.
+// @enforces importer:INV-5
 func PromoteParents(featuresDir string) ([]string, error) {
 	existing, err := scanFeatureIDs(featuresDir)
 	if err != nil {
@@ -74,6 +77,7 @@ func umbrellaManifest(id string) schema.Manifest {
 // in existing. Result is sorted by depth ascending then alphabetically so
 // callers create parents before grandparents — keeps verify warnings clean
 // during partial runs.
+// @enforces importer:INV-5
 func missingAncestors(existing map[string]bool) []string {
 	need := map[string]bool{}
 	for fid := range existing {

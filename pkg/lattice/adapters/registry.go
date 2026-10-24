@@ -1,5 +1,7 @@
 package adapters
 
+// @module-feature adapters
+
 import (
 	"path/filepath"
 	"sort"
@@ -32,6 +34,7 @@ func (r *Registry) Register(a LanguageAdapter) {
 }
 
 // For returns the adapter that handles path, or nil if none does.
+// @enforces adapters:INV-2
 func (r *Registry) For(path string) LanguageAdapter {
 	if a, ok := r.byExt[strings.ToLower(filepath.Ext(path))]; ok {
 		return a

@@ -1,0 +1,16 @@
+id: ep.cli.agent
+version: 1
+status: production
+kind: cli
+purpose: "LLM-backed agentic capabilities (with deterministic fallbacks)"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice agent"
+handler:
+  symbol: internal.cli.newAgentCommand
+  file: internal/cli/agent.go
+flow:
+  - feature: cli
+  - feature: agentic

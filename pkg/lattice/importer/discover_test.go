@@ -33,6 +33,7 @@ func sampleModules() []ir.Module {
 	}
 }
 
+// @verifies importer:INV-1
 func TestDiscoverClustersByDirectory(t *testing.T) {
 	cf := Discover(sampleModules(), Options{MinCandidateSymbols: 3})
 
@@ -86,6 +87,7 @@ func TestDiscoveryCoverage(t *testing.T) {
 	}
 }
 
+// @verifies importer:INV-1
 func TestDiscoverIsDeterministic(t *testing.T) {
 	mods := sampleModules()
 	reversed := []ir.Module{mods[2], mods[1], mods[0]}

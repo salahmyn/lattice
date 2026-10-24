@@ -1,5 +1,7 @@
 package validate
 
+// @module-feature validation
+
 import (
 	"fmt"
 
@@ -9,10 +11,10 @@ import (
 // checkEntryPoints applies the v0.3.0 integrity rules to the entry-point
 // axis. Errors block validation; warnings surface for triage:
 //
-//   UNCLASSIFIED_ENTRY_POINT (warning) — handler reaches no feature
-//   DUPLICATE_TRIGGER         (warning) — two EPs claim the same trigger
-//   PHANTOM_FLOW              (error)   — flow step names a non-existent feature
-//   HANDLER_MISSING           (warning) — handler FQN absent from the IR
+//	UNCLASSIFIED_ENTRY_POINT (warning) — handler reaches no feature
+//	DUPLICATE_TRIGGER         (warning) — two EPs claim the same trigger
+//	PHANTOM_FLOW              (error)   — flow step names a non-existent feature
+//	HANDLER_MISSING           (warning) — handler FQN absent from the IR
 func checkEntryPoints(kg schema.KnowledgeGraph) []schema.Violation {
 	if len(kg.EntryPoints) == 0 {
 		return nil

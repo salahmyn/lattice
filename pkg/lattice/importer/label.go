@@ -1,5 +1,7 @@
 package importer
 
+// @module-feature importer
+
 import (
 	"path"
 	"strconv"
@@ -119,6 +121,7 @@ func sanitizeSegment(s string) string {
 }
 
 // uniqueID disambiguates a derived id against ids already taken.
+// @enforces importer:INV-2
 func uniqueID(base string, seen map[string]bool) string {
 	id := base
 	for n := 2; seen[id]; n++ {

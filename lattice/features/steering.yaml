@@ -1,0 +1,15 @@
+id: steering
+version: 1
+status: production
+purpose: |
+  The steering commands: next ranks the weakest links, and results, lease and ledger
+  feed it.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.agent_coordination
+invariants:
+  - id: INV-1
+    statement: next ranks draft and proposed BRDs as awaiting a human's approval and never tells an agent to approve.
+  - id: INV-2
+    statement: In council mode under a brd_approve mandate, next points at the council path, except for human-only BRDs.

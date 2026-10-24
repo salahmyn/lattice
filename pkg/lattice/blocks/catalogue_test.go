@@ -61,6 +61,7 @@ func TestParseRejectsBadCatalogue(t *testing.T) {
 	}
 }
 
+// @verifies blocks:INV-3
 func TestParseAllDuplicateAcrossFiles(t *testing.T) {
 	a := File{Path: "a.json", Data: []byte(`{"area":"a","nodes":[{"id":"x","kind":"screen"}]}`)}
 	b := File{Path: "b.json", Data: []byte(`{"area":"b","nodes":[{"id":"x","kind":"screen"}]}`)}

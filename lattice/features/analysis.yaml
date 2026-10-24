@@ -1,0 +1,9 @@
+id: analysis
+version: 1
+status: production
+purpose: |
+  Conflict and impact analysis of a proposal manifest before it is accepted.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.adoption

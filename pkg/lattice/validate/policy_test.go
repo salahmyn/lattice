@@ -38,6 +38,7 @@ func byCode(v []schema.Violation, code string) []schema.Violation {
 	return out
 }
 
+// @verifies validation:INV-4
 func TestUnattributedModuleIsOptIn(t *testing.T) {
 	kg := unattributedKG()
 	if got := byCode(Validate(kg, config.Default(), Options{}), schema.CodeUnattributedModule); len(got) != 0 {
@@ -51,6 +52,7 @@ func TestUnattributedModuleIsOptIn(t *testing.T) {
 	}
 }
 
+// @verifies validation:INV-5
 func TestSeverityOverrides(t *testing.T) {
 	in := []schema.Violation{
 		{Code: "A", Severity: schema.SeverityInfo},
@@ -73,6 +75,7 @@ func TestSeverityOverrides(t *testing.T) {
 	}
 }
 
+// @verifies validation:INV-6
 func TestFailOn(t *testing.T) {
 	warn := schema.Violation{Severity: schema.SeverityWarning}
 	info := schema.Violation{Severity: schema.SeverityInfo}
@@ -93,6 +96,7 @@ func TestFailOn(t *testing.T) {
 	}
 }
 
+// @verifies validation:INV-7
 func TestAllowlist(t *testing.T) {
 	dir := t.TempDir()
 	body := `entries:
@@ -150,6 +154,7 @@ func TestAllowlist(t *testing.T) {
 
 // A misspelt key is a schema error, not an empty allowlist: `allow:` for
 // `entries:` used to load nothing, so ALLOWLIST_STALE could never fire.
+// @verifies validation:INV-7
 func TestAllowlistRejectsUnknownKeys(t *testing.T) {
 	for name, body := range map[string]string{
 		"top level": "allow:\n  - code: X\n    subject: a\n    reason: r\n",

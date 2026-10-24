@@ -12,6 +12,8 @@
 //     PMs/QA access to meaning without access to code.
 package workspace
 
+// @module-feature workspace
+
 import (
 	"fmt"
 	"os"
@@ -161,6 +163,7 @@ type Workspace struct {
 // It finds the lattice/ directory by checking, in order: <startPath>/lattice/,
 // then <startPath> itself (a standalone lattice/ repo). It returns an error
 // if neither is an initialized Lattice directory.
+// @enforces workspace:INV-1
 func Open(startPath string) (*Workspace, error) {
 	abs, err := filepath.Abs(startPath)
 	if err != nil {
@@ -195,6 +198,7 @@ func isLatticeDir(dir string) bool {
 }
 
 // loadWorkspaceFile reads workspace.yaml, defaulting to embedded mode.
+// @enforces workspace:INV-2
 func (w *Workspace) loadWorkspaceFile() error {
 	path := filepath.Join(w.LatticeDir, "workspace.yaml")
 	data, err := os.ReadFile(path)

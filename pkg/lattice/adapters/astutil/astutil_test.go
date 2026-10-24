@@ -2,6 +2,7 @@ package astutil
 
 import "testing"
 
+// @verifies adapters:INV-1
 func TestIsTestPath(t *testing.T) {
 	for path, want := range map[string]bool{
 		"tests/test_refund.py":                  true,

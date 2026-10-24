@@ -1,5 +1,7 @@
 package validate
 
+// @module-feature validation
+
 import (
 	"fmt"
 	"strings"
@@ -22,6 +24,7 @@ import (
 // agentic.llm.enabled is true, and it is never run for a BRD that carries
 // a regulatory / legal / financial constraint — those stay human-judged.
 // It never gates and never auto-edits.
+// @enforces validation:INV-9
 func (c *corpus) checkMeaning() []schema.Violation {
 	var v []schema.Violation
 

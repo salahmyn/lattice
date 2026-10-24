@@ -1,5 +1,7 @@
 package brd
 
+// @module-feature brds
+
 import (
 	"context"
 	"encoding/json"
@@ -114,6 +116,7 @@ Output JSON only. No prose around it. No markdown fences.`
 // These fields are NOT taken from the model — they are set here so a
 // rogue model can't promote itself to "approved" or attach to a
 // different feature.
+// @enforces brds:INV-7
 func FromCode(ctx context.Context, feature schema.Manifest, reachedBy []schema.EntryPoint, opts FromCodeOptions) (schema.BRD, string, error) {
 	if opts.Provider == nil {
 		return schema.BRD{}, "", ErrNoLLM
@@ -210,12 +213,12 @@ func FromCode(ctx context.Context, feature schema.Manifest, reachedBy []schema.E
 // disk, not over the wire. Mixing concerns would force JSON tags onto
 // every schema struct.
 type llmFromCodeResponse struct {
-	Title           string             `json:"title"`
-	BusinessProblem string             `json:"business_problem"`
-	BusinessGoals   []string           `json:"business_goals"`
-	Stakeholders    llmStakeholders    `json:"stakeholders"`
-	UserScenarios   []llmUserScenario  `json:"user_scenarios"`
-	SuccessCriteria []llmBRDCriterion  `json:"success_criteria"`
+	Title           string            `json:"title"`
+	BusinessProblem string            `json:"business_problem"`
+	BusinessGoals   []string          `json:"business_goals"`
+	Stakeholders    llmStakeholders   `json:"stakeholders"`
+	UserScenarios   []llmUserScenario `json:"user_scenarios"`
+	SuccessCriteria []llmBRDCriterion `json:"success_criteria"`
 }
 
 type llmStakeholders struct {

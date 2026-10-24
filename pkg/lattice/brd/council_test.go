@@ -42,6 +42,7 @@ func allApprove() []schema.BRDCouncilVote {
 
 const today = "2026-10-24"
 
+// @verifies brds.council:INV-1
 func TestAssessApprovesUnanimousCouncil(t *testing.T) {
 	got := Assess(councilBRD(), councilAutonomy(), "m-council", allApprove(), today)
 	if !got.Approved || len(got.Blockers) != 0 {
@@ -50,6 +51,7 @@ func TestAssessApprovesUnanimousCouncil(t *testing.T) {
 }
 
 // One "changes" vote sends the BRD back; it is not a blocker.
+// @verifies brds.council:INV-1
 func TestAssessChangesVote(t *testing.T) {
 	votes := allApprove()
 	votes[2] = vote("risk", "agent-c", schema.VerdictChanges)
@@ -59,6 +61,7 @@ func TestAssessChangesVote(t *testing.T) {
 	}
 }
 
+// @verifies brds.council:INV-1, brds.council:INV-2, brds.council:INV-3, brds.council:INV-4
 func TestAssessBlockers(t *testing.T) {
 	cases := map[string]struct {
 		brd     func(*schema.BRD)
@@ -124,6 +127,7 @@ func TestAssessBlockers(t *testing.T) {
 
 // Votes are stored per version, one per seat; a re-vote replaces the seat's
 // earlier vote, and a seat off the council is refused.
+// @verifies brds.council:INV-5
 func TestRecordVote(t *testing.T) {
 	dir := t.TempDir()
 	b := councilBRD()
@@ -158,6 +162,7 @@ func TestRecordVote(t *testing.T) {
 
 // Once the human overturns a version, no seat may vote on it again; a new
 // version starts a fresh record.
+// @verifies brds.council:INV-5, brd.intent:US-1
 func TestOverturnLocksTheVersion(t *testing.T) {
 	dir := t.TempDir()
 	b := councilBRD()

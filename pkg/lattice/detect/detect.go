@@ -10,6 +10,8 @@
 // can flag low-confidence guesses for human confirmation.
 package detect
 
+// @module-feature onboarding
+
 import (
 	"encoding/json"
 	"fmt"
@@ -44,17 +46,17 @@ const (
 type Framework string
 
 const (
-	FrameworkNone     Framework = ""
-	FrameworkLaravel  Framework = "laravel"
-	FrameworkSymfony  Framework = "symfony"
-	FrameworkDjango   Framework = "django"
-	FrameworkFastAPI  Framework = "fastapi"
-	FrameworkFlask    Framework = "flask"
-	FrameworkExpress  Framework = "express"
-	FrameworkNestJS   Framework = "nestjs"
-	FrameworkNextJS   Framework = "nextjs"
-	FrameworkRails    Framework = "rails"
-	FrameworkSpring   Framework = "spring"
+	FrameworkNone    Framework = ""
+	FrameworkLaravel Framework = "laravel"
+	FrameworkSymfony Framework = "symfony"
+	FrameworkDjango  Framework = "django"
+	FrameworkFastAPI Framework = "fastapi"
+	FrameworkFlask   Framework = "flask"
+	FrameworkExpress Framework = "express"
+	FrameworkNestJS  Framework = "nestjs"
+	FrameworkNextJS  Framework = "nextjs"
+	FrameworkRails   Framework = "rails"
+	FrameworkSpring  Framework = "spring"
 )
 
 // Detection is the result of inspecting a project root.
@@ -95,6 +97,7 @@ type Package struct {
 // Detect inspects root and returns the highest-confidence guess.
 // A root with no recognised manifest returns Language="", Framework="",
 // Confidence="none" — callers should treat that as "ask the user".
+// @enforces onboarding:INV-2
 func Detect(root string) Detection {
 	root = filepath.Clean(root)
 	det := Detection{Root: root}

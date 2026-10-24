@@ -1,0 +1,13 @@
+id: cli
+version: 1
+status: production
+purpose: |
+  The lattice command line: one static binary whose JSON output is the contract the
+  MCP server and agents consume.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.adoption
+invariants:
+  - id: INV-1
+    statement: Setting a top-level key of a record keeps its other keys and comments; a record that is not a mapping is refused.

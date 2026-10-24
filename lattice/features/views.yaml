@@ -1,0 +1,15 @@
+id: views
+version: 1
+status: production
+purpose: |
+  Renders the graph for each audience: developer, product, business, C4, entry points,
+  flows and feature specs.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.adoption
+invariants:
+  - id: INV-1
+    statement: A consumed event no feature emits renders as an external system in the C4 view.
+  - id: INV-2
+    statement: A feature spec renders the same text for the same manifest.

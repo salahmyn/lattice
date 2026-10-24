@@ -1,5 +1,7 @@
 package schema
 
+// @module-feature schema
+
 // BRDStatus is the lifecycle state of a Business Requirements Document.
 //
 // A BRD is the layer above the Feature axis: it captures *business intent*

@@ -10,6 +10,8 @@
 // from the ledger, like leases and results.
 package flags
 
+// @module-feature flags
+
 import (
 	"encoding/json"
 	"fmt"
@@ -94,6 +96,7 @@ func Raise(latticeDir, unit, reason, by, source string, now time.Time) (Flag, er
 // Clear closes every open flag on unit. Clearing is the human meaning
 // gate — callers must pass the human identity in by; the CLI enforces
 // that it is non-empty and not an agent actor.
+// @enforces flags:INV-1
 func Clear(latticeDir, unit, by string, now time.Time) (int, error) {
 	if strings.TrimSpace(by) == "" {
 		return 0, fmt.Errorf("clearing a flag requires --by <human> — only a human clears meaning flags")

@@ -1,0 +1,25 @@
+id: brds
+version: 1
+status: production
+purpose: |
+  Business Requirements Documents: the business intent above features, linked down
+  by implements_via and up by implements_brd.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.intent
+invariants:
+  - id: INV-1
+    statement: A BRD whose implements_via names a missing feature is BRD_PHANTOM_FEATURE.
+  - id: INV-2
+    statement: An llm_from_code BRD that is not approved is BRD_UNAPPROVED_LLM.
+  - id: INV-3
+    statement: A BRD edited after its approved version is BRD_DRIFT.
+  - id: INV-4
+    statement: A BRD id must start with brd. and follow the dotted id grammar.
+  - id: INV-5
+    statement: A criterion that maps to an invariant its feature does not declare is BRD_CRITERION_PHANTOM_INVARIANT.
+  - id: INV-6
+    statement: A BRD's features are the union of its implements_via and the features that name it in implements_brd.
+  - id: INV-7
+    statement: A BRD regenerated from code is a draft with provenance llm_from_code and needs human review.

@@ -34,6 +34,7 @@ func TestRaiseLoadClear(t *testing.T) {
 	}
 }
 
+// @verifies flags:INV-1
 func TestClearRequiresIdentityAndOpenFlag(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := Clear(dir, "u", "", t0); err == nil {

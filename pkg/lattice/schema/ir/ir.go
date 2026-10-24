@@ -6,6 +6,8 @@
 // validation, analysis — operates on IR and never imports a parser.
 package ir
 
+// @module-feature schema
+
 // Annotation is one Lattice annotation attached to a symbol or module.
 //
 // Args holds positional arguments (each a string or []string). Kwargs holds
@@ -74,19 +76,19 @@ type Surface struct {
 
 // Module is the IR for a single source file.
 type Module struct {
-	File              string       `json:"file"`
-	Language          string       `json:"language"`
+	File     string `json:"file"`
+	Language string `json:"language"`
 	// LineCount is the source-file length. Populated by the extractor
 	// (counted from the raw bytes), not by each adapter — gives the
 	// v0.7 AMA FILE_LINE_CAP rule a value without touching every
 	// adapter implementation.
-	LineCount         int          `json:"line_count,omitempty"`
+	LineCount int `json:"line_count,omitempty"`
 	// HasCode reports top-level runtime code outside any symbol (a render
 	// call, an unannotated value const). It makes a module with no
 	// behaviour symbols production code for attribution. Set by adapters
 	// that can tell it apart from imports and type declarations; never set
 	// on test files.
-	HasCode           bool         `json:"has_code,omitempty"`
+	HasCode bool `json:"has_code,omitempty"`
 	// ChangeHistory marks a file that records changes rather than holding
 	// code, such as a database migration: its symbols are attributed by
 	// their own tags, and the file itself is not a module to attribute.

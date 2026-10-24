@@ -1,0 +1,17 @@
+id: ep.cli.lease
+version: 1
+status: production
+kind: cli
+purpose: "Claim a slice of work so a fleet of agents doesn't collide"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice lease"
+handler:
+  symbol: internal.cli.newLeaseCommand
+  file: internal/cli/steering.go
+flow:
+  - feature: cli
+  - feature: steering
+  - feature: leases

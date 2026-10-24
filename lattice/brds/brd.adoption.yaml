@@ -1,0 +1,80 @@
+id: brd.adoption
+version: 1
+status: draft
+title: Adopt an existing codebase and see it from every angle
+business_problem: Teams cannot afford to describe a brownfield codebase by hand before getting value. Lattice discovers candidates, scaffolds the workspace, and serves views, a CLI, a UI and an MCP server over the same graph.
+business_goals:
+  - A brownfield repository reaches a validated workspace without hand-writing every manifest.
+  - Engineers, product and agents read the same graph through the CLI, the UI and MCP.
+user_scenarios:
+  - id: US-1
+    actor: engineer
+    narrative: An engineer opens the local web UI and browses the block map and the views over the stored graph.
+    given:
+      - a block graph in the workspace store
+    when:
+      - the engineer opens /map, /views and the JSON API
+    then:
+      - the pages and the API serve the stored graph, and an exported page escapes the inlined graph
+success_criteria:
+  - id: SC-1
+    statement: Discovery clusters symbols by directory and gives the same candidates for the same code.
+    maps_to_invariant: importer:INV-1
+  - id: SC-2
+    statement: Candidates whose ids collide get distinct feature ids.
+    maps_to_invariant: importer:INV-2
+  - id: SC-3
+    statement: An inscribe edit that breaks the file's parse is rejected and the file is left untouched.
+    maps_to_invariant: importer:INV-3
+  - id: SC-4
+    statement: Inscribe skips a symbol that already carries a feature annotation.
+    maps_to_invariant: importer:INV-4
+  - id: SC-5
+    statement: promote-parents creates a manifest for every missing ancestor of a dotted feature id.
+    maps_to_invariant: importer:INV-5
+  - id: SC-6
+    statement: Opening a directory with no lattice/ workspace fails.
+    maps_to_invariant: workspace:INV-1
+  - id: SC-7
+    statement: A workspace with an invalid exclude glob fails to open.
+    maps_to_invariant: workspace:INV-2
+  - id: SC-8
+    statement: Onboarding steps advance in a fixed order and stop at done.
+    maps_to_invariant: onboarding:INV-1
+  - id: SC-9
+    statement: With several manifests present, detection picks the highest-scoring stack.
+    maps_to_invariant: onboarding:INV-2
+  - id: SC-10
+    statement: A consumed event no feature emits renders as an external system in the C4 view.
+    maps_to_invariant: views:INV-1
+  - id: SC-11
+    statement: A feature spec renders the same text for the same manifest.
+    maps_to_invariant: views:INV-2
+  - id: SC-12
+    statement: A loopback-bound server refuses a request whose Host is not a loopback name.
+    maps_to_invariant: ui:INV-1
+  - id: SC-13
+    statement: Setting a top-level key of a record keeps its other keys and comments; a record that is not a mapping is refused.
+    maps_to_invariant: cli:INV-1
+  - id: SC-14
+    statement: 'Every tool description follows the template: name and summary, when to call, returns, common errors.'
+    maps_to_invariant: mcp:INV-1
+out_of_scope:
+  - Hosting the UI for remote users; it binds to loopback by default.
+implements_via:
+  - analysis
+  - cli
+  - importer
+  - library
+  - mcp
+  - onboarding
+  - patch
+  - skills
+  - ui
+  - views
+  - workspace
+provenance:
+  source: llm_from_code
+  generated_at: "2026-10-24"
+  authored_by: agent:lattice-on-lattice
+human_review_required: true

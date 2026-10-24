@@ -1,5 +1,7 @@
 package graph
 
+// @module-feature graph
+
 import (
 	"encoding/json"
 	"fmt"
@@ -61,6 +63,7 @@ func topLevel(featureID string) string {
 
 // WriteSharded emits the knowledge graph as a shard index at indexPath plus
 // one shard file per group under shardDir.
+// @enforces graph:INV-4
 func WriteSharded(indexPath, shardDir string, kg schema.KnowledgeGraph, opts ShardOptions) error {
 	if err := os.RemoveAll(shardDir); err != nil {
 		return err
@@ -169,6 +172,7 @@ func assignGroups(kg schema.KnowledgeGraph, opts ShardOptions) map[string]*shard
 
 // Load reads a knowledge graph from indexPath, transparently reassembling it
 // from shard files when the graph was written sharded.
+// @enforces graph:INV-4
 func Load(indexPath string) (schema.KnowledgeGraph, error) {
 	data, err := os.ReadFile(indexPath)
 	if err != nil {

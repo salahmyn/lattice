@@ -1,5 +1,7 @@
 package ui
 
+// @module-feature ui
+
 import (
 	"context"
 	"encoding/json"

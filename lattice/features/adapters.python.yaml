@@ -1,0 +1,12 @@
+id: adapters.python
+version: 1
+status: production
+purpose: |
+  Reads Python: classes, functions and the decorators of the no-op lattice package.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.code_graph
+invariants:
+  - id: INV-1
+    statement: An annotation argument that is not a string literal raises ANNOTATION_ARG_NOT_LITERAL.

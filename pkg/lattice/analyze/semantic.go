@@ -1,5 +1,7 @@
 package analyze
 
+// @module-feature analysis
+
 import (
 	"fmt"
 	"strings"

@@ -1,5 +1,7 @@
 package config
 
+// @module-feature workspace
+
 import (
 	"fmt"
 	"os"

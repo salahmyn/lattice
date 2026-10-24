@@ -7,6 +7,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 )
 
+// @verifies agentic:INV-1
 func TestToneContractEmptyByDefault(t *testing.T) {
 	if got := ToneContract(config.Tone{}); got != "" {
 		t.Errorf("zero-value tone should render empty, got %q", got)
@@ -18,9 +19,9 @@ func TestToneContractEmptyByDefault(t *testing.T) {
 
 func TestToneContractBusinessAudience(t *testing.T) {
 	c := ToneContract(config.Tone{
-		Audience:     "business",
-		ReadingLevel: "simple",
-		AvoidJargon:  true,
+		Audience:          "business",
+		ReadingLevel:      "simple",
+		AvoidJargon:       true,
 		ExtraInstructions: "Always refer to the product as 'Lattice', never 'the tool'.",
 	})
 	for _, want := range []string{

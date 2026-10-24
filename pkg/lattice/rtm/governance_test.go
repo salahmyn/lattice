@@ -39,6 +39,7 @@ func TestDirectWireCriterionLadder(t *testing.T) {
 	}
 }
 
+// @verifies rtm:INV-5
 func TestLiteProfileCapsAtVerified(t *testing.T) {
 	m := Build(directWireFixture(), Options{
 		ProfileLite: true,
@@ -50,6 +51,7 @@ func TestLiteProfileCapsAtVerified(t *testing.T) {
 	}
 }
 
+// @verifies rtm:INV-5
 func TestFlagsRideAlongsideGreen(t *testing.T) {
 	m := Build(directWireFixture(), Options{
 		ResultOf: func(string) (bool, bool) { return true, true },

@@ -139,6 +139,7 @@ func TestClassify(t *testing.T) {
 // Migrations apply in filename order: the last create wins, a drop removes
 // the symbol, and a redefinition that loses tags is reported on the
 // effective definition.
+// @verifies adapters.postgres:INV-1
 func TestResolveEffectiveDefinitions(t *testing.T) {
 	a := New(nil, nil)
 	m1 := parse(t, a, "db/migrations/0001.sql", `
@@ -219,6 +220,7 @@ func TestParsePgTAP(t *testing.T) {
 }
 
 // An explicit @feature wins; refs to two features or to a BRD imply nothing.
+// @verifies adapters.postgres:INV-2
 func TestImpliedFeature(t *testing.T) {
 	enf := func(refs ...interface{}) ir.Annotation { return ir.Annotation{Kind: "enforces_invariant", Args: refs} }
 	for name, tc := range map[string]struct {

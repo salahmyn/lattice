@@ -2,6 +2,8 @@
 // adapters.
 package astutil
 
+// @module-feature adapters
+
 import (
 	"path/filepath"
 	"strings"
@@ -21,6 +23,7 @@ func ModulePath(rel string) string {
 // end-to-end marker in the file name (login.e2e.ts), or by a test-support
 // name (testing.ts, test-utils.ts, test_helpers.py). An e2e/ directory holds
 // browser or device scripts, never production code.
+// @enforces adapters:INV-1
 func IsTestPath(rel string) bool {
 	rel = filepath.ToSlash(rel)
 	for _, seg := range strings.Split(rel, "/") {

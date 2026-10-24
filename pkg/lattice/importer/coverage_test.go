@@ -46,6 +46,7 @@ func TestCoverageFromGraph(t *testing.T) {
 }
 
 // Ambient declarations and tool configuration are not product code.
+// @verifies schema:INV-1
 func TestAttributionSkipsDeclarationsAndConfig(t *testing.T) {
 	kg := schema.KnowledgeGraph{
 		Modules: []schema.GraphModule{
@@ -68,6 +69,7 @@ func TestAttributionSkipsDeclarationsAndConfig(t *testing.T) {
 // A module with no behaviour symbols but top-level code (an entry file that
 // only renders, a dictionary of plain consts) is production code: attributed
 // by its header, or listed as unattributed without one.
+// @verifies schema:INV-1
 func TestAttributionCountsTopLevelCode(t *testing.T) {
 	kg := schema.KnowledgeGraph{Modules: []schema.GraphModule{
 		{File: "src/main.tsx", HasCode: true, Feature: "app.shell"},
@@ -82,6 +84,7 @@ func TestAttributionCountsTopLevelCode(t *testing.T) {
 
 // A migration is change history: its symbols are attributed by their own
 // tags, and the file is not a module to attribute.
+// @verifies schema:INV-1
 func TestAttributionSkipsChangeHistory(t *testing.T) {
 	kg := schema.KnowledgeGraph{
 		Modules: []schema.GraphModule{

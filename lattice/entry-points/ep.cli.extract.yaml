@@ -1,0 +1,26 @@
+id: ep.cli.extract
+version: 1
+status: production
+kind: cli
+purpose: "Extract the knowledge graph and write lattice.json"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice extract"
+handler:
+  symbol: internal.cli.newExtractCommand
+  file: internal/cli/extract.go
+flow:
+  - feature: cli
+  - feature: extraction
+  - feature: graph
+  - feature: schema
+  - feature: entrypoints
+  - feature: scip
+  - feature: adapters
+  - feature: adapters.go
+  - feature: adapters.typescript
+  - feature: adapters.python
+  - feature: adapters.php
+  - feature: adapters.postgres

@@ -1,5 +1,7 @@
 package validate
 
+// @module-feature validation
+
 import (
 	"fmt"
 	"regexp"
@@ -18,6 +20,7 @@ var brdIDPattern = regexp.MustCompile(`^brd\.[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*
 // by design — the BRD axis is opt-in; the validator never errors on
 // absence and only errors on outright structural problems (phantom
 // references, schema breakage, duplicate ids).
+// @enforces brds:INV-1, brds:INV-2, brds:INV-3, brds:INV-4, brds:INV-5
 func (c *corpus) checkBRDs() []schema.Violation {
 	var v []schema.Violation
 
@@ -41,8 +44,8 @@ func (c *corpus) checkBRDs() []schema.Violation {
 		for _, msg := range brdSchemaErrors(b) {
 			v = append(v, schema.Violation{
 				Code: schema.CodeBRDSchema, Severity: schema.SeverityError,
-				Message:  msg,
-				Location: loc,
+				Message:    msg,
+				Location:   loc,
 				NextAction: &schema.NextAction{Kind: "edit_brd", Detail: msg},
 			})
 		}

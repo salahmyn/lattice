@@ -3,6 +3,8 @@
 // placing one at lattice/views/<name>.tmpl.
 package views
 
+// @module-feature views
+
 import (
 	"bytes"
 	"embed"

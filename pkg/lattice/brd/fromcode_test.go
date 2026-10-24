@@ -24,6 +24,7 @@ func (f fakeLLM) Complete(_ context.Context, _ LLMRequest) (LLMResponse, error) 
 	return LLMResponse{Text: f.body}, nil
 }
 
+// @verifies brds:INV-7
 func TestFromCodeSetsDeterministicFields(t *testing.T) {
 	feat := schema.Manifest{
 		ID: "checkout.refund", Version: 1, Status: schema.StatusProduction,

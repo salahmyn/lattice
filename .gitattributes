@@ -1,0 +1,2 @@
+# Lattice ledger: append-only, so a merge keeps both sides' lines
+lattice/.ledger/ledger.jsonl merge=union

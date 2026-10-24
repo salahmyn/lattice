@@ -1,5 +1,7 @@
 package laravel
 
+// @module-feature entrypoints
+
 import (
 	"context"
 	"os"

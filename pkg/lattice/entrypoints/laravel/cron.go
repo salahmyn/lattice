@@ -1,5 +1,7 @@
 package laravel
 
+// @module-feature entrypoints
+
 import (
 	"context"
 	"path/filepath"
@@ -16,10 +18,11 @@ import (
 // CronDetector finds Laravel scheduled tasks declared in Console kernels.
 //
 // Recognises the canonical fluent shapes:
-//   $schedule->command('foo:bar')->daily();
-//   $schedule->command(BackupCommand::class)->cron('0 2 * * *');
-//   $schedule->job(SendEmailsJob::class)->hourly();
-//   $schedule->call(function () { ... })->everyMinute();   // skipped (no symbol)
+//
+//	$schedule->command('foo:bar')->daily();
+//	$schedule->command(BackupCommand::class)->cron('0 2 * * *');
+//	$schedule->job(SendEmailsJob::class)->hourly();
+//	$schedule->call(function () { ... })->everyMinute();   // skipped (no symbol)
 //
 // The trailing call chain provides the schedule — either an explicit
 // ->cron(expr) or a shortcut (->daily, ->hourly, ->everyFiveMinutes,

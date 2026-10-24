@@ -1,5 +1,7 @@
 package scip
 
+// @module-feature scip
+
 import (
 	"os"
 	"sort"

@@ -2,6 +2,8 @@
 // exposing every operation as a subcommand.
 package main
 
+// @module-feature cli
+
 import (
 	"os"
 

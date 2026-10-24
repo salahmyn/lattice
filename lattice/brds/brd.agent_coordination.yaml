@@ -1,0 +1,56 @@
+id: brd.agent_coordination
+version: 1
+status: draft
+title: Let a fleet of agents work one graph safely
+business_problem: Agents working in parallel collide on the same unit and lose track of what changed. Lattice gives them leases, an append-only ledger and a ranked next action.
+business_goals:
+  - Two agents never hold the same unit of work at once.
+  - Every gate decision and truth-level change is recorded with its actor.
+user_scenarios:
+  - id: US-1
+    actor: agent
+    narrative: Two agents claim the same unit; the second is refused until the first lease expires.
+    given:
+      - agent A holds an active lease on a unit
+    when:
+      - agent B acquires the same unit
+    then:
+      - B is refused while A's lease is active
+      - B may claim the unit once the lease has expired
+success_criteria:
+  - id: SC-1
+    statement: Entries are appended and read back in order; a missing ledger reads as empty.
+    maps_to_invariant: ledger:INV-1
+  - id: SC-2
+    statement: A check run whose actor and outcome match the latest entry for its unit appends nothing.
+    maps_to_invariant: ledger:INV-2
+  - id: SC-3
+    statement: Another actor cannot acquire a unit under an active lease; the holder may refresh it.
+    maps_to_invariant: leases:INV-1
+  - id: SC-4
+    statement: An expired lease no longer holds its unit.
+    maps_to_invariant: leases:INV-2
+  - id: SC-5
+    statement: Scopes overlap only across different actors.
+    maps_to_invariant: leases:INV-3
+  - id: SC-6
+    statement: next ranks draft and proposed BRDs as awaiting a human's approval and never tells an agent to approve.
+    maps_to_invariant: steering:INV-1
+  - id: SC-7
+    statement: In council mode under a brd_approve mandate, next points at the council path, except for human-only BRDs.
+    maps_to_invariant: steering:INV-2
+  - id: SC-8
+    statement: The default or mixed audience adds no tone instruction to a prompt.
+    maps_to_invariant: agentic:INV-1
+out_of_scope:
+  - Scheduling agents; Lattice ranks work but does not assign it.
+implements_via:
+  - agentic
+  - leases
+  - ledger
+  - steering
+provenance:
+  source: llm_from_code
+  generated_at: "2026-10-24"
+  authored_by: agent:lattice-on-lattice
+human_review_required: true

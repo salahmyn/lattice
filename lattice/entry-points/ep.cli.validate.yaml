@@ -1,0 +1,20 @@
+id: ep.cli.validate
+version: 1
+status: production
+kind: cli
+purpose: "Extract and validate the workspace"
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: "lattice validate"
+handler:
+  symbol: internal.cli.newValidateCommand
+  file: internal/cli/validate.go
+flow:
+  - feature: cli
+  - feature: validation
+  - feature: extraction
+  - feature: graph
+  - feature: rtm
+  - feature: results

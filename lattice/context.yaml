@@ -1,0 +1,14 @@
+# C4 Level-1 (System Context): the people and external systems that the
+# code cannot reveal. Consumed by `lattice view c4`.
+#
+# system: ""                 # optional display name override
+# actors:
+#   - id: customer
+#     name: Customer
+#     description: A person buying products.
+#     uses: [checkout]        # component / feature ids this actor interacts with
+# external_systems:
+#   - id: payment_gateway
+#     name: Payment Gateway
+#     description: Third-party card processor.
+#     used_by: [checkout]     # components that call this external system

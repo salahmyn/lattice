@@ -2,6 +2,8 @@
 // Annotations are PHP 8 attributes; there is no docblock fallback.
 package php
 
+// @module-feature adapters.php
+
 import (
 	"context"
 	"fmt"

@@ -1,5 +1,7 @@
 package blocks
 
+// @module-feature blocks
+
 import (
 	"bytes"
 	"encoding/json"

@@ -14,6 +14,8 @@
 // with the code.
 package ledger
 
+// @module-feature ledger
+
 import (
 	"bufio"
 	"encoding/json"
@@ -91,6 +93,7 @@ func (e Entry) To() string {
 
 // Record appends one entry to the ledger, creating the directory on first
 // write. The ledger is append-only — entries are never rewritten.
+// @enforces ledger:INV-1
 func Record(latticeDir string, e Entry) error {
 	path := filepath.Join(latticeDir, file)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -116,6 +119,7 @@ func Record(latticeDir string, e Entry) error {
 // check runs with an unchanged outcome then leave the ledger untouched, so
 // re-running a check on parallel branches adds no lines to merge; a run
 // whose outcome changed is still recorded. It reports whether it appended.
+// @enforces ledger:INV-2
 func RecordChange(latticeDir string, e Entry) (bool, error) {
 	entries, err := Load(latticeDir)
 	if err != nil {
@@ -146,6 +150,7 @@ func RecordAll(latticeDir string, entries []Entry) error {
 
 // Load reads every ledger entry in append order. A missing ledger is not
 // an error — it returns an empty slice.
+// @enforces ledger:INV-1
 func Load(latticeDir string) ([]Entry, error) {
 	path := filepath.Join(latticeDir, file)
 	f, err := os.Open(path)

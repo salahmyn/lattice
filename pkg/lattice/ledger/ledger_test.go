@@ -2,6 +2,7 @@ package ledger
 
 import "testing"
 
+// @verifies ledger:INV-1
 func TestRecordLoadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	entries := []Entry{
@@ -29,6 +30,7 @@ func TestRecordLoadRoundTrip(t *testing.T) {
 	}
 }
 
+// @verifies ledger:INV-1
 func TestLoadMissingIsEmpty(t *testing.T) {
 	got, err := Load(t.TempDir())
 	if err != nil {
@@ -57,6 +59,7 @@ func TestTruncate(t *testing.T) {
 
 // Re-running a check with the same outcome adds nothing; a changed outcome,
 // another actor or another unit is recorded.
+// @verifies ledger:INV-2
 func TestRecordChange(t *testing.T) {
 	dir := t.TempDir()
 	run := func(actor, unit, evidence string) bool {

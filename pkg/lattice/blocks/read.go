@@ -1,5 +1,7 @@
 package blocks
 
+// @module-feature blocks
+
 import (
 	"fmt"
 	"os"
@@ -14,6 +16,7 @@ import (
 // ReadGit reads the files matching glob from clone at ref through git, so the
 // clone's working tree and checked-out branch never matter. It returns the
 // files, the commit ref resolved to, and that commit's date.
+// @enforces blocks:INV-2
 func ReadGit(clone, ref, glob string) ([]File, string, string, error) {
 	if ref == "" {
 		ref = "HEAD"

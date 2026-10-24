@@ -51,6 +51,7 @@ func TestVerifiedHappyPath(t *testing.T) {
 	}
 }
 
+// @verifies rtm:INV-2
 func TestUnenforced(t *testing.T) {
 	kg := fixture()
 	kg.Symbols = nil // drop the enforcer
@@ -60,6 +61,7 @@ func TestUnenforced(t *testing.T) {
 	}
 }
 
+// @verifies rtm:INV-2
 func TestUnverified(t *testing.T) {
 	kg := fixture()
 	kg.Tests = nil // drop the verifier
@@ -69,6 +71,7 @@ func TestUnverified(t *testing.T) {
 	}
 }
 
+// @verifies rtm:INV-1
 func TestPhantomFeature(t *testing.T) {
 	kg := fixture()
 	kg.BRDs[0].SuccessCriteria[0].MapsToInvariant = "nonexistent:INV-1"
@@ -78,6 +81,7 @@ func TestPhantomFeature(t *testing.T) {
 	}
 }
 
+// @verifies rtm:INV-1
 func TestPhantomInvariant(t *testing.T) {
 	kg := fixture()
 	kg.BRDs[0].SuccessCriteria[0].MapsToInvariant = "checkout:INV-NOPE"
@@ -96,6 +100,7 @@ func TestUnmapped(t *testing.T) {
 	}
 }
 
+// @verifies rtm:INV-4
 func TestPartialBelowMutationThreshold(t *testing.T) {
 	kg := fixture()
 	kg.Features[0].MutationScores = map[string]float64{"INV-1": 0.6}
@@ -108,6 +113,7 @@ func TestPartialBelowMutationThreshold(t *testing.T) {
 	}
 }
 
+// @verifies rtm:INV-4
 func TestVerifiedAboveMutationThreshold(t *testing.T) {
 	kg := fixture()
 	kg.Features[0].MutationScores = map[string]float64{"INV-1": 0.95}
@@ -117,6 +123,7 @@ func TestVerifiedAboveMutationThreshold(t *testing.T) {
 	}
 }
 
+// @verifies rtm:INV-6
 func TestSummaryWorstStatusRollup(t *testing.T) {
 	kg := fixture()
 	// Add a second SC that's broken; summary worst-status should
@@ -136,8 +143,8 @@ func TestSummaryWorstStatusRollup(t *testing.T) {
 func TestComputeCoverage(t *testing.T) {
 	kg := fixture()
 	kg.BRDs[0].SuccessCriteria = append(kg.BRDs[0].SuccessCriteria,
-		schema.BRDCriterion{ID: "SC-2", Statement: "x"},     // unmapped
-		schema.BRDCriterion{ID: "SC-3", Statement: "x",      // phantom
+		schema.BRDCriterion{ID: "SC-2", Statement: "x"}, // unmapped
+		schema.BRDCriterion{ID: "SC-3", Statement: "x", // phantom
 			MapsToInvariant: "nope:INV-1"},
 	)
 	c := ComputeCoverage(Build(kg, Options{}))
@@ -150,6 +157,7 @@ func TestComputeCoverage(t *testing.T) {
 	}
 }
 
+// @verifies rtm:INV-7
 func TestStructuralOnlyInvariantNotUnverified(t *testing.T) {
 	// An invariant whose verifiable_by is ["structural"] doesn't
 	// need a test verifier — absence shouldn't flip to unverified.

@@ -5,6 +5,8 @@
 // modelled since v0.1.
 package entrypoints
 
+// @module-feature entrypoints
+
 import (
 	"context"
 	"sort"

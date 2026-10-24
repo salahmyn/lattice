@@ -3,6 +3,8 @@
 // fallback, so the framework works fully with no LLM configured.
 package agentic
 
+// @module-feature agentic
+
 import (
 	"context"
 	"errors"

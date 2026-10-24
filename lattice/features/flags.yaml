@@ -1,0 +1,12 @@
+id: flags
+version: 1
+status: production
+purpose: |
+  Meaning flags raised on units; only a named human clears them.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.intent
+invariants:
+  - id: INV-1
+    statement: Clearing a flag needs an identity and an open flag on the unit.

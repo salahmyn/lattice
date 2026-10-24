@@ -1,5 +1,7 @@
 package ui
 
+// @module-feature ui
+
 import (
 	"encoding/json"
 	"io"
@@ -115,17 +117,17 @@ func (s *Server) pageConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, "config.html", pageData{
-		Title:    "Configuration",
-		Active:   "config",
-		JSONHref: "/api/v1/config",
+		Title:       "Configuration",
+		Active:      "config",
+		JSONHref:    "/api/v1/config",
 		Breadcrumbs: []crumb{{Label: "Overview", Href: "/"}, {Label: "Configuration"}},
 		Body: map[string]interface{}{
-			"ConfigPath":     payload.ConfigPath,
-			"ConfigRaw":      payload.ConfigRaw,
-			"WorkspacePath":  payload.WorkspacePath,
-			"WorkspaceRaw":   payload.WorkspaceRaw,
-			"Tone":           payload.Config.Agentic.Tone,
-			"LLM":            payload.Config.Agentic.LLM,
+			"ConfigPath":    payload.ConfigPath,
+			"ConfigRaw":     payload.ConfigRaw,
+			"WorkspacePath": payload.WorkspacePath,
+			"WorkspaceRaw":  payload.WorkspaceRaw,
+			"Tone":          payload.Config.Agentic.Tone,
+			"LLM":           payload.Config.Agentic.LLM,
 		},
 	})
 }

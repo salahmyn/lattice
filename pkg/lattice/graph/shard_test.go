@@ -28,6 +28,7 @@ func shardSampleGraph() schema.KnowledgeGraph {
 	}
 }
 
+// @verifies graph:INV-4
 func TestShardRoundTripByFeatureGroup(t *testing.T) {
 	dir := t.TempDir()
 	index := filepath.Join(dir, "lattice.json")

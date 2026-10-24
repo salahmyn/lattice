@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 
 import { renderDescription, tools } from "../src/tools/index.ts";
 
+/** @verifies mcp:INV-1 */
 test("every tool description follows the template", () => {
   assert.ok(tools.length >= 21, `expected >= 21 tools, got ${tools.length}`);
 

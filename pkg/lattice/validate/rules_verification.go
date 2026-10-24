@@ -1,5 +1,7 @@
 package validate
 
+// @module-feature validation
+
 import (
 	"fmt"
 
@@ -7,6 +9,7 @@ import (
 )
 
 // checkVerification runs the verification-integrity rules.
+// @enforces validation:INV-1
 func (c *corpus) checkVerification() []schema.Violation {
 	enforced := c.enforcedInvariants()
 	verified := c.verifiedRefs()

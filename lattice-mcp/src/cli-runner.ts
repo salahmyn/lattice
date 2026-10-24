@@ -1,6 +1,8 @@
 // cli-runner wraps subprocess invocations of the `lattice` Go binary. The MCP
 // server depends only on the CLI's JSON output contract, never on Go internals.
 
+// @module-feature mcp
+
 import { execa } from "execa";
 
 /** Configuration resolved from the environment. */

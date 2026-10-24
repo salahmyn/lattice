@@ -1,5 +1,7 @@
 package validate
 
+// @module-feature validation
+
 // v0.8.1 — lifecycle governance rules.
 //
 // These keep the graph honest about WHO established a claim and WHAT

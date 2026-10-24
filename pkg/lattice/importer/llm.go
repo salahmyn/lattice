@@ -1,5 +1,7 @@
 package importer
 
+// @module-feature importer
+
 import (
 	"context"
 	"encoding/json"

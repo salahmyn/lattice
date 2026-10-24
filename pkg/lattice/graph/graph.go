@@ -3,6 +3,8 @@
 // deterministically-ordered structure emitted as lattice.json.
 package graph
 
+// @module-feature graph
+
 import (
 	"sort"
 	"strings"
@@ -34,6 +36,7 @@ type Options struct {
 
 // Build fuses the input into a knowledge graph with fully resolved edges and
 // deterministic ordering.
+// @enforces graph:INV-1
 func Build(in Input, opts Options) schema.KnowledgeGraph {
 	res := newResolver(in.Manifests, in.Modules)
 
@@ -168,6 +171,7 @@ func resolveModule(mod *ir.Module) schema.GraphModule {
 
 // hydrateManifests populates the auto-derived manifest fields: children,
 // implementations, and verifications.
+// @enforces graph:INV-2
 func hydrateManifests(manifests []schema.Manifest, symbols, tests []schema.GraphSymbol) []schema.Manifest {
 	ids := make(map[string]bool, len(manifests))
 	for _, m := range manifests {
@@ -230,6 +234,7 @@ func isImplementationEdge(s schema.GraphSymbol) bool {
 }
 
 // childrenOf returns the immediate dot-nested children of a feature id.
+// @enforces graph:INV-2
 func childrenOf(id string, all map[string]bool) []string {
 	var kids []string
 	prefix := id + "."

@@ -175,6 +175,7 @@ func TestMixedCommandQuerySuppressedByCommandKind(t *testing.T) {
 
 // Without ama_mode or an explicit cap, the line caps stay silent: AMA's
 // 150/25 defaults are noise for a project that never chose AMA.
+// @verifies validation:INV-10
 func TestLineCapsNeedOptIn(t *testing.T) {
 	kg := schema.KnowledgeGraph{
 		Modules: []schema.GraphModule{{File: "src/Big.tsx", LineCount: 900, SymbolFQNs: []string{"src.Big.Page"}}},
@@ -216,6 +217,7 @@ func TestMethodLineCapUsesEndLine(t *testing.T) {
 }
 
 // A file holding only tests is not held to the file cap.
+// @verifies validation:INV-10
 func TestFileLineCapSkipsTestFiles(t *testing.T) {
 	cfg := config.Default()
 	cfg.Architecture.FileLineCap = 100

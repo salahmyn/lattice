@@ -5,6 +5,8 @@
 // command lines for SCIP and mutation are final.
 package python
 
+// @module-feature adapters.python
+
 import (
 	"context"
 	"fmt"

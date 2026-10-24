@@ -18,8 +18,8 @@ type fakeAdapter struct {
 }
 
 func (fakeAdapter) Name() string             { return "fake" }
-func (fakeAdapter) FileExtensions() []string  { return []string{".fk"} }
-func (fakeAdapter) CanParse(p string) bool    { return strings.HasSuffix(p, ".fk") }
+func (fakeAdapter) FileExtensions() []string { return []string{".fk"} }
+func (fakeAdapter) CanParse(p string) bool   { return strings.HasSuffix(p, ".fk") }
 
 func (fakeAdapter) Parse(_ context.Context, path string, src []byte) (ir.Module, error) {
 	if strings.Contains(string(src), "@@BROKEN@@") {
@@ -40,7 +40,7 @@ func (a fakeAdapter) RenderAnnotationSuggestion(_ ir.Symbol, sug []adapters.Anno
 	return b.String(), nil
 }
 
-func (fakeAdapter) SCIPIndexerCommand(string, string) ([]string, error)   { return nil, nil }
+func (fakeAdapter) SCIPIndexerCommand(string, string) ([]string, error)      { return nil, nil }
 func (fakeAdapter) MutationRunnerCommand(string, []string) ([]string, error) { return nil, nil }
 
 func TestInsertAnnotations(t *testing.T) {
@@ -91,6 +91,7 @@ func TestPlanInscribe(t *testing.T) {
 	}
 }
 
+// @verifies importer:INV-4
 func TestPlanInscribeSkipsAlreadyAnnotated(t *testing.T) {
 	reg := adapters.NewRegistry(fakeAdapter{})
 	modules := []ir.Module{{
@@ -133,6 +134,7 @@ func TestApplyInscribe(t *testing.T) {
 	}
 }
 
+// @verifies importer:INV-3
 func TestApplyInscribeRollsBackOnBrokenParse(t *testing.T) {
 	dir := t.TempDir()
 	src := "class Handler:\n    pass\n"

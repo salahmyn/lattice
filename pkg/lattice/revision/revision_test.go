@@ -33,6 +33,7 @@ func TestSaveLoadNextID(t *testing.T) {
 	}
 }
 
+// @verifies revision:INV-1
 func TestRetirementCovered(t *testing.T) {
 	revs := []schema.Revision{
 		{ID: "CR-1", Status: schema.RevisionApproved,

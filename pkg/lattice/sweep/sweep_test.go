@@ -6,6 +6,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
+// @verifies sweep:INV-1
 func TestInventoryAndDisappeared(t *testing.T) {
 	kg := schema.KnowledgeGraph{
 		Tests: []schema.GraphSymbol{

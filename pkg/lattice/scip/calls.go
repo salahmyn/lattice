@@ -1,5 +1,7 @@
 package scip
 
+// @module-feature scip
+
 import (
 	"sort"
 	"strings"
@@ -180,6 +182,7 @@ func definitionsByLine(doc *scippb.Document) []defAt {
 // mostRecentDef returns the symbol of the definition whose start
 // line is the largest one ≤ targetLine. Used to attribute a
 // reference to its enclosing function.
+// @enforces scip:INV-1
 func mostRecentDef(defs []defAt, targetLine int) string {
 	if len(defs) == 0 {
 		return ""

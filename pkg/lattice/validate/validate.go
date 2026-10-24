@@ -2,6 +2,8 @@
 // over a knowledge graph and returns structured violations.
 package validate
 
+// @module-feature validation
+
 import (
 	"regexp"
 	"sort"
@@ -110,7 +112,7 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 	v = append(v, c.checkManifests()...)
 	v = append(v, c.checkBRDs()...)
 	v = append(v, c.checkCouncil()...)
-	v = append(v, c.checkScenarios()...)  // v0.8 α/β — scenario + reach
+	v = append(v, c.checkScenarios()...) // v0.8 α/β — scenario + reach
 	v = append(v, c.checkRequiredLevel()...)
 	v = append(v, c.checkDependencies()...)
 	v = append(v, c.checkInitiativesAndTasks()...)
