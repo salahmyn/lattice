@@ -211,6 +211,11 @@ func jsTestKey(classname, name string) string {
 	return strings.TrimSuffix(classname, ext) + ".test." + slugify(titleLeaf(name))
 }
 
+// Slug is the test-name slug Lattice joins reports by: lowercase ASCII
+// letters and digits, every other run collapsed to one dash. A per-test
+// coverage report is named by its test's slug.
+func Slug(s string) string { return slugify(s) }
+
 // slugify mirrors the TypeScript adapter's test-name slug: lowercase ASCII
 // letters and digits, every other run collapsed to one dash.
 func slugify(s string) string {

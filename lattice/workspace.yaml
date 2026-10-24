@@ -8,3 +8,5 @@ mode: embedded
 # e2e tests (it carries its own lattice/ workspace).
 exclude:
   - examples/**
+  # Test fixtures: sample code in other languages, read by tests only.
+  - "**/testdata/**"

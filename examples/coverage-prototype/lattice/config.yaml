@@ -1,0 +1,25 @@
+# Lattice configuration for the coverage example (docs/rnd/0009).
+mutation_testing:
+  enabled: false
+
+# Coverage of the suite and of each verifier test, as regen.sh writes it.
+# The block's presence turns on VERIFIER_MISSES_ENFORCER, COVERAGE_STALE and
+# VERIFIER_UNPROVEN; the floors turn on COVERAGE_BELOW_FLOOR.
+coverage:
+  reports:
+    - path: coverage/all.lcov
+      include: ["src/**"]       # node --test lists only loaded files
+  per_test:
+    only_verifiers: true
+    dirs:
+      - dir: coverage/per-test  # one LCOV per test, named by its slug
+        include: ["src/**"]
+  floors:
+    feature: 50
+    invariant: 80
+    tier: {3: 90}
+
+validate:
+  # Tier-3 criteria (money) must be exercised: a verifier's own run executed
+  # the guard. Everything else must be demonstrated.
+  require_level: {default: demonstrated, tier: {3: exercised}}

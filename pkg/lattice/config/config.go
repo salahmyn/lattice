@@ -42,6 +42,9 @@ type Config struct {
 	Autonomy        Autonomy        `yaml:"autonomy,omitempty"`     // v0.8 — agent steering
 	Runtime         Runtime         `yaml:"runtime,omitempty"`      // v0.8 — V0 runs-clean gate
 	Validate        ValidatePolicy  `yaml:"validate,omitempty"`
+	// Coverage (rnd/0009) is opt-in: nil when config.yaml has no coverage:
+	// block, which keeps every coverage finding off.
+	Coverage *Coverage `yaml:"coverage,omitempty"`
 }
 
 // ValidatePolicy tunes `lattice validate` for a workspace: how severe each

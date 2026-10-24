@@ -17,3 +17,5 @@ invariants:
     statement: Among matching cases the most specific match wins.
   - id: INV-4
     statement: A table-driven test passes only when every row passed.
+  - id: INV-5
+    statement: The test list gives each test the filter its runner takes to run it alone, and the slug its per-test coverage report is named by.

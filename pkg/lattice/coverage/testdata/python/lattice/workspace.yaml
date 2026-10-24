@@ -1,0 +1,2 @@
+# Coverage fixture: a Python wallet with coverage.py per-test contexts.
+mode: embedded

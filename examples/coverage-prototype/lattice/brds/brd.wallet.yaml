@@ -1,0 +1,24 @@
+id: brd.wallet
+version: 1
+status: draft
+title: Keep account balances correct
+business_problem: A wallet that lets a balance go negative, or charges more than the stated fee, loses money and trust. The example shows how coverage tells a verifier that runs its guard from one that only passes.
+success_criteria:
+  - id: SC-1
+    statement: A withdrawal never takes the balance below zero.
+    maps_to_invariant: wallet:INV-1
+    tier: 3
+  - id: SC-2
+    statement: A deposit amount is positive.
+    maps_to_invariant: wallet:INV-2
+  - id: SC-3
+    statement: A fee never exceeds five percent of the amount.
+    maps_to_invariant: fees:INV-1
+    tier: 3
+implements_via:
+  - fees
+  - wallet
+provenance:
+  source: human
+  authored_by: agent:coverage-example
+human_review_required: true
