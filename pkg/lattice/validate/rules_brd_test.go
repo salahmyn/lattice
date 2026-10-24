@@ -109,6 +109,7 @@ func TestBRDUnapprovedLLM(t *testing.T) {
 // A draft an agent wrote needs review whatever its source says: `brd new`
 // run by an agent records source: human. A human's draft and an approved
 // agent draft raise nothing.
+// @verifies brds:INV-7
 func TestBRDUnapprovedAgentAuthored(t *testing.T) {
 	for name, tc := range map[string]struct {
 		status schema.BRDStatus
@@ -290,5 +291,53 @@ func TestBRDUnreferencedInfo(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected BRD_UNREFERENCED info violation")
+	}
+}
+
+// Both halves of a BRD ↔ feature link must agree: a BRD that lists a
+// feature without its back-link, a feature whose back-link names another
+// BRD, and a back-link the BRD does not list each raise
+// BRD_LINK_ONE_SIDED with `lattice brd link` as the fix. A two-sided link
+// and a phantom feature (BRD_PHANTOM_FEATURE's case) raise nothing here.
+// @verifies brds:INV-8
+func TestBRDLinkOneSided(t *testing.T) {
+	brd := func(id string, via ...string) schema.BRD {
+		return schema.BRD{ID: id, Version: 1, Status: schema.BRDDraft, Title: "x", BusinessProblem: "p", ImplementsVia: via}
+	}
+	feat := func(id, up string) schema.Manifest {
+		m := brdManifest(id)
+		m.ImplementsBRD = up
+		return m
+	}
+	kg := schema.KnowledgeGraph{
+		BRDs: []schema.BRD{
+			brd("brd.a", "both", "no_backlink", "other_backlink", "ghost"),
+			brd("brd.b"),
+		},
+		Features: []schema.Manifest{
+			feat("both", "brd.a"),
+			feat("no_backlink", ""),
+			feat("other_backlink", "brd.b"),
+			feat("only_backlink", "brd.a"),
+		},
+	}
+	got := map[string]schema.Violation{}
+	for _, x := range Validate(kg, config.Default(), Options{}) {
+		if x.Code == schema.CodeBRDLinkOneSided {
+			got[x.Subject] = x
+		}
+	}
+	for _, want := range []string{"brd.a|no_backlink", "brd.a|other_backlink", "brd.b|other_backlink", "brd.a|only_backlink"} {
+		x, ok := got[want]
+		if !ok {
+			t.Errorf("missing BRD_LINK_ONE_SIDED for %s; got %v", want, got)
+			continue
+		}
+		if x.Severity != schema.SeverityWarning || x.NextAction == nil || strings.Join(x.NextAction.Command, " ") != "lattice brd link "+strings.Replace(want, "|", " ", 1) {
+			t.Errorf("%s: %+v", want, x)
+		}
+	}
+	if len(got) != 4 {
+		t.Errorf("want exactly 4 findings, got %d: %v", len(got), got)
 	}
 }

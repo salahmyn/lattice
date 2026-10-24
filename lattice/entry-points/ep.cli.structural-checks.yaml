@@ -2,12 +2,12 @@ id: ep.cli.structural-checks
 version: 1
 status: production
 kind: cli
-purpose: "Manage structural invariant checks"
+purpose: Manage structural invariant checks
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice structural-checks"
+  command: lattice structural-checks
 handler:
   symbol: internal.cli.newStructuralChecksCommand
   file: internal/cli/structural.go

@@ -2,12 +2,12 @@ id: ep.cli.actor
 version: 1
 status: production
 kind: cli
-purpose: "Inspect actors declared in lattice/context.yaml and their touchpoints"
+purpose: Inspect actors declared in lattice/context.yaml and their touchpoints
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice actor"
+  command: lattice actor
 handler:
   symbol: internal.cli.newActorCommand
   file: internal/cli/actor.go

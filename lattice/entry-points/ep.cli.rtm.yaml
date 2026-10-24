@@ -2,12 +2,12 @@ id: ep.cli.rtm
 version: 1
 status: production
 kind: cli
-purpose: "Print the requirements traceability matrix (BRD to SC to invariant to tests)"
+purpose: Print the requirements traceability matrix (BRD to SC to invariant to tests)
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice rtm"
+  command: lattice rtm
 handler:
   symbol: internal.cli.newRTMCommand
   file: internal/cli/rtm.go

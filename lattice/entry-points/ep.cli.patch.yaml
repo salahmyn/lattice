@@ -2,12 +2,12 @@ id: ep.cli.patch
 version: 1
 status: production
 kind: cli
-purpose: "Apply a typed patch to a manifest, initiative, or task"
+purpose: Apply a typed patch to a manifest, initiative, or task
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice patch"
+  command: lattice patch
 handler:
   symbol: internal.cli.newPatchCommand
   file: internal/cli/patch.go

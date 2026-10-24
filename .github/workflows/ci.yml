@@ -24,3 +24,4 @@ jobs:
       # a broken link or an invariant left unenforced or unverified fails here.
       - run: go build -o dist/lattice ./cmd/lattice
       - run: dist/lattice extract && dist/lattice validate
+      - run: dist/lattice fmt --check

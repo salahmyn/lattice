@@ -2,12 +2,12 @@ id: ep.cli.view
 version: 1
 status: production
 kind: cli
-purpose: "Render a view: developer | product | business | c4 | agent_context | entry-points | flows"
+purpose: 'Render a view: developer | product | business | c4 | agent_context | entry-points | flows'
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice view"
+  command: lattice view
 handler:
   symbol: internal.cli.newViewCommand
   file: internal/cli/view.go

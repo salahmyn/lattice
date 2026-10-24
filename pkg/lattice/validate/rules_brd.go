@@ -206,6 +206,8 @@ func (c *corpus) checkBRDs() []schema.Violation {
 		}
 	}
 
+	v = append(v, c.checkOneSidedLinks()...)
+
 	// RTM rules (v0.6): walk every BRD success_criterion via the
 	// shared rtm package and surface the per-criterion status as a
 	// validation finding. Reusing rtm.Build means CLI / UI / MCP /
@@ -328,6 +330,65 @@ func brdSchemaErrors(b *schema.BRD) []string {
 func validBRDStatus(s schema.BRDStatus) bool {
 	for _, ok := range schema.ValidBRDStatuses {
 		if s == ok {
+			return true
+		}
+	}
+	return false
+}
+
+// checkOneSidedLinks fires BRD_LINK_ONE_SIDED where the two halves of a
+// BRD ↔ feature link disagree: a BRD's implements_via names a feature
+// whose implements_brd is empty or names another BRD, or a feature's
+// implements_brd names a BRD whose implements_via leaves it out. Missing
+// features and BRDs are BRD_PHANTOM_FEATURE and FEATURE_BRD_MISSING.
+// @enforces brds:INV-8
+func (c *corpus) checkOneSidedLinks() []schema.Violation {
+	feats := map[string]*schema.Manifest{}
+	for i := range c.kg.Features {
+		feats[c.kg.Features[i].ID] = &c.kg.Features[i]
+	}
+	var v []schema.Violation
+	link := func(brdID, featureID, msg string, loc *schema.Location) {
+		v = append(v, schema.Violation{
+			Code: schema.CodeBRDLinkOneSided, Severity: schema.SeverityWarning,
+			FeatureID: featureID, Subject: brdID + "|" + featureID,
+			Message: msg, Location: loc,
+			NextAction: &schema.NextAction{
+				Kind:    "run_command",
+				Command: []string{"lattice", "brd", "link", brdID, featureID},
+				Detail:  "writes both halves of the link; or remove the stray half by hand",
+			},
+		})
+	}
+	for _, b := range c.kg.BRDs {
+		for _, fid := range b.ImplementsVia {
+			f := feats[fid]
+			switch {
+			case f == nil, f.ImplementsBRD == b.ID:
+			case f.ImplementsBRD == "":
+				link(b.ID, fid, fmt.Sprintf("BRD %q lists feature %q in implements_via, but the feature has no implements_brd", b.ID, fid),
+					&schema.Location{File: f.SourcePath})
+			default:
+				link(b.ID, fid, fmt.Sprintf("BRD %q lists feature %q in implements_via, but the feature's implements_brd is %q", b.ID, fid, f.ImplementsBRD),
+					&schema.Location{File: b.SourcePath})
+			}
+		}
+	}
+	for _, b := range c.kg.BRDs {
+		for i := range c.kg.Features {
+			f := &c.kg.Features[i]
+			if f.ImplementsBRD == b.ID && !containsID(b.ImplementsVia, f.ID) {
+				link(b.ID, f.ID, fmt.Sprintf("feature %q has implements_brd %q, but the BRD's implements_via leaves it out", f.ID, b.ID),
+					&schema.Location{File: b.SourcePath})
+			}
+		}
+	}
+	return v
+}
+
+func containsID(ids []string, id string) bool {
+	for _, x := range ids {
+		if x == id {
 			return true
 		}
 	}

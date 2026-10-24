@@ -2,12 +2,12 @@ id: ep.cli.adapters
 version: 1
 status: production
 kind: cli
-purpose: "Inspect language adapters"
+purpose: Inspect language adapters
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice adapters"
+  command: lattice adapters
 handler:
   symbol: internal.cli.newAdaptersCommand
   file: internal/cli/adapters.go

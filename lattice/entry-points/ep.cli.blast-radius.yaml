@@ -2,12 +2,12 @@ id: ep.cli.blast-radius
 version: 1
 status: production
 kind: cli
-purpose: "Show the code-level impact of a symbol via SCIP"
+purpose: Show the code-level impact of a symbol via SCIP
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice blast-radius"
+  command: lattice blast-radius
 handler:
   symbol: internal.cli.newBlastRadiusCommand
   file: internal/cli/code.go

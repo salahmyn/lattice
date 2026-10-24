@@ -2,12 +2,12 @@ id: ep.cli.doctor
 version: 1
 status: production
 kind: cli
-purpose: "Check installed prerequisites"
+purpose: Check installed prerequisites
 owners:
   business: lattice-maintainers
   engineering: lattice-core
 trigger:
-  command: "lattice doctor"
+  command: lattice doctor
 handler:
   symbol: internal.cli.newDoctorCommand
   file: internal/cli/doctor.go
