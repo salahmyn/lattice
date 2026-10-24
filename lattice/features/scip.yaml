@@ -10,3 +10,5 @@ implements_brd: brd.code_graph
 invariants:
   - id: INV-1
     statement: A reference is attributed to the innermost definition that encloses it in the same document; with no recorded extent, to the closest definition above it.
+  - id: INV-2
+    statement: An index run from an --index-root directory reads with document paths relative to the code root, as a run from the root would.

@@ -24,6 +24,9 @@ type IndexResult struct {
 	OK         bool   `json:"ok"`
 	Skipped    bool   `json:"skipped"`
 	Error      string `json:"error,omitempty"`
+	// Root is the directory the indexer ran in, when it was not the code
+	// root (see OrchestrateRoots).
+	Root string `json:"root,omitempty"`
 }
 
 // Orchestrate runs the SCIP indexer for every adapter concurrently against a
