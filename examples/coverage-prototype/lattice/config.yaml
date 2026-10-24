@@ -1,0 +1,5 @@
+# Lattice configuration for the rnd/0009 coverage prototype. Defaults apply.
+# The proposed `coverage:` block (docs/rnd/0009) is not read by Lattice yet;
+# the prototype test passes the same settings in code.
+mutation_testing:
+  enabled: false
