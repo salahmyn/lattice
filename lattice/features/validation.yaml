@@ -29,3 +29,7 @@ invariants:
     statement: An invariant whose enforcers are all non-guard symbols is ENFORCER_NOT_GUARD.
   - id: INV-10
     statement: FILE_LINE_CAP and METHOD_LINE_CAP apply only with ama_mode or an explicit cap, and never to test files.
+  - id: INV-11
+    statement: The coverage codes are off unless the workspace has a coverage block or sets their severity, and a declared floor turns on COVERAGE_BELOW_FLOOR.
+  - id: INV-12
+    statement: require_level accepts a level per criterion tier, and a criterion must reach the level of its tier.

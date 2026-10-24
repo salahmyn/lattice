@@ -64,10 +64,11 @@ type ValidatePolicy struct {
 	// adr on each of its entries.
 	AllowlistKinds map[string]AllowlistKind `yaml:"allowlist_kinds,omitempty"`
 	// RequireLevel is the truth level every BRD success criterion and user
-	// scenario must reach: verified or demonstrated. Below it, validate
-	// raises BRD_BELOW_LEVEL (error). Empty means no level is required.
-	// `lattice validate --require-level` overrides it.
-	RequireLevel string `yaml:"require_level,omitempty"`
+	// scenario must reach: verified, demonstrated or exercised, either one
+	// level or a default plus per-tier levels. Below it, validate raises
+	// BRD_BELOW_LEVEL (error). Empty means no level is required.
+	// `lattice validate --require-level` replaces the default level.
+	RequireLevel RequireLevel `yaml:"require_level,omitempty"`
 }
 
 // AllowlistKind is one class of accepted finding (generated, debt, ...).

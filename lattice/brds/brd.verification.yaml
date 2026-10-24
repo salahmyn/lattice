@@ -114,6 +114,15 @@ success_criteria:
   - id: SC-32
     statement: With no coverage ingested no coverage finding fires, and every finding states the evidence basis it rests on.
     maps_to_invariant: coverage:INV-8
+  - id: SC-33
+    statement: A criterion is exercised only when it is demonstrated and a verifier's own per-test coverage executed an enforcer of every invariant behind it; per-file and suite coverage never promote.
+    maps_to_invariant: rtm:INV-8
+  - id: SC-34
+    statement: The coverage codes are off unless the workspace has a coverage block or sets their severity, and a declared floor turns on COVERAGE_BELOW_FLOOR.
+    maps_to_invariant: validation:INV-11
+  - id: SC-35
+    statement: require_level accepts a level per criterion tier, and a criterion must reach the level of its tier.
+    maps_to_invariant: validation:INV-12
   - id: SC-36
     statement: The test list gives each test the filter its runner takes to run it alone, and the slug its per-test coverage report is named by.
     maps_to_invariant: results:INV-5

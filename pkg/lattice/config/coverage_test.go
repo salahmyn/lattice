@@ -3,7 +3,10 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func load(t *testing.T, text string) (Config, error) {
@@ -13,6 +16,32 @@ func load(t *testing.T, text string) (Config, error) {
 		t.Fatal(err)
 	}
 	return Load(dir)
+}
+
+func TestRequireLevelForms(t *testing.T) {
+	cfg, err := load(t, "validate:\n  require_level: demonstrated\n")
+	if err != nil || cfg.Validate.RequireLevel.For(3) != "demonstrated" || len(cfg.Validate.RequireLevel.Tier) != 0 {
+		t.Fatalf("scalar: %+v %v", cfg.Validate.RequireLevel, err)
+	}
+	cfg, err = load(t, "validate:\n  require_level: {default: demonstrated, tier: {3: exercised}}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := cfg.Validate.RequireLevel
+	if r.For(1) != "demonstrated" || r.For(3) != "exercised" || r.String() != "default demonstrated, tier 3: exercised" {
+		t.Errorf("per tier: %+v (%s)", r, r)
+	}
+	if _, err := load(t, "validate:\n  require_level: {defualt: demonstrated}\n"); err == nil || !strings.Contains(err.Error(), "unknown key") {
+		t.Errorf("a misspelt key must fail, got %v", err)
+	}
+	// The scalar form round-trips as a scalar, so configs keep their shape.
+	out, _ := yaml.Marshal(ValidatePolicy{RequireLevel: RequireLevel{Default: "verified"}})
+	if strings.TrimSpace(string(out)) != "require_level: verified" {
+		t.Errorf("marshal = %q", out)
+	}
+	if out, _ := yaml.Marshal(ValidatePolicy{}); strings.Contains(string(out), "require_level") {
+		t.Errorf("an unset level is omitted: %q", out)
+	}
 }
 
 func TestCoverageBlock(t *testing.T) {

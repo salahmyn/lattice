@@ -213,10 +213,7 @@ func (c *corpus) checkBRDs() []schema.Violation {
 	// validation finding. Reusing rtm.Build means CLI / UI / MCP /
 	// validation all branch on the same status — a SC can never be
 	// "verified" in one surface and "unverified" in another.
-	matrix := rtm.Build(c.kg, rtm.Options{
-		MutationThreshold: c.cfg.MutationTesting.Thresholds.Default,
-		ResultOf:          c.opts.ResultOf,
-	})
+	matrix := rtm.Build(c.kg, c.rtmOptions())
 	for _, row := range matrix.Rows {
 		// Pinpoint the BRD's own source file in the location.
 		var rowLoc *schema.Location

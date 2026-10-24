@@ -67,7 +67,7 @@ func (c *corpus) checkAuthorSeparation() []schema.Violation {
 			byUnit[e.Unit] = h
 		}
 		h.actors[actor] = true
-		if e.To() == "demonstrated" {
+		if e.To() == "demonstrated" || e.To() == "exercised" {
 			h.demonstrated = true
 		}
 	}

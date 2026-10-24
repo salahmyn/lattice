@@ -24,7 +24,33 @@ const SeverityOff = "off"
 // defaultSeverity holds the overrides a workspace gets without configuring
 // anything: rules that are opt-in.
 var defaultSeverity = map[string]string{
-	schema.CodeUnattributedModule: SeverityOff,
+	schema.CodeUnattributedModule:     SeverityOff,
+	schema.CodeVerifierMissesEnforcer: SeverityOff,
+	schema.CodeVerifierUnproven:       SeverityOff,
+	schema.CodeCoverageStale:          SeverityOff,
+	schema.CodeCoverageBelowFloor:     SeverityOff,
+}
+
+// severityDefaults returns the defaults for a workspace. A coverage: block
+// in config.yaml switches the coverage codes on (rnd/0009):
+// VERIFIER_MISSES_ENFORCER and COVERAGE_STALE as warnings,
+// VERIFIER_UNPROVEN as info, and COVERAGE_BELOW_FLOOR as a warning once a
+// floor is declared. An explicit validate.severity entry still wins.
+// @enforces validation:INV-11
+func severityDefaults(cfg config.Config) map[string]string {
+	out := make(map[string]string, len(defaultSeverity)+4)
+	for k, v := range defaultSeverity {
+		out[k] = v
+	}
+	if cfg.CoverageConfigured() {
+		out[schema.CodeVerifierMissesEnforcer] = string(schema.SeverityWarning)
+		out[schema.CodeCoverageStale] = string(schema.SeverityWarning)
+		out[schema.CodeVerifierUnproven] = string(schema.SeverityInfo)
+		if cfg.CoverageConfig().Floors.Declared() {
+			out[schema.CodeCoverageBelowFloor] = string(schema.SeverityWarning)
+		}
+	}
+	return out
 }
 
 // rank orders severities from most to least serious.
@@ -56,11 +82,17 @@ func parseSeverity(name string) (sev schema.Severity, off, ok bool) {
 	return "", false, false
 }
 
-// applySeverity rewrites each finding's severity from the workspace's
-// overrides (falling back to defaultSeverity) and drops findings set off.
-// An unknown severity name is itself reported, and leaves the code as is.
-// @enforces validation:INV-4, validation:INV-5
+// applySeverity is applySeverityWith over the built-in defaults.
 func applySeverity(v []schema.Violation, overrides map[string]string) []schema.Violation {
+	return applySeverityWith(v, overrides, defaultSeverity)
+}
+
+// applySeverityWith rewrites each finding's severity from the workspace's
+// overrides (falling back to the workspace's defaults, see
+// severityDefaults) and drops findings set off. An unknown severity name is
+// itself reported, and leaves the code as is.
+// @enforces validation:INV-4, validation:INV-5
+func applySeverityWith(v []schema.Violation, overrides, defaults map[string]string) []schema.Violation {
 	var out []schema.Violation
 	for code, name := range overrides {
 		if _, _, ok := parseSeverity(name); !ok {
@@ -75,7 +107,7 @@ func applySeverity(v []schema.Violation, overrides map[string]string) []schema.V
 	for _, f := range v {
 		name, set := overrides[f.Code]
 		if !set {
-			name, set = defaultSeverity[f.Code]
+			name, set = defaults[f.Code]
 		}
 		if set {
 			sev, off, ok := parseSeverity(name)
