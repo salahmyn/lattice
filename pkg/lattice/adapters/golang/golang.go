@@ -115,7 +115,9 @@ func renderArgs(args []interface{}) string {
 // external test package beside its package may each declare the same name.
 // The first declaration in path order keeps the FQN; a later one is named
 // <fqn>@<file stem>, and the symbols nested under it (methods of a renamed
-// type, subtests of a renamed test) move with it.
+// type, subtests of a renamed test) move with it. It then resolves each
+// import to its workspace package and links convention methods to their
+// types, for the call graph (golang_refs.go).
 // @enforces adapters.go:INV-3
 func (*Adapter) Resolve(modules []ir.Module) []ir.Module {
 	seen := map[string]bool{}
@@ -148,6 +150,8 @@ func (*Adapter) Resolve(modules []ir.Module) []ir.Module {
 			seen[s.FQN] = true
 		}
 	}
+	resolveImports(modules)
+	linkConventionMethods(modules)
 	return modules
 }
 

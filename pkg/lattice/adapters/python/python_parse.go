@@ -43,6 +43,7 @@ func (a *Adapter) parse(ctx context.Context, path string, source []byte) (ir.Mod
 
 	p := &pyParser{src: source, mod: &mod, modulePath: modulePath, testFile: testFile}
 	p.walkModule(root)
+	p.collectRefs(root)
 	return mod, nil
 }
 
@@ -51,6 +52,9 @@ type pyParser struct {
 	mod        *ir.Module
 	modulePath string
 	testFile   bool
+	// owners is the span of each symbol, for the reference pass
+	// (python_refs.go).
+	owners astutil.Owners
 }
 
 // walkModule walks the top level: module-annotation calls, functions, classes.
@@ -111,6 +115,7 @@ func (p *pyParser) addClass(n *sitter.Node, anns []ir.Annotation) {
 		Exported: isPublicName(name),
 	}
 	p.mod.Symbols = append(p.mod.Symbols, sym)
+	p.owners.Add(n.StartByte(), n.EndByte(), len(p.mod.Symbols)-1)
 
 	body := n.ChildByFieldName("body")
 	if body == nil {
@@ -145,6 +150,7 @@ func (p *pyParser) addFunction(n *sitter.Node, anns []ir.Annotation, enclosingFQ
 		File: p.mod.File, Line: line(n), EndLine: endLine(n), EnclosingFQN: enclosingFQN,
 		Annotations: anns, IsTest: isTest, Exported: isPublicName(name),
 	})
+	p.owners.Add(n.StartByte(), n.EndByte(), len(p.mod.Symbols)-1)
 }
 
 // isPublicName reports whether a Python name is part of the public surface.

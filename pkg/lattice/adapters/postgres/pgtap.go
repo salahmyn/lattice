@@ -70,6 +70,7 @@ func parseTests(mod *ir.Module, stmts []statement) {
 		mod.Symbols = append(mod.Symbols, ir.Symbol{
 			Name: desc, FQN: fqn, Kind: ir.KindFunction, File: mod.File,
 			Line: st.line, EndLine: st.endLine, IsTest: true, Annotations: all,
+			Refs: callRefs(st, true), // an assertion runs the SQL it quotes
 		})
 	}
 }
