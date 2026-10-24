@@ -210,3 +210,17 @@ func TestAllowlistKindsAndADR(t *testing.T) {
 		t.Errorf("accepted = %+v, want kind and adr carried", accepted)
 	}
 }
+
+// An unquoted value containing ": " breaks the whole file; the error says how
+// to fix it.
+func TestAllowlistQuotingHint(t *testing.T) {
+	dir := t.TempDir()
+	body := "entries:\n  - code: X\n    subject: a\n    reason: enforced in SQL: see ADR-12\n"
+	if err := os.WriteFile(filepath.Join(dir, "allowlist.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, bad := LoadAllowlist(dir, config.ValidatePolicy{})
+	if len(bad) != 1 || !strings.Contains(bad[0].Message, "quote a value") {
+		t.Errorf("want one ALLOWLIST_SCHEMA with a quoting hint, got %+v", bad)
+	}
+}

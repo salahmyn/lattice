@@ -175,7 +175,10 @@ validate:
 To gate on the truth level, set `require_level` (or pass
 `--require-level`): every BRD success criterion and user scenario below it
 raises `BRD_BELOW_LEVEL` (error), with the subject `brd.<id>:SC-N` or
-`brd.<id>:US-N` for the allowlist.
+`brd.<id>:US-N` for the allowlist. A red verifier raises both
+`VERIFIER_FAILING` (the test fails) and `BRD_BELOW_LEVEL` (the gate is not
+met); an accepted finding in `--json` `allowlisted[]` keeps its live
+message, next to the entry's `reason`.
 
 ```yaml
 validate:
@@ -185,6 +188,13 @@ validate:
 `UNATTRIBUTED_MODULE` (off unless set) flags a production module with no
 `@module-feature` and no feature on any of its symbols, so a coverage figure
 over annotated code cannot hide the code nobody annotated.
+
+A module is production code when it declares a function, method, class,
+trait or const, or has top-level runtime code (a `render()` call, a plain
+value const). Not production: test files and test support (`*.test.*`,
+`*_test.*`, `e2e/`, `__mocks__/`, `test-utils.*`, ...), files holding only
+imports and type declarations, ambient declarations (`*.d.ts`) and tool
+configuration (`*.config.*`). Attribution coverage counts the same modules.
 
 Known gaps go in `lattice/allowlist.yaml`, each with a reason:
 

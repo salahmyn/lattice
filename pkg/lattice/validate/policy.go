@@ -151,8 +151,14 @@ func LoadAllowlist(latticeDir string, p config.ValidatePolicy) (Allowlist, []sch
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true) // a misspelt key must not load as an empty allowlist
 	if err := dec.Decode(&raw); err != nil && err != io.EOF {
+		hint := allowlistKeys
+		if strings.Contains(err.Error(), "mapping values are not allowed") {
+			// An unquoted `reason: see ADR: 12` is the usual cause, and it
+			// drops every entry at once.
+			hint = "quote a value that contains \": \", e.g. reason: \"enforced in SQL: see ADR-12\""
+		}
 		return al, []schema.Violation{{Code: schema.CodeAllowlistSchema, Severity: schema.SeverityError,
-			Message: "cannot parse allowlist: " + err.Error() + " (" + allowlistKeys + ")", Location: loc}}
+			Message: "cannot parse allowlist: " + err.Error() + " (" + hint + ")", Location: loc}}
 	}
 	root := filepath.Dir(latticeDir)
 	var bad []schema.Violation

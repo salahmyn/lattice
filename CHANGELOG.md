@@ -2,6 +2,19 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **An unquoted `: ` in the allowlist says how to fix it**: a value such as
+  `reason: enforced in SQL: see ADR-12` makes the YAML invalid, so every
+  entry is dropped at once. The `ALLOWLIST_SCHEMA` error now says to quote
+  the value.
+
+### Changed
+
+- The user guide states which modules are production code for attribution.
+
 ## [0.11.0] — 2026-10-24
 
 ### Fixed
