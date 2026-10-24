@@ -2,7 +2,7 @@
 
 All notable changes to Lattice are documented in this file.
 
-## [Unreleased]
+## [0.10.0] — 2026-10-24
 
 ### Fixed
 
