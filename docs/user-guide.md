@@ -182,7 +182,16 @@ message, next to the entry's `reason`.
 
 ```yaml
 validate:
-  require_level: demonstrated   # or verified
+  require_level: demonstrated   # or verified, or exercised (section 4f)
+```
+
+The level can differ per criterion tier. A criterion takes its tier's level,
+else the default; scenarios have no tier and take the default.
+`--require-level` replaces the default and keeps the tier levels.
+
+```yaml
+validate:
+  require_level: {default: demonstrated, tier: {3: exercised}}
 ```
 
 `UNATTRIBUTED_MODULE` (off unless set) flags a production module with no
@@ -445,6 +454,263 @@ The join assumes `go.mod` sits at the code root, so the package directory is
 the tail of the import path. There is no Go SCIP indexer or mutation runner
 yet.
 
+---
+
+## 4f. Coverage: does the verifier run the enforcer?
+
+A passing `@verifies` test makes a criterion `demonstrated`. It does not
+show that the test ran the `@enforces` guard: the guard may be stubbed, or
+the test may return early. Coverage shows what ran. Lattice reads the
+coverage reports your CI writes, maps them onto symbols, and answers one
+question per invariant: did a verifier's own run execute an enforcer?
+Lattice never runs your tests.
+
+### Ingest
+
+Coverage reports go in with the test reports of the same run. Each file is
+told apart by its content:
+
+| Format | Written by | Notes |
+|---|---|---|
+| LCOV (`TN:` / `SF:` records) | c8, nyc, vitest, Jest, `node --test --test-reporter=lcov`, `deno coverage --lcov`, `coverage lcov` | `FN`/`FNDA` records decide whether a function ran |
+| Go profile (`mode:` first line) | `go test -coverprofile` | paths are import paths; Lattice joins them by suffix |
+| istanbul `coverage-final.json` | nyc, c8 `--reporter=json`, vitest, Jest | `fnMap` gives function records |
+| coverage.py JSON | `coverage json` | with `--show-contexts`, one run gives every test's lines |
+| cobertura XML | coverage.py `xml`, c8/nyc `--reporter=cobertura` | `<method hits>` gives function records |
+| clover XML | c8/nyc `--reporter=clover`, PHPUnit `--coverage-clover` | `type="method"` lines give function records |
+| Postgres call counts | your CI, from `pg_stat_user_functions` | see below |
+
+```sh
+lattice results ingest junit.xml coverage/lcov.info --per-test coverage/per-test
+```
+
+- `--per-test <dir>` reads one report per test. Each file is named by its
+  test's slug, as `lattice results tests` prints it
+  (`coverage/per-test/rejects-an-overdraft.lcov`). The extension is
+  ignored.
+- `--per-file <dir>` reads one report per test file, named by the file's
+  slug (`wallet-test.json` for `tests/wallet.test.js`). This is weaker
+  evidence. It can show that no test in the file ran the guard, but it can
+  never make a criterion exercised.
+- Test reports still go to `lattice/.cache/results/results.json`.
+  Coverage goes to `coverage.json` beside it, stamped with the commit and a
+  dirty flag. The flag is set when tracked files under the workspace have
+  uncommitted changes; untracked files and Lattice's own `.ledger/` and
+  `.cache/` do not count.
+- An ingest with only coverage reports leaves the test results in place.
+  An ingest with no paths reads the reports listed in `config.yaml`.
+- Reports and contexts that name no test, or fit several, are listed as
+  warnings and left out. Nothing is guessed.
+
+How a report maps onto a symbol:
+
+- A symbol's coverage is its instrumented lines after its declaration
+  line, up to its end line. V8, istanbul and coverage.py mark a
+  declaration line as run when the module loads, so that line is no
+  evidence. Go blocks never do, so a one-line Go function counts its own
+  line.
+- A function record at the declaration line decides whether the symbol
+  ran, when the format has one.
+- A file a report does not list has no data, unless it is inside the
+  report's `include` set, where it ran no line. Node's runner lists only
+  the files a run loaded; vitest with `coverage.include` lists the rest
+  with zero hits.
+
+### Configure
+
+```yaml
+coverage:
+  reports:                              # read by `results ingest` with no paths
+    - path: apps/web/coverage/lcov.info
+      format: lcov                      # optional: detected from the content
+      root: apps/web                    # prefix the report's paths are relative to
+      include: ["src/**"]               # files the run instrumented, relative to root
+    - path: coverage.json               # coverage.py json --show-contexts
+  per_test:
+    only_verifiers: true                # default: keep per-test reports of @verifies tests only
+    dirs:
+      - dir: apps/web/coverage/per-test # one report per test, named by its slug
+        root: apps/web
+        include: ["src/**"]
+      - dir: coverage/per-file
+        basis: per_file                 # one report per test file
+  floors:                               # percent of body lines; each declared floor is opt-in
+    feature: 60                         # a feature's runtime symbols, over the suite
+    invariant: 80                       # an invariant's enforcers, over its verifiers' runs
+    tier: {2: 90, 3: 100}               # a BRD criterion's weakest invariant, by tier
+```
+
+Paths are relative to the directory holding `lattice/`. When a path given
+on the command line matches an entry here, the entry's `format`, `root` and
+`include` apply to it. `coverage: {}` turns the findings on with nothing
+else configured.
+
+### Collect per-test coverage in CI
+
+`lattice results tests --verifiers` lists each verifier with its report
+slug and the arguments that make its runner run it alone. Text output is
+one tab-separated line per test and runner (runner, slug, file or Go
+package, arguments); `--json` gives the same as data. Use `--lang` and
+`--runner` to narrow it.
+
+| Runner | Filter | Example |
+|---|---|---|
+| `go` | `-run '^TestX$'` (subtests `^TestX$/^name$`) | `go test ./pkg/refund -run '^TestSettle$' -coverpkg=./... -coverprofile=cov/testsettle.cover` |
+| `node` | `--test-name-pattern '^title$'` | `node --test --experimental-test-coverage --test-reporter=lcov --test-reporter-destination=cov/<slug>.lcov --test-name-pattern '^rejects an overdraft$' tests/*.test.js` |
+| `vitest`, `jest` | `-t 'title$'` | `vitest run tests/wallet.test.ts -t 'rejects an overdraft$' --coverage` |
+| `deno` | `--filter '/^title$/'` | `deno test --coverage=cov/raw --filter '/^rejects an overdraft$/'` |
+| `pytest` | a node id (`pytest-k`: `-k name`) | coverage.py contexts need no loop (below) |
+| `phpunit` | `--filter '/::testX$/'` | |
+| `pg_prove` | the test file | pgTAP runs a file as one unit |
+
+A loop over Go verifiers, eight at a time:
+
+```sh
+lattice results tests --verifiers --lang go --json |
+  jq -r '.tests[] | [.package, .filters.go[1], .slug] | @tsv' |
+  xargs -P 8 -L 1 sh -c 'go test "$0" -run "$1" -count=1 -coverpkg=./... -coverprofile="coverage/per-test/$2.cover"'
+lattice results ingest unit.xml coverage/all.cover --per-test coverage/per-test
+```
+
+Python needs no loop. coverage.py records the test behind each line in one
+run:
+
+```ini
+# .coveragerc
+[run]
+dynamic_context = test_function
+```
+
+```sh
+coverage run -m pytest && coverage json --show-contexts -o coverage.json
+lattice results ingest junit.xml coverage.json
+```
+
+pytest-cov's `--cov-context=test` works too. Only the `run` phase of each
+test counts. Every context is kept, whatever `only_verifiers` says, since
+the data is already there.
+
+`examples/coverage-prototype/regen.sh` is a complete Node example: one
+suite run, then one run per test.
+
+### What it changes
+
+The RTM gains a top rung, `exercised`. A criterion is exercised when it is
+demonstrated and, for every invariant behind it, at least one verifier's
+own per-test run executed at least one enforcer. A direct-wired criterion
+uses its `enforced_by` and `verified_by`. A user scenario is exercised when
+a verifier's run executed the handler of an entry point it names.
+
+- Only per-test coverage promotes. Per-file and suite coverage are reported
+  as the row's `evidence`, but never promote.
+- `demonstrated` keeps its meaning. An exercised row counts as demonstrated
+  in every count: 35/35 demonstrated stays 35/35, and "exercised N/35" is a
+  new number beside it.
+- `lattice rtm` shows, under each row with coverage, who exercised it, or
+  why a demonstrated row is not exercised, and how much of the enforcers
+  ran. `--json` rows carry `evidence` (`per_test`, `per_file`, `suite` or
+  `none`), `enforcer_coverage`, `exercised_by` and `coverage_reason`; BRD
+  summaries carry `exercised`.
+- Floors are separate. A row can be exercised and still below its floor.
+
+Findings. Each one is off until the workspace has a `coverage:` block (or
+sets its severity), fires only when its data was ingested, and states the
+evidence basis it rests on:
+
+| Code | With `coverage:` | Fires when |
+|---|---|---|
+| `VERIFIER_MISSES_ENFORCER` | warning | every verifier of an invariant has evidence (its own run, its file's run, or a suite that never ran the enforcer) and none executed an enforcer |
+| `VERIFIER_UNPROVEN` | info | per-test coverage was ingested, and a verifier has none; the finding names the tests |
+| `COVERAGE_STALE` | warning | the coverage was ingested at another commit than the graph's, or from a dirty tree |
+| `COVERAGE_BELOW_FLOOR` | warning, per declared floor | a feature, invariant or criterion tier is under its floor; an invariant is measured over its verifiers' runs when each has per-test data, else over the suite, and the finding says which |
+
+`validate.severity` entries always win, for example
+`VERIFIER_MISSES_ENFORCER: error`. With `require_level: exercised` (or a
+tier level), a demonstrated criterion that is not exercised raises
+`BRD_BELOW_LEVEL`, and the reason says why ("no per-test coverage
+ingested", "no verifier's per-test coverage executed an enforcer"). The
+tier-2+ `MUTATION_REQUIRED_TIER` gate is unchanged, so a tier-3 criterion
+under `tier: {3: exercised}` needs both a verifier that runs its guard and
+mutation evidence that the test notices when the guard is wrong.
+
+Known gaps go in the allowlist, under the invariant (`checkout:INV-2`), the
+feature id, or the criterion (`brd.<id>:SC-N`). To keep kinds apart,
+declare them, for example:
+
+```yaml
+validate:
+  allowlist_kinds:
+    generated: {}                # generated clients and types
+    framework: {}                # reached by reflection, DI or routing the graph cannot see
+    debt: {require_adr: true}    # a verifier that knowingly stubs its enforcer, awaiting a fix
+```
+
+### Postgres: function call counts
+
+Postgres counts calls per function when `track_functions` is on. That is
+enough to say whether a pgTAP test (or test file) executed a function, so
+it maps onto `sql.<schema>.<fn>` symbols as per-test or per-file evidence.
+No extension is needed. Line and branch coverage would need
+`plpgsql_check`'s profiler; Lattice does not read it yet.
+
+Set it up once in the local or CI test database, as a superuser:
+
+```sql
+alter system set track_functions = 'pl';   -- or 'all' to count SQL-language functions too
+select pg_reload_conf();
+```
+
+Then, per test file: reset the counters, run the file, and export the
+counts. A backend flushes its counters when it exits, so the export runs in
+a new session after `pg_prove` ends:
+
+```sh
+echo "file,test,schema,function,calls" > pg-calls.csv
+for f in supabase/tests/*.sql; do
+  psql "$DB" -qAt -c "select pg_stat_reset()"
+  pg_prove --verbose "$f" >> db.tap
+  psql "$DB" -qAt -c "\copy (select '$f', '', schemaname, funcname, calls from pg_stat_user_functions) to stdout with csv" >> pg-calls.csv
+done
+lattice results ingest db.tap pg-calls.csv
+```
+
+The export is CSV with a header, or JSON:
+
+| Column | |
+|---|---|
+| `schema`, `function`, `calls` | required: one row per function and run |
+| `file` | the test file the run covers: per-file evidence |
+| `test` | the test it covers, as a test FQN or `<file>::<description>`: per-test evidence |
+| `calls_before` | optional: subtracted, when you snapshot before a run instead of resetting |
+
+```json
+{
+  "format": "pg_stat_user_functions",
+  "runs": [
+    {"test": "supabase/tests/wallet_test.sql::a debit lowers the balance",
+     "functions": [{"schema": "public", "function": "debit", "calls": 1}]},
+    {"file": "supabase/tests/wallet_test.sql",
+     "functions": [{"schema": "public", "function": "debit", "calls": 3}],
+     "before":    [{"schema": "public", "function": "debit", "calls": 1}]}
+  ]
+}
+```
+
+Per test inside one file, snapshot `pg_stat_xact_user_functions` before and
+after each assertion in the test's own transaction, and export both as
+`calls_before` and `calls`. Every run in the export is kept, whatever
+`only_verifiers` says.
+
+Limits:
+
+- Postgres inlines simple SQL-language functions into the calling query
+  and never counts them, even with `track_functions = 'all'`. An enforcer
+  that is such a function cannot reach `exercised`; write it in PL/pgSQL,
+  or allowlist the criterion with a reason.
+- Call counts carry no lines, so Postgres symbols add nothing to floors.
+- This format was defined without a running Postgres server. The SQL
+  above follows the Postgres documentation and has not been run here.
+
 ## 5. Day-to-day commands
 
 ```sh
@@ -466,6 +732,8 @@ lattice patch --from-file p.json --preview|--apply
 lattice initiative show <id>           # initiative + tasks
 lattice task pick-next                 # next actionable task
 lattice agent context --task <id>      # full bundle for one task
+lattice results ingest <reports>...    # test results + coverage of one run (section 4f)
+lattice results tests --verifiers      # verifiers with each runner's filter, for per-test coverage
 lattice mutation run                   # mutation-test invariant code
 lattice structural-checks run          # run custom structural checks
 lattice skills list                    # shipped agent skills
