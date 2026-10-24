@@ -4,6 +4,19 @@ All notable changes to Lattice are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`adapters.yaml` is strict**: an adapter block outside `adapters:` (for
+  example `postgres:` at the top level) or a misspelt adapter name was
+  ignored without a word, so a language silently went unscanned. Both are
+  now errors that name the fix.
+- **Structural rules skip migrations**: `FILE_LINE_CAP`, `METHOD_LINE_CAP`
+  and `FEATURE_NOT_COLOCATED` no longer count database migrations. An
+  applied migration cannot be split, and a feature that owns rules in the
+  database next to its code is not sprawling.
+- **`validate` text output separates the line**: a finding's line now reads
+  `(line 463)` after the message instead of being glued onto it.
+
 ### Added
 
 - **Go adapter** (on by default, `go` in `adapters.yaml`): Lattice now reads

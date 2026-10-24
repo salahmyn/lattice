@@ -129,6 +129,7 @@ func (c *corpus) checkCrossFeatureImport() []schema.Violation {
 // `Modules/Checkout/...` → `Modules`). Good enough for the warning;
 // the exact rule the user wires later can use config.exclude.
 func (c *corpus) checkFeatureColocation() []schema.Violation {
+	history := changeHistoryFiles(c.kg)
 	var v []schema.Violation
 	for _, f := range c.kg.Features {
 		if len(f.Implementations) == 0 {
@@ -137,6 +138,11 @@ func (c *corpus) checkFeatureColocation() []schema.Violation {
 		dirs := map[string]bool{}
 		var sampleFiles []string
 		for _, impl := range f.Implementations {
+			// A feature legitimately owns rules in database migrations next
+			// to its code; migrations do not count toward colocation.
+			if history[impl.File] {
+				continue
+			}
 			top := topDir(impl.File)
 			if !dirs[top] {
 				dirs[top] = true
@@ -175,7 +181,8 @@ func (c *corpus) checkFileLineCap() []schema.Violation {
 	}
 	var v []schema.Violation
 	for _, mod := range c.kg.Modules {
-		if mod.LineCount <= cap || onlyTests(mod, tests) {
+		// A migration is change history: it cannot be split after it is applied.
+		if mod.LineCount <= cap || onlyTests(mod, tests) || mod.ChangeHistory {
 			continue
 		}
 		v = append(v, schema.Violation{
@@ -228,12 +235,16 @@ func (c *corpus) checkMethodLineCap() []schema.Violation {
 	}
 	// Need module line counts for the last-symbol fallback.
 	moduleLines := map[string]int{}
+	history := changeHistoryFiles(c.kg)
 	for _, mod := range c.kg.Modules {
 		moduleLines[mod.File] = mod.LineCount
 	}
 
 	var v []schema.Violation
 	for file, syms := range symsByFile {
+		if history[file] {
+			continue // a function in an applied migration is changed by a new migration, not a refactor
+		}
 		sort.Slice(syms, func(i, j int) bool { return syms[i].Line < syms[j].Line })
 		for i, sym := range syms {
 			end := moduleLines[file]
@@ -318,4 +329,16 @@ func topDir(file string) string {
 		return clean[:i]
 	}
 	return clean
+}
+
+// changeHistoryFiles is the set of files that record changes rather than
+// hold code (database migrations): structural rules do not apply to them.
+func changeHistoryFiles(kg schema.KnowledgeGraph) map[string]bool {
+	out := map[string]bool{}
+	for _, m := range kg.Modules {
+		if m.ChangeHistory {
+			out[m.File] = true
+		}
+	}
+	return out
 }
