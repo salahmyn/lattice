@@ -221,6 +221,7 @@ func (c *corpus) checkBRDs() []schema.Violation {
 				Code: schema.CodeBRDCriterionPhantomInvariant, Severity: schema.SeverityError,
 				Message: fmt.Sprintf("BRD %q criterion %s: maps_to_invariant %q does not resolve (%s)",
 					row.BRDID, row.CriterionID, row.MapsTo, row.StatusReason),
+				Subject:  row.BRDID + ":" + row.CriterionID,
 				Location: rowLoc,
 				NextAction: &schema.NextAction{
 					Kind:   "edit_brd",
@@ -235,6 +236,7 @@ func (c *corpus) checkBRDs() []schema.Violation {
 				Code: schema.CodeVerifierFailing, Severity: schema.SeverityWarning,
 				Message: fmt.Sprintf("BRD %q criterion %s: %s",
 					row.BRDID, row.CriterionID, row.StatusReason),
+				Subject:  row.BRDID + ":" + row.CriterionID,
 				Location: rowLoc,
 				NextAction: &schema.NextAction{
 					Kind:   "fix_test",
@@ -251,6 +253,7 @@ func (c *corpus) checkBRDs() []schema.Violation {
 				Code: schema.CodeBRDCriterionUnverified, Severity: schema.SeverityWarning,
 				Message: fmt.Sprintf("BRD %q criterion %s is %s: %s",
 					row.BRDID, row.CriterionID, row.Status, row.StatusReason),
+				Subject:  row.BRDID + ":" + row.CriterionID,
 				Location: rowLoc,
 				NextAction: &schema.NextAction{
 					Kind:   "add_verification",
@@ -263,6 +266,7 @@ func (c *corpus) checkBRDs() []schema.Violation {
 				Code: schema.CodeBRDCriterionUnmapped, Severity: schema.SeverityInfo,
 				Message: fmt.Sprintf("BRD %q criterion %s has no maps_to_invariant — verification can't be traced",
 					row.BRDID, row.CriterionID),
+				Subject:  row.BRDID + ":" + row.CriterionID,
 				Location: rowLoc,
 				NextAction: &schema.NextAction{
 					Kind:   "edit_brd",

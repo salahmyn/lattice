@@ -30,6 +30,10 @@ const (
 	CodeOrphanAnnotationRole       = "ORPHAN_ANNOTATION_ROLE"
 	CodeAnnotationArgNotLiteral    = "ANNOTATION_ARG_NOT_LITERAL"
 	CodeAnnotationOrphaned         = "ANNOTATION_ORPHANED"
+	CodeUnattributedModule         = "UNATTRIBUTED_MODULE"
+	CodeAllowlistStale             = "ALLOWLIST_STALE"
+	CodeAllowlistSchema            = "ALLOWLIST_SCHEMA"
+	CodeValidatePolicy             = "VALIDATE_POLICY"
 	CodeModuleAnnotationConflict   = "MODULE_ANNOTATION_CONFLICT"
 
 	// Verification integrity
@@ -191,6 +195,11 @@ type Violation struct {
 	CapabilityID string `json:"capability_id,omitempty"`
 	InitiativeID string `json:"initiative_id,omitempty"`
 	TaskID       string `json:"task_id,omitempty"`
+
+	// Subject names the thing the finding is about in a stable form an
+	// allowlist entry can match: "brd.<id>:SC-N", a module file, a symbol
+	// FQN. Empty when the rule does not set one.
+	Subject string `json:"subject,omitempty"`
 
 	Location   *Location   `json:"location,omitempty"`
 	NextAction *NextAction `json:"next_action,omitempty"`

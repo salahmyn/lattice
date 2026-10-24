@@ -39,6 +39,29 @@ type Config struct {
 	Architecture    Architecture    `yaml:"architecture,omitempty"` // v0.7 — AMA support
 	Autonomy        Autonomy        `yaml:"autonomy,omitempty"`     // v0.8 — agent steering
 	Runtime         Runtime         `yaml:"runtime,omitempty"`      // v0.8 — V0 runs-clean gate
+	Validate        ValidatePolicy  `yaml:"validate,omitempty"`
+}
+
+// ValidatePolicy tunes `lattice validate` for a workspace: how severe each
+// finding is, which severity fails the run, and where the allowlist lives.
+type ValidatePolicy struct {
+	// Severity overrides a finding code's severity: error, warning, info or
+	// off (drop it). UNATTRIBUTED_MODULE is off unless set here.
+	Severity map[string]string `yaml:"severity,omitempty"`
+	// FailOn is the lowest severity that fails the run: error (default),
+	// warning or info. `lattice validate --fail-on` overrides it.
+	FailOn string `yaml:"fail_on,omitempty"`
+	// Allowlist is the allowlist file, relative to the lattice/ directory.
+	// Default allowlist.yaml.
+	Allowlist string `yaml:"allowlist,omitempty"`
+}
+
+// AllowlistPath returns the allowlist file relative to the lattice/ dir.
+func (p ValidatePolicy) AllowlistPath() string {
+	if p.Allowlist != "" {
+		return p.Allowlist
+	}
+	return "allowlist.yaml"
 }
 
 // Runtime (v0.8) describes how to install, build, boot, and probe the
