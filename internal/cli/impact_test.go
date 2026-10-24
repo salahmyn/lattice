@@ -42,6 +42,10 @@ func impactRepo(t *testing.T) string {
 	git("init", "-q", "-b", "main")
 	git("config", "user.email", "test@example.com")
 	git("config", "user.name", "test")
+	// No background maintenance: newer git detaches `maintenance run --auto`
+	// after a commit, which writes into .git while the test snapshots it.
+	git("config", "maintenance.auto", "false")
+	git("config", "gc.auto", "0")
 	write("lattice/config.yaml", "agentic:\n  llm:\n    enabled: false\n")
 	write("lattice/adapters.yaml", "adapters:\n  go:\n    enabled: true\n")
 	write("lattice/features/pay.yaml", "id: pay\nversion: 1\nstatus: production\npurpose: Pay.\nowners:\n  business: b\n  engineering: e\ninvariants:\n  - id: INV-1\n    statement: A payment is positive.\n")

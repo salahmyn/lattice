@@ -65,14 +65,16 @@ func (a *Adapter) parse(ctx context.Context, path string, source []byte) (ir.Mod
 	defer tree.Close()
 
 	p := &tsParser{
-		src:        source,
-		mod:        &mod,
-		modulePath: astutil.ModulePath(path),
-		testFile:   isTestFile(path),
-		testCounts: map[string]int{},
+		src:           source,
+		mod:           &mod,
+		modulePath:    astutil.ModulePath(path),
+		testFile:      isTestFile(path),
+		testCounts:    map[string]int{},
+		boundRequires: map[uint32]bool{},
 	}
 	p.walkStatements(tree.RootNode())
 	mod.HasCode = !p.testFile && hasTopLevelCode(tree.RootNode())
+	p.collectRefs(tree.RootNode())
 	return mod, nil
 }
 
@@ -130,6 +132,17 @@ type tsParser struct {
 	modulePath string
 	testFile   bool
 	testCounts map[string]int // base FQN -> count, for synthetic test symbols
+	// owners is the span of each symbol, for the reference pass
+	// (typescript_refs.go).
+	owners astutil.Owners
+	// boundRequires are the require() calls a top-level binding
+	// (const x = require('./x')) records as an import.
+	boundRequires map[uint32]bool
+}
+
+// track records the span of the symbol just appended.
+func (p *tsParser) track(n *sitter.Node) {
+	p.owners.Add(n.StartByte(), n.EndByte(), len(p.mod.Symbols)-1)
 }
 
 // walkStatements processes a statement list (the file root or a block),
@@ -426,6 +439,7 @@ func (p *tsParser) addClass(n *sitter.Node, anns []ir.Annotation, exported bool)
 		File: p.mod.File, Line: line(n), EndLine: endLine(n), Annotations: anns,
 		BaseClasses: p.extends(n), IsTest: p.testFile, Exported: exported,
 	})
+	p.track(n)
 
 	body := n.ChildByFieldName("body")
 	if body == nil {
@@ -573,6 +587,7 @@ func (p *tsParser) addSymbol(name string, kind ir.SymbolKind, enclosingFQN strin
 		File: p.mod.File, Line: line(n), EndLine: endLine(n), EnclosingFQN: enclosingFQN,
 		Annotations: anns, IsTest: p.testFile || hasVerify(anns), Exported: exported,
 	})
+	p.track(n)
 	return true
 }
 
@@ -598,6 +613,7 @@ func (p *tsParser) addTestSymbolSlug(desc, slug string, n *sitter.Node, anns []i
 		File: p.mod.File, Line: line(n), EndLine: endLine(n), Annotations: anns,
 		IsTest: true, Exported: false,
 	})
+	p.track(n)
 }
 
 // extends returns the base classes from a class heritage clause.

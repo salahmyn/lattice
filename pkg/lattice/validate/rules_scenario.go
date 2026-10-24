@@ -101,11 +101,18 @@ func (c *corpus) checkScenarios() []schema.Violation {
 
 // checkFeatureReach fires FEATURE_UNREACHED (β) for a production feature
 // that sits on no entry-point flow — either dead code or an unmodeled
-// seam (the two states a CLI↔store boundary can hide in). Only runs when
-// at least one entry point is declared, otherwise every feature would
-// trivially be "unreached".
+// seam (the two states a CLI↔store boundary can hide in). Without a call
+// graph it only runs when at least one entry point is declared, otherwise
+// every feature would trivially be "unreached".
+//
+// When the call graph has roots (rnd/0009 phase 2), the rule runs even
+// with no entry point declared, and a feature also counts as reached when
+// a root reaches any of its symbols. It used to fire for every feature off
+// the flows as soon as the first entry point existed.
+// @enforces reachability:INV-7
 func (c *corpus) checkFeatureReach() []schema.Violation {
-	if len(c.kg.EntryPoints) == 0 {
+	bySymbols := c.opts.Reach.FeaturesReached(c.kg)
+	if len(c.kg.EntryPoints) == 0 && bySymbols == nil {
 		return nil
 	}
 	reached := map[string]bool{}
@@ -113,6 +120,13 @@ func (c *corpus) checkFeatureReach() []schema.Violation {
 		for _, step := range ep.Flow {
 			reached[step.Feature] = true
 		}
+	}
+	for f := range bySymbols {
+		reached[f] = true
+	}
+	msg := "production feature %q is on no entry-point flow — dead code or an unmodeled seam"
+	if bySymbols != nil {
+		msg = "production feature %q is on no entry-point flow and no root reaches any of its symbols — dead code or an unmodeled seam (evidence: static call graph)"
 	}
 	var v []schema.Violation
 	for i := range c.kg.Features {
@@ -128,7 +142,7 @@ func (c *corpus) checkFeatureReach() []schema.Violation {
 		v = append(v, schema.Violation{
 			Code: schema.CodeFeatureUnreached, Severity: schema.SeverityInfo,
 			FeatureID: f.ID,
-			Message:   fmt.Sprintf("production feature %q is on no entry-point flow — dead code or an unmodeled seam", f.ID),
+			Message:   fmt.Sprintf(msg, f.ID),
 			Location:  &schema.Location{File: f.SourcePath},
 			NextAction: &schema.NextAction{
 				Kind:   "edit_entry_point",

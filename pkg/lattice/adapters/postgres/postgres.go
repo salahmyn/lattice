@@ -151,7 +151,7 @@ func matchAny(globs []string, p string) bool {
 
 // Parse reads one .sql file into IR.
 func (a *Adapter) Parse(_ context.Context, p string, source []byte) (ir.Module, error) {
-	mod := ir.Module{File: p, Language: Name}
+	mod := ir.Module{File: p, Language: Name, RefsKnown: true}
 	stmts := scan(string(source))
 	switch a.classify(p) {
 	case kindTest:
@@ -275,9 +275,17 @@ func triggerFQN(schemaName, table, name string) string {
 
 // parseDefinitions records functions, policies and triggers, and marks drops.
 func parseDefinitions(mod *ir.Module, stmts []statement) {
+	var applied []ir.Ref
+	appliedLine := 0
+	defer func() {
+		if len(applied) > 0 {
+			mod.Nodes = append(mod.Nodes, appliedNode(mod.File, appliedLine, applied))
+		}
+	}()
 	for _, st := range stmts {
 		anns := tags(mod, attached(st))
 		var sym *ir.Symbol
+		kind, tSchema, table := "function", "", ""
 		switch {
 		case reFunction.MatchString(st.text):
 			m := reFunction.FindStringSubmatch(st.text)
@@ -288,11 +296,13 @@ func parseDefinitions(mod *ir.Module, stmts []statement) {
 			s, t := qualify(m[2], m[3])
 			name := unquote(m[1])
 			sym = &ir.Symbol{Name: "policy " + name + " on " + s + "." + t, FQN: policyFQN(s, t, name)}
+			kind, tSchema, table = "policy", s, t
 		case reTrigger.MatchString(st.text):
 			m := reTrigger.FindStringSubmatch(st.text)
 			s, t := qualify(m[2], m[3])
 			name := unquote(m[1])
 			sym = &ir.Symbol{Name: "trigger " + name + " on " + s + "." + t, FQN: triggerFQN(s, t, name)}
+			kind, tSchema, table = "trigger", s, t
 		case reDropFunc.MatchString(st.text):
 			m := reDropFunc.FindStringSubmatch(st.text)
 			s, n := qualify(m[1], m[2])
@@ -307,6 +317,14 @@ func parseDefinitions(mod *ir.Module, stmts []statement) {
 			markDrop(mod, triggerFQN(s, t, unquote(m[1])), st.line)
 		}
 		if sym == nil {
+			if n, ok := cronNode(mod, st); ok {
+				mod.Nodes = append(mod.Nodes, n)
+			} else if refs := appliedRefs(st); len(refs) > 0 {
+				if appliedLine == 0 {
+					appliedLine = st.line
+				}
+				applied = append(applied, refs...)
+			}
 			orphan(mod, anns, st)
 			continue
 		}
@@ -314,6 +332,7 @@ func parseDefinitions(mod *ir.Module, stmts []statement) {
 		// rewrites the violating case, so they share the function kind.
 		sym.Kind, sym.File, sym.Line, sym.EndLine = ir.KindFunction, mod.File, st.line, st.endLine
 		sym.Exported, sym.Annotations = true, withImpliedFeature(anns)
+		linkRefs(mod, sym, st, kind, tSchema, table)
 		mod.Symbols = append(mod.Symbols, *sym)
 	}
 }
@@ -455,7 +474,58 @@ func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 		}
 		mods[mi].Symbols = syms
 	}
+	resolveCron(mods, order)
 	return mods
+}
+
+// resolveCron keeps one cron job per name across files, in the order
+// migrations apply: the last cron.schedule of a job wins, and
+// cron.unschedule removes it.
+func resolveCron(mods []ir.Module, order []int) {
+	type at struct{ mod, node int }
+	effective := map[string]at{}
+	for _, mi := range order {
+		m := &mods[mi]
+		type event struct {
+			line   int
+			node   int
+			unsche string
+		}
+		var events []event
+		for ni, n := range m.Nodes {
+			if n.Kind == ir.NodeCron {
+				events = append(events, event{line: n.Line, node: ni})
+			}
+		}
+		kept := m.ModuleAnnotations[:0]
+		for _, an := range m.ModuleAnnotations {
+			if an.Kind == cronUnscheduleKind {
+				if len(an.Args) > 0 {
+					events = append(events, event{line: an.Line, node: -1, unsche: fmt.Sprint(an.Args[0])})
+				}
+				continue
+			}
+			kept = append(kept, an)
+		}
+		m.ModuleAnnotations = kept
+		sort.SliceStable(events, func(x, y int) bool { return events[x].line < events[y].line })
+		for _, e := range events {
+			if e.node < 0 {
+				delete(effective, e.unsche)
+				continue
+			}
+			effective[m.Nodes[e.node].FQN] = at{mi, e.node}
+		}
+	}
+	for mi := range mods {
+		nodes := mods[mi].Nodes[:0]
+		for ni, n := range mods[mi].Nodes {
+			if e, ok := effective[n.FQN]; n.Kind != ir.NodeCron || ok && e == (at{mi, ni}) {
+				nodes = append(nodes, n)
+			}
+		}
+		mods[mi].Nodes = nodes
+	}
 }
 
 // lostTags lists the tags on an earlier definition that a redefinition lacks.

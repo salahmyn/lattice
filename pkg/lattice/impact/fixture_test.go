@@ -32,6 +32,10 @@ func newRepo(t *testing.T) *repo {
 	r.git("config", "user.email", "test@example.com")
 	r.git("config", "user.name", "test")
 	r.git("config", "commit.gpgsign", "false")
+	// No background maintenance: newer git detaches `maintenance run --auto`
+	// after a commit, which writes into .git while a test reads it.
+	r.git("config", "maintenance.auto", "false")
+	r.git("config", "gc.auto", "0")
 	r.write("lattice/config.yaml", "agentic:\n  llm:\n    enabled: false\n")
 	r.write("lattice/adapters.yaml", "adapters:\n  go:\n    enabled: true\n")
 	return r

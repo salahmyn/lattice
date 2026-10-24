@@ -49,17 +49,20 @@ func (a *Adapter) parse(ctx context.Context, file string, source []byte) (ir.Mod
 	defer tree.Close()
 	root := tree.RootNode()
 
+	pkgName := packageName(root, source)
 	p := &goParser{
 		src:      source,
 		mod:      &mod,
-		pkgPath:  packagePath(file, packageName(root, source)),
+		pkgPath:  packagePath(file, pkgName),
 		testFile: isTestFile(file),
 		subtests: map[string]int{},
+		recv:     map[int]string{},
 	}
 	p.walkList(root, p.handleTop)
 	if p.testFile {
 		mod.HasCode = false
 	}
+	p.collectRefs(root, pkgName)
 	return mod, nil
 }
 
@@ -69,6 +72,10 @@ type goParser struct {
 	pkgPath  string // FQN prefix: the package directory, dotted
 	testFile bool
 	subtests map[string]int // "<parent FQN>/<subtest>" -> uses, for go test's #NN suffixes
+	// owners and recv feed the reference pass (golang_refs.go): the span
+	// of each symbol, and each method's receiver name.
+	owners astutil.Owners
+	recv   map[int]string
 }
 
 // packagePath is the FQN prefix of a file's symbols: its directory, dotted
@@ -246,6 +253,9 @@ func (p *goParser) addMethod(n *sitter.Node, anns []ir.Annotation) bool {
 	enclosing := p.pkgPath + "." + recv
 	idx := p.addSymbol(name, enclosing+"."+name, ir.KindMethod, enclosing, n, anns,
 		isExported(name) && isExported(recv))
+	if rn := receiverName(n.ChildByFieldName("receiver"), p.src); rn != "" {
+		p.recv[idx] = rn
+	}
 	p.walkFuncBody(body, idx, false)
 	return true
 }
@@ -481,7 +491,9 @@ func (p *goParser) addSymbol(name, fqn string, kind ir.SymbolKind, enclosing str
 		File: p.mod.File, Line: line(n), EndLine: endLine(n), EnclosingFQN: enclosing,
 		Annotations: anns, IsTest: p.testFile || hasVerify(anns), Exported: exported,
 	})
-	return len(p.mod.Symbols) - 1
+	idx := len(p.mod.Symbols) - 1
+	p.owners.Add(n.StartByte(), n.EndByte(), idx)
+	return idx
 }
 
 // parseComment turns a comment's tags into annotations. Module tags go

@@ -29,14 +29,34 @@ var defaultSeverity = map[string]string{
 	schema.CodeVerifierUnproven:       SeverityOff,
 	schema.CodeCoverageStale:          SeverityOff,
 	schema.CodeCoverageBelowFloor:     SeverityOff,
+	// Reachability (rnd/0009 phase 2): off until each is enabled, whatever
+	// the coverage: block says, because they depend on the call graph.
+	schema.CodeSymbolUnreached:     SeverityOff,
+	schema.CodeSymbolTestOnly:      SeverityOff,
+	schema.CodeSymbolUntested:      SeverityOff,
+	schema.CodeUnusedExport:        SeverityOff,
+	schema.CodeReachabilityNoRoots: SeverityOff,
+	schema.CodeRPCUnresolved:       SeverityOff,
+	schema.CodeImportUnresolved:    SeverityOff,
+	schema.CodeSuiteOverlap:        SeverityOff,
 }
+
+// reachCodes are the per-symbol reachability codes; enabling any of them
+// in validate.severity turns on REACHABILITY_NO_ROOTS, RPC_UNRESOLVED and
+// IMPORT_UNRESOLVED (info), which explain what those findings cannot see.
+var reachCodes = []string{schema.CodeSymbolUnreached, schema.CodeSymbolTestOnly,
+	schema.CodeSymbolUntested, schema.CodeUnusedExport}
 
 // severityDefaults returns the defaults for a workspace. A coverage: block
 // in config.yaml switches the coverage codes on (rnd/0009):
 // VERIFIER_MISSES_ENFORCER and COVERAGE_STALE as warnings,
 // VERIFIER_UNPROVEN as info, and COVERAGE_BELOW_FLOOR as a warning once a
-// floor is declared. An explicit validate.severity entry still wins.
-// @enforces validation:INV-11
+// floor is declared. The reachability codes stay off whatever the block
+// says; enabling one of the per-symbol ones in validate.severity brings
+// REACHABILITY_NO_ROOTS, RPC_UNRESOLVED and IMPORT_UNRESOLVED with it, as
+// info. An explicit
+// validate.severity entry still wins.
+// @enforces validation:INV-11, reachability:INV-6
 func severityDefaults(cfg config.Config) map[string]string {
 	out := make(map[string]string, len(defaultSeverity)+4)
 	for k, v := range defaultSeverity {
@@ -48,6 +68,15 @@ func severityDefaults(cfg config.Config) map[string]string {
 		out[schema.CodeVerifierUnproven] = string(schema.SeverityInfo)
 		if cfg.CoverageConfig().Floors.Declared() {
 			out[schema.CodeCoverageBelowFloor] = string(schema.SeverityWarning)
+		}
+	}
+	for _, code := range reachCodes {
+		if name, set := cfg.Validate.Severity[code]; set {
+			if _, off, ok := parseSeverity(name); ok && !off {
+				out[schema.CodeReachabilityNoRoots] = string(schema.SeverityInfo)
+				out[schema.CodeRPCUnresolved] = string(schema.SeverityInfo)
+				out[schema.CodeImportUnresolved] = string(schema.SeverityInfo)
+			}
 		}
 	}
 	return out

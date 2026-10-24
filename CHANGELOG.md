@@ -98,8 +98,62 @@ All notable changes to Lattice are documented in this file.
     `MUTATION_REQUIRED_TIER` gate is unchanged.
   - `examples/coverage-prototype/` is a Node sample workspace with real
     coverage files, where one verifier stubs its guard.
+- **Static reachability** (docs/rnd/0009, phase 2): a call graph, roots and
+  a reach class for every runtime symbol, so dead code, test-only code and
+  unused exports are findings. See the user guide, section 4g.
+  - The TypeScript/JavaScript, Go, Python and Postgres adapters record raw
+    references from the parse they already do (`ir.Module.Imports`,
+    `ir.Symbol.Refs`, and top-level code as a `<module>.<top>` node). The
+    core resolves each one through the module's imports, its own scope, and
+    a member name unique in the language. Ambiguous and missing references
+    stay unresolved and are counted, never guessed; for the reach classes,
+    an ambiguous method call reaches only the candidates whose type reached
+    code uses (Rapid Type Analysis). A SCIP index, when one exists,
+    replaces this resolution for its language.
+  - SQL edges: `.rpc('fn')` to `sql.<schema>.fn`, `.from('t')` to the
+    table's policies and triggers, trigger to function, function body calls,
+    policy expressions, and `cron.schedule` bodies.
+  - Roots are automatic (entry-point handlers, `package.json`
+    `main`/`module`/`exports`/`bin`, `index.html` module scripts, Deno
+    `serve` handlers, cron jobs, SQL triggers and policies, Go's
+    `func main`, Python's `__main__` block) plus `coverage.roots`
+    (`{symbol | file: <glob>, reason}`).
+  - `lattice.json` gains `symbols[].reach`: `entry`, `test_only`,
+    `unreached` or `unknown`. The resolved edges go to
+    `lattice/.cache/callgraph.json`, not to `lattice.json`.
+  - New findings, every one off until enabled in `validate.severity` (a
+    `coverage:` block does not turn them on): `SYMBOL_UNREACHED` (warning),
+    `SYMBOL_TEST_ONLY`, `SYMBOL_UNTESTED` (needs suite coverage) and
+    `UNUSED_EXPORT` (info). Enabling any of them brings
+    `REACHABILITY_NO_ROOTS`, `RPC_UNRESOLVED` and `IMPORT_UNRESOLVED`
+    (info). Runtime coverage only moves a symbol up: one that ran is never
+    unreached. Interfaces and type aliases get no class.
+  - Modules loaded at run time (`import('./x')`, an unbound `require`) are
+    edges of the code that loads them and reach the module's top level and
+    every export. A Deno function's module top level, tool config files
+    (`vite.config.ts`, `playwright.config.ts`, ...) and a migration's
+    top-level calls (a seed `select f(...)`) are roots.
+  - `SUITE_OVERLAP` (info, off until enabled): two test suites whose
+    `@verifies` targets and scenario entry points have a Jaccard index at
+    or above `coverage.overlap` (default 0.8). Suites come from
+    `coverage.suites`, or are the top-level test directories.
+  - `examples/coverage-prototype/` shows `sql.public.debit_v1` unreached
+    while `debit` is reached through `.rpc("debit")`, a test-only
+    function, and a trigger-run function reached through the trigger.
 
 ### Behaviour changes to plan for
+
+- **`FEATURE_UNREACHED` follows the call graph when it has roots.** It
+  used to fire for every production feature on no entry-point flow as soon
+  as the first entry point existed. Now a feature also counts as reached
+  when a root reaches any of its symbols, so a project with entry points
+  and resolvable calls gets fewer of these findings. A project with roots
+  but no declared entry point (a Go `func main`, a SQL trigger, a
+  `package.json` entry) now gets the check, where it got none before. The
+  message names its evidence. Without roots nothing changes.
+- **`lattice.json` grows by one field per runtime symbol** (`reach`), and
+  `extract` takes longer: on this repository about 0.35 s to 0.5 s, nearly
+  all of it the adapters' reference walk.
 
 - **A half-made BRD link now warns.** Until now a feature listed in a BRD's
   `implements_via` counted as linked without its own `implements_brd`.

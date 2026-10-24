@@ -21,6 +21,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/extract"
 	"github.com/salahmyn/lattice/pkg/lattice/graph"
 	"github.com/salahmyn/lattice/pkg/lattice/importer"
+	"github.com/salahmyn/lattice/pkg/lattice/reach"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/scip"
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
@@ -160,13 +161,21 @@ func buildGraph(ctx context.Context, ws *workspace.Workspace, withCodeGraph bool
 
 // buildGraphWith is buildGraph with explicit options.
 func buildGraphWith(ctx context.Context, ws *workspace.Workspace, opts buildOptions) (schema.KnowledgeGraph, error) {
+	kg, _, err := buildGraphReach(ctx, ws, opts)
+	return kg, err
+}
+
+// buildGraphReach is buildGraphWith that also returns the classified call
+// graph (docs/rnd/0009), whose classes it has written onto the graph's
+// symbols. The result is nil in review mode (no source).
+func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOptions) (schema.KnowledgeGraph, *reach.Result, error) {
 	withCodeGraph := opts.codeGraph && !opts.readOnly
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	adCfg, err := config.LoadAdapters(ws.LatticeDir)
 	if err != nil {
-		return schema.KnowledgeGraph{}, err
+		return schema.KnowledgeGraph{}, nil, err
 	}
 	reg := all.Registry(adCfg)
 
@@ -196,7 +205,7 @@ func buildGraphWith(ctx context.Context, ws *workspace.Workspace, opts buildOpti
 
 	res, err := extract.Extract(ctx, ws, reg, extract.Options{})
 	if err != nil {
-		return schema.KnowledgeGraph{}, err
+		return schema.KnowledgeGraph{}, nil, err
 	}
 
 	// Merge the brownfield sidecar map: features link to code without
@@ -274,16 +283,64 @@ func buildGraphWith(ctx context.Context, ws *workspace.Workspace, opts buildOpti
 		}
 	}
 
-	return kg, nil
+	var rr *reach.Result
+	if !ws.Review && !res.Review {
+		cfg, _ := config.Load(ws.LatticeDir)
+		rr = reach.Compute(reach.Input{
+			Modules:     res.Modules,
+			EntryPoints: kg.EntryPoints,
+			CodeRoots:   reachCodeRoots(ws),
+			Declared:    cfg.CoverageConfig().Roots,
+			SCIP:        scipByLanguage(ws, reg.Names()),
+		})
+		reach.Annotate(&kg, rr)
+	}
+	return kg, rr, nil
+}
+
+// reachCodeRoots lists the available code roots with the prefix their
+// files carry in the graph (the root name, when there are several).
+func reachCodeRoots(ws *workspace.Workspace) []reach.CodeRoot {
+	var out []reach.CodeRoot
+	multi := 0
+	for _, r := range ws.CodeRoots {
+		if r.Available {
+			multi++
+		}
+	}
+	for _, r := range ws.CodeRoots {
+		if !r.Available {
+			continue
+		}
+		cr := reach.CodeRoot{Abs: r.Abs}
+		if multi > 1 {
+			cr.Prefix = r.Name
+		}
+		out = append(out, cr)
+	}
+	return out
+}
+
+// scipByLanguage loads each language's SCIP index from the cache, when one
+// was written (extract --with-code-graph).
+func scipByLanguage(ws *workspace.Workspace, languages []string) map[string]*scip.Corpus {
+	out := map[string]*scip.Corpus{}
+	for _, lang := range languages {
+		if c, err := scip.Load(filepath.Join(ws.SCIPDir(), lang+".scip")); err == nil && !c.Empty() {
+			out[lang] = c
+		}
+	}
+	return out
 }
 
 // runExtract performs extraction + graph build and writes the knowledge graph.
 func runExtract(ctx context.Context, ws *workspace.Workspace, opts buildOptions) (extractSummary, error) {
-	kg, err := buildGraphWith(ctx, ws, opts)
+	kg, rr, err := buildGraphReach(ctx, ws, opts)
 	if err != nil {
 		return extractSummary{}, err
 	}
 	cfg, _ := config.Load(ws.LatticeDir)
+	_ = reach.Save(ws.LatticeDir, rr)
 
 	sharded, err := writeGraph(ws, cfg, kg)
 	if err != nil {

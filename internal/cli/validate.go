@@ -15,6 +15,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/flags"
 	"github.com/salahmyn/lattice/pkg/lattice/lease"
 	"github.com/salahmyn/lattice/pkg/lattice/ledger"
+	"github.com/salahmyn/lattice/pkg/lattice/reach"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/validate"
@@ -50,10 +51,11 @@ func newValidateCommand(io *IO) *cobra.Command {
 			if review {
 				ws.Review = true
 			}
-			kg, err := buildGraph(cmd.Context(), ws, false)
+			kg, rr, err := buildGraphReach(cmd.Context(), ws, buildOptions{})
 			if err != nil {
 				return io.fail("VALIDATE_FAILED", err.Error(), nil)
 			}
+			_ = reach.Save(ws.LatticeDir, rr)
 			cfg, _ := config.Load(ws.LatticeDir)
 			if requireLevel != "" {
 				// The flag replaces the default level; per-tier levels from
@@ -76,6 +78,7 @@ func newValidateCommand(io *IO) *cobra.Command {
 				LedgerEntries: entries,
 				FlagsOf:       flagReasons(flags.OpenByUnit(ws.LatticeDir)),
 				Coverage:      coverageIndex(ws, kg),
+				Reach:         rr,
 			})
 			violations = append(violations, ambiguousResults(kg, set)...)
 			kg.Violations = violations

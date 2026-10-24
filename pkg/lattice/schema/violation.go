@@ -148,6 +148,20 @@ const (
 	CodeCoverageStale          = "COVERAGE_STALE"           // coverage is of another commit, or a dirty tree (warning)
 	CodeCoverageBelowFloor     = "COVERAGE_BELOW_FLOOR"     // a feature, invariant or tier is under its declared floor (warning)
 
+	// Reachability (rnd/0009, phase 2). Every one is off until enabled in
+	// validate.severity; a coverage: block does not turn them on, because
+	// they depend on the call graph's quality. REACHABILITY_NO_ROOTS,
+	// RPC_UNRESOLVED and IMPORT_UNRESOLVED come on (info) with the first of
+	// the others.
+	CodeSymbolUnreached     = "SYMBOL_UNREACHED"      // no root, test or reached symbol reaches it, and it did not run (warning)
+	CodeSymbolTestOnly      = "SYMBOL_TEST_ONLY"      // only tests reach it (info)
+	CodeSymbolUntested      = "SYMBOL_UNTESTED"       // a root reaches it, but no test executed it (info, needs suite coverage)
+	CodeUnusedExport        = "UNUSED_EXPORT"         // exported, and no other module imports or references it (info)
+	CodeReachabilityNoRoots = "REACHABILITY_NO_ROOTS" // the graph has no roots, so no symbol is classified (info)
+	CodeRPCUnresolved       = "RPC_UNRESOLVED"        // an .rpc() whose function name is not a literal (info)
+	CodeImportUnresolved    = "IMPORT_UNRESOLVED"     // an import() or require() whose module is not a literal (info)
+	CodeSuiteOverlap        = "SUITE_OVERLAP"         // two test suites verify nearly the same targets (info)
+
 	// Council approval (v0.12).
 	CodeBRDCouncilUnreviewed = "BRD_COUNCIL_UNREVIEWED" // a council approval its human has not acknowledged (info)
 	CodeBRDCouncilInvalid    = "BRD_COUNCIL_INVALID"
