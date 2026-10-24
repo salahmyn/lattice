@@ -26,13 +26,20 @@ func appendLedgerEvent(io *IO, ws *workspace.Workspace, event, unit, evidence st
 	if actor == "" {
 		actor = "unattributed"
 	}
-	err := ledger.Record(ws.LatticeDir, ledger.Entry{
+	e := ledger.Entry{
 		At:       time.Now().UTC().Format(time.RFC3339),
 		Event:    event,
 		Actor:    actor,
 		Unit:     unit,
 		Evidence: evidence,
-	})
+	}
+	var err error
+	if event == ledger.EventCheckRun {
+		// A check run that repeats the last outcome adds no evidence.
+		_, err = ledger.RecordChange(ws.LatticeDir, e)
+	} else {
+		err = ledger.Record(ws.LatticeDir, e)
+	}
 	if err != nil {
 		io.printf("warning: ledger append failed: %v\n", err)
 	}
