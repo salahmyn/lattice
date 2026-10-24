@@ -2,7 +2,7 @@
 
 All notable changes to Lattice are documented in this file.
 
-## [Unreleased]
+## [0.13.0] — 2026-10-24
 
 ### Fixed
 
@@ -104,6 +104,12 @@ All notable changes to Lattice are documented in this file.
   files under `testdata/` are test code. Comments that start a line with
   `@enforces x:INV-1` and the other tag names now attach to the declaration
   below them.
+- **A draft BRD an agent wrote now raises `BRD_UNAPPROVED_LLM`.** The
+  warning used to fire only for `provenance.source: llm_from_code`. It now
+  also fires for a draft whose `provenance.authored_by` is an agent (an
+  actor starting with `agent`). With `fail_on: warning`, such a draft fails
+  `validate` until a human approves it, or until `validate.severity`
+  lowers `BRD_UNAPPROVED_LLM`.
 
 ## [0.12.0] — 2026-10-24
 
