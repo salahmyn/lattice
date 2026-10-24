@@ -726,10 +726,10 @@ core resolves them.
 
 | Adapter | References | Resolution |
 |---|---|---|
-| TypeScript / JavaScript | imports, `export … from`, `export default`, `import('./x')`, `require('./x')`; calls, `new C()`, JSX `<C />`, named values (a callback, a default argument); `.rpc('fn')`, `.from('table')`, `.schema('s')` | relative paths (with or without an extension, or a directory's `index`); `@/`, `~/` and `#/` aliases by a unique path suffix |
+| TypeScript / JavaScript | imports, `export … from`, `export default`, `require('./x')` bound to names; `import('./x')` and an unbound `require('./x')` as modules loaded at run time; calls, `new C()`, JSX `<C />`, named values (a callback, a default argument); `.rpc('fn')`, `.from('table')`, `.schema('s')`, and a project's own `rpc('fn', …)` wrapper | relative paths (with or without an extension, or a directory's `index`); `@/`, `~/` and `#/` aliases by a unique path suffix |
 | Go | imports; calls, composite literals, types, function values; a method's receiver; a local's declared type (`func f(kg schema.KnowledgeGraph)`, `var x T`, `x := &T{}`) | an import path is local when it is `<module>/<dir>`; the module path is inferred from the imports, not read from `go.mod` |
 | Python | `import`, `from … import` (relative too), calls, `self.m()`, named values, supabase-py `.rpc()` / `.table()` | exact module, `__init__.py` for a package, or a unique `src/`-layout suffix |
-| Postgres | a function body's calls (`f(`, `perform f(`, `select f(`), a trigger's `execute function f()`, a policy's `using` / `with check` calls, `cron.schedule` bodies | `schema.name` as written; an unqualified name in `public` |
+| Postgres | a function body's calls (`f(`, `perform f(`, `select f(`; comments skipped), a trigger's `execute function f()`, a policy's `using` / `with check` calls, `cron.schedule` bodies, and the calls of a file's other top-level statements (a seed `select f(…)`, a `do` block, a check or default) | `schema.name` as written; an unqualified name in `public` |
 | PHP | none yet | its symbols are `unknown` |
 
 A reference resolves, in order, through the module's imports, through its
@@ -742,9 +742,17 @@ never guessed:
   adapters that have `Parse`), so no edge is drawn;
 - **missing**: it names a module of the workspace, or a database function,
   that has no such symbol;
-- **dynamic**: `.rpc(name)` with a computed name. With the reachability
-  codes on, each one is an `RPC_UNRESOLVED` info, so it cannot hide a live
-  function.
+- **dynamic**: `.rpc(name)` with a computed name, or `import(x)` /
+  `require(x)` of a computed module. With the reachability codes on, each
+  one is an `RPC_UNRESOLVED` or `IMPORT_UNRESOLVED` info, so it cannot
+  hide a live function.
+
+A module loaded at run time (`lazy(() => import('./admin/App').then(…))`,
+an `import('./boot')` inside a function, an unbound `require('./x')`) is an
+edge of the code that loads it. Which of its exports that code then uses
+is not told apart, so the module's top level and every export are reached:
+it errs towards reached, never towards dead. A `require` bound to names
+(`const { a } = require('./x')`) stays as precise as an `import`.
 
 A reference to the standard library, a dependency, a builtin or a local
 variable resolves to nothing and is not counted as unresolved. A method
@@ -777,9 +785,20 @@ Automatic roots, and nothing guessed in between:
   `<script type="module" src>`. A build output maps back to its source
   (`dist/index.js` to `src/index.ts`, or through `tsconfig.json`'s `outDir`
   and `rootDir`);
-- a top-level `serve(...)` or `Deno.serve(...)` handler;
+- a top-level `serve(...)` or `Deno.serve(...)` handler, and the top-level
+  code of its module (what it builds for the handler);
+- tool config files, which a build or test tool loads by name:
+  `<tool>.config.{js,ts,mjs,cjs,mts,cts}` (vite, vitest, playwright,
+  eslint, tailwind, postcss, capacitor, ...). Their top-level code and
+  exports are roots, so what they import is reached. They stay outside
+  attribution, as before;
 - `cron.schedule` bodies;
-- SQL triggers and policies (the database runs them);
+- SQL triggers and policies (the database runs them), and the other
+  top-level statements of a migration or schema file that call a function
+  (a seed `select f(…)`, a `do` block, a check constraint, a default): the
+  database runs them when it applies the file. `grant`, `revoke`,
+  `comment`, `drop` and `alter function` only name functions and are no
+  roots;
 - Go's `func main` in package `main`, and Python's
   `if __name__ == "__main__":` block.
 
@@ -806,6 +825,11 @@ roots.
 | `test_only` | no root reaches it, a test does |
 | `unreached` | nothing reaches it, not even through an ambiguous reference that names it |
 | `unknown` | there are no roots; or its language has no reference data; or only an ambiguous reference reaches it and nothing reached uses its type |
+
+Only runtime symbols get a class: functions, methods, classes, consts and
+traits. Interfaces and type aliases (kind `interface`) run nothing, so
+their `reach` is empty; tests are in `tests[]`, not `symbols[]`, and have
+none either.
 
 An ambiguous call stays unresolved in the call graph. For the classes,
 it reaches the candidates whose type reached code builds or names, and no
@@ -834,6 +858,7 @@ is the severity each is designed for.
 | `UNUSED_EXPORT` | info | exported, top-level, and no other module imports or references it; roots are exempt |
 | `REACHABILITY_NO_ROOTS` | info, with any of the four above | the graph has no roots; it replaces every per-symbol finding |
 | `RPC_UNRESOLVED` | info, with any of the four above | an `.rpc()` with a computed name |
+| `IMPORT_UNRESOLVED` | info, with any of the four above | an `import()` or `require()` of a computed module |
 | `SUITE_OVERLAP` | info | two test suites verify nearly the same targets (below) |
 
 ```yaml

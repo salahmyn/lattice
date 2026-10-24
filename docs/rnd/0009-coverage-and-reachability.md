@@ -628,6 +628,23 @@ edges, roots, e2e coverage) were answered for phase 2.
   `Len/Less/Swap`, ...) are reached with their type; a Python class reaches
   its dunder methods; `new C()` reaches C's constructor. Python's `if
   __name__ == "__main__":` block is a root, like Go's `func main`.
+- **Run-time loads and run-as-a-whole code, from a real adopter app.** A
+  TS + SQL app first read 102 symbols unreached, almost all live. The
+  causes: `lazy(() => import('./x').then(...))` was no edge (whole
+  sub-apps behind it), a Deno function's module top level was no root
+  (only its serve callback was), tool config files were not roots, a
+  project's own `rpc('fn')` wrapper named no database function, a `--`
+  comment with an apostrophe in a function body cut the rest of the body,
+  and a migration's seed `select f(...)` was not code the database runs.
+  Now `import('<literal>')` and an unbound `require('<literal>')` reach the
+  module's top level and every export (towards reached, never dead; a
+  computed one is `IMPORT_UNRESOLVED`), the serve module's top level, tool
+  config files (`<tool>.config.<js|ts|...>`) and a file's applied
+  top-level calls are roots, a bare `rpc('fn')` is an rpc reference too,
+  and body comments are skipped. On that app: unreached 102 to 1 (a real
+  dead function), test_only 81 to 8 (each really reached only from
+  tests), entry 291 to 465, unknown 0, unresolved 12 to 14 (11
+  ambiguous, 3 computed). Interfaces and type aliases have no class.
 - **`FEATURE_UNREACHED` with roots runs without entry points.** A project
   whose only roots are a `func main` or SQL triggers now gets the check.
 - **Default suites** are the top-level directories named `tests`, `test`,

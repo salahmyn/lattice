@@ -125,8 +125,14 @@ All notable changes to Lattice are documented in this file.
     `coverage:` block does not turn them on): `SYMBOL_UNREACHED` (warning),
     `SYMBOL_TEST_ONLY`, `SYMBOL_UNTESTED` (needs suite coverage) and
     `UNUSED_EXPORT` (info). Enabling any of them brings
-    `REACHABILITY_NO_ROOTS` and `RPC_UNRESOLVED` (info). Runtime coverage
-    only moves a symbol up: one that ran is never unreached.
+    `REACHABILITY_NO_ROOTS`, `RPC_UNRESOLVED` and `IMPORT_UNRESOLVED`
+    (info). Runtime coverage only moves a symbol up: one that ran is never
+    unreached. Interfaces and type aliases get no class.
+  - Modules loaded at run time (`import('./x')`, an unbound `require`) are
+    edges of the code that loads them and reach the module's top level and
+    every export. A Deno function's module top level, tool config files
+    (`vite.config.ts`, `playwright.config.ts`, ...) and a migration's
+    top-level calls (a seed `select f(...)`) are roots.
   - `SUITE_OVERLAP` (info, off until enabled): two test suites whose
     `@verifies` targets and scenario entry points have a Jaccard index at
     or above `coverage.overlap` (default 0.8). Suites come from
