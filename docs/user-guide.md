@@ -450,6 +450,7 @@ lattice view entry-points                     # every trigger (HTTP/CLI/cron/que
 lattice view flows [<ep-id>]                  # Mermaid: trigger -> handler -> features
 lattice serve [--port 7070] [--token X]       # v0.4.0 web UI: tracking + visualising + editing
 lattice analyze proposal <file>        # conflict + impact analysis
+lattice impact --since origin/main     # read-only change-impact report (PR comment: --format markdown)
 lattice patch --from-file p.json --preview|--apply
 lattice initiative show <id>           # initiative + tasks
 lattice task pick-next                 # next actionable task
@@ -476,6 +477,155 @@ means running `backprop` in CI on every pull request changes a tracked file.
 
 For a report that writes nothing, such as a pull-request comment, use
 `lattice impact` (below).
+
+### 5b. Change impact on a pull request: `lattice impact`
+
+```sh
+lattice impact --since origin/main                    # terminal
+lattice impact --since origin/main --format markdown  # PR comment
+lattice impact --since origin/main --json             # machine-readable
+```
+
+`lattice impact` compares `merge-base(<ref>, HEAD)` with the working tree
+(HEAD plus uncommitted and untracked files, as extraction reads them) and
+says which base commit it used. It is **read-only**: it writes no ledger
+entry, raises no flag and changes no tracked file. Git runs on a private
+copy of the index, so even `.git/index` is left as it was. The head graph is
+built the way `validate` builds it, minus the LLM labeling of entry points
+(which saves files). Nothing is checked out for the base side: each changed
+file is read with `git cat-file` and parsed with the same adapters.
+
+The report has five sections:
+
+| Section | What it lists |
+|---|---|
+| Changed code | Symbols whose own lines (declaration to last line) a `git diff -M --unified=0` hunk touches, on the base or the working-tree side. A symbol that only shifted in its file, or moved with its text unchanged, is not listed. |
+| Affected criteria | Each BRD criterion whose `maps_to_invariant` (one ref or a list) has a changed enforcer, with the criterion, its invariants and the enforcers that changed. A direct-wired criterion counts through its `enforced_by` symbols and `@enforces <brd>:<criterion>` tags. Approved BRDs come first. Draft and proposed BRDs are in a separate section, shown by default; `--include-drafts=false` hides it. Superseded BRDs are left out. |
+| Removed enforcement | A base-side enforcer that no longer enforces its invariant: the symbol was deleted, its `@enforces` tag was dropped (the tag sits above the symbol, outside its lines, so this compares each file's (symbol, invariant) pairs on both sides), or its file was deleted or moved out of the scanned tree. A file moved elsewhere in the scanned tree is not a removal. |
+| Manifest changes | Features, BRDs and entry points added, removed, renamed and changed, with every changed field named (`invariants[INV-1].verifiable_by`, `user_scenarios[US-1].then`, `success_criteria[SC-2].maps_to_invariant`). The walk is generic over the schema, so a new field is compared without a code change. A manifest moved out of `lattice/features/` is removed; one moved within it is renamed, compared by id. |
+| Code roll-up | With a SCIP code graph (`lattice extract --with-code-graph`), the blast radius of each changed or removed enforcer, rolled up to referencing modules, test files and entry points (through each entry point's handler and `flow`). `--max-symbols N` (default 50) caps how many are expanded, enforcers of approved criteria first, and the report says when it truncated. Without a code graph the section says "code graph unavailable" and the command still succeeds. |
+
+The markdown form is meant to be posted as a sticky PR comment. It starts
+with `<!-- lattice-impact -->`, so a CI job can find and replace its own
+comment. A sample:
+
+```markdown
+<!-- lattice-impact -->
+## Lattice impact
+
+Compared with base `1a2b3c4d5e6f` (merge base of `main` and HEAD `7a8b9c0d1e2f`), including uncommitted changes.
+
+11 files changed · 5 symbols changed · 4 approved criteria affected · 4 enforcements removed
+
+### Changed code
+
+| Change | Symbol | File | Lines | Enforces |
+|---|---|---|---|---|
+| removed | `refund.Gone` | `refund/gone.go` | 7-9 (base) | `refund:INV-4` |
+| added | `refund.NewHelper` | `refund/guard.go` | 6-8 |  |
+| modified | `refund.Guard` | `refund/guard.go` | 12-17 (was 7-9) | `refund:INV-1` |
+| removed | `refund.Limit` | `refund/guard.go` | 18-20 (base) | `refund:INV-2` |
+| modified | `refund.Audit` | `refund/guard.go` | 25-27 (was 23-25) |  |
+
+### Affected criteria: approved BRDs
+
+- **`brd.refunds` / SC-1** (tier 3): A refund never exceeds what was captured.
+  - invariants: `refund:INV-1`
+  - `refund:INV-1` changed enforcers: `refund.Guard` (modified, `refund/guard.go`)
+- **`brd.refunds` / SC-2** (tier 1): A refund is tagged and reversible.
+  - invariants: `refund:INV-3`, `refund:INV-4`, `refund:INV-6`
+  - `refund:INV-3` changed enforcers: `refund.Tagged` (enforcement removed, `refund/tagged.go`)
+  - `refund:INV-4` changed enforcers: `refund.Gone` (enforcement removed, `refund/gone.go`)
+- **`brd.refunds` / SC-3** (tier 1, direct-wired): Every refund is audited.
+  - invariants: `brd.refunds:SC-3`
+  - `brd.refunds:SC-3` changed enforcers: `refund.Audit` (modified, `refund/guard.go`)
+- **`brd.refunds` / SC-4** (tier 1): A refund is reported.
+  - invariants: `refund:INV-5`
+  - `refund:INV-5` changed enforcers: `refund.Moved` (enforcement removed, `refund/moved.go`)
+
+### Affected criteria: draft and proposed BRDs (not yet approved)
+
+_These BRDs are not the source of truth until a human approves them._
+
+- **`brd.payouts` / SC-1** (tier 1): Daily refund volume is capped.
+  - invariants: `refund:INV-2`
+  - `refund:INV-2` changed enforcers: `refund.Limit` (enforcement removed, `refund/guard.go`)
+
+### Removed enforcement
+
+| Symbol | Invariant | File | Why |
+|---|---|---|---|
+| `refund.Gone` | `refund:INV-4` | `refund/gone.go:7` | file deleted |
+| `refund.Limit` | `refund:INV-2` | `refund/guard.go:18` | symbol deleted |
+| `refund.Tagged` | `refund:INV-3` | `refund/tagged.go:7` | @enforces tag dropped |
+| `refund.Moved` | `refund:INV-5` | `refund/moved.go:7` | file moved out of the scanned tree (to vendor/moved.go) |
+
+### Manifest changes
+
+**Features**
+
+- added `added`: `lattice/features/added.yaml`
+- removed `legacy`: `lattice/features/legacy.yaml`
+- renamed `notes`: `lattice/features/notes/old.yaml` → `lattice/features/notes.yaml`
+- changed `refund`: `lattice/features/refund.yaml`
+  - `capabilities[issue].rules`: `[A refund is issued against one capture.]` → `[A refund is issued against one capture., A refund names the capture it reverses.]`
+  - `invariants[INV-1].verifiable_by`: added: `[test, mutation]`
+
+**BRDs**
+
+- changed `brd.refunds`: `lattice/brds/brd.refunds.yaml`
+  - `user_scenarios[US-1].actor`: `customer` → `support agent`
+  - `user_scenarios[US-1].verified_by`: added: `[refund.TestGuard]`
+  - `user_scenarios[US-1].given`: added: `[a captured payment]`
+  - `user_scenarios[US-1].when`: added: `[the customer asks for a refund]`
+  - `user_scenarios[US-1].then`: added: `[the refund is issued]`
+  - `user_scenarios[US-1].blocks`: added: `[blk.refund]`
+  - `success_criteria[SC-1].tier`: `2` → `3`
+  - `success_criteria[SC-2].maps_to_invariant`: `[refund:INV-3, refund:INV-4]` → `[refund:INV-3, refund:INV-4, refund:INV-6]`
+
+### Code roll-up
+
+Expanded 6 of 6 enforcer symbols.
+
+| Enforcer | References | Modules | Test files | Entry points |
+|---|---|---|---|---|
+| `refund.Audit` | 1 | 1 | 0 | `ep.cli.refund` |
+| `refund.Gone` | not in index | 0 | 0 | `ep.cli.refund` |
+| `refund.Guard` | 2 | 1 | 1 | `ep.cli.refund` |
+| `refund.Moved` | not in index | 0 | 0 | `ep.cli.refund` |
+| `refund.Tagged` | not in index | 0 | 0 | `ep.cli.refund` |
+| `refund.Limit` | not in index | 0 | 0 | `ep.cli.refund` |
+
+**Entry points reached**
+
+- `ep.cli.refund` (cli refund issue) via flow: refund, handler file
+
+**Test files referencing them**: `refund/guard_test.go`
+```
+
+A GitHub Actions step that keeps one comment up to date (the checkout needs
+the base branch's history, e.g. `fetch-depth: 0`):
+
+```yaml
+- run: lattice impact --since origin/${{ github.base_ref }} --format markdown > impact.md
+- run: gh pr comment ${{ github.event.pull_request.number }} --edit-last --body-file impact.md ||
+       gh pr comment ${{ github.event.pull_request.number }} --body-file impact.md
+  env:
+    GH_TOKEN: ${{ github.token }}
+```
+
+**Monorepos without a root `tsconfig.json`.** The SCIP indexers run from the
+code root, so a repository whose packages each carry their own
+`tsconfig.json` gets no TypeScript index. Point them at the packages instead:
+
+```sh
+lattice extract --with-code-graph --index-root apps/web --index-root apps/api
+```
+
+Each `--index-root` is relative to the code root (or absolute inside it).
+The runs are merged into one index per language, with paths relative to the
+code root, so `blast-radius` and the impact roll-up read it as if it had
+been indexed from the root.
 
 ---
 
