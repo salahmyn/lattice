@@ -81,10 +81,13 @@ All notable changes to Lattice are documented in this file.
   handler inside a React component) are symbols enclosed by it. Unannotated
   ones stay out of the graph. `// @module-feature x` on one line works like
   the JSDoc form (line comments never carry symbol tags).
-- **Result lookup is deterministic**: when several report cases match a
-  verifier, the most specific match wins (the longest shared path), and equal
-  matches resolve to the worst outcome. Before, two files with the same test
-  title gave a pass or a fail depending on map order.
+- **Result lookup is deterministic and refuses to guess**: when several
+  report cases match a verifier, the most specific match wins (the longest
+  shared path). When two different cases match equally (the same short test
+  name in two files and nothing else in common), the result is not counted
+  and `validate` raises `RESULT_AMBIGUOUS` (warning) naming them. Before,
+  such a verifier took a pass or a fail depending on map order. The ingested
+  set records which case each key came from (`cases`).
 
 ### Added
 
