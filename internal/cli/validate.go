@@ -18,19 +18,27 @@ import (
 )
 
 type validateReport struct {
-	Violations []schema.Violation `json:"violations"`
-	Errors     int                `json:"errors"`
-	Warnings   int                `json:"warnings"`
-	ReviewMode bool               `json:"review_mode"`
-	OK         bool               `json:"ok"`
+	Violations  []schema.Violation  `json:"violations"`
+	Errors      int                 `json:"errors"`
+	Warnings    int                 `json:"warnings"`
+	Infos       int                 `json:"infos"`
+	Allowlisted []validate.Accepted `json:"allowlisted,omitempty"`
+	FailOn      schema.Severity     `json:"fail_on"`
+	ReviewMode  bool                `json:"review_mode"`
+	OK          bool                `json:"ok"`
 }
 
 func newValidateCommand(io *IO) *cobra.Command {
 	var review bool
+	var failOn string
 	cmd := &cobra.Command{
 		Use:   "validate",
 		Short: "Extract and validate the workspace",
-		Long:  "Runs every validation rule and exits non-zero if any error-severity violation is found.",
+		Long: "Runs every validation rule and exits non-zero if any finding at or above the fail-on\n" +
+			"severity is open (default error; config.yaml validate.fail_on or --fail-on).\n" +
+			"Findings accepted by the allowlist (lattice/allowlist.yaml, each entry with a reason)\n" +
+			"are reported apart and never fail the run; an entry that matches nothing is stale\n" +
+			"and fails it, so the list only shrinks.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ws, err := openWorkspace(io)
 			if err != nil {
@@ -63,20 +71,37 @@ func newValidateCommand(io *IO) *cobra.Command {
 			kg.Violations = violations
 			_, _ = writeGraph(ws, cfg, kg)
 
-			report := validateReport{Violations: violations, ReviewMode: ws.Review}
-			for _, v := range violations {
-				if v.IsError() {
+			if failOn == "" {
+				failOn = cfg.Validate.FailOn
+			}
+			threshold, err := validate.FailOn(failOn)
+			if err != nil {
+				return io.fail("VALIDATE_FAILED", err.Error(), nil)
+			}
+			allow, bad := validate.LoadAllowlist(ws.LatticeDir, cfg.Validate.AllowlistPath())
+			open, accepted := allow.Apply(append(violations, bad...))
+
+			report := validateReport{Violations: open, Allowlisted: accepted, FailOn: threshold,
+				ReviewMode: ws.Review, OK: true}
+			for _, v := range open {
+				switch v.Severity {
+				case schema.SeverityError:
 					report.Errors++
-				} else {
+				case schema.SeverityWarning:
 					report.Warnings++
+				default:
+					report.Infos++
+				}
+				if validate.Fails(v, threshold) {
+					report.OK = false
 				}
 			}
-			report.OK = report.Errors == 0
 
 			// Ledger the check run — script-free claims are not evidence;
 			// the ledger line is.
 			appendLedgerEvent(io, ws, ledger.EventCheckRun, "workspace",
-				fmt.Sprintf("validate: %d error(s), %d warning(s)", report.Errors, report.Warnings))
+				fmt.Sprintf("validate: %d error(s), %d warning(s), %d info, %d allowlisted",
+					report.Errors, report.Warnings, report.Infos, len(report.Allowlisted)))
 
 			if io.JSON {
 				_ = io.printJSON(report)
@@ -90,6 +115,7 @@ func newValidateCommand(io *IO) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&review, "review", false, "manifest-only mode: skip code-coupled checks")
+	cmd.Flags().StringVar(&failOn, "fail-on", "", "lowest severity that fails the run: error (default), warning or info")
 	return cmd
 }
 
@@ -98,7 +124,11 @@ func renderValidate(io *IO, r validateReport) {
 		io.printf("review mode: no code accessible — annotation and verification checks deferred to CI\n")
 	}
 	if len(r.Violations) == 0 {
-		io.printf("validate: clean (0 violations)\n")
+		io.printf("validate: clean (0 open findings")
+		if n := len(r.Allowlisted); n > 0 {
+			io.printf(", %d allowlisted", n)
+		}
+		io.printf(")\n")
 		return
 	}
 	byFile := map[string][]schema.Violation{}
@@ -119,8 +149,11 @@ func renderValidate(io *IO, r validateReport) {
 		io.printf("\n%s\n", f)
 		for _, v := range byFile[f] {
 			mark := "error"
-			if !v.IsError() {
+			switch v.Severity {
+			case schema.SeverityWarning:
 				mark = "warn "
+			case schema.SeverityInfo:
+				mark = "info "
 			}
 			line := ""
 			if v.Location != nil && v.Location.Line > 0 {
@@ -132,7 +165,14 @@ func renderValidate(io *IO, r validateReport) {
 			}
 		}
 	}
-	io.printf("\n%d error(s), %d warning(s)\n", r.Errors, r.Warnings)
+	io.printf("\n%d error(s), %d warning(s), %d info", r.Errors, r.Warnings, r.Infos)
+	if n := len(r.Allowlisted); n > 0 {
+		io.printf(", %d allowlisted", n)
+	}
+	if r.FailOn != "" && r.FailOn != schema.SeverityError {
+		io.printf(" (fails on %s)", r.FailOn)
+	}
+	io.printf("\n")
 }
 
 func describeNextAction(na *schema.NextAction) string {

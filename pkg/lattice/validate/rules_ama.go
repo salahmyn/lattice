@@ -181,6 +181,7 @@ func (c *corpus) checkFileLineCap() []schema.Violation {
 		v = append(v, schema.Violation{
 			Code:     schema.CodeFileLineCap,
 			Severity: schema.SeverityWarning,
+			Subject:  mod.File,
 			Message: fmt.Sprintf("file %s is %d lines (cap %d) — AMA recommends splitting",
 				mod.File, mod.LineCount, cap),
 			Location: &schema.Location{File: mod.File, Line: cap},
@@ -249,6 +250,7 @@ func (c *corpus) checkMethodLineCap() []schema.Violation {
 			v = append(v, schema.Violation{
 				Code:     schema.CodeMethodLineCap,
 				Severity: schema.SeverityWarning,
+				Subject:  sym.FQN,
 				FeatureID: sym.Feature,
 				Message: fmt.Sprintf("symbol %s is ~%d lines (cap %d) — AMA recommends splitting",
 					sym.FQN, footprint, cap),

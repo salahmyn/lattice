@@ -161,6 +161,37 @@ lattice validate           # exits 0 when clean, non-zero on violations
 `validate` reports every problem with a structured `next_action` telling you
 (or an agent) exactly what to do.
 
+Findings are `error`, `warning` or `info`; by default only errors fail the
+run. A workspace tunes this in `config.yaml`:
+
+```yaml
+validate:
+  fail_on: warning              # or info; `--fail-on` overrides per run
+  severity:                     # per code: error | warning | info | off
+    UNATTRIBUTED_MODULE: error  # opt-in: production code in no feature
+    BRD_SCENARIO_UNMAPPED: warning
+```
+
+`UNATTRIBUTED_MODULE` (off unless set) flags a production module with no
+`@module-feature` and no feature on any of its symbols, so a coverage figure
+over annotated code cannot hide the code nobody annotated.
+
+Known gaps go in `lattice/allowlist.yaml`, each with a reason:
+
+```yaml
+entries:
+  - code: BRD_CRITERION_UNMAPPED
+    subject: brd.billing:SC-5          # findings carry a stable subject
+    reason: enforced outside the analysed languages; see decisions/ADR-0012.md
+  - code: UNATTRIBUTED_MODULE
+    file: src/generated/**
+    reason: generated
+```
+
+Accepted findings are listed apart and never fail the run. An entry that
+matches no finding is reported as `ALLOWLIST_STALE` (error), so the list
+only shrinks as gaps close.
+
 ### Step 5 — Evolve safely
 
 - Edit manifests through **typed patches**, never by hand:

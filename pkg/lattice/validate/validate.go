@@ -117,6 +117,7 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 
 	if !opts.ReviewMode {
 		v = append(v, c.checkAnnotations()...)
+		v = append(v, c.checkAttribution()...)
 		// The lite profile (v0.8.1) keeps the immediate-payoff subset —
 		// links, grounding, @feature annotations, leases, governance —
 		// and defers the deep families until the architect pass upgrades
@@ -131,6 +132,7 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 		}
 	}
 
+	v = applySeverity(v, cfg.Validate.Severity)
 	sortViolations(v)
 	return dedupe(v)
 }
