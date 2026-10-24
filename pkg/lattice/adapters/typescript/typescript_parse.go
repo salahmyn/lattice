@@ -70,7 +70,42 @@ func (a *Adapter) parse(ctx context.Context, path string, source []byte) (ir.Mod
 		testCounts: map[string]int{},
 	}
 	p.walkStatements(tree.RootNode())
+	mod.HasCode = !p.testFile && hasTopLevelCode(tree.RootNode())
 	return mod, nil
+}
+
+// typeOnlyNodes are top-level statements that run nothing: imports, comments
+// and type-level declarations.
+var typeOnlyNodes = map[string]bool{
+	"comment": true, "import_statement": true, "empty_statement": true, "hash_bang_line": true,
+	"type_alias_declaration": true, "interface_declaration": true, "ambient_declaration": true,
+}
+
+// hasTopLevelCode reports whether a file has top-level runtime code: anything
+// but imports, comments, type declarations, directives ('use client') and
+// re-exports (export { x } from, export * from). An entry file whose only
+// statement is a render() call, or a module of plain value consts, has code
+// even though it declares no function or class.
+func hasTopLevelCode(root *sitter.Node) bool {
+	for i := 0; i < int(root.NamedChildCount()); i++ {
+		n := root.NamedChild(i)
+		switch {
+		case typeOnlyNodes[n.Type()]:
+		case n.Type() == "expression_statement" && n.NamedChildCount() == 1 && n.NamedChild(0).Type() == "string":
+			// a directive
+		case n.Type() == "export_statement":
+			if d := n.ChildByFieldName("declaration"); d != nil {
+				if !typeOnlyNodes[d.Type()] {
+					return true
+				}
+			} else if n.ChildByFieldName("value") != nil {
+				return true // export default <expression>
+			}
+		default:
+			return true
+		}
+	}
+	return false
 }
 
 // grammarFor picks the tree-sitter grammar for a path. Only .ts/.mts/.cts use
