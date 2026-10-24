@@ -17,15 +17,18 @@ import (
 func (c *corpus) checkAttribution() []schema.Violation {
 	var v []schema.Violation
 	for _, a := range c.kg.Attribution() {
-		if a.ProductionSymbols == 0 || a.Attributed {
+		if !a.Production || a.Attributed {
 			continue
+		}
+		what := fmt.Sprintf("%d production symbol(s)", a.ProductionSymbols)
+		if a.ProductionSymbols == 0 {
+			what = "top-level code"
 		}
 		v = append(v, schema.Violation{
 			Code:     schema.CodeUnattributedModule,
 			Severity: schema.SeverityWarning,
 			Subject:  a.File,
-			Message: fmt.Sprintf("module %s has %d production symbol(s) and belongs to no feature",
-				a.File, a.ProductionSymbols),
+			Message:  fmt.Sprintf("module %s has %s and belongs to no feature", a.File, what),
 			Location: &schema.Location{File: a.File, Line: 1},
 			NextAction: &schema.NextAction{
 				Kind:       "add_annotation",

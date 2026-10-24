@@ -64,3 +64,18 @@ func TestAttributionSkipsDeclarationsAndConfig(t *testing.T) {
 		t.Errorf("attribution = %+v, want only src/configure.ts counted", at)
 	}
 }
+
+// A module with no behaviour symbols but top-level code (an entry file that
+// only renders, a dictionary of plain consts) is production code: attributed
+// by its header, or listed as unattributed without one.
+func TestAttributionCountsTopLevelCode(t *testing.T) {
+	kg := schema.KnowledgeGraph{Modules: []schema.GraphModule{
+		{File: "src/main.tsx", HasCode: true, Feature: "app.shell"},
+		{File: "src/i18n.ts", HasCode: true},
+		{File: "src/types.ts"}, // no code, no symbols
+	}}
+	at := ComputeAttribution(kg)
+	if at.TotalModules != 2 || at.AttributedModules != 1 || len(at.Unattributed) != 1 || at.Unattributed[0] != "src/i18n.ts" {
+		t.Errorf("attribution = %+v, want 1/2 with src/i18n.ts unattributed", at)
+	}
+}

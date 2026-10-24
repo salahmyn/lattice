@@ -76,6 +76,7 @@ type GraphModule struct {
 	File               string   `json:"file"`
 	Language           string   `json:"language"`
 	LineCount          int      `json:"line_count,omitempty"` // v0.7 — for FILE_LINE_CAP
+	HasCode            bool     `json:"has_code,omitempty"`   // top-level runtime code outside any symbol
 	Feature            string   `json:"feature,omitempty"`
 	EnforcesInvariants []string `json:"enforces_invariants,omitempty"`
 	DependsOnFeatures  []string `json:"depends_on_features,omitempty"`
@@ -141,9 +142,13 @@ type ModuleAttribution struct {
 	// ProductionSymbols counts the module's non-test symbols that carry
 	// behaviour or state (functions, methods, classes, traits, consts).
 	// A module with none (tests only, or interfaces and type aliases only)
-	// is not production code for attribution.
+	// is not production code for attribution, unless it has top-level code.
 	ProductionSymbols int
-	Attributed        bool
+	// Production is true for a module with a production symbol or with
+	// top-level runtime code (GraphModule.HasCode), so an entry file that
+	// only calls render() or a module of plain value consts still counts.
+	Production bool
+	Attributed bool
 }
 
 // behaviourKinds are the symbol kinds that make a module production code.
@@ -178,6 +183,7 @@ func (kg KnowledgeGraph) Attribution() []ModuleAttribution {
 				a.Attributed = true
 			}
 		}
+		a.Production = a.ProductionSymbols > 0 || m.HasCode
 		out = append(out, a)
 	}
 	return out

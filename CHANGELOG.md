@@ -6,6 +6,14 @@ All notable changes to Lattice are documented in this file.
 
 ### Fixed
 
+- **Modules with top-level code are production code**: a module counted for
+  attribution (and `UNATTRIBUTED_MODULE`) only when it declared a function,
+  method, class, trait or const symbol. An entry file whose only statement is
+  `createRoot(...).render(...)`, or a module of plain value consts, was
+  invisible: removing its `@module-feature` still read 100%. The TypeScript
+  adapter now records `has_code` on a module with top-level runtime code
+  (anything but imports, comments, type declarations, directives and
+  re-exports; never on test files), and such a module is production code.
 - **A misspelt allowlist key is an error**: the allowlist was decoded
   leniently, so `allow:` instead of `entries:` (or a misspelt entry field)
   loaded an empty list with no finding, and `ALLOWLIST_STALE` could never
