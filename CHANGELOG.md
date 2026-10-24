@@ -48,6 +48,14 @@ All notable changes to Lattice are documented in this file.
   untracked paths its ignore rules exclude (every `.gitignore`, nested files
   and negations included) and skips them; tracked files are always scanned.
   Outside a git work tree nothing changes.
+- **Repeated check runs no longer churn the ledger**: `validate`,
+  `results ingest`, `runs-clean` and `backprop` append a check-run entry only
+  when its outcome differs from the latest entry for the same unit and actor.
+  Before, every run appended a line to the tracked ledger, so parallel
+  branches conflicted on it.
+- **`init` makes the ledger merge cleanly**: it writes
+  `lattice/.ledger/ledger.jsonl merge=union` to `.gitattributes` (when the
+  file does not exist yet), so git keeps both sides' lines on a merge.
 - **`validate` counts info findings as info**: the text output printed info
   findings as `warn` and the summary (and `--json` `warnings`) counted them
   as warnings, while `--json` gave their severity as `info`. Text, summary
@@ -58,6 +66,21 @@ All notable changes to Lattice are documented in this file.
   accepted import candidates, so a hand-written workspace read 0%. Coverage
   now comes from the graph: documentation is the share of production symbols
   attributed to a feature (plus accepted candidates, when there are any).
+- **Table-driven tests are tests**: `it.each(table)("title", fn)`,
+  `test.each` and `describe.each` were not recognised (the callee is itself a
+  call), so their `@verifies` was dropped. They are now test symbols whose
+  FQN marks each title placeholder (`%s`, `$name`, `${x}`) with `_`; the
+  result join matches every row's case in the same file, and the test is
+  demonstrated only when all rows pass.
+- **Deno test files are test code**: `x_test.ts` (Deno's naming) is a test
+  file, like `x.test.ts`; its helpers no longer count as production code.
+- **More TypeScript annotation targets**: an annotated non-function `const`
+  (`export const client = createClient(…)`) is a symbol; annotated methods of
+  an object literal (`export const store = { get() {} }`) are method symbols
+  of that const; annotated functions declared inside a function body (a
+  handler inside a React component) are symbols enclosed by it. Unannotated
+  ones stay out of the graph. `// @module-feature x` on one line works like
+  the JSDoc form (line comments never carry symbol tags).
 - **Result lookup is deterministic**: when several report cases match a
   verifier, the most specific match wins (the longest shared path), and equal
   matches resolve to the worst outcome. Before, two files with the same test

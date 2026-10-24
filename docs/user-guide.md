@@ -207,6 +207,14 @@ The whole `lattice/` directory (manifests, `lattice.json`, config, skills) is
 committed to git; `lattice/.cache/` is gitignored. Wire `lattice validate`
 into CI with the templates in `ci-templates/`.
 
+> **Parallel branches.** `lattice.json` is rebuilt by `lattice extract` from
+> the source and manifests on every run, so teams (or agent fleets) working on
+> many branches at once can gitignore it and treat it as build output. The
+> ledger (`lattice/.ledger/ledger.jsonl`) is append-only evidence: `init` adds
+> `merge=union` for it to `.gitattributes`, so a merge keeps both sides'
+> lines, and a check run that repeats the previous outcome is not appended
+> again. Existing workspaces can add the same line to `.gitattributes`.
+
 > **Multi-repo / review mode.** In standalone mode the `lattice/` directory is
 > its own repository — add it to code repos as a submodule, or keep it free-
 > standing. When code roots are not accessible (the PM/QA case), Lattice runs
