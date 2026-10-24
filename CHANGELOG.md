@@ -2,7 +2,7 @@
 
 All notable changes to Lattice are documented in this file.
 
-## [Unreleased]
+## [0.10.0] — 2026-10-24
 
 ### Fixed
 
@@ -70,10 +70,13 @@ All notable changes to Lattice are documented in this file.
 - **`lattice next` on an empty workspace**: it said "every unit is
   demonstrated" when nothing was declared; it now says nothing is declared
   yet and how to start (`--json` carries `empty: true`).
-- **Result lookup is deterministic**: when several report cases match a
-  verifier, the most specific match wins (the longest shared path), and equal
-  matches resolve to the worst outcome. Before, two files with the same test
-  title gave a pass or a fail depending on map order.
+- **Result lookup is deterministic and refuses to guess**: when several
+  report cases match a verifier, the most specific match wins (the longest
+  shared path). When two different cases match equally (the same short test
+  name in two files and nothing else in common), the result is not counted
+  and `validate` raises `RESULT_AMBIGUOUS` (warning) naming them. Before,
+  such a verifier took a pass or a fail depending on map order. The ingested
+  set records which case each key came from (`cases`).
 
 ### Added
 
@@ -105,20 +108,6 @@ All notable changes to Lattice are documented in this file.
   `: ` inside a value) or that has no `id` was skipped without a word; the
   only symptoms were downstream (`FEATURE_UNREACHED`, a missing entry point).
   It now raises `ENTRYPOINT_PARSE_ERROR` (error) with the file and line.
-- **Result lookup is deterministic**: when several report cases match a
-  verifier, the most specific match wins (the longest shared path), and equal
-  matches resolve to the worst outcome. Before, two files with the same test
-  title gave a pass or a fail depending on map order.
-- **Result lookup is deterministic and refuses to guess**: when several
-  report cases match a verifier, the most specific match wins (the longest
-  shared path). When two different cases match equally (the same short test
-  name in two files and nothing else in common), the result is not counted
-  and `validate` raises `RESULT_AMBIGUOUS` (warning) naming them. Before,
-  such a verifier took a pass or a fail depending on map order. The ingested
-  set records which case each key came from (`cases`).
-
-### Added
-
 - **Attribution coverage**: `lattice coverage` reports the share of
   production modules that belong to a feature and lists the ones that do
   not. Modules holding only tests, types or nothing are not production code,
