@@ -34,8 +34,8 @@ tree-sitter bindings):
 
 ```sh
 git clone <this-repo> && cd lattice
-CGO_ENABLED=1 go build -o lattice ./cmd/lattice
-sudo mv lattice /usr/local/bin/        # or anywhere on PATH
+CGO_ENABLED=1 go build -o dist/lattice ./cmd/lattice
+sudo mv dist/lattice /usr/local/bin/        # or anywhere on PATH
 lattice version
 ```
 

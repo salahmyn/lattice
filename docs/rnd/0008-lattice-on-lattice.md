@@ -219,6 +219,10 @@ $ git check-ignore -v lattice/workspace.yaml           # .gitignore:3:/lattice
   `lattice/workspace.yaml` and warn that the workspace will not be
   committed. A small fix, but it touches the repository's build docs and
   CI, so it is left for the owner to choose.
+- **Done, repository half:** README and the user guide build to
+  `dist/lattice`, `.gitignore` hides only the workspace's derived files,
+  and CI runs `lattice extract && lattice validate` on it. The engine half
+  (the `init`/`doctor` warning) is still open.
 
 ### F6 — `results ingest` overstates the run (fixed in PR #38)
 

@@ -43,8 +43,8 @@ A merge to `master` publishes a release when `CHANGELOG.md` names a new version.
 Or build from source (Go 1.25+, a C toolchain for the tree-sitter bindings):
 
 ```sh
-go build -o lattice ./cmd/lattice
-./lattice version
+go build -o dist/lattice ./cmd/lattice
+./dist/lattice version
 ```
 
 ```text

@@ -1,11 +1,15 @@
 # Build output
 /dist/
-/lattice
-/lattice.exe
 
 # Lattice runtime cache
 lattice/.cache/
 **/lattice/.cache/
+
+# Lattice output rebuilt from the repository (the workspace beside it is tracked):
+# `lattice extract`, `lattice import scan`, and the skill copies `lattice init` exports.
+/lattice/lattice.json
+/lattice/import/
+/lattice/skills/
 
 # Go
 *.test
