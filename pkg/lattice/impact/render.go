@@ -94,7 +94,7 @@ func Markdown(w io.Writer, r Report) {
 	case cr.Total == 0:
 		p("_No changed or removed enforcer to expand._\n")
 	default:
-		p("Expanded %d of %d enforcer symbol(s)", cr.Expanded, cr.Total)
+		p("Expanded %d of %s", cr.Expanded, plural(cr.Total, "enforcer symbol", "enforcer symbols"))
 		if cr.Truncated {
 			p(" (truncated at --max-symbols %d)", cr.MaxSymbols)
 		}
@@ -294,7 +294,7 @@ func Text(w io.Writer, r Report) {
 	case cr.Total == 0:
 		p("  (no changed or removed enforcer to expand)\n")
 	default:
-		p("  expanded %d of %d enforcer symbol(s)", cr.Expanded, cr.Total)
+		p("  expanded %d of %s", cr.Expanded, plural(cr.Total, "enforcer symbol", "enforcer symbols"))
 		if cr.Truncated {
 			p(" (truncated at --max-symbols %d)", cr.MaxSymbols)
 		}
@@ -304,7 +304,8 @@ func Text(w io.Writer, r Report) {
 				p("  %s: not in the SCIP index\n", s.Symbol)
 				continue
 			}
-			p("  %s: %d reference(s), %d module(s), %d test file(s)\n", s.Symbol, s.References, len(s.Modules), len(s.TestFiles))
+			p("  %s: %s, %s, %s\n", s.Symbol, plural(s.References, "reference", "references"),
+				plural(len(s.Modules), "module", "modules"), plural(len(s.TestFiles), "test file", "test files"))
 		}
 		for _, ep := range cr.EntryPoints {
 			p("  entry point %s (%s%s) via %s\n", ep.ID, ep.Kind, triggerSuffix(ep.Trigger), strings.Join(ep.Via, ", "))
