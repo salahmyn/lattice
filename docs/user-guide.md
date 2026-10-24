@@ -190,7 +190,32 @@ entries:
 
 Accepted findings are listed apart and never fail the run. An entry that
 matches no finding is reported as `ALLOWLIST_STALE` (error), so the list
-only shrinks as gaps close.
+only shrinks as gaps close. An unknown key (`allow:` for `entries:`, a
+misspelt entry field) is an `ALLOWLIST_SCHEMA` error, never an empty list.
+
+An entry may say what kind of gap it is and which decision record stands
+behind it. `adr` is a path relative to the directory holding `lattice/` (or
+a URL), and it must exist. To make kinds a closed set, list them in
+`config.yaml`; a kind can require an ADR:
+
+```yaml
+validate:
+  allowlist_kinds:
+    generated: {}
+    debt: {}
+    sql-out-of-scope: {require_adr: true}
+```
+
+```yaml
+entries:
+  - code: BRD_CRITERION_UNMAPPED
+    subject: brd.billing:SC-5
+    kind: sql-out-of-scope
+    adr: docs/adr/0012-sql-invariants.md
+    reason: enforced by a database constraint
+```
+
+`--json` carries each accepted finding's `reason`, `kind` and `adr`.
 
 ### Step 5 — Evolve safely
 
