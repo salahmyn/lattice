@@ -1,0 +1,44 @@
+id: landscape
+type: system
+rationale: The six systems of the demo bookshop and the people who use it.
+author: demo@example.com
+entries:
+  - id: sys.storefront
+    title: Storefront
+    technology: Web app
+    owner: team-web
+    description: The shop's website, where readers browse, buy and track books.
+  - id: sys.checkout
+    title: Checkout
+    technology: HTTP service
+    owner: team-checkout
+    description: Baskets, orders and delivery options.
+  - id: sys.payments
+    title: Payments
+    technology: HTTP service
+    owner: team-payments
+    description: Takes card payments through the gateway and handles refunds.
+  - id: sys.catalogue
+    title: Catalogue
+    technology: HTTP service
+    owner: team-catalogue
+    description: Books, search, reviews and stock.
+  - id: sys.notifications
+    title: Notifications
+    technology: Event consumer
+    owner: team-platform
+    description: Sends the emails that orders, refunds and stock changes call for.
+  - id: sys.accounts
+    title: Accounts
+    technology: HTTP service
+    owner: team-platform
+    description: Sign-in, profiles and wish lists.
+  - id: actor.reader
+    title: Reader
+    kind: actor
+    description: Someone buying books on the website.
+  - id: actor.staff
+    title: Shop staff
+    kind: actor
+    owner: team-catalogue
+    description: Staff who keep the catalogue and stock up to date.

@@ -1,0 +1,13 @@
+id: refunds
+version: 1
+status: production
+purpose: |
+  Gives a reader their money back for a cancelled or returned order.
+owners:
+  business: commerce
+  engineering: team-payments
+depends_on:
+  - checkout
+invariants:
+  - id: INV-1
+    statement: A refund never exceeds what was paid.

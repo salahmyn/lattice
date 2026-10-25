@@ -1,0 +1,13 @@
+{"area": "webhooks", "title": "Gateway webhooks", "summary": "What the gateway tells the shop after the fact.",
+ "nodes": [
+  {"id": "webhooks", "parent": null, "kind": "controller", "title": "Gateway webhooks"},
+  {"id": "webhooks.receive", "parent": "webhooks", "kind": "endpoint", "title": "Receive a notice",
+   "http": {"method": "POST", "path": "/payments/webhooks/gateway"}, "status": "built",
+   "next": [{"to": "webhooks.verify", "label": "verify"}]},
+  {"id": "webhooks.verify", "parent": "webhooks.receive", "kind": "rule", "title": "Check the signature", "status": "built",
+   "next": [{"to": "webhooks.settle", "label": "settled"}, {"to": "webhooks.dispute", "label": "disputed"}]},
+  {"id": "webhooks.settle", "parent": "webhooks", "kind": "action", "title": "Mark the payment settled",
+   "events": ["payment.settled"], "status": "built"},
+  {"id": "webhooks.dispute", "parent": "webhooks", "kind": "action", "title": "Open a dispute",
+   "events": ["payment.disputed"], "status": "planned"}
+ ]}

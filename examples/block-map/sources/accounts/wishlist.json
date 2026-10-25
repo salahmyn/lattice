@@ -1,0 +1,11 @@
+{"area": "wishlist", "title": "Wish lists", "summary": "Books a reader saved for later.",
+ "nodes": [
+  {"id": "wishlist", "parent": null, "kind": "service", "title": "Wish lists"},
+  {"id": "wishlist.get", "parent": "wishlist", "kind": "route", "title": "Get the wish list",
+   "http": {"method": "GET", "path": "/accounts/wishlist"}, "fulfills": ["account.wishlist.load"], "status": "built",
+   "next": [{"to": "wishlist.store", "label": "read"}]},
+  {"id": "wishlist.add", "parent": "wishlist", "kind": "route", "title": "Save a book",
+   "http": {"method": "POST", "path": "/accounts/wishlist"}, "fulfills": ["book.wishlist.call"], "status": "planned",
+   "next": [{"to": "wishlist.store", "label": "write"}]},
+  {"id": "wishlist.store", "parent": "wishlist", "kind": "data", "title": "Wish list store", "status": "built"}
+ ]}

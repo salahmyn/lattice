@@ -1,0 +1,45 @@
+[
+ {"id": "browse-and-buy", "title": "Find a book and buy it", "stop": "end",
+  "facts": {"guest_checkout.enabled": "false", "payment.needs_challenge": "false"},
+  "steps": [
+   {"id": "home.hero"},
+   {"id": "home.search", "label": "search"},
+   {"id": "browse.results", "label": "search"},
+   {"id": "browse.query", "label": "query"},
+   {"id": "browse.open", "label": "pick a book"},
+   {"id": "book.details", "label": "open"},
+   {"id": "book.load", "label": "load"},
+   {"id": "book.add", "label": "add to basket"},
+   {"id": "book.add.call", "label": "add"},
+   {"id": "cart.view", "label": "view basket"},
+   {"id": "cart.continue", "label": "check out", "when": ["basket.items > 0"], "chosen": true},
+   {"id": "checkout.signin", "label": "continue"},
+   {"id": "checkout.signin.call", "label": "sign in"},
+   {"id": "checkout.address", "label": "signed in"},
+   {"id": "checkout.address.save", "label": "save"},
+   {"id": "checkout.delivery", "label": "next"},
+   {"id": "checkout.payment", "label": "choose"},
+   {"id": "checkout.payment.card", "label": "pay by card"},
+   {"id": "checkout.payment.submit", "label": "pay"},
+   {"id": "checkout.place", "label": "authorised", "chosen": true},
+   {"id": "checkout.confirm", "label": "placed"}
+  ]},
+ {"id": "card-declined", "title": "Card declined, try again", "stop": "loop",
+  "facts": {"payment.needs_challenge": "true"},
+  "steps": [
+   {"id": "checkout.payment"},
+   {"id": "checkout.payment.card", "label": "pay by card"},
+   {"id": "checkout.payment.submit", "label": "pay"},
+   {"id": "checkout.payment.challenge", "label": "challenge", "when": ["payment.needs_challenge"], "chosen": true},
+   {"id": "checkout.failed", "label": "failed"},
+   {"id": "checkout.payment", "label": "try again"}
+  ]},
+ {"id": "use-a-voucher", "title": "Apply a voucher to the basket", "stop": "end",
+  "facts": {"vouchers.enabled": "true"},
+  "steps": [
+   {"id": "cart.view"},
+   {"id": "cart.voucher", "label": "apply voucher"},
+   {"id": "cart.voucher.call", "label": "apply"},
+   {"id": "cart.continue", "label": "check out"}
+  ]}
+]

@@ -1,0 +1,47 @@
+# Block map demo: a fictional online bookshop, six systems read from
+# catalogue/v1 directories. `lattice --repo examples/block-map refresh`
+# builds the block graph; `lattice --repo examples/block-map export map
+# map.html` writes it as one file.
+mode: embedded
+
+sources:
+  - id: storefront
+    path: sources/storefront
+    catalogue: "*.json"
+    prefix: sf
+    tier: frontend
+    system: sys.storefront
+    stamp: sources/stamps/storefront.json
+    flows: sources/flows/storefront.json
+  - id: checkout
+    path: sources/checkout
+    catalogue: "*.json"
+    prefix: co
+    tier: backend
+    system: sys.checkout
+    stamp: sources/stamps/checkout.json
+  - id: payments
+    path: sources/payments
+    catalogue: "*.json"
+    prefix: pay
+    tier: backend
+    system: sys.payments
+    stamp: sources/stamps/payments.json
+  - id: catalogue
+    path: sources/catalogue
+    catalogue: "*.json"
+    prefix: cat
+    tier: backend
+    system: sys.catalogue
+  - id: notifications
+    path: sources/notifications
+    catalogue: "*.json"
+    prefix: nt
+    tier: backend
+    system: sys.notifications
+  - id: accounts
+    path: sources/accounts
+    catalogue: "*.json"
+    prefix: acc
+    tier: backend
+    system: sys.accounts

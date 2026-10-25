@@ -1,0 +1,34 @@
+id: wiring
+type: edge
+rationale: Calls, events and people the catalogues cannot show.
+author: demo@example.com
+entries:
+  # people
+  - {from: actor.reader, to: sf:home, kind: uses, label: browses}
+  - {from: actor.reader, to: sf:cart, kind: uses, label: buys}
+  - {from: actor.reader, to: sf:account, kind: uses, label: tracks orders}
+  - {from: actor.staff, to: cat:admin, kind: uses, label: edits the catalogue}
+  - {from: nt:email.order, to: actor.reader, kind: notifies, label: order email}
+  - {from: nt:email.refund, to: actor.reader, kind: notifies, label: refund email}
+  - {from: nt:email.lowstock, to: actor.staff, kind: notifies, label: low-stock email}
+  # service to service
+  - {from: co:orders.place.reserve, to: cat:stock.reserve, kind: server_api, label: reserve stock}
+  - {from: co:orders.cancel.release, to: cat:stock.release, kind: server_api, label: release stock}
+  - {from: co:orders.place.validate, to: pay:intents.status, kind: server_api, label: check payment}
+  - {from: co:basket.price, to: cat:books.get, kind: server_api, label: look up prices}
+  - {from: pay:intents.refund, to: co:orders.refund, kind: server_api, label: mark refunded}
+  # externals
+  - {from: pay:intents.create.authorize, to: ext.gateway, kind: server_api, label: authorise}
+  - {from: pay:intents.capture, to: ext.gateway, kind: server_api, label: capture}
+  - {from: pay:intents.refund.call, to: ext.gateway, kind: server_api, label: refund}
+  - {from: ext.gateway, to: pay:webhooks.receive, kind: webhook, label: settlement notices}
+  - {from: nt:email.send, to: ext.email, kind: server_api, label: send}
+  - {from: co:orders.delivery.quote, to: ext.carrier, kind: server_api, label: quote rates}
+  # events: from the block that emits it to the consumer
+  - {to: nt:email.order, kind: event, events: [order.placed]}
+  - {to: nt:email.refund, kind: event, events: [payment.refunded]}
+  - {to: nt:email.lowstock, kind: event, events: [stock.low]}
+  - {to: co:orders.settle, kind: event, events: [payment.settled]}
+  - {to: cat:stock.release, kind: event, events: [order.cancelled]}
+  # settings: the store settings feed every block that reads one
+  - {from: cat:admin.settings, kind: configures, config_kind: storeSetting}

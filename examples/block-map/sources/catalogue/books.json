@@ -1,0 +1,22 @@
+{"area": "books", "title": "Book service", "summary": "Book records, search and reviews.",
+ "nodes": [
+  {"id": "books", "parent": null, "kind": "service", "title": "Book service"},
+  {"id": "books.featured", "parent": "books", "kind": "route", "title": "Featured books",
+   "http": {"method": "GET", "path": "/catalogue/featured"}, "fulfills": ["home.featured.load"], "status": "built",
+   "next": [{"to": "books.records", "label": "read"}]},
+  {"id": "books.search", "parent": "books", "kind": "route", "title": "Search books",
+   "http": {"method": "GET", "path": "/catalogue/search"}, "fulfills": ["browse.query"], "status": "built",
+   "next": [{"to": "books.index", "label": "query"}]},
+  {"id": "books.get", "parent": "books", "kind": "route", "title": "Get a book",
+   "http": {"method": "GET", "path": "/catalogue/books/{id}"}, "fulfills": ["book.load"], "status": "built",
+   "next": [{"to": "books.records", "label": "read"}]},
+  {"id": "books.reviews", "parent": "books", "kind": "route", "title": "Reviews of a book",
+   "http": {"method": "GET", "path": "/catalogue/books/{id}/reviews"}, "fulfills": ["book.reviews.load"], "status": "built",
+   "next": [{"to": "books.reviews.moderate", "label": "filter"}]},
+  {"id": "books.reviews.moderate", "parent": "books.reviews", "kind": "rule", "title": "Hide unmoderated reviews", "status": "built"},
+  {"id": "books.index", "parent": "books", "kind": "data", "title": "Search index", "status": "built",
+   "config_source": {"type": "search", "ref": "books", "scope": "store"}},
+  {"id": "books.records", "parent": "books", "kind": "data", "title": "Book records", "status": "built",
+   "config_source": {"type": "db", "ref": "books", "scope": "store"},
+   "next": [{"to": "books.index", "label": "reindex"}]}
+ ]}

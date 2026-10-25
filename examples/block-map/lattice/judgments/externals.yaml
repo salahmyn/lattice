@@ -1,0 +1,23 @@
+id: externals
+type: external
+rationale: Services the shop calls but does not run. All fictional.
+author: demo@example.com
+entries:
+  - id: ext.providers
+    title: Third-party providers
+    kind: external_group
+  - id: ext.gateway
+    title: Card payment gateway
+    parent: ext.providers
+    technology: REST + webhooks
+    description: Authorises, captures and refunds card payments.
+  - id: ext.email
+    title: Email delivery service
+    parent: ext.providers
+    technology: SMTP relay
+    description: Delivers transactional email.
+  - id: ext.carrier
+    title: Parcel carrier
+    parent: ext.providers
+    technology: REST
+    description: Quotes delivery rates and tracks parcels.

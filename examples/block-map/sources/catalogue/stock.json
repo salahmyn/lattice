@@ -1,0 +1,20 @@
+{"area": "stock", "title": "Inventory", "summary": "Stock levels, reservations and low-stock alerts.",
+ "configs": [{"id": "stock.low_threshold", "kind": "storeSetting"}],
+ "nodes": [
+  {"id": "stock", "parent": null, "kind": "service", "title": "Inventory"},
+  {"id": "stock.get", "parent": "stock", "kind": "route", "title": "Stock of a book",
+   "http": {"method": "GET", "path": "/catalogue/books/{id}/stock"}, "fulfills": ["book.stock.load"], "status": "built",
+   "next": [{"to": "stock.levels", "label": "read"}]},
+  {"id": "stock.reserve", "parent": "stock", "kind": "route", "title": "Reserve stock",
+   "http": {"method": "POST", "path": "/catalogue/stock/reservations"}, "status": "built",
+   "next": [{"to": "stock.reserve.never-negative", "label": "check"}]},
+  {"id": "stock.reserve.never-negative", "parent": "stock.reserve", "kind": "invariant", "title": "Stock never goes below zero", "status": "built",
+   "next": [{"to": "stock.levels", "label": "write"}]},
+  {"id": "stock.release", "parent": "stock", "kind": "action", "title": "Release a reservation", "status": "built",
+   "next": [{"to": "stock.levels", "label": "write"}]},
+  {"id": "stock.levels", "parent": "stock", "kind": "data", "title": "Stock levels", "status": "built",
+   "config_source": {"type": "db", "ref": "stock", "scope": "store"},
+   "next": [{"to": "stock.low", "label": "below threshold", "when": ["stock.low_threshold > 0"]}]},
+  {"id": "stock.low", "parent": "stock", "kind": "action", "title": "Raise a low-stock alert",
+   "events": ["stock.low"], "status": "built"}
+ ]}

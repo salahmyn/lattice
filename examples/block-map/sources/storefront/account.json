@@ -1,0 +1,21 @@
+{"area": "account", "title": "My account", "summary": "Orders, profile, addresses and the wish list.",
+ "nodes": [
+  {"id": "account", "parent": null, "kind": "page", "title": "My account"},
+  {"id": "account.orders", "parent": "account", "kind": "screen", "title": "Order history", "status": "built",
+   "next": [{"to": "account.orders.load", "label": "load"}, {"to": "account.orders.cancel", "label": "cancel"}]},
+  {"id": "account.orders.load", "parent": "account.orders", "kind": "api", "title": "Load orders",
+   "api": {"method": "GET", "path": "/checkout/orders", "variant": "ok"}, "status": "built"},
+  {"id": "account.orders.cancel", "parent": "account.orders", "kind": "api", "title": "Cancel an order",
+   "api": {"method": "POST", "path": "/checkout/orders/{order}/cancel", "variant": "ok"}, "status": "built"},
+  {"id": "account.profile", "parent": "account", "kind": "screen", "title": "Profile", "status": "built",
+   "next": [{"to": "account.profile.load", "label": "load"}]},
+  {"id": "account.profile.load", "parent": "account.profile", "kind": "api", "title": "Load the profile",
+   "api": {"method": "GET", "path": "/accounts/me", "variant": "ok"}, "status": "built"},
+  {"id": "account.addresses", "parent": "account", "kind": "screen", "title": "Saved addresses", "status": "planned"},
+  {"id": "account.wishlist", "parent": "account", "kind": "screen", "title": "Wish list", "status": "built",
+   "next": [{"to": "account.wishlist.load", "label": "load"}]},
+  {"id": "account.wishlist.load", "parent": "account.wishlist", "kind": "api", "title": "Load the wish list",
+   "api": {"method": "GET", "path": "/accounts/wishlist", "variant": "ok"}, "status": "built"},
+  {"id": "account.signout", "parent": "account", "kind": "action", "title": "Sign out", "status": "built",
+   "next": [{"to": "home.hero", "label": "signed out"}]}
+ ]}
