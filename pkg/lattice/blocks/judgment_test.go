@@ -11,9 +11,9 @@ type: group
 rationale: how providers are reached
 author: a@example.com
 entries:
-  - {id: pay.lanes.card, title: Card gateways, parent: pay-providers, members: [ext.visa]}
+  - {id: pay.lanes.card, title: Card gateways, parent: pay-providers, owner: payments-team, members: [ext.visa]}
 `), "lanes.yaml")
-	if err != nil || j.ID != "lanes" || j.Entries[0].Members[0] != "ext.visa" || j.Rationale == "" {
+	if err != nil || j.ID != "lanes" || j.Entries[0].Members[0] != "ext.visa" || j.Rationale == "" || j.Entries[0].Owner != "payments-team" {
 		t.Fatalf("judgment = %+v, %v", j, err)
 	}
 }
@@ -44,7 +44,7 @@ func TestJudgmentsApplyInBuild(t *testing.T) {
 	in := shopInputs(t)
 	in.Judgments = append(in.Judgments,
 		Judgment{ID: "providers", Type: "external", Entries: []JudgmentEntry{
-			{ID: "pay-providers", Title: "Payment providers", Kind: "external_group"},
+			{ID: "pay-providers", Title: "Payment providers", Kind: "external_group", Owner: "payments-team", Technology: "REST"},
 			{ID: "ext.visa", Title: "Visa", Parent: "pay-providers"}}},
 		Judgment{ID: "lanes", Type: "group", Entries: []JudgmentEntry{
 			{ID: "pay.lanes.card", Title: "Card gateways", Parent: "pay-providers", Members: []string{"ext.visa", "ext.nope"}}}},
@@ -57,6 +57,9 @@ func TestJudgmentsApplyInBuild(t *testing.T) {
 	b := blockMap(r)
 	if b["ext.visa"].Parent != "pay.lanes.card" || b["pay.lanes.card"].Kind != "group" || b["pay-providers"].Kind != "external_group" {
 		t.Errorf("group/external: visa=%+v lane=%+v", b["ext.visa"], b["pay.lanes.card"])
+	}
+	if a := b["pay-providers"].Attrs; a["owner"] != "payments-team" || a["technology"] != "REST" || b["ext.visa"].Attrs != nil {
+		t.Errorf("owner attrs: %v, visa %v", a, b["ext.visa"].Attrs)
 	}
 	if b["ext.visa"].Provenance.Source != "judgment:providers" || b["fe:cart"].Title != "Basket" {
 		t.Errorf("provenance/label: %+v %+v", b["ext.visa"].Provenance, b["fe:cart"])

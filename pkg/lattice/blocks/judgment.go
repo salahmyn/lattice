@@ -32,6 +32,7 @@ type JudgmentEntry struct {
 	Parent       string   `yaml:"parent,omitempty"`        // system, external, group
 	Technology   string   `yaml:"technology,omitempty"`    // system, external, group
 	Description  string   `yaml:"description,omitempty"`   // system, external, group
+	Owner        string   `yaml:"owner,omitempty"`         // system, external, group: the owning team (attrs.owner)
 	Members      []string `yaml:"members,omitempty"`       // group: blocks moved under it
 	From         string   `yaml:"from,omitempty"`          // edge
 	To           string   `yaml:"to,omitempty"`            // edge
@@ -151,8 +152,14 @@ func (g *graph) applyNodes(j Judgment, defaultKind string) {
 			g.warnf("judgment %s: %s replaces an existing block", j.ID, e.ID)
 		}
 		var attrs map[string]string
-		if e.Technology != "" {
-			attrs = map[string]string{"technology": e.Technology}
+		for k, v := range map[string]string{"technology": e.Technology, "owner": e.Owner} {
+			if v == "" {
+				continue
+			}
+			if attrs == nil {
+				attrs = map[string]string{}
+			}
+			attrs[k] = v
 		}
 		if e.Parent != "" && g.blocks[e.Parent] == nil {
 			g.warnf("judgment %s: %s parent %q is not a block", j.ID, e.ID, e.Parent)
