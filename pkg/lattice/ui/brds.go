@@ -99,6 +99,7 @@ func (s *Server) pageBRD(w http.ResponseWriter, r *http.Request) {
 			{Label: "BRDs", Href: "/brds"},
 			{Label: b.ID},
 		},
+		MapLinks: s.brdMapLinks(r.Context(), *b),
 		Body: map[string]interface{}{
 			"BRD":        b,
 			"Features":   features,

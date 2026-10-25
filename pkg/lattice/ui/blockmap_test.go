@@ -59,6 +59,66 @@ func TestBlockMapServesTheStore(t *testing.T) {
 	}
 }
 
+// The feature, BRD and entry point pages link to the map exactly when the
+// stored block graph has a block that stands for them.
+func TestViewOnMapLinks(t *testing.T) {
+	ws := &workspace.Workspace{LatticeDir: t.TempDir()}
+	st := store.OpenFiles(ws)
+	if err := st.ReplaceGraph(context.Background(), store.Graph{Blocks: []schema.Block{
+		{ID: "feat:refund", Kind: "composite", Title: "refund", BRD: "brd.refunds", Truth: "declared"},
+		{ID: "feat:audit", Kind: "composite", Title: "audit", BRD: "brd.refunds", Truth: "declared"},
+		{ID: "ep:post-refund", Kind: "boundary-in", Title: "POST /refunds", Truth: "wired"},
+		{ID: "web:cart", Kind: "screen", Title: "Cart", Truth: "declared"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	kg := schema.KnowledgeGraph{
+		Features: []schema.Manifest{{ID: "refund"}, {ID: "orders"}, {ID: "audit"}},
+		BRDs: []schema.BRD{{ID: "brd.refunds", Title: "Refunds", Status: schema.BRDDraft, ImplementsVia: []string{"refund"}},
+			{ID: "brd.cart", Title: "Cart", Status: schema.BRDDraft, Blocks: []string{"web:cart"}},
+			{ID: "brd.none", Title: "None", Status: schema.BRDDraft, ImplementsVia: []string{"orders"}}},
+		EntryPoints: []schema.EntryPoint{{ID: "post-refund", Kind: schema.EntryPointKindHTTP}, {ID: "cron-sweep", Kind: schema.EntryPointKindCron}},
+	}
+	build := func(context.Context) (schema.KnowledgeGraph, error) { return kg, nil }
+	for _, c := range []struct {
+		name  string
+		opts  Options
+		path  string
+		links []string // the focused block ids, in order; none means no link
+	}{
+		{"feature with a block", Options{Store: st}, "/features/refund", []string{"feat%3Arefund"}},
+		{"feature without a block", Options{Store: st}, "/features/orders", nil},
+		{"BRD: implementing features first", Options{Store: st}, "/brds/brd.refunds", []string{"feat%3Arefund", "feat%3Aaudit"}},
+		{"BRD: blocks it names", Options{Store: st}, "/brds/brd.cart", []string{"web%3Acart"}},
+		{"BRD without a block", Options{Store: st}, "/brds/brd.none", nil},
+		{"entry point with a block", Options{Store: st}, "/entry-points/post-refund", []string{"ep%3Apost-refund"}},
+		{"entry point without a block", Options{Store: st}, "/entry-points/cron-sweep", nil},
+		{"no store", Options{}, "/features/refund", nil},
+	} {
+		c.opts.GraphBuilder = build
+		w := httptest.NewRecorder()
+		New(ws, c.opts).routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, c.path, nil))
+		body := w.Body.String()
+		if w.Code != 200 {
+			t.Errorf("%s: %s = %d %s", c.name, c.path, w.Code, body)
+			continue
+		}
+		if n := strings.Count(body, "/map#tab=focus&amp;id="); n != len(c.links) || strings.Contains(body, "data-map-links") != (len(c.links) > 0) {
+			t.Errorf("%s: %d map links, want %d", c.name, n, len(c.links))
+			continue
+		}
+		at := 0
+		for _, id := range c.links {
+			i := strings.Index(body[at:], "/map#tab=focus&amp;id="+id+`"`)
+			if i < 0 {
+				t.Errorf("%s: no link to %s in order", c.name, id)
+				break
+			}
+			at += i + 1
+		}
+	}
+}
+
 // @verifies brd.adoption:US-1
 func TestViewsServeAndExport(t *testing.T) {
 	ws := &workspace.Workspace{LatticeDir: t.TempDir()}
