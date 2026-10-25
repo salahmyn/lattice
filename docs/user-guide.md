@@ -1021,8 +1021,12 @@ entries:
 Focus puts one block in the centre, the blocks that link to it on the
 left, and the blocks it links to on the right.
 
-- **Hops** 1–3 add columns outward. A block sits in the nearest column on
-  its side, and each column shows up to 40 blocks.
+- **Hops** 1–3 add columns outward, and each column shows up to 40 blocks.
+  Every block has one card, at its nearest hop, and the centre never comes
+  back as its own neighbour. A block linked both ways at the same hop sits
+  in the OUT column, marked "⇄ both ways", with both edges drawn. Its
+  further neighbours extend the OUT side only. Arrows point at each edge's
+  target.
 - **Click** a card to centre it. ◀ ▶, the breadcrumb, `[` `]` and the
   browser's back button walk the history.
 - **Double-click** a card, or use **Details**, to open its details.
@@ -1044,7 +1048,13 @@ in, and the proposal's verdict when one is selected.
 - The text box filters on title, id, kind, system and owner.
 - Chips filter per column. Each chip's count is what the other filters
   leave.
-- Headers sort, and a row opens Focus on its block.
+- Headers sort, and a row opens Focus on its block. System context turns
+  off for this, unless the block is a system or external itself.
+
+Blocks that exist only in a proposal show only while that proposal is
+selected. The page header counts them apart ("159 blocks +8 in
+proposals"). Discover names them beside its count, and the proposal's name
+selects it.
 
 ### Flows: swimlanes and the walkthrough
 
@@ -1065,7 +1075,10 @@ The bar at the bottom of the Diagram and Focus has:
 
 - **Fit**, zoom (`+`, `-`) and the zoom level;
 - the levels L1–L3;
-- a **Minimap** (`m`), which you click or drag to move the view;
+- a **Minimap** (`m`), which you click or drag to move the view. It shows
+  by itself while part of the drawing is off screen. The button shows or
+  hides it on demand. While it is on, **Fit** keeps the drawing clear of
+  it, either to its left or above it, whichever lets the drawing be larger;
 - **Text** (`t`): the view as Mermaid source;
 - **Export**: the view as an SVG or PNG image, or a `.mmd` file.
 

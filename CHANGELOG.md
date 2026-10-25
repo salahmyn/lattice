@@ -9,7 +9,8 @@ All notable changes to Lattice are documented in this file.
 - **Block map explorer** (`/map` and `lattice export map`), still one file
   that works offline:
   - **Focus** replaces Relations. A block sits in the centre with what links
-    to it on the left and what it links to on the right, 1 to 3 hops out.
+    to it on the left and what it links to on the right, 1 to 3 hops out,
+    each block once ("⇄ both ways" when linked in both directions).
     Click to re-centre, with back and forward history. **System context**
     lifts edges to systems and externals and merges them with counts.
   - **Lenses** on the Diagram group blocks by system, owner, kind, tier,
@@ -21,8 +22,11 @@ All notable changes to Lattice are documented in this file.
   - **Deep links**: the URL hash keeps the tab, block, hops, lens, context,
     proposal and hidden kinds, and the back button walks them. Feature,
     BRD and entry point pages in `lattice serve` link to their block.
-  - **Canvas toolbar**: fit, zoom, levels, a minimap, the view as Mermaid
+  - **Canvas toolbar**: fit, zoom, levels, a minimap (shown while part of
+    the drawing is off screen; Fit keeps clear of it), the view as Mermaid
     text, and export as SVG, PNG or `.mmd`.
+  - Blocks only in a proposal are counted apart in the header, and Discover
+    names them with a link that selects the proposal.
   - **Flows** group their steps into swimlanes by system, owner or tier.
     The walkthrough steps with the arrow keys and takes another way at a
     fork with 1–9.

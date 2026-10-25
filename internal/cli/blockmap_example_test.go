@@ -91,5 +91,19 @@ func TestBlockMapBrowserSmoke(t *testing.T) {
 		}
 		t.Fatalf("smoke test failed: %v\n%s", err, out)
 	}
+	// the demo must exercise these checks, not skip them
+	for _, want := range []string{
+		"ok   Diagram: after Fit with the minimap on, no box is under the minimap",
+		"ok   Focus: after Fit with the minimap on, no card is under the minimap",
+		"ok   system context at 2 hop(s): each block once",
+		"ok   a block linked both ways is marked ⇄ both ways",
+		"ok   Discover names the proposal-only blocks: 159 of 159 blocks · 8 more only in proposals",
+		"ok   clicking it selects the proposal (159 -> 167 rows)",
+		"ok   no console errors",
+	} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("smoke output lacks %q", want)
+		}
+	}
 	t.Logf("%s", out)
 }

@@ -54,6 +54,15 @@ const settle = page => page.waitForTimeout(350);
 const diagramDrawn = page => page.waitForSelector('#vp .bx', { timeout: 15000 });
 const hashParams = async page => Object.fromEntries(new URLSearchParams((await page.evaluate(() => location.hash)).slice(1)));
 const centre = page => page.$eval('#fvp .fc.me', g => g.dataset.f);
+const miniShown = page => page.$eval('#mini', m => m.style.display !== 'none');
+const underMini = (page, sel) => page.evaluate(sel => { // the ids of the boxes that overlap the minimap, or ''
+  const m = document.getElementById('mini').getBoundingClientRect();
+  return [...document.querySelectorAll(sel)].filter(e => {
+    const b = e.getBoundingClientRect();
+    return b.left < m.right && b.right > m.left && b.top < m.bottom && b.bottom > m.top;
+  }).map(e => e.closest('[data-box], [data-f]')?.getAttribute('data-box') || e.closest('[data-f]')?.dataset.f).join(', ');
+}, sel);
+const graphOf = page => page.evaluate(() => JSON.parse(document.getElementById('graph').textContent));
 
 async function smoke(browser) {
   const url = 'file://' + file;
@@ -98,10 +107,18 @@ async function smoke(browser) {
   const z0 = await zoom();
   await page.click('#ctool [data-tool=in]'); await settle(page);
   check(await zoom() !== z0, `zoom in (${z0} -> ${await zoom()})`);
+  await page.click('#ctool [data-tool=fit]'); await settle(page);
+  check(!(await miniShown(page)), 'the minimap hides while the whole drawing is in view');
+  for (let i = 0; i < 4; i++) await page.click('#ctool [data-tool=in]');
+  await settle(page);
+  check(await miniShown(page), 'the minimap appears when part of the drawing is off screen');
   await page.click('#ctool [data-tool=mini]');
-  check(await page.$eval('#mini', m => m.style.display === 'none'), 'minimap toggles off');
+  check(!(await miniShown(page)), 'the minimap toggles off');
   await page.click('#ctool [data-tool=mini]');
-  check(await page.$eval('#mini', m => m.style.display !== 'none' && m.querySelectorAll('rect').length > 1), 'minimap shows the boxes');
+  check(await page.$eval('#mini', m => m.style.display !== 'none' && m.querySelectorAll('rect').length > 1), 'the minimap toggles on and shows the boxes');
+  await page.click('#ctool [data-tool=fit]'); await settle(page);
+  const underD = await underMini(page, '#vp .bx rect.l, #vp .bx rect.c');
+  check(await miniShown(page) && !underD, 'Diagram: after Fit with the minimap on, no box is under the minimap' + (underD ? ': ' + underD : ''));
   await page.click('#ctool [data-tool=text]'); await settle(page);
   check(/^flowchart LR/m.test(await page.$eval('#mmd', p => p.textContent)), 'the view as Mermaid text');
   await page.keyboard.press('Escape');
@@ -160,11 +177,36 @@ async function smoke(browser) {
   check((await hashParams(page)).ctx === undefined, 'c toggles system context off');
   await page.click('#ctool [data-tool=fit]');
 
+  // every block once in Focus: system context around a system, at each hop count
+  const g0 = await graphOf(page);
+  const sys = (g0.blocks.find(b => b.id === 'sys.checkout') || g0.blocks.find(b => b.kind === 'system' && !b.initiative) || {}).id;
+  if (sys) {
+    await page.goto(url + '#tab=focus&id=' + encodeURIComponent(sys) + '&ctx=1&hops=2'); await page.waitForSelector('#fvp .fc.me'); await settle(page);
+    for (const hops of [2, 3, 1]) {
+      if (hops !== 2) { await page.click(`[data-hops="${hops}"]`); await settle(page); }
+      const ids = await page.$$eval('#fvp .fc', l => l.map(g => g.dataset.f));
+      const heads = await page.$$eval('#fvp text.colh', l => l.reduce((n, t) => n + +t.textContent.split('·').pop(), 0));
+      const more = await page.$$eval('#fvp .fmore', l => l.length);
+      // the headers count each card once (and the blocks behind a "+N more" box)
+      const headsOk = more ? heads >= ids.length - 1 : heads === ids.length - 1;
+      check(new Set(ids).size === ids.length && headsOk, `system context at ${hops} hop(s): each block once (${ids.length} cards, headers count ${heads})`);
+      if (hops === 2 && sys === 'sys.checkout') {
+        check(await page.$('#fvp .fc .both') !== null, 'a block linked both ways is marked ⇄ both ways');
+        check(await page.$('#fvp path.fe[data-a^="out|"][data-b^="c|"]') !== null, 'its inbound edge points back at the centre');
+      }
+    }
+    if (!(await miniShown(page))) await page.click('#ctool [data-tool=mini]');
+    await page.click('#ctool [data-tool=fit]'); await settle(page);
+    const underF = await underMini(page, '#fvp .fc rect.b, #fvp .fmore rect');
+    check(await miniShown(page) && !underF, 'Focus: after Fit with the minimap on, no card is under the minimap' + (underF ? ': ' + underF : ''));
+  }
+
   // edge filter is shared
   await page.click('#fbar details.kinds summary');
   await page.click('#fbar details.kinds input[data-kind]'); await settle(page);
   check(await page.$eval('#fbar details.kinds summary', s => /of/.test(s.textContent)), 'the edge filter applies to Focus');
   await page.click('#fbar details.kinds input[data-kind]'); await settle(page);
+  await page.click('#fbar details.kinds summary'); await settle(page); // close the menu
 
   // right-click a card: copy its id, then focus another
   await page.click('#fvp .fc.me rect.b', { button: 'right' });
@@ -206,8 +248,20 @@ async function smoke(browser) {
     check(await page.$('#walk[hidden]') !== null, 'Esc stops the walkthrough');
   }
 
-  // discover: text filter, a chip, sorting, a row opens Focus
+  // discover: proposal-only blocks are named, text filter, a chip, sorting, a row opens Focus
+  await page.selectOption('#init', ''); await settle(page);
   await page.click('.tabs [data-tab=discover]'); await page.waitForSelector('#dtable tr[data-row]');
+  const proposed = (await graphOf(page)).blocks.filter(b => b.initiative).length;
+  if (proposed) {
+    const counts = await page.$eval('#counts', e => e.textContent);
+    check(counts.includes(`+${proposed} in proposals`), `the header counts proposal blocks apart: ${counts}`);
+    const rowsOf = async () => +(await page.$eval('#dcount', e => e.textContent)).match(/of (\d+) blocks/)[1];
+    const hint = await page.$eval('#dcount', e => e.textContent), r0 = await rowsOf();
+    check(hint.includes(`${proposed} more only in proposals`), `Discover names the proposal-only blocks: ${hint}`);
+    await page.click('#dcount [data-pick-init]'); await page.waitForSelector('#dtable tr[data-row]'); await settle(page);
+    const r1 = await rowsOf();
+    check(await page.$eval('#init', s => s.value) !== '' && r1 > r0, `clicking it selects the proposal (${r0} -> ${r1} rows)`);
+  }
   const total = await page.$$eval('#dtable tr[data-row]', l => l.length);
   await page.fill('#dq', target.title.split(' ')[0]); await settle(page);
   const filtered = await page.$$eval('#dtable tr[data-row]', l => l.length);

@@ -165,6 +165,8 @@ path.e.walk { stroke: var(--warn); stroke-opacity: 1; stroke-width: 2.5; }
 svg text.colh { font: 600 10.5px var(--sans); letter-spacing: .08em; fill: var(--muted); }
 path.fe { fill: none; stroke: var(--muted); stroke-opacity: .5; }
 path.fe.hot { stroke: var(--accent); stroke-opacity: 1; }
+svg path.ah { fill: var(--muted); stroke: none; }
+.fc text.kk tspan.both { fill: var(--accent); }
 .disc { max-width: 100%; }
 .dhead { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 8px; }
 .dhead input { width: 320px; }
@@ -299,7 +301,7 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
   // sel: the block in the detail panel; focus: the block in the middle of the Focus tab, with its history
   const S = { sel: "", cluster: "", init: "", tab: "diag", flow: flows.length ? flows[0].id : "", open: new Set([""]), treeOn: false,
     focus: "", hops: 1, ctx: false, lens: "containment", hist: [], hi: -1,
-    hide: new Set(), mini: true, text: false, lanes: "system", lmode: "lanes" }; // hide: kinds the legend turned off
+    hide: new Set(), mini: "auto", text: false, /* mini: auto (while part of the drawing is off screen), on or off */ lanes: "system", lmode: "lanes" }; // hide: kinds the legend turned off
   const rank = {}; // verdict -> rank in the selected initiative's class order
 
   function title(id) { const b = byId.get(id); return b ? (b.title || b.id) : id; }
@@ -401,7 +403,11 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
   const flowsOf = new Map(); // block -> the flows that step on it
   for (const f of flows) for (const s of f.steps) { const l = flowsOf.get(s.to) || flowsOf.set(s.to, []).get(s.to); if (!l.includes(f)) l.push(f); }
 
-  document.getElementById("counts").textContent = `${blocks.length} blocks · ${edges.length} edges · ${flows.length} flows`;
+  // blocks that exist only in a proposal show only while it is selected; the header counts them apart
+  const inProposals = new Map(); // initiative -> its blocks
+  for (const b of blocks) if (b.initiative) inProposals.set(b.initiative, (inProposals.get(b.initiative) || 0) + 1);
+  const nProposed = [...inProposals.values()].reduce((a, n) => a + n, 0);
+  document.getElementById("counts").textContent = `${blocks.length - nProposed} blocks${nProposed ? ` +${nProposed} in proposals` : ""} · ${edges.length} edges · ${flows.length} flows`;
   document.getElementById("stamps").innerHTML = sources.map(s => {
     const st = s.state === "behind" ? `behind ${s.behind}` : s.state === "ahead" ? `ahead ${s.ahead}` : (s.state || "");
     const cls = s.state === "current" || s.state === "snapshot" ? "ok" : s.state ? "warn" : "";
@@ -578,30 +584,37 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
     return F.adj;
   }
   function topKind(g) { return Object.entries(g.kinds).sort((a, b) => b[1] - a[1])[0][0]; }
-  function columns(c, adj, side) { // one column per hop, outward; a block sits in the nearest column of its side
-    const cols = [], placed = new Set([c]);
-    let prev = [c];
-    for (let h = 1; h <= S.hops && prev.length; h++) {
+  // The hop columns of both sides, built together so a block gets one card: at its nearest hop, never the centre
+  // again, and a block linked both ways at the same hop sits on the OUT side, marked (it extends that side only).
+  function layers(c, adj) {
+    const placed = new Set([c]), R = [], L = [], both = new Set();
+    const reach = (front, map, end) => {
       const seen = new Map();
-      prev.forEach((p, i) => {
-        for (const g of (side === "out" ? adj.out : adj.inn).get(p) || []) {
-          const id = side === "out" ? g.to : g.from;
+      front.forEach((p, i) => {
+        for (const g of map.get(p) || []) {
+          const id = end(g);
           if (placed.has(id)) continue;
           const s = seen.get(id);
           if (s) { s.sum += i; s.n++; } else seen.set(id, { sum: i, n: 1, kind: topKind(g) });
         }
       });
-      const ids = [...seen.keys()].sort((a, b) => {
-        const x = seen.get(a), y = seen.get(b);
-        return (h === 1 ? x.kind.localeCompare(y.kind) : x.sum / x.n - y.sum / y.n) || title(a).localeCompare(title(b));
-      });
-      if (!ids.length) break;
-      for (const id of ids) placed.add(id);
-      const shown = ids.slice(0, MAXC);
-      cols.push({ ids: shown, more: ids.length - shown.length });
-      prev = shown;
+      return seen;
+    };
+    const order = (seen, h) => [...seen.keys()].sort((a, b) => {
+      const x = seen.get(a), y = seen.get(b);
+      return (h === 1 ? x.kind.localeCompare(y.kind) : x.sum / x.n - y.sum / y.n) || title(a).localeCompare(title(b));
+    });
+    let fo = [c], fi = [c];
+    for (let h = 1; h <= S.hops && (fo.length || fi.length); h++) {
+      const so = reach(fo, adj.out, g => g.to), si = reach(fi, adj.inn, g => g.from);
+      for (const id of [...si.keys()]) if (so.has(id)) { both.add(id); si.delete(id); }
+      const oi = order(so, h), ii = order(si, h);
+      for (const id of oi.concat(ii)) placed.add(id);
+      fo = oi.slice(0, MAXC); fi = ii.slice(0, MAXC);
+      if (oi.length) R.push({ ids: fo, more: oi.length - fo.length, hop: h });
+      if (ii.length) L.push({ ids: fi, more: ii.length - fi.length, hop: h });
     }
-    return cols;
+    return { R, L, both };
   }
   function pickFocus() {
     if (S.sel && visible(S.sel)) return S.sel;
@@ -640,15 +653,16 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
     if (p) return "in " + title(p.id);
     return b.description || b.kind;
   }
-  function fcard(id, x, y, w, h, me, adj) {
+  function fcard(id, x, y, w, h, me, adj, both) {
     const b = byId.get(id), o = ov(b), col = kcolor(b.kind), chars = Math.floor((w - 24) / 7.1);
     const nin = (adj.inn.get(id) || []).length, nout = (adj.out.get(id) || []).length;
     const tl = me ? wrap(b.title || b.id, chars - 2, 2) : [trunc(b.title || b.id, chars)];
-    let s = `<g class="fc${me ? " me" : ""}${id === S.sel ? " sel" : ""}" data-f="${esc(id)}" tabindex="0" role="button" aria-label="${esc((me ? "Centre: " : "Focus ") + (b.title || b.id))}" transform="translate(${x},${y})"><title>${esc(b.id)}${me ? "" : " · click to centre, double-click for details"}</title>` +
+    let s = `<g class="fc${me ? " me" : ""}${id === S.sel ? " sel" : ""}" data-f="${esc(id)}" tabindex="0" role="button" aria-label="${esc((me ? "Centre: " : "Focus ") + (b.title || b.id) + (both ? ", linked both ways" : ""))}" transform="translate(${x},${y})"><title>${esc(b.id)}${both ? " · linked both ways with the column before it" : ""}${me ? "" : " · click to centre, double-click for details"}</title>` +
       `<rect class="b" width="${w}" height="${h}" rx="9"/><rect x="9" y="0" width="${w - 18}" height="3" rx="1.5" style="fill:${col}"/>` +
       (o ? `<rect x="0" y="6" width="4" height="${h - 12}" rx="2" style="fill:${vcolor(o.verdict)}"><title>${esc(o.title || o.verdict)}</title></rect>` : "") +
-      gSvg(b.kind, 10, 10, 12) + `<text class="kk" x="27" y="20" style="fill:${col}">${esc(trunc(b.kind.toUpperCase(), 16))}${b.truth === "wired" ? `<tspan style="fill:var(--wired)"> ✓</tspan>` : ""}</text>` +
-      (ownerOf(id) ? `<text class="cnt" x="${w - 10}" y="20" text-anchor="end"><title>owner ${esc(ownerOf(id))}</title>@${esc(trunc(ownerOf(id), Math.floor(w / 7.2) - 17))}</text>` : "");
+      gSvg(b.kind, 10, 10, 12) + `<text class="kk" x="27" y="20" style="fill:${col}">${esc(trunc(b.kind.toUpperCase(), both ? 9 : 16))}${b.truth === "wired" ? `<tspan style="fill:var(--wired)"> ✓</tspan>` : ""}${both ? `<tspan class="both"> ⇄ both ways</tspan>` : ""}</text>` +
+      (ownerOf(id) ? `<text class="cnt" x="${w - 10}" y="20" text-anchor="end"><title>owner ${esc(ownerOf(id))}</title>@${esc(trunc(ownerOf(id),
+        Math.floor((w - 45 - (Math.min(b.kind.length, both ? 9 : 16) + (both ? 12 : 0) + (b.truth === "wired" ? 2 : 0)) * 6.6) / 6.6) - 1))}</text>` : "");
     let ty = 38;
     for (const t of tl) { s += `<text class="t" x="10" y="${ty}">${esc(t)}</text>`; ty += 16; }
     s += `<text class="s" x="10" y="${h - 10}">${esc(trunc(parentLine(id), chars - 8))}</text>` +
@@ -663,49 +677,57 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
     if (!S.focus) { document.getElementById("fvp").innerHTML = `<text class="k" x="40" y="90">The graph is empty.</text>`; return; }
     const adj = focusGraph(), c = adj.node(S.focus) || S.focus;
     F.center = c;
-    const R = columns(c, adj, "out"), L = columns(c, adj, "inn");
-    const boxes = new Map(); // "side|id" -> box
+    const { R, L, both } = layers(c, adj);
+    const key = id => id === c ? "c|" + c : (L.some(col => col.ids.includes(id)) ? "inn|" : "out|") + id;
+    const boxes = new Map(); // "c|id", "out|id" or "inn|id" -> box; every block once
     boxes.set("c|" + c, { x: -CW / 2, y: -CH / 2, w: CW, h: CH, id: c });
     const colX = (side, h) => side === "out" ? CW / 2 + FGX + (h - 1) * (FW + FGX) : -CW / 2 - FGX - FW - (h - 1) * (FW + FGX);
     const heads = [];
-    let top = -CH / 2;
-    for (const [side, cols] of [["out", R], ["inn", L]]) cols.forEach((col, i) => {
-      const n = col.ids.length + (col.more ? 1 : 0), tot = n * FH + (n - 1) * FGY, x = colX(side, i + 1);
+    let top = -CH / 2, bottom = CH / 2;
+    for (const [side, cols] of [["out", R], ["inn", L]]) for (const col of cols) {
+      const n = col.ids.length + (col.more ? 1 : 0), tot = n * FH + (n - 1) * FGY, x = colX(side, col.hop);
       col.ids.forEach((id, j) => boxes.set(side + "|" + id, { x, y: -tot / 2 + j * (FH + FGY), w: FW, h: FH, id }));
       if (col.more) col.moreBox = { x, y: -tot / 2 + col.ids.length * (FH + FGY), w: FW, h: FH };
-      top = Math.min(top, -tot / 2);
-      heads.push({ x, side, hop: i + 1, n: col.ids.length + col.more });
-    });
+      top = Math.min(top, -tot / 2); bottom = Math.max(bottom, tot / 2);
+      heads.push({ x, side, hop: col.hop, n: col.ids.length + col.more }); // each card counted once
+    }
     F.boxes = boxes;
-    let h = "";
+    let h = `<defs><marker id="fah" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" orient="auto"><path class="ah" d="M0,1 L9,5 L0,9 z"/></marker></defs>`;
     const drawn = [];
-    const link = (g, ka, kb) => { // from box ka's right side to box kb's left side
+    // an edge runs from its source to its target, arrow at the target; dy parts the two edges of a pair linked both ways
+    const link = (g, ka, kb, dy = 0) => {
       const a = boxes.get(ka), b = boxes.get(kb);
-      if (a && b) drawn.push({ g, x1: a.x + a.w, y1: a.y + a.h / 2, x2: b.x, y2: b.y + b.h / 2, ka, kb });
+      if (!a || !b) return;
+      const fwd = a.x < b.x, x1 = fwd ? a.x + a.w : a.x, y1 = a.y + a.h / 2 + dy, x2 = fwd ? b.x : b.x + b.w, y2 = b.y + b.h / 2 + dy;
+      let path, lx = fwd ? (ka.startsWith("inn|") ? x1 + 6 : x2 - 6) : x1 - 6, ly = fwd ? (ka.startsWith("inn|") ? y1 : y2) - 5 : y1 + 13;
+      if (fwd || kb.startsWith("c|")) { const mx = (x1 + x2) / 2; path = `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`; }
+      else { const yb = bottom + 40; path = `M${x1},${y1} C${x1 - 120},${yb} ${x2 + 120},${yb} ${x2},${y2}`; } // back across the centre, below it
+      drawn.push({ g, path, ka, kb, lx, ly, anchor: fwd && ka.startsWith("inn|") ? "start" : "end", across: !fwd && !kb.startsWith("c|") });
     };
-    for (const [side, cols] of [["out", R], ["inn", L]]) cols.forEach((col, i) => {
-      const prev = i === 0 ? [c] : cols[i - 1].ids, pk = i === 0 ? "c|" : side + "|", here = new Set(col.ids);
-      for (const p of prev) for (const g of (side === "out" ? adj.out : adj.inn).get(p) || []) {
-        const o = side === "out" ? g.to : g.from;
-        if (!here.has(o)) continue;
-        side === "out" ? link(g, pk + p, "out|" + o) : link(g, "inn|" + o, pk + p);
-      }
-    });
+    const R0 = [c], frontOf = (cols, hop) => hop === 1 ? R0 : (cols.find(x => x.hop === hop - 1)?.ids || []);
+    for (const col of R) {
+      const here = new Set(col.ids), back = new Set(frontOf(L, col.hop));
+      for (const p of frontOf(R, col.hop)) for (const g of adj.out.get(p) || [])
+        if (here.has(g.to)) link(g, key(p), "out|" + g.to, both.has(g.to) && col.hop === 1 && back.has(p) ? -4 : 0);
+      for (const id of col.ids) if (both.has(id)) for (const g of adj.out.get(id) || []) // the inbound half of a both-ways link
+        if (back.has(g.to)) link(g, "out|" + id, key(g.to), col.hop === 1 ? 4 : 0);
+    }
+    for (const col of L) {
+      const here = new Set(col.ids);
+      for (const p of frontOf(L, col.hop)) for (const g of adj.inn.get(p) || []) if (here.has(g.from)) link(g, "inn|" + g.from, key(p));
+    }
     const labelled = drawn.length <= 150;
     for (const d of drawn) {
-      const kinds = Object.keys(d.g.kinds), col = kinds.length === 1 ? kindColor(kinds[0]) : "", mx = (d.x1 + d.x2) / 2;
-      h += `<path class="fe" data-a="${esc(d.ka)}" data-b="${esc(d.kb)}" d="M${d.x1},${d.y1} C${mx},${d.y1} ${mx},${d.y2} ${d.x2},${d.y2}" style="stroke-width:${strokeW(d.g.n, 1.2)}${col ? ";stroke:" + col : ""}">` +
+      const kinds = Object.keys(d.g.kinds), col = kinds.length === 1 ? kindColor(kinds[0]) : "";
+      h += `<path class="fe" data-a="${esc(d.ka)}" data-b="${esc(d.kb)}" d="${d.path}" marker-end="url(#fah)" style="stroke-width:${strokeW(d.g.n, 1.2)}${col ? ";stroke:" + col : ""}">` +
         `<title>${esc(title(d.g.from))} → ${esc(title(d.g.to))}: ${esc(kindsText(d.g, 9))}${d.g.labels.length ? " (" + esc(d.g.labels.join("; ")) + ")" : ""}</title></path>`;
-      if (labelled) { // at the outer end, where each edge has its own card
-        const out = d.ka.startsWith("c|") || d.ka.startsWith("out|");
-        h += `<text class="el" x="${out ? d.x2 - 6 : d.x1 + 6}" y="${(out ? d.y2 : d.y1) - 5}" text-anchor="${out ? "end" : "start"}">${esc(trunc(kindsText(d.g), 26))}</text>`;
-      }
+      if (labelled) h += `<text class="el" x="${d.lx}" y="${d.ly}" text-anchor="${d.anchor}">${esc(trunc(kindsText(d.g), 26))}</text>`; // at the end with its own card
     }
     for (const hd of heads) {
       const label = hd.side === "out" ? `OUT · HOP ${hd.hop} →` : `← IN · HOP ${hd.hop}`;
       h += `<text class="colh" x="${hd.x + (hd.side === "out" ? 0 : FW)}" y="${top - 16}" text-anchor="${hd.side === "out" ? "start" : "end"}">${label} · ${hd.n}</text>`;
     }
-    for (const [k, b] of boxes) h += fcard(b.id, b.x, b.y, b.w, b.h, k.startsWith("c|"), adj);
+    for (const [k, b] of boxes) h += fcard(b.id, b.x, b.y, b.w, b.h, k.startsWith("c|"), adj, both.has(b.id) && !k.startsWith("c|"));
     for (const [side, cols] of [["out", R], ["inn", L]]) for (const col of cols) if (col.moreBox) {
       const m = col.moreBox;
       h += `<g class="fmore" transform="translate(${m.x},${m.y})"><title>${col.more} more blocks at this hop; narrow the edge filter or open Discover</title><rect width="${m.w}" height="${m.h}" rx="9"/>` +
@@ -714,7 +736,7 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
     if (!R.length && !L.length)
       h +=`<text class="k" x="0" y="${CH / 2 + 34}" text-anchor="middle">no ${D.off.size ? "shown " : ""}edges${S.ctx ? " between systems" : ""}</text>`;
     document.getElementById("fvp").innerHTML = h;
-    let x0 = -CW / 2, x1 = CW / 2, y0 = top - 34, y1 = CH / 2 + 40;
+    let x0 = -CW / 2, x1 = CW / 2, y0 = top - 34, y1 = Math.max(CH / 2 + 40, drawn.some(d => d.across) ? bottom + 36 : 0);
     for (const b of boxes.values()) { x0 = Math.min(x0, b.x); x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h); }
     for (const cols of [R, L]) for (const col of cols) if (col.moreBox) y1 = Math.max(y1, col.moreBox.y + FH);
     F.size = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
@@ -743,12 +765,12 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
   }
   function ffit(all) { // all: the whole focus graph; otherwise the centre in the middle at a readable scale
     const svg = document.getElementById("fsvg"); if (!svg || !F.size) return;
-    const r = svg.getBoundingClientRect(), top = (document.getElementById("fbar")?.offsetHeight || 0) + 6;
-    const k0 = Math.min((r.width - 40) / F.size.w, (r.height - top - 20) / F.size.h, 1);
-    if (all || k0 >= 0.6) {
-      const k = Math.max(k0, 0.08);
-      F.tf = { k, x: (r.width - F.size.w * k) / 2 - F.size.x * k, y: top + Math.max(0, (r.height - top - F.size.h * k) / 2) - F.size.y * k };
-    } else F.tf = { k: 0.6, x: r.width / 2, y: top + (r.height - top) / 2 }; // too big to read whole: the centre, readable
+    const t = fitTf(svg, "fbar", F.size, 1, 0.08);
+    if (all || t.k >= 0.6) F.tf = t;
+    else { // too big to read whole: the centre, readable
+      const r = svg.getBoundingClientRect(), top = (document.getElementById("fbar")?.offsetHeight || 0) + 10;
+      F.tf = { k: 0.6, x: r.width / 2, y: top + (r.height - top - TOOLBAR_H) / 2 };
+    }
     applyView();
   }
   function wireFocus() {
@@ -963,7 +985,12 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
       }
     };
     document.getElementById("dfacets").innerHTML = fh;
-    document.getElementById("dcount").textContent = `${hits.length} of ${rows.length} blocks${hits.length > shown.length ? ` · showing ${shown.length}` : ""}`;
+    const others = [...inProposals].filter(([init]) => init !== S.init), nOther = others.reduce((a, [, n]) => a + n, 0);
+    const pname = init => byId.get("init:" + init)?.title || init;
+    document.getElementById("dcount").innerHTML = `${hits.length} of ${rows.length} blocks${hits.length > shown.length ? ` · showing ${shown.length}` : ""}` +
+      (nOther ? `<span class="phint"> · ${nOther} more only in ${S.init ? "other " : ""}proposals: ` +
+        others.map(([init, n]) => `<a class="link" data-pick-init="${esc(init)}" title="Select this proposal to show its blocks">${esc(pname(init))}${others.length > 1 ? ` (${n})` : ""}</a>`).join(", ") +
+        (others.length === 1 ? ` <a class="link" data-pick-init="${esc(others[0][0])}">show</a>` : "") + `</span>` : "");
     document.getElementById("dtable").innerHTML = `<table class="dt"><thead><tr>${th}</tr></thead><tbody>` +
       shown.map(r => `<tr data-row="${esc(r.id)}" tabindex="0" title="Open ${esc(r.title)} in Focus">${cols.map(c => td(r, c)).join("")}</tr>`).join("") + `</tbody></table>` +
       (hits.length > shown.length ? `<p><button data-act="dmore">Show ${Math.min(200, hits.length - shown.length)} more</button></p>` : "") +
@@ -971,6 +998,8 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
     renderKinds(hits.map(r => r.kind));
   }
   function discoverClick(e) {
+    const pi = e.target.closest("[data-pick-init]");
+    if (pi) { setInit(pi.dataset.pickInit); renderLegend(); renderTree(); renderDetail(); renderDiscover(true); commit(true); return; }
     const s = e.target.closest("[data-sort]");
     if (s) { if (Q.sort === s.dataset.sort) Q.dir = -Q.dir; else { Q.sort = s.dataset.sort; Q.dir = DC.find(c => c.id === Q.sort)?.num ? -1 : 1; } discoverBody(); return; }
     const f = e.target.closest("[data-facet]");
@@ -981,9 +1010,11 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
     if (a === "clear") { Q.f = {}; Q.text = ""; Q.limit = 200; renderDiscover(true); return; }
     if (a === "dmore") { Q.limit += 200; discoverBody(); return; }
     const r = e.target.closest("[data-row]");
-    if (r) openFocus(r.dataset.row);
+    if (r) focusBlock(r.dataset.row);
   }
-  pane.onkeydown = e => { if (S.tab === "discover" && e.key === "Enter" && e.target.matches("tr[data-row]")) openFocus(e.target.dataset.row); };
+  pane.onkeydown = e => { if (S.tab === "discover" && e.key === "Enter" && e.target.matches("tr[data-row]")) focusBlock(e.target.dataset.row); };
+  // Focus on this very block: system context, which would put its system in the centre instead, goes off
+  function focusBlock(id) { openFocus(id, isCtx(byId.get(id)) ? undefined : false); }
 
   // ---- diagram: boxes for the root's children, opened in place or drilled into; block edges are lifted to the
   // nearest box on screen and merged per (from, to, kind). A lens other than containment groups the blocks instead.
@@ -1383,19 +1414,37 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
   }
 
   function applyTf() { applyView(); }
-  function fit() {
-    const svg = document.getElementById("dsvg"); if (!svg || !D.size) return;
-    const r = svg.getBoundingClientRect(), top = (document.getElementById("dbar")?.offsetHeight || 0) + 10;
-    const k = Math.min((r.width - 40) / (D.size.w || 1), (r.height - top - 20) / (D.size.h || 1), 1.2);
-    D.tf = { k, x: (r.width - D.size.w * k) / 2, y: top + Math.max(0, (r.height - top - D.size.h * k) / 2) };
-    applyTf();
+  function fit() { D.tf = fitTf(document.getElementById("dsvg"), "dbar", D.size, 1.2, 0); applyTf(); }
+  // Fit: all of a drawing, clear of the top bar and the toolbar, and of the minimap when it is on: the drawing goes
+  // left of the minimap or above it, whichever lets it be larger.
+  const MINI = { w: 200, h: 140, m: 14, gap: 12 }, TOOLBAR_H = 60;
+  function miniBox(r) { return { x: r.width - MINI.m - MINI.w, y: r.height - MINI.m - MINI.h, w: MINI.w, h: MINI.h }; }
+  function fitTf(svg, barId, size, maxK, minK) {
+    if (!svg || !size) return { k: 1, x: 0, y: 0 };
+    const r = svg.getBoundingClientRect(), top = (document.getElementById(barId)?.offsetHeight || 0) + 10, bottom = r.height - TOOLBAR_H;
+    let regions = [{ x: 20, y: top, w: r.width - 40, h: bottom - top }];
+    if (S.mini === "on") {
+      const m = miniBox(r);
+      regions = [{ x: 20, y: top, w: m.x - MINI.gap - 20, h: bottom - top }, { x: 20, y: top, w: r.width - 40, h: Math.min(bottom, m.y - MINI.gap) - top }];
+    }
+    let best = null;
+    for (const g of regions) {
+      if (g.w <= 0 || g.h <= 0) continue;
+      const k = Math.max(minK, Math.min(g.w / (size.w || 1), g.h / (size.h || 1), maxK));
+      if (!best || k > best.k) best = { k, g };
+    }
+    if (!best) best = { k: Math.max(minK, 0.1), g: regions[0] };
+    const { k, g } = best;
+    return { k, x: g.x + (g.w - size.w * k) / 2 - size.x * k, y: g.y + Math.max(0, (g.h - size.h * k) / 2) - size.y * k };
   }
-  function centerOn(id) { // pan (and zoom in if the boxes are tiny) so a box is in view
+  function centerOn(id) { // pan (and zoom in if the boxes are tiny) so a box is in view, and not under the minimap
     const b = D.boxes.get(id), svg = document.getElementById("dsvg"); if (!b || !svg) return;
-    const r = svg.getBoundingClientRect();
-    if (D.tf.k < 0.6) { const k = 0.8; D.tf.x = r.width / 2 - (b.x + b.w / 2) * k; D.tf.y = r.height / 2 - (b.y + b.h / 2) * k; D.tf.k = k; applyTf(); return; }
-    const sx = D.tf.x + (b.x + b.w / 2) * D.tf.k, sy = D.tf.y + (b.y + b.h / 2) * D.tf.k;
-    if (sx < 40 || sy < 70 || sx > r.width - 40 || sy > r.height - 40) { D.tf.x += r.width / 2 - sx; D.tf.y += r.height / 2 - sy; applyTf(); }
+    const r = svg.getBoundingClientRect(), cy = (70 + r.height - TOOLBAR_H) / 2;
+    if (D.tf.k < 0.6) { const k = 0.8; D.tf.x = r.width / 2 - (b.x + b.w / 2) * k; D.tf.y = cy - (b.y + b.h / 2) * k; D.tf.k = k; applyTf(); return; }
+    const k = D.tf.k, bx = D.tf.x + b.x * k, by = D.tf.y + b.y * k, bw = b.w * k, bh = b.h * k, m = miniBox(r);
+    const underMini = S.mini !== "off" && bx < m.x + m.w && bx + bw > m.x - MINI.gap && by < m.y + m.h && by + bh > m.y - MINI.gap;
+    const sx = bx + bw / 2, sy = by + bh / 2;
+    if (underMini || sx < 40 || sy < 70 || sx > r.width - 40 || sy > r.height - TOOLBAR_H) { D.tf.x += r.width / 2 - sx; D.tf.y += cy - sy; applyTf(); }
   }
 
   function setLens(v) {
@@ -1553,7 +1602,7 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
       `<button data-tool="fit" title="Fit the view ( f )">Fit</button><button data-tool="out" aria-label="Zoom out" title="Zoom out ( - )">−</button>` +
       `<span class="zp" id="zp" aria-live="polite">100%</span><button data-tool="in" aria-label="Zoom in" title="Zoom in ( + )">+</button>` +
       (lv ? `<span class="sep"></span>` + [1, 2, 3].map(n => `<button data-depth="${n}" title="Show inside, ${n} level${n > 1 ? "s" : ""} deep"${D.depth === n ? ' class="on"' : ""}>L${n}</button>`).join("") : "") +
-      `<span class="sep"></span><button data-tool="mini" aria-pressed="${S.mini}" title="Minimap ( m )">Minimap</button>` +
+      `<span class="sep"></span><button data-tool="mini" aria-pressed="false" title="Minimap ( m ): shown by itself while part of the drawing is off screen">Minimap</button>` +
       `<button data-tool="text" aria-pressed="${S.text}" title="This view as Mermaid text ( t )">Text</button>` +
       `<span class="menu"><button data-tool="export" aria-haspopup="menu" title="Download this view">Export ▾</button><div id="xmenu" role="menu" hidden>` +
       `<button data-x="svg" role="menuitem">SVG image</button><button data-x="png" role="menuitem">PNG image</button><button data-x="mmd" role="menuitem">Mermaid (.mmd)</button></div></span></div>` +
@@ -1582,7 +1631,6 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
   function renderMini() { // every box in its kind's colour, open boxes outlined, and the part of the canvas in view
     const m = document.getElementById("mini"), c = cur();
     if (!m || !c || !c.T.size) return;
-    m.style.display = S.mini ? "" : "none";
     const sz = c.T.size, pad = 30;
     m.setAttribute("viewBox", `${sz.x - pad} ${sz.y - pad} ${sz.w + 2 * pad} ${sz.h + 2 * pad}`);
     let h = "";
@@ -1604,9 +1652,23 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
     m.onpointerdown = e => { m.setPointerCapture(e.pointerId); go(e); m.onpointermove = go; };
     m.onpointerup = () => { m.onpointermove = null; };
   }
+  function allInView(c) { // the whole drawing is on screen at the current zoom: nothing for a minimap to navigate
+    const r = c.svg.getBoundingClientRect(), t = c.T.tf, sz = c.T.size, top = (document.getElementById(S.tab === "focus" ? "fbar" : "dbar")?.offsetHeight || 0);
+    const x0 = t.x + sz.x * t.k, y0 = t.y + sz.y * t.k;
+    return x0 >= -1 && y0 >= top - 1 && x0 + sz.w * t.k <= r.width + 1 && y0 + sz.h * t.k <= r.height + 1;
+  }
+  function miniOn() { // shown: on demand, or (auto) while part of the drawing is off screen
+    const c = cur();
+    if (!c || !c.svg || !c.T.size) return false;
+    return S.mini === "on" || (S.mini === "auto" && !allInView(c));
+  }
   function miniView() {
-    const mv = document.getElementById("mv"), c = cur();
-    if (!mv || !c || !c.svg) return;
+    const m = document.getElementById("mini"), mv = document.getElementById("mv"), c = cur();
+    if (!m || !c || !c.svg) return;
+    const on = miniOn();
+    m.style.display = on ? "" : "none";
+    document.querySelectorAll("#ctool [data-tool=mini]").forEach(b => b.setAttribute("aria-pressed", String(on)));
+    if (!mv) return;
     const r = c.svg.getBoundingClientRect(), t = c.T.tf;
     mv.setAttribute("x", -t.x / t.k); mv.setAttribute("y", -t.y / t.k);
     mv.setAttribute("width", Math.max(1, r.width / t.k)); mv.setAttribute("height", Math.max(1, r.height / t.k));
@@ -1701,7 +1763,7 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
     document.body.appendChild(t);
     setTimeout(() => t.remove(), 1600);
   }
-  function setMini(on) { S.mini = on; const m = document.getElementById("mini"); if (m) m.style.display = on ? "" : "none"; miniView(); document.querySelectorAll("#ctool [data-tool=mini]").forEach(b => b.setAttribute("aria-pressed", String(on))); }
+  function toggleMini() { S.mini = miniOn() ? "off" : "on"; miniView(); } // the toggle shows it on demand, or hides it
   function toolClick(e) {
     const x = e.target.closest("[data-x]");
     if (x) { document.getElementById("xmenu").hidden = true; exportView(x.dataset.x); return; }
@@ -1711,7 +1773,7 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
     if (t === "fit") S.tab === "focus" ? ffit(true) : fit();
     if (t === "in") zoomBy(1.25);
     if (t === "out") zoomBy(0.8);
-    if (t === "mini") setMini(!S.mini);
+    if (t === "mini") toggleMini();
     if (t === "text") { S.text = !S.text; textView(); }
     if (t === "copy") copyText(mermaid());
     if (t === "export") { const m = document.getElementById("xmenu"); m.hidden = !m.hidden; }
@@ -1744,7 +1806,7 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
     const a = e.target.closest("[data-cm]")?.dataset.cm, id = cm.dataset.id;
     if (!a) return;
     cm.hidden = true;
-    if (a === "focus") openFocus(id);
+    if (a === "focus") focusBlock(id);
     if (a === "ctx") openFocus(isCtx(byId.get(id)) ? id : ctxOf(id), true);
     if (a === "details") openDetail(id);
     if (a === "diag") { if (S.tab !== "diag") setTab("diag"); select(id); }
@@ -1910,7 +1972,7 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
       if (e.key === "f") { S.tab === "focus" ? ffit(true) : fit(); return; }
       if (e.key === "+" || e.key === "=") { zoomBy(1.25); return; }
       if (e.key === "-") { zoomBy(0.8); return; }
-      if (e.key === "m") { setMini(!S.mini); return; }
+      if (e.key === "m") { toggleMini(); return; }
       if (e.key === "t") { S.text = !S.text; textView(); return; }
     }
     if (S.tab !== "focus") return;
