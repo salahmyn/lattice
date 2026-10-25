@@ -6,6 +6,33 @@ All notable changes to Lattice are documented in this file.
 
 ### Added
 
+- **Block map explorer** (`/map` and `lattice export map`), still one file
+  that works offline:
+  - **Focus** replaces Relations. A block sits in the centre with what links
+    to it on the left and what it links to on the right, 1 to 3 hops out.
+    Click to re-centre, with back and forward history. **System context**
+    lifts edges to systems and externals and merges them with counts.
+  - **Lenses** on the Diagram group blocks by system, owner, kind, tier,
+    truth or proposal verdict, with merged edges between the groups.
+  - **Kind colours and icons** by family, in every view, with a legend that
+    counts the kinds on screen and hides a kind on click.
+  - **Discover**: a filterable, sortable table of every block, with chips
+    per column; a row opens Focus.
+  - **Deep links**: the URL hash keeps the tab, block, hops, lens, context,
+    proposal and hidden kinds, and the back button walks them. Feature,
+    BRD and entry point pages in `lattice serve` link to their block.
+  - **Canvas toolbar**: fit, zoom, levels, a minimap, the view as Mermaid
+    text, and export as SVG, PNG or `.mmd`.
+  - **Flows** group their steps into swimlanes by system, owner or tier.
+    The walkthrough steps with the arrow keys and takes another way at a
+    fork with 1–9.
+  - A right-click menu on any block, and `@owner` on boxes and cards.
+- **`owner`** on system, external and group judgment entries, kept as
+  `attrs.owner`. Feature blocks carry their manifest's owner too.
+- **`examples/block-map/`**: a fictional bookshop workspace for the map,
+  and `scripts/blockmap-smoke.js`, a Playwright smoke test of the exported
+  page (run by a Go test that skips without node or Playwright).
+
 - **`lattice fmt [--check] [path...]`** rewrites feature manifests, BRDs
   and entry points in canonical form: their schema's field order and a
   2-space indent, as Lattice's own writers produce.
