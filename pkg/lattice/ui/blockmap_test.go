@@ -59,6 +59,34 @@ func TestBlockMapServesTheStore(t *testing.T) {
 	}
 }
 
+// The exported page is one file with the explorer's tabs, lenses, legend and
+// canvas tools, the graph inlined, and no script but the pinned, SRI-checked ELK.
+func TestMapExportHasTheExplorer(t *testing.T) {
+	g := store.Graph{Blocks: []schema.Block{{ID: "sys.shop", Kind: "system", Title: "Shop", Truth: "declared", Attrs: map[string]string{"owner": "team-a"}},
+		{ID: "web:cart", Kind: "screen", Parent: "sys.shop", Title: "Cart", Truth: "declared"}}}
+	page, err := MapHTML(g, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(page)
+	for _, want := range []string{
+		`data-tab="diag"`, `data-tab="focus"`, `data-tab="flows"`, `data-tab="discover"`, // tabs
+		`id="klegend"`, `data-act="lens"`, `containment: "Containment"`, `verdict: "Proposal verdict"`, // legend and lenses
+		`data-tool="mini"`, `data-x="svg"`, `data-x="png"`, `data-x="mmd"`, // canvas tools
+		`"id":"sys.shop"`, `"owner":"team-a"`, // the graph, inlined
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("export lacks %s", want)
+		}
+	}
+	if n := strings.Count(s, "<script src="); n != 1 || !strings.Contains(s, `<script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js" integrity="sha384-`) {
+		t.Errorf("external scripts: %d, want only the pinned ELK with SRI", n)
+	}
+	if strings.Contains(s, "<link ") {
+		t.Error("the export loads a stylesheet")
+	}
+}
+
 // The feature, BRD and entry point pages link to the map exactly when the
 // stored block graph has a block that stands for them.
 func TestViewOnMapLinks(t *testing.T) {
