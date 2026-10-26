@@ -1,0 +1,12 @@
+{"area": "admin", "title": "Catalogue admin", "summary": "Where staff edit books, import lists and change store settings.",
+ "nodes": [
+  {"id": "admin", "parent": null, "kind": "screen", "title": "Catalogue admin"},
+  {"id": "admin.edit", "parent": "admin", "kind": "screen", "title": "Edit a book", "status": "built",
+   "next": [{"to": "admin.edit.save", "label": "save"}]},
+  {"id": "admin.edit.save", "parent": "admin.edit", "kind": "action", "title": "Save the book", "status": "built",
+   "next": [{"to": "books.records", "label": "write"}]},
+  {"id": "admin.import", "parent": "admin", "kind": "action", "title": "Bulk import", "status": "planned",
+   "next": [{"to": "books.records", "label": "write"}]},
+  {"id": "admin.settings", "parent": "admin", "kind": "setting", "title": "Store settings", "status": "built",
+   "detail": "Promotions, vouchers, reviews, guest checkout and stock thresholds."}
+ ]}

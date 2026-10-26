@@ -1,0 +1,3 @@
+# Lattice configuration for the block map demo (no code roots to extract).
+mutation_testing:
+  enabled: false

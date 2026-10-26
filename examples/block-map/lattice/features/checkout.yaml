@@ -1,0 +1,11 @@
+id: checkout
+version: 1
+status: production
+purpose: |
+  Turns a reader's basket into a paid order.
+owners:
+  business: commerce
+  engineering: team-checkout
+invariants:
+  - id: INV-1
+    statement: Only a paid basket becomes an order.

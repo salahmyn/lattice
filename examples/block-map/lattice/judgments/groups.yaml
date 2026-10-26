@@ -1,0 +1,10 @@
+id: groups
+type: group
+rationale: Keep the feature blocks together instead of loose on the landscape.
+author: demo@example.com
+entries:
+  - id: grp.features
+    title: Product features
+    owner: team-checkout
+    description: The features the shop's manifests declare.
+    members: [feat:checkout, feat:refunds]

@@ -11,8 +11,10 @@ func TestFeaturesBecomeBlocks(t *testing.T) {
 	r := Build(Inputs{
 		Features: []schema.Manifest{
 			{ID: "refund", Purpose: "Refund orders.", ImplementsBRD: "brd.refunds", DependsOn: []string{"orders"},
+				Owners:     schema.Owners{Business: "finance", Engineering: "payments-team"},
 				Invariants: []schema.Invariant{{ID: "INV-1", Statement: "Refund at most once."}}},
-			{ID: "orders", Purpose: "Place orders."},
+			{ID: "orders", Purpose: "Place orders.", Owners: schema.Owners{Business: "sales"}},
+			{ID: "audit", Purpose: "Audit log."},
 		},
 		EntryPoints: []schema.EntryPoint{{ID: "post-refund", Kind: schema.EntryPointKindHTTP, Purpose: "Refund API",
 			Trigger: schema.Trigger{Method: "POST", Path: "/refunds"}, Flow: []schema.FlowStep{{Feature: "refund", Capability: "issue"}}}},
@@ -21,6 +23,9 @@ func TestFeaturesBecomeBlocks(t *testing.T) {
 	f := b["feat:refund"]
 	if f.Kind != "composite" || f.BRD != "brd.refunds" || f.Description != "Refund orders." || f.Provenance.Kind != schema.ProvenanceHuman {
 		t.Errorf("feature block = %+v", f)
+	}
+	if b["feat:refund"].Attrs["owner"] != "payments-team" || b["feat:orders"].Attrs["owner"] != "sales" || b["feat:audit"].Attrs != nil {
+		t.Errorf("owners: refund %v, orders %v, audit %v", b["feat:refund"].Attrs, b["feat:orders"].Attrs, b["feat:audit"].Attrs)
 	}
 	if inv := b["inv:refund.INV-1"]; inv.Parent != "feat:refund" || inv.Kind != "invariant" || inv.Description != "Refund at most once." {
 		t.Errorf("invariant block = %+v", inv)

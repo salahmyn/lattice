@@ -20,7 +20,8 @@ type pageData struct {
 	Active      string
 	Breadcrumbs []crumb
 	Body        interface{}
-	JSONHref    string // canonical URL of the same content as JSON
+	JSONHref    string    // canonical URL of the same content as JSON
+	MapLinks    []mapLink // "View on map": the blocks this page's artefact corresponds to
 }
 
 type crumb struct {
@@ -122,6 +123,7 @@ func (s *Server) pageFeature(w http.ResponseWriter, r *http.Request) {
 			{Label: "Features", Href: "/features"},
 			{Label: feat.ID},
 		},
+		MapLinks: s.mapLinks(r.Context(), []string{"feat:" + id}, nil),
 		Body: map[string]interface{}{
 			"Feature":   feat,
 			"ReachedBy": reached,
@@ -183,7 +185,8 @@ func (s *Server) pageEntryPoint(w http.ResponseWriter, r *http.Request) {
 			{Label: "Entry points", Href: "/entry-points"},
 			{Label: ep.ID},
 		},
-		Body: ep,
+		MapLinks: s.mapLinks(r.Context(), []string{"ep:" + id}, nil),
+		Body:     ep,
 	})
 }
 

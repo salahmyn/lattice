@@ -1,0 +1,19 @@
+{"area": "home", "title": "Home page", "summary": "The landing page: featured books, a promotion banner and the search box.",
+ "configs": [{"id": "promo.enabled", "kind": "storeSetting"}, {"id": "featured.count", "kind": "storeSetting"}],
+ "nodes": [
+  {"id": "home", "parent": null, "kind": "page", "title": "Home page", "detail": "What a reader sees first."},
+  {"id": "home.hero", "parent": "home", "kind": "screen", "title": "Hero banner", "status": "built",
+   "next": [{"to": "home.featured", "label": "scroll"}]},
+  {"id": "home.promo", "parent": "home", "kind": "screen", "title": "Promotion strip", "status": "built",
+   "detail": "Shown while a promotion runs.", "when": ["promo.enabled = true"]},
+  {"id": "home.featured", "parent": "home", "kind": "screen", "title": "Featured books", "status": "built",
+   "when": ["featured.count > 0"],
+   "next": [{"to": "home.featured.load", "label": "load"}, {"to": "home.featured.open", "label": "pick a book"}]},
+  {"id": "home.featured.load", "parent": "home.featured", "kind": "api", "title": "Load featured books",
+   "api": {"method": "GET", "path": "/catalogue/featured", "variant": "ok"}, "status": "built",
+   "tests": {"react": ["home/featured.test.ts > loads featured books"]}},
+  {"id": "home.featured.open", "parent": "home.featured", "kind": "action", "title": "Open a featured book",
+   "next": [{"to": "book.details", "label": "open"}], "status": "built"},
+  {"id": "home.search", "parent": "home", "kind": "action", "title": "Search box", "status": "built",
+   "next": [{"to": "browse.results", "label": "search"}]}
+ ]}

@@ -16,7 +16,7 @@ func (g *graph) addFeatures(ms []schema.Manifest, eps []schema.EntryPoint) {
 		prov := schema.Provenance{Kind: schema.ProvenanceHuman, Source: "features/" + m.ID + ".yaml"}
 		id := "feat:" + m.ID
 		g.blocks[id] = &schema.Block{ID: id, Kind: "composite", Title: m.ID, Description: m.Purpose,
-			BRD: m.ImplementsBRD, Truth: schema.TruthDeclared, Provenance: prov}
+			BRD: m.ImplementsBRD, Truth: schema.TruthDeclared, Provenance: prov, Attrs: ownerAttrs(m.Owners)}
 		for _, inv := range m.Invariants {
 			iid := "inv:" + m.ID + "." + inv.ID
 			g.blocks[iid] = &schema.Block{ID: iid, Kind: "invariant", Parent: id, Title: inv.ID,
@@ -51,6 +51,19 @@ func (g *graph) addFeatures(ms []schema.Manifest, eps []schema.EntryPoint) {
 			g.edge(id, "feat:"+s.Feature, "flow", s.Capability, nil, prov)
 		}
 	}
+}
+
+// ownerAttrs carries a manifest's owners onto its feature block, so the block
+// map can group by owner: the engineering owner, else the business owner.
+func ownerAttrs(o schema.Owners) map[string]string {
+	owner := o.Engineering
+	if owner == "" {
+		owner = o.Business
+	}
+	if owner == "" {
+		return nil
+	}
+	return map[string]string{"owner": owner}
 }
 
 func triggerTitle(ep schema.EntryPoint) string {

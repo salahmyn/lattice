@@ -1,0 +1,16 @@
+{"area": "identity", "title": "Identity", "summary": "Sign-in, sessions and profiles.",
+ "nodes": [
+  {"id": "identity", "parent": null, "kind": "service", "title": "Identity"},
+  {"id": "identity.signin", "parent": "identity", "kind": "route", "title": "Sign in",
+   "http": {"method": "POST", "path": "/accounts/sessions"}, "fulfills": ["checkout.signin.call"], "status": "built",
+   "next": [{"to": "identity.signin.lockout", "label": "check"}]},
+  {"id": "identity.signin.lockout", "parent": "identity.signin", "kind": "rule", "title": "Lock out after five failed tries", "status": "built",
+   "next": [{"to": "identity.sessions", "label": "start session"}]},
+  {"id": "identity.me", "parent": "identity", "kind": "route", "title": "Who am I",
+   "http": {"method": "GET", "path": "/accounts/me"}, "fulfills": ["account.profile.load"], "status": "built",
+   "next": [{"to": "identity.profiles", "label": "read"}]},
+  {"id": "identity.sessions", "parent": "identity", "kind": "data", "title": "Session store", "status": "built",
+   "config_source": {"type": "cache", "ref": "sessions", "scope": "reader"}},
+  {"id": "identity.profiles", "parent": "identity", "kind": "data", "title": "Profiles", "status": "built",
+   "config_source": {"type": "db", "ref": "readers", "scope": "store"}}
+ ]}

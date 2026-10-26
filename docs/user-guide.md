@@ -950,6 +950,171 @@ run it in a copy to keep the example as committed.
   with `kind: framework`.
 - PHP has no reference extraction yet.
 
+## 4h. The block map
+
+`lattice refresh` builds the block graph from a workspace's sources and
+judgments. `lattice serve` shows it at `/map`, and `lattice export map
+out.html` writes the same page as one file that works offline. The page
+lays out with ELK from a pinned, SRI-checked CDN copy; without the network
+it falls back to a simple grid.
+
+`examples/block-map/` is a fictional bookshop to try it on:
+
+```sh
+lattice --repo examples/block-map refresh
+lattice --repo examples/block-map export map /tmp/bookshop-map.html
+```
+
+### Kinds and the legend
+
+Each block's kind has a colour and a small icon, by family: system or
+container, external, actor, screen or UI, API or route, action or step,
+data or setting, and invariant or rule. A kind in no family keeps a colour
+made from its name and a plain dot. The tree, the Diagram, Focus, Flows and
+Discover all use the same encoding.
+
+The legend under the tabs lists the kinds on screen, each with its count.
+Open containers and lens groups are boundaries, so they are left out.
+Clicking a kind hides those blocks in every view but the tree; clicking it
+again, or "show all", brings them back.
+
+### Diagram and lenses
+
+The Diagram shows nested boxes. Double-click a box to open it, use L1–L3 in
+the toolbar to open every box to that depth, or drill in from a block's
+details. Edges are lifted to the nearest box on screen and merged, with a
+count.
+
+**Group by** changes the lens:
+
+| Lens | Groups blocks by |
+|---|---|
+| Containment | their parents (the default) |
+| System | the nearest `system` or external block above them |
+| Owner | `attrs.owner` on the block or the nearest block above it |
+| Kind | their kind |
+| Tier | `tier` on the block or above it |
+| Truth | `declared` or `wired` |
+| Proposal verdict | the selected proposal's verdict (only with a proposal) |
+
+Every lens except containment draws one box per group, with its size, kind
+mix and links in and out. The edges between groups are merged with counts.
+Click a group to list its blocks, and double-click it to open it. An open
+group draws its 40 most connected blocks, and the rest share one "+N more"
+box.
+
+**Owners** come from `owner:` on a system, external or group judgment
+entry, and from a feature manifest's `owners` (engineering, else business).
+A block takes the nearest owner above it. Blocks with no owner group as
+"unowned". Owned boxes and cards show `@owner`.
+
+```yaml
+# lattice/judgments/landscape.yaml
+id: landscape
+type: system
+entries:
+  - {id: sys.checkout, title: Checkout, owner: team-checkout}
+```
+
+### Focus
+
+Focus puts one block in the centre, the blocks that link to it on the
+left, and the blocks it links to on the right.
+
+- **Hops** 1–3 add columns outward, and each column shows up to 40 blocks.
+  Every block has one card, at its nearest hop, and the centre never comes
+  back as its own neighbour. A block linked both ways at the same hop sits
+  in the OUT column, marked "⇄ both ways", with both edges drawn. Its
+  further neighbours extend the OUT side only. Arrows point at each edge's
+  target.
+- **Click** a card to centre it. ◀ ▶, the breadcrumb, `[` `]` and the
+  browser's back button walk the history.
+- **Double-click** a card, or use **Details**, to open its details.
+- **Focus a block…** finds a block by name.
+- **System context** lifts both ends of every edge to their nearest system
+  or external and merges parallel edges with counts. On a system block that
+  gives its context map: the systems, externals and actors around it. A
+  block's details have a **System context** button too.
+
+The edge-kind filter (**Edges**) is shared by the Diagram, Focus and
+Discover.
+
+### Discover
+
+Discover is a table of every visible block. Its columns are title, kind,
+system, tier, truth, owner, links in and out, the flows the block appears
+in, and the proposal's verdict when one is selected.
+
+- The text box filters on title, id, kind, system and owner.
+- Chips filter per column. Each chip's count is what the other filters
+  leave.
+- Headers sort, and a row opens Focus on its block. System context turns
+  off for this, unless the block is a system or external itself.
+
+Blocks that exist only in a proposal show only while that proposal is
+selected. The page header counts them apart ("159 blocks +8 in
+proposals"). Discover names them beside its count, and the proposal's name
+selects it.
+
+### Flows: swimlanes and the walkthrough
+
+The Flows tab draws the selected flow's steps left to right, grouped by
+system, owner or tier. The groups show as full-width lanes or as boxes
+around their steps; `g` cycles the grouping.
+
+**Walk it on the diagram** starts the walkthrough. A card shows the step,
+its condition, the block, the ways on from it and the steps walked so far.
+
+- `→` and `←` step.
+- At a fork, `1`–`9` take another way and leave the recorded walk.
+- **Play** steps on its own, and `Esc` stops.
+
+### Canvas tools
+
+The bar at the bottom of the Diagram and Focus has:
+
+- **Fit**, zoom (`+`, `-`) and the zoom level;
+- the levels L1–L3;
+- a **Minimap** (`m`), which you click or drag to move the view. It shows
+  by itself while part of the drawing is off screen. The button shows or
+  hides it on demand. While it is on, **Fit** keeps the drawing clear of
+  it, either to its left or above it, whichever lets the drawing be larger;
+- **Text** (`t`): the view as Mermaid source;
+- **Export**: the view as an SVG or PNG image, or a `.mmd` file.
+
+Right-click any block, in any view or the tree, to focus it, see its system
+context, open its details, show it on the diagram, or copy its id.
+
+### Links
+
+The URL hash holds the view, so a link reopens it and the back button
+walks it:
+
+```
+/map#tab=focus&id=co%3Aorders.place&hops=2&ctx=1
+/map#tab=diag&lens=owner
+/map#tab=discover&init=pay-sheet
+```
+
+The keys are `tab` (`diag`, `focus`, `flows`, `discover`), `id` (the
+focused or selected block), `hops`, `ctx`, `lens`, `root` (the box drilled
+into), `init` (the proposal), `flow`, `lanes` and `hide` (hidden kinds).
+In `lattice serve`, the pages of a feature, a BRD and an entry point link
+to `/map#tab=focus&id=<block>` when the graph has a block for them:
+`feat:<id>`, `ep:<id>`, and for a BRD its features' blocks and the blocks
+it names.
+
+Keys: `/` search, `Esc` close, `f` fit; in Focus also `[` `]` back and
+forward, `1` `2` `3` hops and `c` system context.
+
+### Checking it in a browser
+
+`scripts/blockmap-smoke.js` drives an exported map in Chromium with
+Playwright and fails on any console error. `go test ./internal/cli -run
+BlockMapBrowserSmoke` runs it on the demo; the test skips when node or the
+`playwright` package is missing. The script can also take screenshots
+(`--shots dir`) and time a generated graph (`--perf 2000`).
+
 ## 5. Day-to-day commands
 
 ```sh

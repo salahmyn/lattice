@@ -1,0 +1,19 @@
+id: pay-sheet
+type: initiative
+status: proposed
+title: Hosted payment sheet
+author: demo@example.com
+created: "2026-10-01T09:00:00Z"
+motivation: |
+  Replace the storefront's own card screens with the gateway's hosted
+  payment sheet, so card details never touch the shop.
+map:
+  system:
+    title: Hosted payment sheet
+    description: A drop-in sheet from the payment gateway, mounted on the payment step.
+  host_block: sf:checkout.payment
+  flag: pay_sheet
+  decision: Pilot on 10% of checkouts once the voucher gap is closed.
+  blocking: [G-VOUCHER]
+  externals:
+    - {to: ext.gateway, kind: sdk, label: loads the sheet}

@@ -1,0 +1,15 @@
+{"area": "email", "title": "Email", "summary": "Transactional email, sent through the email delivery service.",
+ "nodes": [
+  {"id": "email", "parent": null, "kind": "service", "title": "Email"},
+  {"id": "email.order", "parent": "email", "kind": "consumer", "title": "Order confirmation email", "status": "built",
+   "next": [{"to": "email.render", "label": "render"}]},
+  {"id": "email.refund", "parent": "email", "kind": "consumer", "title": "Refund email", "status": "built",
+   "next": [{"to": "email.render", "label": "render"}]},
+  {"id": "email.lowstock", "parent": "email", "kind": "consumer", "title": "Low-stock email to staff", "status": "built",
+   "next": [{"to": "email.render", "label": "render"}]},
+  {"id": "email.render", "parent": "email", "kind": "action", "title": "Render a template", "status": "built",
+   "next": [{"to": "email.templates", "label": "read"}, {"to": "email.send", "label": "send"}]},
+  {"id": "email.templates", "parent": "email", "kind": "config", "title": "Email templates", "status": "built"},
+  {"id": "email.send", "parent": "email", "kind": "action", "title": "Hand to the email service", "status": "built"},
+  {"id": "email.prefs", "parent": "email", "kind": "rule", "title": "Respect the reader's email preferences", "status": "planned"}
+ ]}

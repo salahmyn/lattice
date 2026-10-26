@@ -1,0 +1,29 @@
+{"format": "evidence/v1", "id": "pay-sheet", "source": "storefront",
+ "classes": [
+  {"id": "GAP", "title": "not covered by the sheet"},
+  {"id": "CHANGE", "title": "needs a change"},
+  {"id": "REPLACE", "title": "replaced by the sheet", "replaces": true},
+  {"id": "KEEP", "title": "stays as it is"}
+ ],
+ "package": {"name": "pay-sheet-kit", "version": "0.3.0", "commit": "9b1e4d2c7a0f", "dir": "src",
+  "components": [{"tag": "pay-sheet", "file": "sheet.tsx", "props": ["intent", "amount", "currency"], "events": ["paid", "declined", "closed"]}],
+  "modules": [{"concern": "payment", "modules": ["intent", "challenge"]}],
+  "paths": ["/payments/intents"]},
+ "verdicts": [
+  {"block": "checkout.payment", "class": "REPLACE", "requirement": "The sheet draws the payment step."},
+  {"block": "checkout.payment.card", "class": "REPLACE", "requirement": "Card entry moves into the sheet."},
+  {"block": "checkout.payment.challenge", "class": "REPLACE", "requirement": "The sheet runs the card challenge."},
+  {"block": "checkout.payment.submit", "class": "CHANGE", "requirement": "Create the intent before opening the sheet."},
+  {"block": "checkout.failed", "class": "CHANGE", "requirement": "Listen for the sheet's declined event."},
+  {"block": "checkout.place", "class": "KEEP"},
+  {"block": "checkout.confirm", "class": "KEEP"},
+  {"block": "checkout.delivery", "class": "KEEP"},
+  {"block": "checkout.address", "class": "KEEP"},
+  {"block": "cart.voucher", "class": "GAP", "notes": "The sheet has no line for a voucher discount."}
+ ],
+ "gaps": [
+  {"code": "G-VOUCHER", "cites": ["cart.voucher", "checkout.payment.submit"], "owners": ["team-checkout"],
+   "summary": "The sheet cannot show a voucher discount, so the amount looks wrong to the reader."},
+  {"code": "G-SAVED-CARDS", "cites": ["checkout.payment.card"], "low": true, "owners": ["team-payments"],
+   "summary": "Saved cards need the gateway's customer id, which the shop does not store yet."}
+ ]}

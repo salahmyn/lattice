@@ -80,6 +80,9 @@
         {{if $i}}<span class="text-slate-300">›</span>{{end}}
         {{if $c.Href}}<a href="{{$c.Href}}" class="hover:text-slate-900">{{$c.Label}}</a>{{else}}<span class="text-slate-900">{{$c.Label}}</span>{{end}}
       {{end}}
+      {{if .MapLinks}}<span class="ml-auto flex items-center gap-3" data-map-links>
+        {{range .MapLinks}}<a href="{{.Href}}" class="text-mica-400 hover:text-slate-900" title="Focus {{.ID}} on the block map">View on map{{if gt (len $.MapLinks) 1}}: {{.Title}}{{end}} ↗</a>{{end}}
+      </span>{{end}}
     </div>
     {{end}}
   </header>
