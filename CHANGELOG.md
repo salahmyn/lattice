@@ -26,6 +26,28 @@ All notable changes to Lattice are documented in this file.
   fact, upper_bound or proxy labels. `--json` is `lattice.audit/1`, `--markdown`
   suits a PR comment, and `lattice/audit-notes.yaml` adds second-reader notes
   that never change a class. It reads `breaks.json` as a file and blocks nothing.
+- **`lattice prepare` and `lattice confirm`** make confirmation a human act that
+  the platform vouches for. `prepare brd approve|return|ack|overturn`, `prepare
+  promise confirm` and `prepare waiver add` validate the action against the
+  kernel and write a decision branch `decision/<id>-v<N>` holding one decision
+  file, built from HEAD with git plumbing: the checkout, index and working tree
+  are never touched, and nothing is pushed or opened. It prints
+  `lattice.prepare/1` with the `gh pr create` command, or a refusal with a code
+  (`REGULATED_MACHINE_WRITTEN`, `VOTES_INCOMPLETE`, `COUNCIL_TOUCHED`,
+  `WAIVER_TIER3`, and more).
+  - `lattice confirm [--platform github] [--offline]` finds each decision file on
+    the default branch, the pull request that merged it, and that request's
+    reviews (GitHub REST via `GITHUB_TOKEN` or `GH_TOKEN`). A decision counts only
+    with an approving review from a non-author, non-bot, non-agent user on the
+    merged head, and while its packet hash still matches. It writes
+    `lattice/.cache/confirm.json` (`lattice.confirm/1`, derived); `--offline` reads
+    the cache only and unknown is never confirmed.
+  - **`lattice audit`'s `confirmed` signal now reads `confirm.json` only**: `human`,
+    `pending`, `agent`, `draft`, `drifted`, `none` or `unknown`. A BRD's
+    `approved_by` and a hand-written `approval:` block are display only.
+  - `brd approve`, `brd ack` and `brd overturn` keep working, print a deprecation
+    line and record `local: true`; the audit reads that as "prepared by a local
+    session, not confirmed".
 
 ### Changed
 
