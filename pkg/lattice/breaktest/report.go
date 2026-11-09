@@ -68,12 +68,32 @@ type Run struct {
 	// Cached marks an outcome reused from an earlier run. Also an addition
 	// to the contract.
 	Cached bool `json:"cached,omitempty"`
+
+	// RanVerifiers are the verifiers that executed: from the JUnit report
+	// when the runner has {junit}, from Go's -v pass lines, else every
+	// verifier the runner was given.
+	RanVerifiers []string `json:"ran_verifiers,omitempty"`
+	// NotRunVerifiers are the verifiers that did not execute: no runner
+	// matches their file, or the runner's filter selected no test for them.
+	// A survived outcome with any of these says nothing about them.
+	NotRunVerifiers []string `json:"not_run_verifiers,omitempty"`
+	// FailedTests are the names of the tests that failed after the break.
+	FailedTests []string `json:"failed_tests,omitempty"`
+	// ConfigHash is the sha256 of the resolved runner commands, the setup
+	// commands and GeneratorVersion, part of the cache key.
+	ConfigHash string `json:"config_hash,omitempty"`
 }
 
+// GeneratorVersion stamps the generators, the runner logic and the outcome
+// rules. It is part of the cache key, so a change to any of them invalidates
+// cached outcomes.
+const GeneratorVersion = "2"
+
 // cacheKey is what makes an earlier outcome valid again: the same enforcer
-// source, the same verifier source, the same way of breaking it.
-func (r Run) cacheKey() [4]string {
-	return [4]string{r.EnforcerHash, r.VerifierHash, r.Method, r.ScriptHash}
+// source, the same verifier source, the same way of breaking it, and the
+// same way of running the verifiers.
+func (r Run) cacheKey() [5]string {
+	return [5]string{r.EnforcerHash, r.VerifierHash, r.Method, r.ScriptHash, r.ConfigHash}
 }
 
 // cacheable reports whether the outcome may be reused later. Unknown never

@@ -410,6 +410,22 @@ func (s Set) Tally() (cases, pass, fail, skip int) {
 	return
 }
 
+// FailedCases lists the report cases that failed, as "<classname>::<name>"
+// ids (just the name when the case has no class), sorted.
+func (s Set) FailedCases() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, id := range s.Cases {
+		if seen[id] || s.Results[normalize(id)] != Fail {
+			continue
+		}
+		seen[id] = true
+		out = append(out, strings.TrimPrefix(id, "::"))
+	}
+	sort.Strings(out)
+	return out
+}
+
 // worse reports whether a is a worse outcome than b (fail < skip < pass).
 func worse(a, b Outcome) bool {
 	rank := map[Outcome]int{Fail: 0, Skip: 1, Pass: 2}
