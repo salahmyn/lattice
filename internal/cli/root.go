@@ -56,6 +56,7 @@ func NewRootCommand() *cobra.Command {
 		newBRDCommand(io),
 		newDetectCommand(io),
 		newRTMCommand(io),
+		newAuditCommand(io),
 		newJourneyCommand(io),
 		newActorCommand(io),
 		newResultsCommand(io),
@@ -69,6 +70,7 @@ func NewRootCommand() *cobra.Command {
 		newImpactCommand(io),
 		newSweepCommand(io),
 		newDemonstrateCommand(io),
+		newBreakCommand(io),
 	)
 
 	return root

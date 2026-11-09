@@ -1,0 +1,23 @@
+id: audit
+version: 1
+status: production
+purpose: |
+  The assurance audit: one row per invariant, saying whether there is evidence the
+  promise is kept or it only looks done. It joins the ladder, per-test coverage,
+  reach, break outcomes and the BRD approval record, and classifies each row as
+  fake, break_tested, exercised, demonstrated_only, a gap, or unknown.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.verification
+invariants:
+  - id: INV-1
+    statement: Every invariant gets exactly one class, chosen in the order fake, break_tested, exercised, demonstrated_only, a gap, unknown; a second reader's note is shown and never changes the class.
+  - id: INV-2
+    statement: Unknown is never a pass and never fake. Missing per-test coverage or break runs read unknown, and only break_tested and exercised are drawn positive.
+  - id: INV-3
+    statement: A break run that survived on any enforcer reads passes_when_broken, and one that killed reads break_tested.
+  - id: INV-4
+    statement: A breaks file of another commit, or of a schema the audit does not know, is set aside and never counted.
+  - id: INV-5
+    statement: The confirmed signal is read from the BRD approval record as human, agent, draft or drifted, and the least confirmed BRD behind a promise decides.

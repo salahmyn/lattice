@@ -1,0 +1,21 @@
+id: breaktest
+version: 1
+status: production
+purpose: |
+  Breaks each promise's enforcer on a throwaway worktree and runs only that promise's
+  verifiers, so a verifier that cannot tell the code is broken is found.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.verification
+invariants:
+  - id: INV-1
+    statement: A generated break only inserts an early return at the top of the enforcer's body, and a language or symbol kind with no generator gets no break.
+  - id: INV-2
+    statement: Breaks are made and tested on a temporary worktree at HEAD, which is always removed; the working tree is never edited, and a dirty tree is refused unless allowed.
+  - id: INV-3
+    statement: A break that does not compile, a baseline that fails, a timeout or a missing runner reads unknown, never killed or survived.
+  - id: INV-4
+    statement: Verifiers that pass before and after the break read survived, and verifiers that pass before and fail after read killed.
+  - id: INV-5
+    statement: An earlier outcome is reused only when the enforcer, verifier, method and script hashes all match, and unknown outcomes are never reused.

@@ -1115,6 +1115,127 @@ BlockMapBrowserSmoke` runs it on the demo; the test skips when node or the
 `playwright` package is missing. The script can also take screenshots
 (`--shots dir`) and time a generated graph (`--perf 2000`).
 
+## 4i. Break testing: does the verifier notice?
+
+A verifier that runs the enforcing code and asserts nothing passes the
+coverage checks and still proves nothing. `lattice break` finds it by
+breaking the enforcer and running only that promise's verifiers:
+
+```sh
+lattice break                          # every promise with an enforcer
+lattice break --promise cart:INV-2     # one promise
+lattice break --feature cart --json
+```
+
+For each enforcer it makes a temporary detached `git worktree` at HEAD,
+runs the verifiers unbroken (the **baseline**), applies the break, runs
+them again and removes the worktree. Your working tree is never edited. A
+tree with uncommitted changes is refused; `--allow-dirty` copies the changes
+into the worktree and records `dirty: true`.
+
+| Outcome | Meaning |
+|---|---|
+| `killed` | The verifiers passed before the break and failed after it. |
+| `survived` | They passed both times: the test cannot tell the code is broken. |
+| `unknown` | Anything else. It is never a pass and never a fail. |
+
+`unknown` covers: no generated break for the language ("add a script"), a
+break that does not compile, a baseline that fails, a timeout (`--timeout`,
+default 120s, per test run), no runner configured, and SQL without a script.
+
+**The generated break** is an early return at the top of the enforcer's
+body, with the rest left in place so imports and variables stay used. Go
+returns zero values (`if true { return }` for named or no results);
+TypeScript returns `undefined as any` (plain `undefined` in JavaScript),
+for function declarations, methods, and functions or arrows with a block
+body; Python gets `return None`. Constructors, setters, expression-bodied
+arrows and classes read unknown.
+
+**A scripted break** is a patch at `lattice/breaks/<feature>/<INV>.patch`
+(made with `git diff`), applied with `git apply` in the worktree. It
+replaces the generated break for that promise, and is the way to break
+SQL or anything else with no generator.
+
+**Runners.** Go verifiers run with `go test -run '^(TestA|TestB)$' -count=1`
+and need no setup. Other languages need a command template in
+`lattice/config.yaml`; `{files}` and `{filter}` arrive shell-quoted:
+
+```yaml
+break:
+  commands:
+    typescript: npx vitest run {files} -t {filter}
+    python: python -m pytest {files} -k {filter}
+```
+
+Commands run in the worktree, from the directory that holds `lattice/`.
+`lattice results tests --verifiers` shows the filter each runner takes.
+
+**Cache.** An earlier killed or survived outcome is reused when the
+enforcer's source, the verifiers' source, the method and the script all
+match; `unknown` is never reused, so a timeout is always tried again.
+
+The result is `lattice/.cache/results/breaks.json` (`lattice.breaks/1`,
+derived and gitignored). A promise with several enforcers has one run each.
+Nothing blocks on it yet: it is evidence for `lattice audit`.
+## 4j. The audit: is each promise kept, or does it only look done?
+
+`lattice audit` gives every invariant one class. It computes nothing new about
+your tests: it joins what the kernel already has, so it agrees with `lattice
+rtm`, `lattice results` and `lattice validate`.
+
+```sh
+lattice extract
+lattice results ingest junit.xml all.lcov --per-test coverage/per-test
+lattice audit                 # summary by class, then one row per invariant
+lattice audit --json          # lattice.audit/1
+lattice audit --markdown      # for a PR comment or a report
+lattice audit --class fake --feature wallet
+```
+
+The same rows are on the `/audit` page of `lattice serve`, filterable by class
+and feature; each fake opens to its verifiers, enforcers, the evidence behind
+the class and any reader's note. `GET /api/v1/audit` returns the JSON.
+
+### Classes, in precedence order
+
+| Class | Means |
+|---|---|
+| `fake` / `never_runs_enforcer` | per-test coverage exists for every verifier and none ran an enforcer |
+| `fake` / `passes_when_broken` | a break of an enforcer left the verifiers green |
+| `break_tested` | breaking the enforcer made the verifiers fail (positive) |
+| `exercised` | a verifier passed and its own run executed an enforcer (positive, weaker) |
+| `demonstrated_only` | a verifier passed; nothing shows whether it runs an enforcer (`no_tool`, `partial_coverage`) |
+| `unenforced`, `unverified`, `not_demonstrated` | a gap |
+| `unknown` | nothing to judge, for example an invariant verified by a structural check only |
+
+Unknown is never a pass and never fake: with no per-test coverage and no break
+run, a promise reads `demonstrated_only` with kind `no_tool`, not `fake`. Only
+`break_tested` and `exercised` are drawn positive.
+
+### Signals
+
+Each row carries eight signals, each with an honesty label: `declared`,
+`enforced`, `verified`, `demonstrated`, `exercised`, `live` (reach class of the
+enforcers; an upper bound), `break_tested` and `confirmed`. `exercised` says the
+code ran, not that the test checks it, so it is a proxy. `confirmed` is the
+approval record behind the BRD criteria that map to the invariant:
+`human`, `agent` (an agent actor, or a council not yet acknowledged), `draft`,
+`drifted`, or `none`. It is a fact about who signed which version, not proof
+the intent is right.
+
+### Break results
+
+`breaks.json` (`lattice/.cache/results/`, written by `lattice break`) is read
+as a file. A run for another commit, or of a schema the audit does not know, is
+set aside and listed under `inputs.breaks.ignored`. When an invariant has
+several enforcers, a survived break on any of them reads `passes_when_broken`.
+
+### Second readers
+
+`lattice/audit-notes.yaml` lists `{promise, reader, verdict, note}` entries,
+with `verdict` one of `confirmed_fake` or `not_fake`. The note is shown on the
+row. It never changes the class. Nothing in the audit blocks a merge.
+
 ## 5. Day-to-day commands
 
 ```sh
