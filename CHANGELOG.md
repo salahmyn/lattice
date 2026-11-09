@@ -6,6 +6,28 @@ All notable changes to Lattice are documented in this file.
 
 ### Added
 
+- **`lattice check --base <rev> [--json | --markdown] [--ci]`** gives one
+  verdict for a change, from `merge-base(<rev>, HEAD)` to the working tree:
+  `BROKEN` (something fell: a level dropped, an enforcer or verifier removed, a
+  break killed at base survives at head, the suite is red, or a confirmed
+  promise's statement, tier or mapping was edited), `UNPROVEN` (a touched
+  promise has a gap, or touched lines are untraced; never drawn as a pass) or
+  `ASSURED`. It reuses `impact` for the touched promises and lines and
+  `audit` for the signals, and prints `merge_allowed`: an `UNPROVEN` change may
+  merge only when no (promise, signal) pair gained a gap against base, the new
+  untraced lines did not rise, and no tier-3 promise is involved. A waiver never
+  removes a gap. A file-level module tag alone does not make a line traced.
+  - `--json` is `lattice.check/1` (frozen by a golden test); `--markdown` starts
+    with `<!-- lattice-check -->`. Exit codes: 0 for `ASSURED` or an allowed
+    `UNPROVEN`, 1 for `BROKEN` or a disallowed `UNPROVEN`, 2 for a usage error.
+  - The base audit is read from `lattice/.cache/audit/<sha>.json`, written by
+    `lattice check` or `lattice check --snapshot` and restored by CI from a
+    cache. With none, evidence comparisons read `unknown` and the verdict is
+    `UNPROVEN`, never `BROKEN`, from missing data.
+  - `results ingest`, coverage ingest and `lattice break` stamp their files with
+    a `ci_run` (`GITHUB_RUN_ID`, `CI_PIPELINE_ID` and similar, else `local`).
+    With `--ci`, evidence that is not for `HEAD` or is from a `local` run is set
+    aside and reads `unknown` (`EVIDENCE_NOT_CI`).
 - **`lattice break [--promise f:INV-n] [--feature f] [--timeout 120s]
   [--allow-dirty]`** breaks each promise's enforcer on a temporary git
   worktree and runs only that promise's verifiers. A verifier that passes

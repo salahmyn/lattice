@@ -1304,6 +1304,81 @@ reads as it always did.
 with `verdict` one of `confirmed_fake` or `not_fake`. The note is shown on the
 row. It never changes the class. Nothing in the audit blocks a merge.
 
+## 4k. The check: one verdict for a change
+
+`lattice check --base <rev>` judges one change, from `merge-base(<rev>, HEAD)`
+to the working tree, and prints one page. It finds the touched promises and
+lines with `lattice impact`, reads their signals from `lattice audit` at head,
+and compares them with the audit of the base. It adds no measurement of its own.
+
+```sh
+lattice check --base origin/main              # text
+lattice check --base origin/main --json       # lattice.check/1
+lattice check --base origin/main --markdown   # PR comment, starts with <!-- lattice-check -->
+lattice check --base origin/main --ci         # count only CI-stamped evidence
+lattice check --snapshot                      # save the audit of HEAD, for a base-branch job
+```
+
+### The verdict
+
+| Verdict | Means | Merge |
+|---|---|---|
+| `BROKEN` | Something fell: a promise's class dropped to a known-bad class (`fake`, `unenforced`, `unverified`, `not_demonstrated`) against base; an enforcer or verifier was removed; a break killed at base survives at head; the suite is red; or the statement, tier or mapping of a confirmed promise was edited (the edit voids the confirmation, and the row says to re-confirm it) | Never |
+| `UNPROVEN` | Nothing fell, but a touched promise is unconfirmed, not exercised, not break-tested where its tier needs it, or unknown, or touched lines are untraced. It is never drawn as a pass: no check mark, and the comment says so | Only if the merge rule holds |
+| `ASSURED` | Every touched line is traced, every touched promise has the signals its tier needs, and nothing fell | Yes |
+
+Tier defaults until the owner decides: tier 1 needs `exercised` or
+`break_tested`; tier 2 and 3 need `break_tested`; every tier needs the promise
+traced, confirmed and live. A missing signal is a gap, never a pass.
+
+**The merge rule** (`merge_allowed`): an `UNPROVEN` change may merge when no
+(promise, signal) pair has a gap at head that it did not have at base, the
+count of new untraced lines did not rise, and no tier-3 promise is involved.
+A promise the change adds is exempt for `confirmed` only: a new promise cannot
+be confirmed before it merges. A waiver in `lattice/waivers.yaml` is shown on
+the gap and never removes it, including one added in the same change.
+
+### Traced, and the blind spot
+
+A touched line counts as traced only when an enforcer span covers it (the
+symbol carries `@enforces`), a checked reference names it (a direct-wire
+criterion's `enforced_by`), or an entry point of its feature reaches it. A
+file-level `@module-feature` tag alone never counts. The rest goes in the blind
+spot, with the promises a human marked out of reach, and keeps the verdict at
+`UNPROVEN`. Lines are counted by the touched symbol's extent, an upper bound.
+
+### The base audit, and how CI gets it
+
+The base's audit is `lattice/.cache/audit/<merge-base sha>.json`. It is derived
+and never committed. `lattice check` (and `lattice check --snapshot`) writes the
+audit of `HEAD` there when the tree is clean. In CI:
+
+1. A job on the base branch runs the suite, `lattice results ingest`,
+   `lattice break` and `lattice check --snapshot`, then saves
+   `lattice/.cache/audit/` to a cache or artifact keyed by the commit sha.
+2. The pull-request job restores the entry for the merge base (for GitHub
+   Actions, `actions/cache` with `key: lattice-audit-${{ github.event.pull_request.base.sha }}`),
+   runs the same evidence steps at head, then `lattice check --base
+   origin/${{ github.base_ref }} --ci --markdown`, and posts the comment.
+
+With no snapshot, only structural signals are compared with the base (removed
+enforcement, and edits to confirmed promises). Evidence comparisons read
+`unknown` ("no base audit"). The verdict is `UNPROVEN`, never `BROKEN`, because
+of missing data, and the merge rule is not met.
+
+### CI provenance
+
+`lattice results ingest`, coverage ingest and `lattice break` stamp their files
+with the head commit and a `ci_run` (from `GITHUB_RUN_ID`, `CI_PIPELINE_ID` and
+similar, else `local`). With `--ci`, evidence whose commit is not `HEAD` or whose
+`ci_run` is `local` is set aside and reads `unknown` (`EVIDENCE_NOT_CI`). Only
+CI's verdict counts; a local run is advice.
+
+### Exit codes
+
+`0` for `ASSURED` or an allowed `UNPROVEN`; `1` for `BROKEN` or a disallowed
+`UNPROVEN`; `2` for a usage error (no `--base`, a base that is not a commit).
+
 ## 5. Day-to-day commands
 
 ```sh
