@@ -471,6 +471,9 @@ func plural(n int, w string) string {
 func (c *computation) merge(v Verdict, gaps []Gap, newUntraced int, rows []PromiseRow) (bool, MergeRule) {
 	switch v.State {
 	case Assured:
+		if v.Code == CodeNothingTouched {
+			return true, MergeRule{Code: CodeMergeOK, Text: "ASSURED: nothing the kernel tracks was touched"}
+		}
 		return true, MergeRule{Code: CodeMergeOK, Text: "ASSURED: every signal is present"}
 	case Broken:
 		return false, MergeRule{Code: CodeBroken, Text: "something fell: BROKEN never merges"}
