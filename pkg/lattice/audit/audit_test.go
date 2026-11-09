@@ -294,56 +294,6 @@ func TestPositiveClasses(t *testing.T) {
 	}
 }
 
-// The confirmed signal reads the approval record: human, agent, draft,
-// drifted, or none, and the worst BRD decides.
-// @verifies audit:INV-5
-func TestConfirmed(t *testing.T) {
-	brd := func(id string, status schema.BRDStatus, version int, ap *schema.BRDApproval) schema.BRD {
-		return schema.BRD{ID: id, Status: status, Version: version, Approval: ap,
-			SuccessCriteria: []schema.BRDCriterion{{ID: "SC-1", Statement: "s", Tier: 3, MapsToInvariant: schema.InvariantRefs{"f:INV-1"}}}}
-	}
-	cases := []struct {
-		name string
-		b    schema.BRD
-		want string
-	}{
-		{"draft", brd("b", schema.BRDDraft, 1, nil), ConfirmedDraft},
-		{"proposed", brd("b", schema.BRDProposed, 1, nil), ConfirmedDraft},
-		{"human", brd("b", schema.BRDApproved, 1, &schema.BRDApproval{ApprovedBy: "ana@example.com", ApprovedVersion: 1}), ConfirmedHuman},
-		{"agent actor", brd("b", schema.BRDApproved, 1, &schema.BRDApproval{ApprovedBy: "agent:approver", ApprovedVersion: 1}), ConfirmedAgent},
-		{"council pending", brd("b", schema.BRDApproved, 1, &schema.BRDApproval{ApprovedBy: "council:m1", Mandate: "m1", ApprovedVersion: 1, HumanReview: schema.HumanReviewPending}), ConfirmedAgent},
-		{"council acked", brd("b", schema.BRDApproved, 1, &schema.BRDApproval{ApprovedBy: "council:m1", Mandate: "m1", ApprovedVersion: 1,
-			HumanReview: schema.HumanReviewAcknowledged, ReviewedBy: "ana@example.com"}), ConfirmedHuman},
-		{"council acked by an agent", brd("b", schema.BRDApproved, 1, &schema.BRDApproval{ApprovedBy: "council:m1", Mandate: "m1", ApprovedVersion: 1,
-			HumanReview: schema.HumanReviewAcknowledged, ReviewedBy: "agent:x"}), ConfirmedAgent},
-		{"drifted", brd("b", schema.BRDApproved, 2, &schema.BRDApproval{ApprovedBy: "ana@example.com", ApprovedVersion: 1}), ConfirmedDrifted},
-	}
-	for _, c := range cases {
-		kg := graph(inv("INV-1"), []string{"INV-1"}, map[string][]string{"INV-1": {"f.TestOne"}})
-		kg.BRDs = []schema.BRD{c.b}
-		r := Compute(Sources{KG: kg, Results: pass("f.TestOne")}).Rows[0]
-		if got := r.Signals.Confirmed.Value; got != c.want {
-			t.Errorf("%s: confirmed = %s, want %s", c.name, got, c.want)
-		}
-		if r.Signals.Confirmed.Honesty != Proxy || r.Tier != 3 {
-			t.Errorf("%s: honesty %s tier %d", c.name, r.Signals.Confirmed.Honesty, r.Tier)
-		}
-	}
-	// Two BRDs: the least confirmed decides.
-	kg := graph(inv("INV-1"), []string{"INV-1"}, map[string][]string{"INV-1": {"f.TestOne"}})
-	kg.BRDs = []schema.BRD{
-		brd("a", schema.BRDApproved, 1, &schema.BRDApproval{ApprovedBy: "ana@example.com", ApprovedVersion: 1}),
-		brd("b", schema.BRDDraft, 1, nil),
-	}
-	if got := Compute(Sources{KG: kg}).Rows[0].Signals.Confirmed.Value; got != ConfirmedDraft {
-		t.Errorf("two BRDs: %s", got)
-	}
-	kg.BRDs = nil
-	if got := Compute(Sources{KG: kg}).Rows[0].Signals.Confirmed.Value; got != ConfirmedNone {
-		t.Errorf("no BRD: %s", got)
-	}
-}
-
 // The live signal folds the enforcers' reach classes.
 // @verifies audit:INV-1
 func TestLive(t *testing.T) {

@@ -278,11 +278,13 @@ func newBRDApproveCommand(io *IO) *cobra.Command {
 	var approver string
 	cmd := &cobra.Command{
 		Use:   "approve <id>",
-		Short: "Approve a BRD at its current version",
-		Long: `Records human sign-off in the BRD's approval block and flips
-status to 'approved'. The approval pins the version the approver
-signed; a subsequent edit that bumps version raises BRD_DRIFT until
-re-approved.`,
+		Short: "Approve a BRD at its current version (deprecated: use `lattice prepare brd approve`)",
+		Long: `Deprecated. Records a local note in the BRD's approval block and flips
+status to 'approved', marked local: true. The audit reads it as "prepared by a
+local session, not confirmed". Only a human other than the author, approving
+the merged pull request that 'lattice prepare brd approve' opens, confirms a
+BRD. The approval pins the version; a subsequent edit that bumps version
+raises BRD_DRIFT until re-approved.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ws, err := openWorkspace(io)
@@ -300,11 +302,13 @@ re-approved.`,
 			if b == nil {
 				return io.fail("BRD_NOT_FOUND", "BRD not found: "+args[0], nil)
 			}
+			io.errorf("deprecated: `lattice brd approve` records a local note, not a confirmation; use `lattice prepare brd approve %s --version %d`\n", b.ID, b.Version)
 			b.Status = schema.BRDApproved
 			b.Approval = &schema.BRDApproval{
 				ApprovedBy:      approver,
 				ApprovedAt:      time.Now().UTC().Format(time.RFC3339),
 				ApprovedVersion: b.Version,
+				Local:           true,
 			}
 			path, err := brd.SaveForce(ws.BRDsDir(), *b)
 			if err != nil {

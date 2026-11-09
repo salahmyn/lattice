@@ -52,6 +52,9 @@ type Overturn struct {
 	By     string `yaml:"by"`
 	At     string `yaml:"at"`
 	Reason string `yaml:"reason"`
+	// Local marks an overturn made by the deprecated local command: a typed
+	// string, not a confirmed decision.
+	Local bool `yaml:"local,omitempty"`
 }
 
 // LoadRecord returns the council record of one BRD version. A missing file

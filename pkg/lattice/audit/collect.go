@@ -93,6 +93,8 @@ func Collect(latticeDir string, kg schema.KnowledgeGraph, dirty bool) Sources {
 		src.Stamps.Breaks = BreaksInput{Present: true, Commit: bf.Commit, Dirty: bf.Dirty, GeneratedAt: bf.GeneratedAt, Runs: len(bf.Runs)}
 	}
 
+	src.Confirm = LoadConfirm(latticeDir)
+
 	notes, nPresent, nErrs := LoadNotes(latticeDir)
 	src.Notes = notes
 	src.Stamps.Notes = NotesInput{Present: nPresent, Count: len(notes), Errors: nErrs}
