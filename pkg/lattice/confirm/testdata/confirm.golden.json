@@ -1,0 +1,63 @@
+{
+  "contract": "lattice.confirm/1",
+  "commit": "deadbeef",
+  "branch": "main",
+  "generated_at": "2026-01-02T03:04:05Z",
+  "assurance": {
+    "state": "pass",
+    "honesty": "fact",
+    "code": "PLATFORM_READ",
+    "text": "approvals read from the platform"
+  },
+  "records": [
+    {
+      "id": "brd.x",
+      "version": 2,
+      "action": "brd.approve",
+      "state": "confirmed",
+      "approver_login": "ana",
+      "pr": 12,
+      "merged_sha": "m1",
+      "verified_at": "2026-01-02T03:04:05Z",
+      "decision_sha": "c0ffee",
+      "assurance": {
+        "state": "confirmed",
+        "honesty": "fact",
+        "code": "APPROVED",
+        "text": "approved by ana on the merged head of PR #12"
+      }
+    },
+    {
+      "id": "brd.x",
+      "version": 2,
+      "action": "promise.confirm",
+      "state": "confirmed",
+      "approver_login": "ana",
+      "pr": 12,
+      "merged_sha": "m1",
+      "verified_at": "2026-01-02T03:04:05Z",
+      "rows": [
+        "f:INV-1"
+      ],
+      "decision_sha": "c0ffee",
+      "assurance": {
+        "state": "confirmed",
+        "honesty": "fact",
+        "code": "APPROVED",
+        "text": "approved by ana on the merged head of PR #12"
+      }
+    },
+    {
+      "id": "brd.y",
+      "version": 1,
+      "action": "brd.return",
+      "state": "pending",
+      "assurance": {
+        "state": "pending",
+        "honesty": "fact",
+        "code": "NOT_MERGED",
+        "text": "prepared on decision/brd.y-v1.return, not merged to the default branch"
+      }
+    }
+  ]
+}

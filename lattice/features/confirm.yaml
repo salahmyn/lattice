@@ -1,0 +1,22 @@
+id: confirm
+version: 1
+status: production
+purpose: |
+  Human confirmation. `lattice prepare` validates a decision against the kernel and writes a
+  decision branch without touching the checkout; `lattice confirm` computes CONFIRMED from the
+  platform's approving review on the merged pull request. Only a human other than the author
+  confirms, and the audit's confirmed signal reads that result and nothing else.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+invariants:
+  - id: INV-1
+    statement: A decision counts only when the platform shows an approving review from a user other than the pull request's author, who is not a bot or an agent.
+  - id: INV-2
+    statement: The approving review must be on the head that was merged; an approval of an earlier head, a later change request or dismissal, or a comment is not an approval.
+  - id: INV-3
+    statement: A decision whose packet hash no longer matches its BRD version, promises and structural diff reads stale, and the hash ignores run-dependent signals so a better test run never voids a confirmation.
+  - id: INV-4
+    statement: Unknown is never confirmed. No platform token, no cache, or an unreadable platform reads unknown or pending, and an offline run reads the cache only.
+  - id: INV-5
+    statement: Prepare builds the decision branch with git plumbing from HEAD and never switches the checkout, touches the index or working tree, pushes or opens a pull request; the kernel refuses with a code when a rule is broken.
