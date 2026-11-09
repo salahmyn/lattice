@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/salahmyn/lattice/pkg/lattice/results"
 )
 
 // Schema is the version stamp of breaks.json. The audit reads the file by
@@ -38,8 +40,10 @@ const (
 
 // Report is lattice/.cache/results/breaks.json.
 type Report struct {
-	Schema      string `json:"schema"`
-	Commit      string `json:"commit"`
+	Schema string `json:"schema"`
+	Commit string `json:"commit"`
+	// CIRun is the CI run that wrote the file, or "local" (results.CIRunID).
+	CIRun       string `json:"ci_run,omitempty"`
 	Dirty       bool   `json:"dirty"`
 	GeneratedAt string `json:"generated_at"`
 	Runs        []Run  `json:"runs"`
@@ -122,6 +126,9 @@ func Read(latticeDir string) Report {
 // Write saves the report, runs sorted by promise then enforcer.
 func Write(latticeDir string, r Report) error {
 	r.Schema = Schema
+	if r.CIRun == "" {
+		r.CIRun = results.CIRunID()
+	}
 	if r.GeneratedAt == "" {
 		r.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
 	}
