@@ -1115,6 +1115,69 @@ BlockMapBrowserSmoke` runs it on the demo; the test skips when node or the
 `playwright` package is missing. The script can also take screenshots
 (`--shots dir`) and time a generated graph (`--perf 2000`).
 
+## 4i. Break testing: does the verifier notice?
+
+A verifier that runs the enforcing code and asserts nothing passes the
+coverage checks and still proves nothing. `lattice break` finds it by
+breaking the enforcer and running only that promise's verifiers:
+
+```sh
+lattice break                          # every promise with an enforcer
+lattice break --promise cart:INV-2     # one promise
+lattice break --feature cart --json
+```
+
+For each enforcer it makes a temporary detached `git worktree` at HEAD,
+runs the verifiers unbroken (the **baseline**), applies the break, runs
+them again and removes the worktree. Your working tree is never edited. A
+tree with uncommitted changes is refused; `--allow-dirty` copies the changes
+into the worktree and records `dirty: true`.
+
+| Outcome | Meaning |
+|---|---|
+| `killed` | The verifiers passed before the break and failed after it. |
+| `survived` | They passed both times: the test cannot tell the code is broken. |
+| `unknown` | Anything else. It is never a pass and never a fail. |
+
+`unknown` covers: no generated break for the language ("add a script"), a
+break that does not compile, a baseline that fails, a timeout (`--timeout`,
+default 120s, per test run), no runner configured, and SQL without a script.
+
+**The generated break** is an early return at the top of the enforcer's
+body, with the rest left in place so imports and variables stay used. Go
+returns zero values (`if true { return }` for named or no results);
+TypeScript returns `undefined as any` (plain `undefined` in JavaScript),
+for function declarations, methods, and functions or arrows with a block
+body; Python gets `return None`. Constructors, setters, expression-bodied
+arrows and classes read unknown.
+
+**A scripted break** is a patch at `lattice/breaks/<feature>/<INV>.patch`
+(made with `git diff`), applied with `git apply` in the worktree. It
+replaces the generated break for that promise, and is the way to break
+SQL or anything else with no generator.
+
+**Runners.** Go verifiers run with `go test -run '^(TestA|TestB)$' -count=1`
+and need no setup. Other languages need a command template in
+`lattice/config.yaml`; `{files}` and `{filter}` arrive shell-quoted:
+
+```yaml
+break:
+  commands:
+    typescript: npx vitest run {files} -t {filter}
+    python: python -m pytest {files} -k {filter}
+```
+
+Commands run in the worktree, from the directory that holds `lattice/`.
+`lattice results tests --verifiers` shows the filter each runner takes.
+
+**Cache.** An earlier killed or survived outcome is reused when the
+enforcer's source, the verifiers' source, the method and the script all
+match; `unknown` is never reused, so a timeout is always tried again.
+
+The result is `lattice/.cache/results/breaks.json` (`lattice.breaks/1`,
+derived and gitignored). A promise with several enforcers has one run each.
+Nothing blocks on it yet: it is evidence for `lattice audit`.
+
 ## 5. Day-to-day commands
 
 ```sh

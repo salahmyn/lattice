@@ -2,6 +2,24 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- **`lattice break [--promise f:INV-n] [--feature f] [--timeout 120s]
+  [--allow-dirty]`** breaks each promise's enforcer on a temporary git
+  worktree and runs only that promise's verifiers. A verifier that passes
+  before and after the break reads `survived`; one that fails after reads
+  `killed`; anything else (no generator, a break that does not compile, a
+  failing baseline, a timeout, no runner) reads `unknown`, never a pass.
+  - Generated breaks insert an early return for Go, TypeScript/JavaScript
+    and Python; `lattice/breaks/<feature>/<INV>.patch` scripts a break
+    (SQL, anything else).
+  - Go runs with `go test -run`; other languages use `break.commands.<lang>`
+    in `config.yaml`.
+  - Writes `lattice/.cache/results/breaks.json` (`lattice.breaks/1`),
+    cached by enforcer, verifier, method and script hashes.
+
 ## [0.14.0] — 2026-10-26
 
 ### Added
