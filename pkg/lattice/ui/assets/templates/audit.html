@@ -1,0 +1,148 @@
+{{define "audit.html"}}{{template "layout" .}}{{end}}
+
+{{define "sig"}}
+<tr>
+  <td class="py-1 pr-4 font-mono text-slate-500">{{.Name}}</td>
+  <td class="py-1 pr-4 font-mono text-slate-800">{{.S.Value}}{{if .S.Method}} <span class="text-slate-500">({{.S.Method}})</span>{{end}}</td>
+  <td class="py-1 pr-4 text-slate-500">{{.S.Honesty}}</td>
+  <td class="py-1 text-slate-500">{{.S.Detail}}{{range .S.Items}} <span class="font-mono">{{.}}</span>{{end}}</td>
+</tr>
+{{end}}
+
+{{define "body"}}
+<style>
+  /* exercised is positive but weaker than break_tested (.badge.is-ok): outlined, no fill. */
+  .badge.is-ok-weak { color: var(--ok-fg); background: transparent; box-shadow: inset 0 0 0 1px var(--ok-fg); }
+  .audit-row > summary { cursor: pointer; list-style: none; }
+  .audit-row > summary::-webkit-details-marker { display: none; }
+</style>
+
+<section class="bg-white rounded-lg border border-slate-200 p-6 mb-6">
+  <div class="flex items-baseline justify-between">
+    <h2 class="text-lg font-semibold text-slate-900">Is each promise kept, or does it only look done?</h2>
+    <p class="text-xs text-slate-500">{{.Total}} promises</p>
+  </div>
+  <p class="mt-1 text-xs text-slate-500">Only <span class="font-mono">break_tested</span> and <span class="font-mono">exercised</span> are positive, and exercised is the weaker. <span class="font-mono">unknown</span> is never a pass, and "no tool" is not "fake". Nothing here blocks a merge.</p>
+
+  <div class="mt-4 flex flex-wrap gap-2 items-center">
+    <a href="/audit{{if .Feature}}?feature={{.Feature}}{{end}}" class="text-xs px-2 py-1 rounded border border-slate-300 {{if not .Class}}text-slate-900 font-medium{{else}}text-slate-500 hover:text-slate-900{{end}}">all</a>
+    {{range .Chips}}
+    <a href="/audit?class={{.Class}}{{if $.Feature}}&feature={{$.Feature}}{{end}}" class="text-xs {{if eq $.Class .Class}}ring-1 ring-slate-500{{end}} rounded">
+      <span class="badge {{.Badge}}">{{.Class}} {{.Count}}</span>
+    </a>
+    {{end}}
+  </div>
+
+  {{if .Features}}
+  <div class="mt-3 flex flex-wrap gap-2 items-center text-xs">
+    <span class="text-slate-500">feature</span>
+    <a href="/audit{{if .Class}}?class={{.Class}}{{end}}" class="px-2 py-0.5 rounded border border-slate-300 {{if not .Feature}}text-slate-900 font-medium{{else}}text-slate-500 hover:text-slate-900{{end}}">all</a>
+    {{range .Features}}
+    <a href="/audit?feature={{.}}{{if $.Class}}&class={{$.Class}}{{end}}" class="px-2 py-0.5 rounded border border-slate-300 font-mono {{if eq $.Feature .}}text-slate-900 font-medium{{else}}text-slate-500 hover:text-slate-900{{end}}">{{.}}</a>
+    {{end}}
+  </div>
+  {{end}}
+
+  <details class="mt-4 text-xs text-slate-500">
+    <summary class="cursor-pointer">Evidence read{{if .Report.Commit}} (commit <span class="font-mono">{{.Report.Commit}}</span>){{end}}</summary>
+    <ul class="mt-2 font-mono">
+      {{range .InputLines}}<li>{{.}}</li>{{end}}
+    </ul>
+  </details>
+</section>
+
+<section class="space-y-2">
+  {{range .Rows}}
+  <details class="audit-row bg-white rounded-lg border border-slate-200" {{if .Open}}open{{end}}>
+    <summary class="px-4 py-3 flex flex-wrap items-baseline gap-3">
+      <span class="badge {{.Badge}}">{{.Class}}</span>
+      {{if .Kind}}<span class="text-xs font-mono text-slate-500">{{.Kind}}</span>{{end}}
+      <span class="font-mono text-sm text-slate-900">{{.Promise}}</span>
+      <span class="text-xs text-slate-500">confirmed: {{.Signals.Confirmed.Value}}</span>
+      {{if .Notes}}<span class="text-xs text-slate-500">second reader: {{range .Notes}}{{.Verdict}} {{end}}</span>{{end}}
+      <span class="text-sm text-slate-700 basis-full">{{.Reason}}</span>
+    </summary>
+
+    <div class="px-4 pb-4 border-t border-slate-200 pt-3 space-y-4 text-xs">
+      <p class="text-sm text-slate-700">{{.Statement}}</p>
+
+      {{if .Notes}}
+      <div>
+        <h3 class="uppercase tracking-wide text-slate-500 mb-1">Second reader</h3>
+        {{range .Notes}}<p class="text-slate-700"><span class="font-mono">{{.Reader}}</span>: <span class="font-mono">{{.Verdict}}</span> {{.Note}}</p>{{end}}
+        <p class="text-slate-500">Notes are shown, never counted: they do not change the class.</p>
+      </div>
+      {{end}}
+
+      <div>
+        <h3 class="uppercase tracking-wide text-slate-500 mb-1">Verifiers</h3>
+        {{if .Evidence.Verifiers}}
+        <table class="w-full">
+          <thead class="text-slate-500"><tr>
+            <th class="text-left font-medium pb-1">test</th><th class="text-left font-medium pb-1">result</th>
+            <th class="text-left font-medium pb-1">coverage</th><th class="text-left font-medium pb-1">ran an enforcer</th>
+          </tr></thead>
+          <tbody>
+          {{range .Evidence.Verifiers}}
+          <tr>
+            <td class="py-0.5 pr-4 font-mono text-slate-800">{{.FQN}}{{if .File}} <span class="text-slate-500">{{.File}}</span>{{end}}</td>
+            <td class="py-0.5 pr-4 font-mono">{{.Result}}</td>
+            <td class="py-0.5 pr-4 font-mono">{{if .Coverage}}{{.Coverage}}{{else}}-{{end}}</td>
+            <td class="py-0.5 font-mono">{{if eq .Coverage "per_test"}}{{if .RanEnforcer}}yes{{else}}<span class="text-rose-700">no</span>{{end}}{{else}}unknown{{end}}</td>
+          </tr>
+          {{end}}
+          </tbody>
+        </table>
+        {{else}}<p class="text-slate-500">none anchored</p>{{end}}
+      </div>
+
+      <div>
+        <h3 class="uppercase tracking-wide text-slate-500 mb-1">Enforcers</h3>
+        {{if .Evidence.Enforcers}}
+        {{range .Evidence.Enforcers}}
+        <p class="font-mono text-slate-800">{{.FQN}} <span class="text-slate-500">{{.File}}{{if .Line}}:{{.Line}}{{end}} reach {{if .Reach}}{{.Reach}}{{else}}unknown{{end}}</span></p>
+        {{end}}
+        {{else}}<p class="text-slate-500">none anchored</p>{{end}}
+      </div>
+
+      {{if .Evidence.Breaks}}
+      <div>
+        <h3 class="uppercase tracking-wide text-slate-500 mb-1">Break runs</h3>
+        {{range .Evidence.Breaks}}
+        <p class="font-mono text-slate-800">{{.Enforcer}} <span class="text-slate-500">{{.Method}}, baseline {{.Baseline}}:</span> {{.Outcome}}{{if .Reason}} <span class="text-slate-500">{{.Reason}}</span>{{end}}</p>
+        {{end}}
+      </div>
+      {{end}}
+
+      {{if .Evidence.Approvals}}
+      <div>
+        <h3 class="uppercase tracking-wide text-slate-500 mb-1">Approval record (a fact about who signed, not proof the intent is right)</h3>
+        {{range .Evidence.Approvals}}
+        <p class="text-slate-700"><a class="font-mono hover:underline" href="/brds/{{.BRD}}">{{.BRD}}</a> {{.Criterion}} (tier {{.Tier}}): <span class="font-mono">{{.State}}</span> <span class="text-slate-500">{{.Detail}}</span></p>
+        {{end}}
+      </div>
+      {{end}}
+
+      <table>
+        <thead class="text-slate-500"><tr>
+          <th class="text-left font-medium pb-1 pr-4">signal</th><th class="text-left font-medium pb-1 pr-4">value</th>
+          <th class="text-left font-medium pb-1 pr-4">honesty</th><th class="text-left font-medium pb-1">detail</th>
+        </tr></thead>
+        <tbody>
+          {{template "sig" (dict "Name" "declared" "S" .Signals.Declared)}}
+          {{template "sig" (dict "Name" "enforced" "S" .Signals.Enforced)}}
+          {{template "sig" (dict "Name" "verified" "S" .Signals.Verified)}}
+          {{template "sig" (dict "Name" "demonstrated" "S" .Signals.Demonstrated)}}
+          {{template "sig" (dict "Name" "exercised" "S" .Signals.Exercised)}}
+          {{template "sig" (dict "Name" "live" "S" .Signals.Live)}}
+          {{template "sig" (dict "Name" "break_tested" "S" .Signals.BreakTested)}}
+          {{template "sig" (dict "Name" "confirmed" "S" .Signals.Confirmed)}}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {{else}}
+  <p class="bg-white rounded-lg border border-slate-200 px-6 py-6 text-center text-sm text-slate-500">No promises match. Declare invariants in a feature manifest, or clear the filters.</p>
+  {{end}}
+</section>
+{{end}}

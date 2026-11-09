@@ -1177,6 +1177,64 @@ match; `unknown` is never reused, so a timeout is always tried again.
 The result is `lattice/.cache/results/breaks.json` (`lattice.breaks/1`,
 derived and gitignored). A promise with several enforcers has one run each.
 Nothing blocks on it yet: it is evidence for `lattice audit`.
+## 4j. The audit: is each promise kept, or does it only look done?
+
+`lattice audit` gives every invariant one class. It computes nothing new about
+your tests: it joins what the kernel already has, so it agrees with `lattice
+rtm`, `lattice results` and `lattice validate`.
+
+```sh
+lattice extract
+lattice results ingest junit.xml all.lcov --per-test coverage/per-test
+lattice audit                 # summary by class, then one row per invariant
+lattice audit --json          # lattice.audit/1
+lattice audit --markdown      # for a PR comment or a report
+lattice audit --class fake --feature wallet
+```
+
+The same rows are on the `/audit` page of `lattice serve`, filterable by class
+and feature; each fake opens to its verifiers, enforcers, the evidence behind
+the class and any reader's note. `GET /api/v1/audit` returns the JSON.
+
+### Classes, in precedence order
+
+| Class | Means |
+|---|---|
+| `fake` / `never_runs_enforcer` | per-test coverage exists for every verifier and none ran an enforcer |
+| `fake` / `passes_when_broken` | a break of an enforcer left the verifiers green |
+| `break_tested` | breaking the enforcer made the verifiers fail (positive) |
+| `exercised` | a verifier passed and its own run executed an enforcer (positive, weaker) |
+| `demonstrated_only` | a verifier passed; nothing shows whether it runs an enforcer (`no_tool`, `partial_coverage`) |
+| `unenforced`, `unverified`, `not_demonstrated` | a gap |
+| `unknown` | nothing to judge, for example an invariant verified by a structural check only |
+
+Unknown is never a pass and never fake: with no per-test coverage and no break
+run, a promise reads `demonstrated_only` with kind `no_tool`, not `fake`. Only
+`break_tested` and `exercised` are drawn positive.
+
+### Signals
+
+Each row carries eight signals, each with an honesty label: `declared`,
+`enforced`, `verified`, `demonstrated`, `exercised`, `live` (reach class of the
+enforcers; an upper bound), `break_tested` and `confirmed`. `exercised` says the
+code ran, not that the test checks it, so it is a proxy. `confirmed` is the
+approval record behind the BRD criteria that map to the invariant:
+`human`, `agent` (an agent actor, or a council not yet acknowledged), `draft`,
+`drifted`, or `none`. It is a fact about who signed which version, not proof
+the intent is right.
+
+### Break results
+
+`breaks.json` (`lattice/.cache/results/`, written by `lattice break`) is read
+as a file. A run for another commit, or of a schema the audit does not know, is
+set aside and listed under `inputs.breaks.ignored`. When an invariant has
+several enforcers, a survived break on any of them reads `passes_when_broken`.
+
+### Second readers
+
+`lattice/audit-notes.yaml` lists `{promise, reader, verdict, note}` entries,
+with `verdict` one of `confirmed_fake` or `not_fake`. The note is shown on the
+row. It never changes the class. Nothing in the audit blocks a merge.
 
 ## 5. Day-to-day commands
 

@@ -19,6 +19,13 @@ All notable changes to Lattice are documented in this file.
     in `config.yaml`.
   - Writes `lattice/.cache/results/breaks.json` (`lattice.breaks/1`),
     cached by enforcer, verifier, method and script hashes.
+- **`lattice audit`** and the `/audit` page of `lattice serve`: one row per
+  invariant, classified `fake` (`never_runs_enforcer` from per-test coverage,
+  `passes_when_broken` from a break run), `break_tested`, `exercised`,
+  `demonstrated_only`, a gap, or `unknown`. Each row carries eight signals with
+  fact, upper_bound or proxy labels. `--json` is `lattice.audit/1`, `--markdown`
+  suits a PR comment, and `lattice/audit-notes.yaml` adds second-reader notes
+  that never change a class. It reads `breaks.json` as a file and blocks nothing.
 
 ## [0.14.0] — 2026-10-26
 
