@@ -58,7 +58,9 @@ func OpenRepo(ctx context.Context, codeRoot string) (Repo, error) {
 	if r.Head, err = git(ctx, r.Top, "rev-parse", "HEAD"); err != nil {
 		return r, err
 	}
-	status, err := git(ctx, r.Top, "status", "--porcelain")
+	// Lattice's own ledger is appended by ingest and validate runs; it is
+	// not code, so it does not make the tree dirty for a break run.
+	status, err := git(ctx, r.Top, "status", "--porcelain", "--", ".", ":(exclude,glob)**/lattice/.ledger/**")
 	if err != nil {
 		return r, err
 	}

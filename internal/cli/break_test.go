@@ -248,6 +248,27 @@ func TestBreakDirtyTree(t *testing.T) {
 	}
 }
 
+// Lattice's own ledger, appended by `results ingest`, does not make the tree
+// dirty, so `results ingest` then `break` works without --allow-dirty.
+// @verifies breaktest:INV-2
+func TestBreakIgnoresLedger(t *testing.T) {
+	dir := breakFixture(t)
+	ledger := filepath.Join(dir, "lattice", ".ledger", "ledger.jsonl")
+	if err := os.MkdirAll(filepath.Dir(ledger), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ledger, []byte(`{"kind":"results_ingested"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rep, out, err := runBreak(t, dir, "--promise", "guard:INV-1")
+	if err != nil {
+		t.Fatalf("a ledger-only change should not be refused: %v\n%s", err, out)
+	}
+	if rep.Dirty {
+		t.Error("a ledger-only change was recorded as dirty")
+	}
+}
+
 // A script at lattice/breaks/<feature>/<INV>.patch replaces the generated break.
 // @verifies breaktest:INV-1
 func TestBreakScripted(t *testing.T) {
