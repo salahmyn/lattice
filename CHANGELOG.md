@@ -27,6 +27,37 @@ All notable changes to Lattice are documented in this file.
   suits a PR comment, and `lattice/audit-notes.yaml` adds second-reader notes
   that never change a class. It reads `breaks.json` as a file and blocks nothing.
 
+### Changed
+
+- **`lattice break` runs per framework, not per language.** `break.runners`
+  lists `{name, match, command, dir}` entries (`{files}`, `{filter}`, `{junit}`);
+  a promise's verifiers are grouped by the first runner whose glob matches and
+  every group runs, so vitest and Deno verifiers can share a promise. A
+  `break.commands.<lang>` template stays as the fallback, and Go stays built in.
+  A verifier no runner matches is recorded as not run.
+  - Each run in `breaks.json` adds `ran_verifiers`, `not_run_verifiers` and
+    `failed_tests`. A baseline that executes no test reads `unknown` ("the filter
+    matched no tests"), never `survived`. With `{junit}` the executed tests are
+    counted; without it the reason says the count could not be checked.
+  - `break.setup` runs commands in the temporary worktree before the baseline
+    (`{repo}` is the main checkout), and `node_modules` directories are linked
+    in by default (`break.link_node_modules: false` opts out).
+  - The cache key includes the resolved runner commands, the setup commands and
+    the generator version, so a config change reruns.
+  - Only explicit build markers read as "does not compile" (Go `[build failed]`,
+    esbuild `ERROR:` lines, Deno `error: TS` or `Module not found`); a runtime
+    failure with a stack trace is a failing test and reads `killed`. The reason
+    names the failing tests, else the first error line.
+  - TypeScript and JavaScript arrows with an expression body are now broken, as
+    `(true ? (undefined as any) : (expr))`; consts that are not functions read
+    "not a function".
+  - `--promise` prints only the selected runs; `breaks.json` still merges.
+- **`lattice audit`:** a survived break counts as `fake` / `passes_when_broken`
+  only if every verifier of the promise ran. With a verifier in
+  `not_run_verifiers` the row reads `unknown` / `partial_run`, with a reason naming
+  it, and each enforcer's outcome is in the row's evidence. `breaks.json` files
+  without the new fields read as before.
+
 ## [0.14.0] — 2026-10-26
 
 ### Added
