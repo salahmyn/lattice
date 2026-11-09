@@ -129,6 +129,7 @@ success_criteria:
 out_of_scope:
   - Reading go test -json directly; reports are converted to JUnit first.
 implements_via:
+  - audit
   - breaktest
   - coverage
   - mutation
