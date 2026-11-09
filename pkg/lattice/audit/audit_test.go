@@ -218,6 +218,59 @@ func TestBreakOutcomes(t *testing.T) {
 	}
 }
 
+// A survived run is fake only when every verifier ran. With a verifier that
+// could not run (a journey the runner excludes), it reads unknown/partial_run
+// and names the verifier; a killed enforcer still makes the promise
+// break_tested; a file that predates the fields reads as before.
+// @verifies audit:INV-3
+func TestPartialRunIsNotFake(t *testing.T) {
+	kg := graph(inv("INV-1"), []string{"INV-1"}, map[string][]string{"INV-1": {"f.TestOne", "f.TestJourney"}})
+	kg.Symbols = append(kg.Symbols, schema.GraphSymbol{FQN: "f.Second", Feature: "f", EnforcesInvariants: []string{"INV-1"}})
+	set := pass("f.TestOne", "f.TestJourney")
+	partial := func(enforcer string) BreakRun {
+		r := run("f:INV-1", enforcer, "survived")
+		r.RanVerifiers = []string{"f.TestOne"}
+		r.NotRunVerifiers = []string{"f.TestJourney"}
+		return r
+	}
+
+	row := Compute(Sources{KG: kg, Results: set, Breaks: breaks("abc123", partial("f.EnfINV-1"))}).Rows[0]
+	if row.Class != ClassUnknown || row.Kind != KindPartialRun || row.Signals.BreakTested.Value != "partial_run" {
+		t.Fatalf("partial: %s/%s %+v", row.Class, row.Kind, row.Signals.BreakTested)
+	}
+	if !strings.Contains(row.Reason, "f.TestJourney") || Positive(row.Class) {
+		t.Errorf("the reason should name the verifier that could not run: %q", row.Reason)
+	}
+	if len(row.Evidence.Breaks) != 1 || row.Evidence.Breaks[0].NotRunVerifiers[0] != "f.TestJourney" {
+		t.Errorf("evidence should carry the run: %+v", row.Evidence.Breaks)
+	}
+
+	// One enforcer killed, the other survived partially: still break_tested,
+	// and the other enforcer's outcome is in the detail.
+	mixed := Compute(Sources{KG: kg, Results: set, Breaks: breaks("abc123",
+		run("f:INV-1", "f.EnfINV-1", "killed"), partial("f.Second"))}).Rows[0]
+	if mixed.Class != ClassBreakTested || !strings.Contains(mixed.Signals.BreakTested.Detail, "f.Second: survived") {
+		t.Errorf("mixed: %s %+v", mixed.Class, mixed.Signals.BreakTested)
+	}
+
+	// A full survival on one enforcer still makes it fake, partial or not on the other.
+	both := Compute(Sources{KG: kg, Results: set, Breaks: breaks("abc123",
+		run("f:INV-1", "f.EnfINV-1", "survived"), partial("f.Second"))}).Rows[0]
+	if both.Class != ClassFake || both.Kind != KindPassesWhenBroken || len(both.Signals.BreakTested.Items) != 1 || both.Signals.BreakTested.Items[0] != "f.EnfINV-1" {
+		t.Errorf("full survival: %s/%s %+v", both.Class, both.Kind, both.Signals.BreakTested)
+	}
+
+	// An older breaks.json has no not_run_verifiers: today's reading.
+	old := Compute(Sources{KG: kg, Results: set, Breaks: breaks("abc123", run("f:INV-1", "f.EnfINV-1", "survived"))}).Rows[0]
+	if old.Class != ClassFake || old.Kind != KindPassesWhenBroken {
+		t.Errorf("old file: %s/%s", old.Class, old.Kind)
+	}
+	var bf BreaksFile
+	if err := json.Unmarshal([]byte(`{"schema":"lattice.breaks/1","commit":"abc123","runs":[{"promise":"f:INV-1","enforcer":"f.EnfINV-1","outcome":"survived"}]}`), &bf); err != nil || len(bf.Runs[0].NotRunVerifiers) != 0 {
+		t.Errorf("old json: %v %+v", err, bf)
+	}
+}
+
 // A structural-only invariant has no verifier to audit: unknown, not fake.
 // @verifies audit:INV-2
 func TestStructuralOnlyIsUnknown(t *testing.T) {

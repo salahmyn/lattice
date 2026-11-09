@@ -32,8 +32,11 @@ func newBreakCommand(io *IO) *cobra.Command {
 			"The generated break returns early at the top of the enforcer's body (Go,\n" +
 			"TypeScript/JavaScript, Python). A patch at lattice/breaks/<feature>/<INV>.patch\n" +
 			"replaces it for that promise (use one for SQL). Go verifiers run with `go test\n" +
-			"-run`; other languages need break.commands.<lang> in config.yaml, a command with\n" +
-			"{files} and {filter} placeholders.\n" +
+			"-run`; other frameworks need break.runners in config.yaml (a glob over the test\n" +
+			"files and a command with {files}, {filter} and {junit}), or break.commands.<lang>\n" +
+			"as a fallback. break.setup runs commands in the worktree first, and node_modules\n" +
+			"directories are linked from the main checkout unless break.link_node_modules is\n" +
+			"false. A verifier that did not run is listed in not_run_verifiers.\n" +
 			"\n" +
 			"The working tree is never edited. A tree with uncommitted changes is refused\n" +
 			"unless --allow-dirty, which tests the tree as it stands and records dirty: true.\n" +
@@ -73,6 +76,16 @@ func newBreakCommand(io *IO) *cobra.Command {
 			if io.JSON {
 				return io.printJSON(rep)
 			}
+			// The file keeps every run of the commit; the table shows the
+			// ones this invocation asked for.
+			opts := breaktest.Options{Promise: promise, Feature: feature}
+			var shown []breaktest.Run
+			for _, r := range rep.Runs {
+				if opts.Selects(r.Promise) {
+					shown = append(shown, r)
+				}
+			}
+			rep.Runs = shown
 			printBreakTable(io, rep)
 			return nil
 		},

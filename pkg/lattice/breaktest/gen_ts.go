@@ -21,8 +21,10 @@ var tsFunctionNodes = map[string]bool{
 
 // generateTS inserts `if (true) { return undefined as any; }` (TypeScript) or
 // `if (true) { return undefined; }` (JavaScript) after the opening brace of a
-// function with a block body. Expression-bodied arrows, constructors and
-// setters read unknown.
+// function with a block body. An arrow with an expression body, `(a) => expr`,
+// gets its body wrapped as `(true ? (undefined as any) : (expr))` (no `as
+// any` in JavaScript), so the expression is still referenced. Constructors,
+// setters, classes and consts that are not functions read unknown.
 func generateTS(file string, src []byte, sym Symbol) (Break, error) {
 	lang := tstsx.GetLanguage()
 	isTS := true
@@ -42,9 +44,9 @@ func generateTS(file string, src []byte, sym Symbol) (Break, error) {
 		n    *sitter.Node
 		body *sitter.Node
 		name string
+		expr bool // an arrow with an expression body
 	}
 	var cands []cand
-	var expressionBody bool
 	walk(tree.RootNode(), func(n *sitter.Node) bool {
 		if !tsFunctionNodes[n.Type()] {
 			return true
@@ -53,14 +55,7 @@ func generateTS(file string, src []byte, sym Symbol) (Break, error) {
 		if body == nil || !within(sym.Line, tsHeaderRow(n), body) {
 			return true
 		}
-		name := tsFunctionName(n, src)
-		if body.Type() != "statement_block" {
-			if name == sym.Name {
-				expressionBody = true
-			}
-			return true
-		}
-		cands = append(cands, cand{n, body, name})
+		cands = append(cands, cand{n, body, tsFunctionName(n, src), body.Type() != "statement_block"})
 		return true
 	})
 	var pick *cand
@@ -70,14 +65,19 @@ func generateTS(file string, src []byte, sym Symbol) (Break, error) {
 			break
 		}
 	}
-	if pick == nil && len(cands) == 1 {
+	// An unnamed function is taken as the symbol's only when it is the one
+	// block-bodied candidate; an expression body is never guessed at.
+	if pick == nil && len(cands) == 1 && !cands[0].expr {
 		pick = &cands[0]
 	}
 	if pick == nil {
-		if expressionBody {
-			return Break{}, noBreak("%s has an expression body, not a block", sym.Name)
+		if sym.Kind == "const" || sym.Kind == "variable" {
+			return Break{}, noBreak("%s is not a function; add a script", sym.Name)
 		}
-		return Break{}, noBreak("no function %s with a block body at line %d (kind %s)", sym.Name, sym.Line, sym.Kind)
+		if sym.Kind == "class" {
+			return Break{}, noBreak("%s is a class; add a script", sym.Name)
+		}
+		return Break{}, noBreak("no function %s at line %d (kind %s)", sym.Name, sym.Line, sym.Kind)
 	}
 	if pick.n.Type() == "method_definition" {
 		if pick.name == "constructor" {
@@ -88,6 +88,18 @@ func generateTS(file string, src []byte, sym Symbol) (Break, error) {
 				return Break{}, noBreak("setter: no generated break; add a script")
 			}
 		}
+	}
+	if pick.expr {
+		// (true ? undefined : (expr)): the expression stays referenced and
+		// the whole is any, so the code still type-checks.
+		head, ret := "(true ? ", "undefined"
+		if isTS {
+			ret = "(undefined as any)"
+		}
+		return Break{
+			Offset: int(pick.body.StartByte()), Text: head + ret + " : (",
+			More: []Break{{Offset: int(pick.body.EndByte()), Text: "))"}},
+		}, nil
 	}
 	stmt := "if (true) { return undefined; }"
 	if isTS {

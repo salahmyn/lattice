@@ -31,6 +31,13 @@ func TestClassify(t *testing.T) {
 		{"", "Error: Transform failed with 1 error:\nsrc/a.ts:3:10: ERROR: Expected \";\"\n", 1, false, statusBuild},
 		{"", "E   IndentationError: unexpected indent\n", 2, false, statusBuild},
 		{"", "ERROR collecting tests/test_a.py\n", 2, false, statusBuild},
+		// Deno: type-check, resolution and check-file errors are build failures.
+		{"", "Check file:///w/a_test.ts\nerror: TS2322 [ERROR]: Type 'string' is not assignable\n", 1, false, statusBuild},
+		{"", "error: Module not found \"file:///w/b.ts\".\n", 1, false, statusBuild},
+		// A runtime failure with a stack trace is a failing test, not a broken build.
+		{"", "running 1 test from ./a_test.ts\nit works ... FAILED (3ms)\n\n ERRORS\n\nit works => ./a_test.ts:4:6\nerror: TypeError: Cannot read properties of undefined (reading 'x')\n    at f (file:///w/a.ts:3:10)\n    at file:///w/a_test.ts:5:3\n", 1, false, statusFail},
+		{"", "TypeError: x is not a function\n    at f (web/a.ts:3:10)\n", 1, false, statusFail},
+		{"", "SyntaxError: in an assertion message\n at test (a.test.ts:1:1)\n", 1, false, statusFail},
 		{"go", "", -1, false, statusError},
 		{"go", "partial output", 1, true, statusTimeout},
 	}
@@ -79,6 +86,7 @@ func TestCacheKey(t *testing.T) {
 		"verifier": func(r *Run) { r.VerifierHash = "v2" },
 		"method":   func(r *Run) { r.Method = MethodScripted },
 		"script":   func(r *Run) { r.ScriptHash = "s" },
+		"config":   func(r *Run) { r.ConfigHash = "c" },
 	} {
 		c := base
 		mut(&c)

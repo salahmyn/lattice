@@ -140,6 +140,8 @@ export const arrow = (a: number): number => {
 
 export const short = (a: number) => a * 2;
 
+export const NOT_FN = 42;
+
 const fnExpr = function (a: number) {
   return a;
 };
@@ -164,12 +166,78 @@ const fnExpr = function (a: number) {
 	for _, c := range []struct{ sub, name, why string }{
 		{"constructor(", "constructor", "constructor"},
 		{"set value", "value", "setter"},
-		{"export const short", "short", "expression body"},
 	} {
 		_, err := gen(t, "typescript", "src/a.ts", src, c.sub, c.name)
 		var nb *NoBreak
 		if !errors.As(err, &nb) || !strings.Contains(nb.Reason, c.why) {
 			t.Errorf("%s: want NoBreak(%s), got %v", c.name, c.why, err)
+		}
+	}
+}
+
+// An arrow with an expression body keeps its expression referenced: the body
+// becomes (true ? (undefined as any) : (expr)), and the file still parses. A
+// const that is not a function reads unknown, "not a function".
+// @verifies breaktest:INV-1
+func TestGenerateExpressionArrow(t *testing.T) {
+	const src = `export const short = (a: number) => a * 2;
+
+export const obj = (a: number) => ({ a });
+
+export const multi = async (
+  a: number,
+  b: number,
+): Promise<number> =>
+  a + b;
+
+export const NOT_FN = 42;
+
+class Svc {
+  field = (x: string) => x.trim();
+  method(x: string): string {
+    return x;
+  }
+}
+
+const fnExpr = function (a: number) {
+  return a;
+};
+`
+	for _, c := range []struct{ sub, name, want string }{
+		{"export const short", "short", "(a: number) => (true ? (undefined as any) : (a * 2));"},
+		{"export const obj", "obj", "=> (true ? (undefined as any) : (({ a })));"},
+		{"export const multi", "multi", "(true ? (undefined as any) : (a + b));"},
+		{"field =", "field", "(true ? (undefined as any) : (x.trim()));"},
+		{"  method(", "method", "{ if (true) { return undefined as any; } "},
+		{"const fnExpr", "fnExpr", "{ if (true) { return undefined as any; } "},
+	} {
+		got, err := gen(t, "typescript", "src/a.ts", src, c.sub, c.name)
+		if err != nil {
+			t.Errorf("%s: %v", c.name, err)
+			continue
+		}
+		if !strings.Contains(got, c.want) {
+			t.Errorf("%s: want %q in\n%s", c.name, c.want, got)
+		}
+		// The expression is still there, and the file still parses.
+		if _, err := parse(tsGrammar(), []byte(got)); err != nil {
+			t.Errorf("%s: broken file does not parse: %v\n%s", c.name, err, got)
+		}
+	}
+	// JavaScript gets no type assertion.
+	got, err := gen(t, "javascript", "a.js", "export const f = (a) => a * 2;\n", "export const f", "f")
+	if err != nil || got != "export const f = (a) => (true ? undefined : (a * 2));\n" {
+		t.Errorf("js: %v %q", err, got)
+	}
+	// A const that holds no function, or a call that only contains an arrow.
+	for _, c := range []struct{ src, sub, name string }{
+		{src, "export const NOT_FN", "NOT_FN"},
+		{"export const h = useThing((a: number) => a);\n", "export const h", "h"},
+	} {
+		_, err := Generate("typescript", "a.ts", []byte(c.src), Symbol{Name: c.name, Kind: "const", Line: lineOf(t, c.src, c.sub)})
+		var nb *NoBreak
+		if !errors.As(err, &nb) || !strings.Contains(nb.Reason, "not a function") {
+			t.Errorf("%s: want NoBreak(not a function), got %v", c.name, err)
 		}
 	}
 }

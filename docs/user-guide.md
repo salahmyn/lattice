@@ -1140,16 +1140,26 @@ into the worktree and records `dirty: true`.
 | `unknown` | Anything else. It is never a pass and never a fail. |
 
 `unknown` covers: no generated break for the language ("add a script"), a
-break that does not compile, a baseline that fails, a timeout (`--timeout`,
-default 120s, per test run), no runner configured, and SQL without a script.
+break that does not compile, a baseline that fails or executes no test, a
+timeout (`--timeout`, default 120s, per test run), no runner configured, and
+SQL without a script.
+
+Only an explicit build marker reads as "does not compile": Go's `[build
+failed]` or `[setup failed]`, an esbuild or transform `file:line:col: ERROR:`
+line, Deno's `error: TS...`, `error: Module not found` or `Check file`, and
+pytest's collection and import errors. A runtime failure with a stack trace is
+a failing test, so it reads `killed` when the baseline passed. The reason
+names the failing tests, else the first error line.
 
 **The generated break** is an early return at the top of the enforcer's
 body, with the rest left in place so imports and variables stay used. Go
 returns zero values (`if true { return }` for named or no results);
 TypeScript returns `undefined as any` (plain `undefined` in JavaScript),
 for function declarations, methods, and functions or arrows with a block
-body; Python gets `return None`. Constructors, setters, expression-bodied
-arrows and classes read unknown.
+body; Python gets `return None`. An arrow with an expression body,
+`(a) => expr`, has its body wrapped as `(true ? (undefined as any) : (expr))`
+(no `as any` in JavaScript), so `expr` stays referenced. Constructors, setters,
+classes and consts that are not functions ("not a function") read unknown.
 
 **A scripted break** is a patch at `lattice/breaks/<feature>/<INV>.patch`
 (made with `git diff`), applied with `git apply` in the worktree. It
@@ -1157,22 +1167,73 @@ replaces the generated break for that promise, and is the way to break
 SQL or anything else with no generator.
 
 **Runners.** Go verifiers run with `go test -run '^(TestA|TestB)$' -count=1`
-and need no setup. Other languages need a command template in
-`lattice/config.yaml`; `{files}` and `{filter}` arrive shell-quoted:
+and need no setup. Everything else needs a runner in `lattice/config.yaml`.
+Runners are per framework, not per language: a promise's verifiers can span
+vitest and Deno, both TypeScript.
 
 ```yaml
 break:
-  commands:
-    typescript: npx vitest run {files} -t {filter}
+  runners:
+    - name: vitest
+      match: ["apps/client/**/*.test.ts"]
+      command: [npx, vitest, run, --root, apps/client, --reporter=junit,
+                "--outputFile.junit={junit}", -t, "{filter}", "{files}"]
+    - name: deno
+      match: ["supabase/functions/**/*_test.ts"]
+      command: [deno, test, --allow-all, --junit-path={junit}, --filter, "/{filter}/", "{files}"]
+  commands:                      # fallback for a verifier no runner matches
     python: python -m pytest {files} -k {filter}
 ```
 
-Commands run in the worktree, from the directory that holds `lattice/`.
+- `match` are doublestar globs over the verifier files, relative to the directory
+  that holds `lattice/`. A promise's verifiers are grouped by the first runner
+  that matches and **every group is run**. The promise is `killed` only if at
+  least one group fails after the break while all passed at baseline.
+- `command` is an argument list, run without a shell. `{files}` as its own
+  element becomes one argument per file; `{filter}` (a regular expression over
+  the test titles, a `-k` expression for Python) and `{junit}` are replaced
+  where they appear. `dir` (optional) is the working directory, and file paths
+  are then given relative to it.
+- A `break.commands.<lang>` shell template (with `{files}`, `{filter}` and
+  `{junit}`, shell-quoted) is the fallback for a verifier no runner matches, as
+  before. A verifier that no runner or template matches is recorded as not run.
+- `{junit}` is the path of a JUnit report the runner should write. With it,
+  `lattice break` counts the tests that executed. A filter that selects none of
+  the promise's verifiers reads `unknown` ("the filter matched no tests"), never
+  `survived`: vitest's `-t` with no match exits 0. Without `{junit}` the executed
+  count cannot be checked, and the reason says so.
+- Paths in `{files}` are relative to the directory that holds `lattice/`, but a
+  runner may resolve them against its own root. For vitest, pass `--root
+  apps/client` rather than `cd apps/client && vitest {files}`, which finds
+  nothing; or set `dir`.
+
+**The worktree.** A temporary worktree has no `node_modules`, so `lattice break`
+symlinks each `node_modules` directory of the main checkout into the same relative
+path of the worktree (set `break.link_node_modules: false` to opt out). `break.setup`
+lists shell commands run once in the worktree before the first baseline, with
+`{repo}` set to the main checkout's path:
+
+```yaml
+break:
+  setup:
+    - ln -s {repo}/.env.test .env.test
+```
+
+A setup command that fails makes every run `unknown` ("setup failed").
 `lattice results tests --verifiers` shows the filter each runner takes.
 
+Each run in `breaks.json` records `ran_verifiers` (from the JUnit report, or Go's
+`-v` pass lines), `not_run_verifiers` (no runner, or the filter or the runner's
+config left them out) and `failed_tests` (the tests that failed after the break).
+
 **Cache.** An earlier killed or survived outcome is reused when the
-enforcer's source, the verifiers' source, the method and the script all
-match; `unknown` is never reused, so a timeout is always tried again.
+enforcer's source, the verifiers' source, the method, the script and the
+runner configuration (the resolved runner commands, the setup commands and the
+generator version) all match, so a config change runs again; `unknown` is never
+reused, so a timeout is always tried again.
+
+`--promise` and `--feature` print only the runs they selected; `breaks.json`
+still keeps the rest of the commit's runs.
 
 The result is `lattice/.cache/results/breaks.json` (`lattice.breaks/1`,
 derived and gitignored). A promise with several enforcers has one run each.
@@ -1201,11 +1262,12 @@ the class and any reader's note. `GET /api/v1/audit` returns the JSON.
 | Class | Means |
 |---|---|
 | `fake` / `never_runs_enforcer` | per-test coverage exists for every verifier and none ran an enforcer |
-| `fake` / `passes_when_broken` | a break of an enforcer left the verifiers green |
+| `fake` / `passes_when_broken` | a break of an enforcer left the verifiers green, and every verifier of the promise ran |
 | `break_tested` | breaking the enforcer made the verifiers fail (positive) |
 | `exercised` | a verifier passed and its own run executed an enforcer (positive, weaker) |
 | `demonstrated_only` | a verifier passed; nothing shows whether it runs an enforcer (`no_tool`, `partial_coverage`) |
 | `unenforced`, `unverified`, `not_demonstrated` | a gap |
+| `unknown` / `partial_run` | a break survived, but a verifier could not run (no runner, or a journey the runner excludes), so it says nothing about that verifier |
 | `unknown` | nothing to judge, for example an invariant verified by a structural check only |
 
 Unknown is never a pass and never fake: with no per-test coverage and no break
@@ -1228,7 +1290,13 @@ the intent is right.
 `breaks.json` (`lattice/.cache/results/`, written by `lattice break`) is read
 as a file. A run for another commit, or of a schema the audit does not know, is
 set aside and listed under `inputs.breaks.ignored`. When an invariant has
-several enforcers, a survived break on any of them reads `passes_when_broken`.
+several enforcers, a survived break on any of them reads `passes_when_broken`,
+but only when no verifier of the promise was left unrun: a run with entries in
+`not_run_verifiers` reads `unknown` / `partial_run`, with a reason naming those
+verifiers. `break_tested` needs at least one enforcer killed and none survived
+with all verifiers run. A row's evidence lists the outcome of each enforcer, with
+its unrun verifiers and failed tests. A `breaks.json` from before these fields
+reads as it always did.
 
 ### Second readers
 

@@ -16,7 +16,7 @@ invariants:
   - id: INV-2
     statement: Unknown is never a pass and never fake. Missing per-test coverage or break runs read unknown, and only break_tested and exercised are drawn positive.
   - id: INV-3
-    statement: A break run that survived on any enforcer reads passes_when_broken, and one that killed reads break_tested.
+    statement: A break run that survived on any enforcer with every verifier run reads passes_when_broken; one that survived while a verifier did not run reads unknown (partial_run), never fake; and one that killed, with no such survivor, reads break_tested.
   - id: INV-4
     statement: A breaks file of another commit, or of a schema the audit does not know, is set aside and never counted.
   - id: INV-5

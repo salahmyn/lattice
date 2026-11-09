@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 
 	sitter "github.com/smacker/go-tree-sitter"
 )
@@ -23,20 +24,26 @@ type Symbol struct {
 	Line int
 }
 
-// Break is one insertion into a source file: Text goes in at byte Offset and
+// Break is an insertion into a source file: Text goes in at byte Offset and
 // the rest of the file stays as it was, so imports and variables stay used
-// and the code still compiles.
+// and the code still compiles. More holds further insertions, for a break
+// that wraps an expression and so needs one at each end.
 type Break struct {
 	Offset int
 	Text   string
+	More   []Break
 }
 
 // Apply returns src with the break inserted.
 func (b Break) Apply(src []byte) []byte {
-	out := make([]byte, 0, len(src)+len(b.Text))
-	out = append(out, src[:b.Offset]...)
-	out = append(out, b.Text...)
-	return append(out, src[b.Offset:]...)
+	ins := append([]Break{{Offset: b.Offset, Text: b.Text}}, b.More...)
+	sort.SliceStable(ins, func(i, j int) bool { return ins[i].Offset > ins[j].Offset })
+	out := append([]byte(nil), src...)
+	for _, in := range ins {
+		tail := append([]byte(nil), out[in.Offset:]...)
+		out = append(append(out[:in.Offset], in.Text...), tail...)
+	}
+	return out
 }
 
 // NoBreak is why no break could be generated. The outcome is unknown, never
