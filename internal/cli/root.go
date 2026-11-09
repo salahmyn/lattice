@@ -69,6 +69,7 @@ func NewRootCommand() *cobra.Command {
 		newImpactCommand(io),
 		newSweepCommand(io),
 		newDemonstrateCommand(io),
+		newBreakCommand(io),
 	)
 
 	return root
