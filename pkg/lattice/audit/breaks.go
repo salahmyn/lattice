@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // BreaksSchema is the version tag of lattice/.cache/results/breaks.json, the
@@ -40,6 +41,12 @@ type BreakRun struct {
 	Outcome    string `json:"outcome"`
 	Reason     string `json:"reason,omitempty"`
 	DurationMS int64  `json:"duration_ms,omitempty"`
+	// RanVerifiers, NotRunVerifiers and FailedTests say what the run actually
+	// executed. A file written before they existed has none of them, and its
+	// runs read as if every verifier ran.
+	RanVerifiers    []string `json:"ran_verifiers,omitempty"`
+	NotRunVerifiers []string `json:"not_run_verifiers,omitempty"`
+	FailedTests     []string `json:"failed_tests,omitempty"`
 }
 
 // LoadBreaks reads breaks.json; ok is false when there is none. A file that
@@ -101,10 +108,13 @@ func short(sha string) string {
 	return sha
 }
 
-// breakSignal folds one promise's runs. A survived run on any enforcer makes
-// it survived (the verifiers cannot tell that enforcer is broken); else a
-// killed run makes it killed (a fact about that one break); else unknown,
-// with the reasons. A run on a dirty tree is noted, not discarded.
+// breakSignal folds one promise's runs, one outcome per enforcer. A run that
+// survived with every verifier run, on any enforcer, makes it survived (the
+// verifiers cannot tell that enforcer is broken); else a killed run makes it
+// killed (a fact about that one break); else a run that survived while some
+// verifier did not run makes it partial_run (the break says nothing about the
+// verifiers that could not run); else unknown, with the reasons. A run on a
+// dirty tree is noted, not discarded.
 // @enforces audit:INV-3
 func breakSignal(runs []BreakRun) (Signal, []BreakRun) {
 	s := Signal{Value: "unknown", Honesty: Fact}
@@ -115,26 +125,37 @@ func breakSignal(runs []BreakRun) (Signal, []BreakRun) {
 	runs = append([]BreakRun(nil), runs...)
 	sort.SliceStable(runs, func(i, j int) bool { return runs[i].Enforcer < runs[j].Enforcer })
 
-	pick := func(outcome string) (items []string, method string) {
-		for _, r := range runs {
-			if r.Outcome == outcome {
-				items = append(items, r.Enforcer)
-				if method == "" {
-					method = r.Method
-				}
-			}
+	var full, killed, partial []BreakRun
+	for _, r := range runs {
+		switch {
+		case r.Outcome == "survived" && len(r.NotRunVerifiers) == 0:
+			full = append(full, r)
+		case r.Outcome == "survived":
+			partial = append(partial, r)
+		case r.Outcome == "killed":
+			killed = append(killed, r)
+		}
+	}
+	enforcers := func(rs []BreakRun) (items []string) {
+		for _, r := range rs {
+			items = append(items, r.Enforcer)
 		}
 		return
 	}
-	if items, m := pick("survived"); len(items) > 0 {
-		s.Value, s.Items, s.Method = "survived", items, m
+	if len(full) > 0 {
+		s.Value, s.Items, s.Method = "survived", enforcers(full), full[0].Method
 		return s, runs
 	}
-	if items, m := pick("killed"); len(items) > 0 {
-		s.Value, s.Items, s.Method = "killed", items, m
-		if len(items) < len(runs) {
-			s.Detail = fmt.Sprintf("%d of %d enforcers broken; the rest read unknown", len(items), len(runs))
+	if len(killed) > 0 {
+		s.Value, s.Items, s.Method = "killed", enforcers(killed), killed[0].Method
+		if len(killed) < len(runs) {
+			s.Detail = fmt.Sprintf("%d of %d enforcers broken; the rest: %s", len(killed), len(runs), perEnforcer(runs, "killed"))
 		}
+		return s, runs
+	}
+	if len(partial) > 0 {
+		s.Value, s.Items, s.Method = "partial_run", enforcers(partial), partial[0].Method
+		s.Detail = "survived, but verifiers did not run: " + strings.Join(notRun(partial), ", ")
 		return s, runs
 	}
 	// Unknown: say why, from the runs' own reasons.
@@ -154,4 +175,37 @@ func breakSignal(runs []BreakRun) (Signal, []BreakRun) {
 	}
 	s.Method = runs[0].Method
 	return s, runs
+}
+
+// notRun lists the verifiers the runs left unrun, sorted, once each.
+func notRun(runs []BreakRun) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, r := range runs {
+		for _, v := range r.NotRunVerifiers {
+			if !seen[v] {
+				seen[v] = true
+				out = append(out, v)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// perEnforcer is the outcome of each enforcer whose outcome is not skip, in
+// one line.
+func perEnforcer(runs []BreakRun, skip string) string {
+	var parts []string
+	for _, r := range runs {
+		if r.Outcome == skip {
+			continue
+		}
+		p := r.Enforcer + ": " + r.Outcome
+		if r.Outcome == "survived" && len(r.NotRunVerifiers) > 0 {
+			p += " (verifiers not run: " + strings.Join(r.NotRunVerifiers, ", ") + ")"
+		}
+		parts = append(parts, p)
+	}
+	return strings.Join(parts, "; ")
 }

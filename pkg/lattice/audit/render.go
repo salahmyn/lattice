@@ -167,6 +167,12 @@ func WriteMarkdown(w io.Writer, r Report) {
 			}
 			for _, b := range row.Evidence.Breaks {
 				fmt.Fprintf(w, "- break of `%s` (%s): %s\n", b.Enforcer, b.Method, b.Outcome)
+				if len(b.NotRunVerifiers) > 0 {
+					fmt.Fprintf(w, "  - verifiers not run: %s\n", strings.Join(b.NotRunVerifiers, ", "))
+				}
+				if len(b.FailedTests) > 0 {
+					fmt.Fprintf(w, "  - failed after the break: %s\n", strings.Join(b.FailedTests, "; "))
+				}
 			}
 			for _, n := range row.Notes {
 				fmt.Fprintf(w, "- second reader %s: %s. %s\n", n.Reader, n.Verdict, n.Note)

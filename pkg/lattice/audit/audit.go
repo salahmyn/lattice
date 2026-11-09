@@ -52,6 +52,9 @@ const (
 	// fake
 	KindNeverRunsEnforcer = "never_runs_enforcer"
 	KindPassesWhenBroken  = "passes_when_broken"
+	// unknown: a break survived, but a verifier of the promise did not run
+	// (no runner, or an excluded journey), so it says nothing about that one.
+	KindPartialRun = "partial_run"
 	// demonstrated_only, unknown: the evidence that would decide is absent,
 	// which is not a verdict on the verifier.
 	KindNoTool          = "no_tool"          // no per-test coverage ingested
@@ -514,7 +517,8 @@ func live(enf []EnforcerEvidence) Signal {
 }
 
 // classify sets Class, Kind and Reason in the audit's precedence: fake, then
-// break_tested, exercised, demonstrated_only, a gap, and last unknown.
+// break_tested, unknown (partial_run), exercised, demonstrated_only, a gap,
+// and last unknown. A survived break is fake only when every verifier ran.
 // @enforces audit:INV-1, audit:INV-2
 func classify(r *Row, rr rtm.Row, cov coverageVerdict, hasVerifiers bool) {
 	wired := len(rr.Enforcers) > 0 && hasVerifiers
@@ -536,6 +540,11 @@ func classify(r *Row, rr rtm.Row, cov coverageVerdict, hasVerifiers bool) {
 	case wired && bt.Value == "killed" && !failing:
 		r.Class = ClassBreakTested
 		r.Reason = "breaking " + strings.Join(bt.Items, ", ") + " (" + bt.Method + ") made the verifiers fail"
+		return
+	case wired && bt.Value == "partial_run" && !failing:
+		r.Class, r.Kind = ClassUnknown, KindPartialRun
+		r.Reason = "breaking " + strings.Join(bt.Items, ", ") + " (" + bt.Method + ") left the verifiers green, but some could not run (" +
+			strings.Join(notRun(r.Evidence.Breaks), ", ") + "): the break says nothing about them (not a fake)"
 		return
 	case rr.Status == rtm.StatusExercised:
 		r.Class = ClassExercised

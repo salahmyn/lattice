@@ -110,6 +110,8 @@
         <h3 class="uppercase tracking-wide text-slate-500 mb-1">Break runs</h3>
         {{range .Evidence.Breaks}}
         <p class="font-mono text-slate-800">{{.Enforcer}} <span class="text-slate-500">{{.Method}}, baseline {{.Baseline}}:</span> {{.Outcome}}{{if .Reason}} <span class="text-slate-500">{{.Reason}}</span>{{end}}</p>
+        {{if .NotRunVerifiers}}<p class="text-slate-500 pl-4">verifiers not run: <span class="font-mono">{{range $i, $v := .NotRunVerifiers}}{{if $i}}, {{end}}{{$v}}{{end}}</span></p>{{end}}
+        {{if .FailedTests}}<p class="text-slate-500 pl-4">failed after the break: <span class="font-mono">{{range $i, $v := .FailedTests}}{{if $i}}; {{end}}{{$v}}{{end}}</span></p>{{end}}
         {{end}}
       </div>
       {{end}}
