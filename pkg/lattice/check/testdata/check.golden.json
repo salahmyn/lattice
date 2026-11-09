@@ -1,0 +1,288 @@
+{
+  "contract": "lattice.check/1",
+  "commit": "head",
+  "base": {
+    "rev": "main",
+    "sha": "base"
+  },
+  "head": {
+    "sha": "head"
+  },
+  "ci": false,
+  "verdict": {
+    "state": "UNPROVEN",
+    "code": "GAPS",
+    "params": {
+      "n": 2,
+      "untraced": 1
+    },
+    "text": "2 gaps in the touched promises"
+  },
+  "merge_allowed": false,
+  "merge": {
+    "code": "NEW_GAP",
+    "params": {
+      "pairs": [
+        "bookshop:INV-2/exercised"
+      ]
+    },
+    "text": "UNPROVEN may merge only with no new (promise, signal) gap: bookshop:INV-2/exercised"
+  },
+  "evidence": {
+    "results": {
+      "present": true,
+      "commit": "head",
+      "ci_run": "4812",
+      "tied": true,
+      "counted": true
+    },
+    "coverage": {
+      "present": true,
+      "commit": "head",
+      "ci_run": "4812",
+      "tied": true,
+      "counted": true
+    },
+    "breaks": {
+      "present": true,
+      "commit": "head",
+      "ci_run": "4812",
+      "tied": true,
+      "counted": true
+    },
+    "base_audit": {
+      "present": true,
+      "commit": "base"
+    },
+    "suite": {
+      "present": true,
+      "cases": 40,
+      "failed": 0
+    }
+  },
+  "promises": [
+    {
+      "promise": "bookshop:INV-1",
+      "feature": "bookshop",
+      "statement": "A statement for bookshop:INV-1",
+      "tier": 2,
+      "class": "break_tested",
+      "touched": [
+        "enforcer_changed"
+      ],
+      "signals": {
+        "traced": {
+          "state": "pass",
+          "honesty": "fact",
+          "text": "an enforcer is anchored"
+        },
+        "confirmed": {
+          "state": "pass",
+          "honesty": "proxy"
+        },
+        "live": {
+          "state": "pass",
+          "honesty": "upper_bound",
+          "text": "an entry point reaches an enforcer"
+        },
+        "exercised": {
+          "state": "pass",
+          "honesty": "proxy"
+        },
+        "break_tested": {
+          "state": "pass",
+          "honesty": "fact",
+          "text": "breaking bookshop.Guard made the verifiers fail"
+        },
+        "nothing_fell": {
+          "state": "pass",
+          "honesty": "fact",
+          "text": "no level dropped against base"
+        },
+        "suite_green": {
+          "state": "pass",
+          "honesty": "fact",
+          "text": "40 cases passed"
+        }
+      },
+      "needs": [
+        "traced",
+        "confirmed",
+        "live",
+        "break_tested",
+        "nothing_fell"
+      ],
+      "next_action": "nothing to do"
+    },
+    {
+      "promise": "bookshop:INV-2",
+      "feature": "bookshop",
+      "statement": "A statement for bookshop:INV-2",
+      "tier": 1,
+      "class": "demonstrated_only",
+      "touched": [
+        "enforcer_changed"
+      ],
+      "signals": {
+        "traced": {
+          "state": "pass",
+          "honesty": "fact",
+          "text": "an enforcer is anchored"
+        },
+        "confirmed": {
+          "state": "pass",
+          "honesty": "proxy"
+        },
+        "live": {
+          "state": "pass",
+          "honesty": "upper_bound",
+          "text": "an entry point reaches an enforcer"
+        },
+        "exercised": {
+          "state": "unknown",
+          "honesty": "proxy",
+          "code": "NO_COVERAGE",
+          "text": "no per-test coverage ingested"
+        },
+        "break_tested": {
+          "state": "unknown",
+          "honesty": "fact",
+          "code": "NO_BREAK_RUN",
+          "text": "no break run"
+        },
+        "nothing_fell": {
+          "state": "pass",
+          "honesty": "fact",
+          "text": "no level dropped against base"
+        },
+        "suite_green": {
+          "state": "pass",
+          "honesty": "fact",
+          "text": "40 cases passed"
+        }
+      },
+      "needs": [
+        "traced",
+        "confirmed",
+        "live",
+        "exercised",
+        "nothing_fell"
+      ],
+      "next_action": "add a verifier whose own run executes the enforcer, and ingest per-test coverage in CI"
+    },
+    {
+      "promise": "bookshop:INV-3",
+      "feature": "bookshop",
+      "statement": "A statement for bookshop:INV-3",
+      "tier": 1,
+      "class": "break_tested",
+      "touched": [
+        "enforcer_changed",
+        "promise_added"
+      ],
+      "new_promise": true,
+      "signals": {
+        "traced": {
+          "state": "pass",
+          "honesty": "fact",
+          "text": "an enforcer is anchored"
+        },
+        "confirmed": {
+          "state": "fail",
+          "honesty": "proxy",
+          "code": "CONFIRMED_DRAFT",
+          "text": "not confirmed: status draft"
+        },
+        "live": {
+          "state": "pass",
+          "honesty": "upper_bound",
+          "text": "an entry point reaches an enforcer"
+        },
+        "exercised": {
+          "state": "pass",
+          "honesty": "proxy"
+        },
+        "break_tested": {
+          "state": "pass",
+          "honesty": "fact",
+          "text": "breaking bookshop.Guard made the verifiers fail"
+        },
+        "nothing_fell": {
+          "state": "pass",
+          "honesty": "fact",
+          "text": "no level dropped against base"
+        },
+        "suite_green": {
+          "state": "pass",
+          "honesty": "fact",
+          "text": "40 cases passed"
+        }
+      },
+      "needs": [
+        "traced",
+        "confirmed",
+        "live",
+        "exercised",
+        "nothing_fell"
+      ],
+      "next_action": "a human confirms the promise: lattice prepare promise confirm bookshop:INV-3"
+    }
+  ],
+  "gaps": [
+    {
+      "promise": "bookshop:INV-2",
+      "signal": "exercised",
+      "state": "unknown",
+      "honesty": "proxy",
+      "code": "NO_COVERAGE",
+      "text": "no per-test coverage ingested",
+      "delta": "new",
+      "waived": true,
+      "blocks": true,
+      "next_action": "add a verifier whose own run executes the enforcer, and ingest per-test coverage in CI"
+    },
+    {
+      "promise": "bookshop:INV-3",
+      "signal": "confirmed",
+      "state": "fail",
+      "honesty": "proxy",
+      "code": "CONFIRMED_DRAFT",
+      "text": "not confirmed: status draft",
+      "delta": "new",
+      "new_promise": true,
+      "next_action": "a human confirms the promise: lattice prepare promise confirm bookshop:INV-3"
+    }
+  ],
+  "weakenings": [],
+  "blind_spot": {
+    "state": "info",
+    "honesty": "fact",
+    "code": "UNTRACED_LINES",
+    "params": {
+      "new": 12,
+      "of": 42,
+      "untraced": 12
+    },
+    "text": "12 of 42 touched lines untraced",
+    "untraced": [
+      {
+        "file": "bookshop/format.go",
+        "symbol": "bookshop.Format",
+        "lines": "5-16",
+        "count": 12,
+        "new": true,
+        "reason": "file or module tag only: no enforcer span, checked reference or entry point reaches it"
+      }
+    ],
+    "out_of_reach": []
+  },
+  "waivers": [
+    {
+      "subject": "bookshop:INV-2/exercised",
+      "kind": "no_tool",
+      "reason": "no coverage tool",
+      "in_change": true
+    }
+  ],
+  "note": "UNPROVEN is not a pass: it means nothing fell and something is not shown. Unknown is never a pass; only CI's verdict counts."
+}
