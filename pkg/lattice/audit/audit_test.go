@@ -229,6 +229,18 @@ func TestStructuralOnlyIsUnknown(t *testing.T) {
 	}
 }
 
+// Only break_tested and exercised are drawn positive; every other class,
+// unknown and the gaps included, is not.
+// @verifies audit:INV-2
+func TestPositiveClasses(t *testing.T) {
+	for _, c := range Classes {
+		want := c == ClassBreakTested || c == ClassExercised
+		if got := Positive(c); got != want {
+			t.Errorf("Positive(%s) = %v, want %v", c, got, want)
+		}
+	}
+}
+
 // The confirmed signal reads the approval record: human, agent, draft,
 // drifted, or none, and the worst BRD decides.
 // @verifies audit:INV-5
