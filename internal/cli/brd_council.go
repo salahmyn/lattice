@@ -266,7 +266,9 @@ func newBRDAckCommand(io *IO) *cobra.Command {
 			if err != nil {
 				return io.fail("COUNCIL_REVIEW", err.Error(), nil)
 			}
+			io.errorf("deprecated: `lattice brd ack` records a local note, not a confirmation; use `lattice prepare brd ack %s`\n", b.ID)
 			b.Approval.HumanReview = schema.HumanReviewAcknowledged
+			b.Approval.Local = true
 			b.Approval.ReviewedBy = by
 			b.Approval.ReviewedAt = time.Now().UTC().Format(time.RFC3339)
 			if _, err := brd.SaveForce(ws.BRDsDir(), *b); err != nil {
@@ -304,6 +306,7 @@ func newBRDOverturnCommand(io *IO) *cobra.Command {
 			if err != nil {
 				return io.fail("COUNCIL_REVIEW", err.Error(), nil)
 			}
+			io.errorf("deprecated: `lattice brd overturn` records a local note, not a confirmation; use `lattice prepare brd overturn %s --reason ...`\n", b.ID)
 			version := b.Version
 			b.Status = schema.BRDProposed
 			b.Approval = nil
@@ -311,7 +314,7 @@ func newBRDOverturnCommand(io *IO) *cobra.Command {
 				return io.fail("BRD_SAVE_FAILED", err.Error(), nil)
 			}
 			now := time.Now().UTC().Format(time.RFC3339)
-			if err := brd.MarkOverturned(ws.LatticeDir, b.ID, version, brd.Overturn{By: by, At: now, Reason: reason}); err != nil {
+			if err := brd.MarkOverturned(ws.LatticeDir, b.ID, version, brd.Overturn{By: by, At: now, Reason: reason, Local: true}); err != nil {
 				return io.fail("COUNCIL_REVIEW", err.Error(), nil)
 			}
 			// The summary keeps the decision and now says it was overturned.

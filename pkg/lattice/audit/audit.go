@@ -237,7 +237,9 @@ type Sources struct {
 	// Coverage is nil when no coverage was ingested.
 	Coverage rtm.CoverageEvidence
 	Breaks   *BreaksFile
-	Notes    []Note
+	// Confirm is lattice/.cache/confirm.json; nil reads "no confirm data".
+	Confirm *ConfirmData
+	Notes   []Note
 	// Stamps describe the evidence files; Collect sets them.
 	Stamps Inputs
 	Dirty  bool
@@ -377,7 +379,7 @@ func buildRow(ref, feature string, inv schema.Invariant, rr rtm.Row, src Sources
 	var bt Signal
 	bt, r.Evidence.Breaks = breakSignal(breaks[ref])
 	r.Signals.BreakTested = bt
-	r.Signals.Confirmed, r.Evidence.Approvals = confirmed(crit)
+	r.Signals.Confirmed, r.Evidence.Approvals = confirmed(crit, src.Confirm)
 
 	classify(&r, rr, cov, len(ver) > 0)
 	return r

@@ -37,7 +37,10 @@ const (
 // identifiers (see normalize); the same case is indexed under several
 // keys so a lattice test FQN can match by its trailing segment.
 type Set struct {
-	Commit  string             `json:"commit,omitempty"`
+	Commit string `json:"commit,omitempty"`
+	// CIRun is the CI run that produced the reports (CIRunID at ingest), or
+	// "local". `lattice check --ci` refuses a set whose run is local.
+	CIRun   string             `json:"ci_run,omitempty"`
 	Results map[string]Outcome `json:"results"`
 	// Cases maps each key to the report case it came from
 	// ("<classname>::<name>"). One case is indexed under several keys;
@@ -438,7 +441,7 @@ func worse(a, b Outcome) bool {
 // (unit, e2e, database, ...): a verifier with no result in the set cannot
 // count as demonstrated.
 func Ingest(latticeDir, commit string, paths ...string) (Set, error) {
-	set := Set{Commit: commit, Results: map[string]Outcome{}, Cases: map[string]string{}}
+	set := Set{Commit: commit, CIRun: CIRunID(), Results: map[string]Outcome{}, Cases: map[string]string{}}
 	for _, p := range paths {
 		data, err := os.ReadFile(p)
 		if err != nil {

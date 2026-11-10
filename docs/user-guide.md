@@ -1280,10 +1280,15 @@ Each row carries eight signals, each with an honesty label: `declared`,
 `enforced`, `verified`, `demonstrated`, `exercised`, `live` (reach class of the
 enforcers; an upper bound), `break_tested` and `confirmed`. `exercised` says the
 code ran, not that the test checks it, so it is a proxy. `confirmed` is the
-approval record behind the BRD criteria that map to the invariant:
-`human`, `agent` (an agent actor, or a council not yet acknowledged), `draft`,
-`drifted`, or `none`. It is a fact about who signed which version, not proof
-the intent is right.
+platform's record of who confirmed the BRD criteria that map to the invariant,
+read from `lattice/.cache/confirm.json` (section 4l) and from nothing else:
+`human` (a verified platform approval of this version), `pending` (prepared and
+not merged or not verified, or made by a local session), `agent` (a council or
+an agent approved it and no human decision confirmed it), `draft`, `drifted`,
+`unknown` (an approval is claimed and no confirm data backs it) or `none`. A
+BRD's `approved_by` is display only: a hand-written `approval:` block reads
+`unknown`, never `human`. It is a fact about who confirmed which version, not
+proof the intent is right.
 
 ### Break results
 
@@ -1303,6 +1308,178 @@ reads as it always did.
 `lattice/audit-notes.yaml` lists `{promise, reader, verdict, note}` entries,
 with `verdict` one of `confirmed_fake` or `not_fake`. The note is shown on the
 row. It never changes the class. Nothing in the audit blocks a merge.
+
+## 4k. The check: one verdict for a change
+
+`lattice check --base <rev>` judges one change, from `merge-base(<rev>, HEAD)`
+to the working tree, and prints one page. It finds the touched promises and
+lines with `lattice impact`, reads their signals from `lattice audit` at head,
+and compares them with the audit of the base. It adds no measurement of its own.
+
+```sh
+lattice check --base origin/main              # text
+lattice check --base origin/main --json       # lattice.check/1
+lattice check --base origin/main --markdown   # PR comment, starts with <!-- lattice-check -->
+lattice check --base origin/main --ci         # count only CI-stamped evidence
+lattice check --snapshot                      # save the audit of HEAD, for a base-branch job
+```
+
+### The verdict
+
+| Verdict | Means | Merge |
+|---|---|---|
+| `BROKEN` | Something fell: a promise's class dropped to a known-bad class (`fake`, `unenforced`, `unverified`, `not_demonstrated`) against base; an enforcer or verifier was removed; a break killed at base survives at head; the suite is red; or the statement, tier or mapping of a confirmed promise was edited without its re-confirmation (see below) | Never |
+| `UNPROVEN` | Nothing fell, but a touched promise is unconfirmed, not exercised, not break-tested where its tier needs it, or unknown, or touched lines are untraced. It is never drawn as a pass: no check mark, and the comment says so | Only if the merge rule holds |
+| `ASSURED` | Every touched line is traced, every touched promise has the signals its tier needs, and nothing fell | Yes |
+
+**Editing a confirmed promise.** The edit voids the confirmation. To keep the change mergeable, put the re-confirmation in the same pull request: run `lattice prepare brd approve <id> --version <N>` (or `prepare promise confirm`) on the pull request's branch, then `git merge --ff-only` the decision branch it prints, so its decision file rides with the edit. That makes the promise's `confirmed` gap read *pending*. A pending confirmation does not block the merge, tier 3 included, because the merge needs the human approval that confirms it; `lattice confirm` records it once the pull request merges. Without the decision file the edit reads `BROKEN` (`CONFIRMATION_VOIDED`).
+
+Tier defaults until the owner decides: tier 1 needs `exercised` or
+`break_tested`; tier 2 and 3 need `break_tested`; every tier needs the promise
+traced, confirmed and live. A missing signal is a gap, never a pass.
+
+**The merge rule** (`merge_allowed`): an `UNPROVEN` change may merge when no
+(promise, signal) pair has a gap at head that it did not have at base, the
+count of new untraced lines did not rise, and no tier-3 promise is involved.
+A promise the change adds is exempt for `confirmed` only: a new promise cannot
+be confirmed before it merges. A waiver in `lattice/waivers.yaml` is shown on
+the gap and never removes it, including one added in the same change.
+
+### Traced, and the blind spot
+
+A touched line counts as traced only when an enforcer span covers it (the
+symbol carries `@enforces`), a checked reference names it (a direct-wire
+criterion's `enforced_by`), or an entry point of its feature reaches it. A
+file-level `@module-feature` tag alone never counts. The rest goes in the blind
+spot, with the promises a human marked out of reach, and keeps the verdict at
+`UNPROVEN`. Lines are counted by the touched symbol's extent, an upper bound.
+
+### The base audit, and how CI gets it
+
+The base's audit is `lattice/.cache/audit/<merge-base sha>.json`. It is derived
+and never committed. `lattice check` (and `lattice check --snapshot`) writes the
+audit of `HEAD` there when the tree is clean. In CI:
+
+1. A job on the base branch runs the suite, `lattice results ingest`,
+   `lattice break` and `lattice check --snapshot`, then saves
+   `lattice/.cache/audit/` to a cache or artifact keyed by the commit sha.
+2. The pull-request job restores the entry for the merge base (for GitHub
+   Actions, `actions/cache` with `key: lattice-audit-${{ github.event.pull_request.base.sha }}`),
+   runs the same evidence steps at head, then `lattice check --base
+   origin/${{ github.base_ref }} --ci --markdown`, and posts the comment.
+
+With no snapshot, only structural signals are compared with the base (removed
+enforcement, and edits to confirmed promises). Evidence comparisons read
+`unknown` ("no base audit"). The verdict is `UNPROVEN`, never `BROKEN`, because
+of missing data, and the merge rule is not met.
+
+### CI provenance
+
+`lattice results ingest`, coverage ingest and `lattice break` stamp their files
+with the head commit and a `ci_run` (from `GITHUB_RUN_ID`, `CI_PIPELINE_ID` and
+similar, else `local`). With `--ci`, evidence whose commit is not `HEAD` or whose
+`ci_run` is `local` is set aside and reads `unknown` (`EVIDENCE_NOT_CI`). Only
+CI's verdict counts; a local run is advice.
+
+### Exit codes
+
+`0` for `ASSURED` or an allowed `UNPROVEN`; `1` for `BROKEN` or a disallowed
+`UNPROVEN`; `2` for a usage error (no `--base`, a base that is not a commit).
+
+## 4l. Confirmation: `lattice prepare` and `lattice confirm`
+
+Only a human confirms, and the platform vouches for who that human is. A
+`--by <email>` value is a typed string, so it proves nothing. The record is the
+platform's approving review on a merged pull request.
+
+### Prepare a decision
+
+```sh
+lattice prepare brd approve brd.refunds --version 3
+lattice prepare brd return brd.refunds --reason "C-2 is not what we agreed" --row refunds:INV-2
+lattice prepare brd ack brd.refunds                       # a council's approval
+lattice prepare brd overturn brd.refunds --reason "..."
+lattice prepare promise confirm refunds:INV-1 refunds:INV-3   # one BRD per batch
+lattice prepare waiver add --code NO_BREAK_RUN --subject refunds:INV-1 \
+    --kind no_tool --reason "no mutation tool for PL/pgSQL"
+```
+
+`prepare` checks the action against the kernel, then writes a branch
+`decision/<id>-v<N>` holding one file, `lattice/decisions/approvals/<id>-v<N>.yaml`
+(`brd ack`, `return`, `overturn` and `promise confirm` add a suffix, so several
+decisions on one version never share a file; a waiver also writes the protected
+`lattice/waivers.yaml`). The branch is built from HEAD with git plumbing, so your
+checkout, index and working tree are never touched. It never pushes and never opens
+a pull request. It prints `lattice.prepare/1`:
+
+```json
+{ "contract": "lattice.prepare/1", "commit": "cad25d1", "branch": "decision/brd.refunds-v3",
+  "base": "main", "files": ["lattice/decisions/approvals/brd.refunds-v3.yaml"],
+  "packet_hash": "sha256:9e1f...", "command": "gh pr create --head decision/brd.refunds-v3 --base main ...",
+  "note": "Push the branch first ..." }
+```
+
+When the kernel says no, it prints `{refused, params, text, next}` and exits 1:
+
+```json
+{ "contract": "lattice.prepare/1", "refused": "REGULATED_MACHINE_WRITTEN",
+  "params": {"constraint": "C-1", "kind": "legal", "author": "agent:impl-2"},
+  "text": "constraint C-1 (legal) was written by agent:impl-2",
+  "next": "rewrite it yourself, then re-open this review" }
+```
+
+Refusal codes: `BRD_NOT_FOUND`, `VERSION_REQUIRED`, `VERSION_MISMATCH`,
+`BRD_SUPERSEDED`, `REGULATED_MACHINE_WRITTEN`, `AGENT_PREPARER`, `REASON_REQUIRED`,
+`PROMISE_NOT_FOUND`, `PROMISE_NO_BRD`, `REFS_REQUIRED`, `BATCH_MULTI_BRD`,
+`NO_ENFORCER`, `NO_COUNCIL_APPROVAL`, `VERSION_MOVED`, `VOTES_INCOMPLETE`,
+`COUNCIL_TOUCHED`, `COUNCIL_HUMAN_ONLY`, `COUNCIL_OVERTURNED`, `COUNCIL_INVALID`,
+`MANDATE_NOT_PINNED`, `UNKNOWN_WAIVER_KIND`, `ADR_REQUIRED`, `ADR_NOT_FOUND`,
+`WAIVER_TIER3`, `WAIVER_DUPLICATE`, `SUBJECT_NOT_FOUND`, `DIRTY_LATTICE`,
+`BRANCH_EXISTS`, `BAD_ID`, `NOT_A_REPO`. Waiver kinds are closed: `no_tool`,
+`generated_code`, `out_of_reach` and `accepted_risk` (the last two need an ADR). A
+waiver is shown and never counted as proof.
+
+The decision file records `{action, id, version, packet_hash, rows, reason,
+prepared_by, prepared_at}`. `prepared_by` is your git identity, for display only.
+The `packet_hash` covers the BRD version's content (not its status or approval
+block), each promise's structural signals (text, tier, enforcers, verifiers) and
+the structural diff since the last confirmed version. Run-dependent signals are
+left out, so a better test run never voids a confirmation.
+
+### Confirm
+
+```sh
+lattice confirm                 # in CI, on the default branch; needs GITHUB_TOKEN or GH_TOKEN
+lattice confirm --offline       # read the cache only
+```
+
+For each decision file on the default branch, `confirm` finds the commit that
+added it, the pull request that merged it, and that request's reviews from the
+GitHub REST API. A decision counts only if all hold:
+
+- an approving review exists from a user other than the pull request's author;
+- that user is not a bot (a `[bot]` login, or account type `Bot`) or an agent actor;
+- the review is on the head that was merged (`pull.head.sha` equals the review's
+  `commit_id`), and it is the reviewer's last verdict: a later change request or
+  dismissal cancels it;
+- the decision's packet hash still matches the BRD, its promises and the diff.
+
+A decision whose hash no longer matches reads `stale`. A prepared decision that is
+not merged reads `pending`. With no token, `unknown`. `--offline`, or a missing
+cache, reads `unknown`, never confirmed. The result is
+`lattice/.cache/confirm.json` (`lattice.confirm/1`: derived, cached by commit,
+never committed), with `{id, version, action, state, approver_login, pr,
+merged_sha, verified_at}` per decision. `lattice audit` reads the `confirmed`
+signal from that file only. Set branch protection to require a current review;
+`confirm` does not rely on it, but it keeps the platform's own state in step.
+
+### The local commands
+
+`lattice brd approve`, `brd ack` and `brd overturn` still work for now. Each
+prints a deprecation line and records `local: true`, and the audit shows
+"prepared by a local session, not confirmed". Councils (`brd vote`, `brd
+decide`) stay as advice: a council's approval reads "reviewed by council, awaiting
+you" until a human ack is confirmed.
 
 ## 5. Day-to-day commands
 

@@ -33,7 +33,9 @@ const (
 type Set struct {
 	// Commit is the commit the run covers; Dirty says the working tree had
 	// changes to tracked files when it was ingested (DirtyFiles lists some).
-	Commit     string   `json:"commit,omitempty"`
+	Commit string `json:"commit,omitempty"`
+	// CIRun is the CI run that ingested the set, or "local" (results.CIRunID).
+	CIRun      string   `json:"ci_run,omitempty"`
 	Dirty      bool     `json:"dirty"`
 	DirtyFiles []string `json:"dirty_files,omitempty"`
 	// Sources are the reports read, with their content hashes.
@@ -110,6 +112,7 @@ func Ingest(latticeDir string, kg schema.KnowledgeGraph, inputs []Input, opts Op
 	if err != nil {
 		return set, notes, err
 	}
+	set.CIRun = results.CIRunID()
 	return set, notes, Save(latticeDir, set)
 }
 

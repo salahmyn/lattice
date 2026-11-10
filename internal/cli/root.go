@@ -3,6 +3,8 @@ package cli
 // @module-feature cli
 
 import (
+	"errors"
+
 	"github.com/spf13/cobra"
 )
 
@@ -68,9 +70,12 @@ func NewRootCommand() *cobra.Command {
 		newCRCommand(io),
 		newBackpropCommand(io),
 		newImpactCommand(io),
+		newCheckCommand(io),
 		newSweepCommand(io),
 		newDemonstrateCommand(io),
 		newBreakCommand(io),
+		newPrepareCommand(io),
+		newConfirmCommand(io),
 	)
 
 	return root
@@ -80,6 +85,10 @@ func NewRootCommand() *cobra.Command {
 func Execute() int {
 	root := NewRootCommand()
 	if err := root.Execute(); err != nil {
+		var ec exitCodeError
+		if errors.As(err, &ec) {
+			return ec.code
+		}
 		if !IsExit(err) {
 			root.PrintErrln("error:", err)
 		}

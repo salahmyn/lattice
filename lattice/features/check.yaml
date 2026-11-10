@@ -1,0 +1,25 @@
+id: check
+version: 1
+status: production
+purpose: |
+  The single check: one verdict for a change, from merge-base(base, HEAD) to the working
+  tree. It finds the touched promises and lines with impact, reads their signals from the
+  audit at head, compares them with the audit snapshot of the base, and says BROKEN,
+  UNPROVEN or ASSURED, whether the change may merge, and the blind spot.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+implements_brd: brd.verification
+invariants:
+  - id: INV-1
+    statement: Anything that fell reads BROKEN and never merges. That is a promise level dropped against base, an enforcer or verifier removed, a break killed at base that survives at head, a red suite, or an edit to the statement, tier or mapping of a confirmed promise.
+  - id: INV-2
+    statement: Unknown is never a pass. A missing signal is a gap that keeps the verdict at UNPROVEN, each tier needs its default signals (tier 1 exercised or break_tested, tier 2 and 3 break_tested), and UNPROVEN is never drawn as a pass.
+  - id: INV-3
+    statement: An UNPROVEN change may merge only when no (promise, signal) pair gained a gap it did not have at base, the new untraced lines did not rise, and no tier-3 promise is involved; a waiver, including one added in the same change, never removes a gap from that comparison.
+  - id: INV-4
+    statement: With --ci, evidence not stamped with the head commit and a CI run is set aside and reads unknown (EVIDENCE_NOT_CI).
+  - id: INV-5
+    statement: A touched line counts as traced only when an enforcer span, a checked reference or an entry point that reaches it covers it; a file-level module tag alone never does, and such lines go in the blind spot.
+  - id: INV-6
+    statement: A change that edits a confirmed promise and carries a decision file approving, acking or confirming it at its new version is not a weakening; its confirmed gap is pending on the change's own human approval and does not block the merge, tier 3 included. Without the decision file the edit voids the confirmation.

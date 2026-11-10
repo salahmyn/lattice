@@ -6,6 +6,32 @@ All notable changes to Lattice are documented in this file.
 
 ### Added
 
+- **Re-confirm in the same pull request.** An edit to a confirmed promise that carries a
+  `lattice prepare` decision for its new version reads its `confirmed` gap as pending, not
+  `BROKEN`, and does not block the merge (tier 3 included): the merge's human approval is the
+  confirmation. Without the decision the edit still reads `CONFIRMATION_VOIDED`.
+- **`lattice check --base <rev> [--json | --markdown] [--ci]`** gives one
+  verdict for a change, from `merge-base(<rev>, HEAD)` to the working tree:
+  `BROKEN` (something fell: a level dropped, an enforcer or verifier removed, a
+  break killed at base survives at head, the suite is red, or a confirmed
+  promise's statement, tier or mapping was edited), `UNPROVEN` (a touched
+  promise has a gap, or touched lines are untraced; never drawn as a pass) or
+  `ASSURED`. It reuses `impact` for the touched promises and lines and
+  `audit` for the signals, and prints `merge_allowed`: an `UNPROVEN` change may
+  merge only when no (promise, signal) pair gained a gap against base, the new
+  untraced lines did not rise, and no tier-3 promise is involved. A waiver never
+  removes a gap. A file-level module tag alone does not make a line traced.
+  - `--json` is `lattice.check/1` (frozen by a golden test); `--markdown` starts
+    with `<!-- lattice-check -->`. Exit codes: 0 for `ASSURED` or an allowed
+    `UNPROVEN`, 1 for `BROKEN` or a disallowed `UNPROVEN`, 2 for a usage error.
+  - The base audit is read from `lattice/.cache/audit/<sha>.json`, written by
+    `lattice check` or `lattice check --snapshot` and restored by CI from a
+    cache. With none, evidence comparisons read `unknown` and the verdict is
+    `UNPROVEN`, never `BROKEN`, from missing data.
+  - `results ingest`, coverage ingest and `lattice break` stamp their files with
+    a `ci_run` (`GITHUB_RUN_ID`, `CI_PIPELINE_ID` and similar, else `local`).
+    With `--ci`, evidence that is not for `HEAD` or is from a `local` run is set
+    aside and reads `unknown` (`EVIDENCE_NOT_CI`).
 - **`lattice break [--promise f:INV-n] [--feature f] [--timeout 120s]
   [--allow-dirty]`** breaks each promise's enforcer on a temporary git
   worktree and runs only that promise's verifiers. A verifier that passes
@@ -26,6 +52,28 @@ All notable changes to Lattice are documented in this file.
   fact, upper_bound or proxy labels. `--json` is `lattice.audit/1`, `--markdown`
   suits a PR comment, and `lattice/audit-notes.yaml` adds second-reader notes
   that never change a class. It reads `breaks.json` as a file and blocks nothing.
+- **`lattice prepare` and `lattice confirm`** make confirmation a human act that
+  the platform vouches for. `prepare brd approve|return|ack|overturn`, `prepare
+  promise confirm` and `prepare waiver add` validate the action against the
+  kernel and write a decision branch `decision/<id>-v<N>` holding one decision
+  file, built from HEAD with git plumbing: the checkout, index and working tree
+  are never touched, and nothing is pushed or opened. It prints
+  `lattice.prepare/1` with the `gh pr create` command, or a refusal with a code
+  (`REGULATED_MACHINE_WRITTEN`, `VOTES_INCOMPLETE`, `COUNCIL_TOUCHED`,
+  `WAIVER_TIER3`, and more).
+  - `lattice confirm [--platform github] [--offline]` finds each decision file on
+    the default branch, the pull request that merged it, and that request's
+    reviews (GitHub REST via `GITHUB_TOKEN` or `GH_TOKEN`). A decision counts only
+    with an approving review from a non-author, non-bot, non-agent user on the
+    merged head, and while its packet hash still matches. It writes
+    `lattice/.cache/confirm.json` (`lattice.confirm/1`, derived); `--offline` reads
+    the cache only and unknown is never confirmed.
+  - **`lattice audit`'s `confirmed` signal now reads `confirm.json` only**: `human`,
+    `pending`, `agent`, `draft`, `drifted`, `none` or `unknown`. A BRD's
+    `approved_by` and a hand-written `approval:` block are display only.
+  - `brd approve`, `brd ack` and `brd overturn` keep working, print a deprecation
+    line and record `local: true`; the audit reads that as "prepared by a local
+    session, not confirmed".
 
 ### Changed
 

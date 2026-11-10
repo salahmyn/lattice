@@ -131,6 +131,7 @@ out_of_scope:
 implements_via:
   - audit
   - breaktest
+  - check
   - coverage
   - mutation
   - results
