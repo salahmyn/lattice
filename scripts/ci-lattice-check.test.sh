@@ -59,7 +59,8 @@ export GITHUB_REPOSITORY=example/repo GITHUB_STEP_SUMMARY="$tmp/summary.md"
 # snapshot: the audit of HEAD is saved and its path printed.
 head_sha="$(git rev-parse HEAD)"
 out="$("$SCRIPT" snapshot)" && [ "$out" = "$audit_dir/$head_sha.json" ] && ok "snapshot saves the audit of HEAD" || bad "snapshot saves the audit of HEAD"
-cp "$audit_dir/$head_sha.json" "$tmp/snap.json"
+# The base's snapshot is HEAD's, renamed: a snapshot must name its own commit.
+jq --arg c "$mb" '.commit = $c' "$audit_dir/$head_sha.json" >"$tmp/snap.json"
 rm -f "$audit_dir/$mb.json"
 
 # fetch-base with no artifact: says so, succeeds, leaves nothing behind.
