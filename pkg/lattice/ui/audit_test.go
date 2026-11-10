@@ -17,7 +17,10 @@ import (
 
 // The audit page lists a row per promise with filters by class and feature,
 // opens each fake, and never gives a non-positive class the positive colour.
+// A fake shows what breaking each enforcer did, and ?promise= narrows the rows.
 // @verifies audit:INV-2
+// @verifies audit:INV-6
+// @verifies audit:INV-7
 func TestAuditPage(t *testing.T) {
 	dir := t.TempDir()
 	cache := filepath.Join(dir, ".cache", "results")
@@ -92,5 +95,20 @@ func TestAuditPage(t *testing.T) {
 	if w := get("/api/v1/audit?class=fake"); w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &rep) != nil ||
 		rep.Schema != audit.Schema || len(rep.Rows) != 1 || rep.Rows[0].Kind != audit.KindPassesWhenBroken {
 		t.Errorf("/api/v1/audit = %d %s", w.Code, w.Body.String())
+	}
+
+	// The fake names the enforcer whose break survived, one line each.
+	if !strings.Contains(body, "What breaking each enforcer did") || !strings.Contains(body, "text-rose-700 font-medium\">survived</span> pay.Guard") {
+		t.Error("a fake row shows what breaking each enforcer did")
+	}
+	if w := get("/api/v1/audit?promise=pay:INV-2"); w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &rep) != nil ||
+		len(rep.Rows) != 1 || rep.Rows[0].Promise != "pay:INV-2" || len(rep.Rows[0].Enforcers) != 1 || rep.Rows[0].Enforcers[0].Outcome != audit.OutcomeKilled {
+		t.Errorf("/api/v1/audit?promise = %d %s", w.Code, w.Body.String())
+	}
+	if w := get("/api/v1/audit?promise=pay:INV-9"); w.Code != http.StatusBadRequest {
+		t.Errorf("an unknown promise = %d, want 400", w.Code)
+	}
+	if body := get("/audit?promise=pay:INV-2").Body.String(); strings.Contains(body, "pay:INV-1</span>") || !strings.Contains(body, "pay:INV-2</span>") {
+		t.Error("promise filter on the page")
 	}
 }

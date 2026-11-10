@@ -25,3 +25,5 @@ invariants:
     statement: Each run records the verifiers that ran, the ones that did not (no runner, or no test selected) and the tests that failed; a baseline that executes no test reads unknown, never survived.
   - id: INV-8
     statement: The worktree is prepared before the first baseline (node_modules linked, break.setup run), and a setup that fails reads unknown for every run.
+  - id: INV-9
+    statement: A break report records dirty true whenever the working tree differs from HEAD (tracked changes or untracked files that are not ignored) outside the workspace's own .ledger/ and .cache/, with or without --allow-dirty; those Lattice-owned paths, wherever the workspace sits in the checkout, never make it dirty.

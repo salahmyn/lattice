@@ -3,6 +3,7 @@ package results
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -418,5 +419,86 @@ func TestParseNodeRunnerJUnit(t *testing.T) {
 		if k == "test.test-valid" {
 			t.Errorf("identifier-style name got a title key: %v", keysFor("pkg", "test_valid"))
 		}
+	}
+}
+
+// A runner whose project has no tests writes an empty <testsuites>: in any
+// spelling it is an empty set, not an error, so the other reports of the
+// same ingest are kept.
+// @verifies results:INV-7
+func TestParseJUnitEmptyTestsuites(t *testing.T) {
+	for name, report := range map[string]string{
+		"self-closing":          `<testsuites/>`,
+		"self-closing, attrs":   `<testsuites name="vitest tests" tests="0" failures="0" errors="0" time="0"/>`,
+		"open and close":        `<testsuites></testsuites>`,
+		"attrs and declaration": `<?xml version="1.0" encoding="UTF-8" ?>` + "\n" + `<testsuites name="vitest tests" tests="0" failures="0" errors="0" time="0.001">` + "\n" + `</testsuites>` + "\n",
+		"whitespace around":     "\n\n  <?xml version=\"1.0\"?>\n\t<testsuites tests=\"0\">\n  </testsuites>\n\n",
+		"comment before root":   "<?xml version=\"1.0\"?>\n<!-- generated -->\n<testsuites/>",
+		"byte-order mark":       "\xef\xbb\xbf<?xml version=\"1.0\" encoding=\"UTF-8\"?><testsuites tests=\"0\"></testsuites>",
+		"empty bare testsuite":  `<testsuite name="none" tests="0"/>`,
+	} {
+		set, err := ParseJUnit([]byte(report))
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if len(set.Results) != 0 || len(set.Cases) != 0 || set.Results == nil {
+			t.Errorf("%s: want an empty set, got %+v", name, set)
+		}
+	}
+
+	// The non-empty shapes still parse.
+	for name, report := range map[string]string{
+		"wrapped":    sampleJUnit,
+		"bare suite": `<testsuite name="s"><testcase classname="a" name="b"/></testsuite>`,
+		"root cases": `<testsuites><testcase classname="test" name="adds fees"/></testsuites>`,
+	} {
+		if set, err := ParseJUnit([]byte(report)); err != nil || len(set.Results) == 0 {
+			t.Errorf("%s: %v, %d results", name, err, len(set.Results))
+		}
+	}
+
+	// A report that is not junit still fails.
+	for name, report := range map[string]string{
+		"other root": `<coverage line-rate="1"/>`,
+		"truncated":  `<testsuites><testsuite name="s"><testcase classname="a"`,
+		"no element": `<?xml version="1.0"?>`,
+	} {
+		if _, err := ParseJUnit([]byte(report)); err == nil {
+			t.Errorf("%s: want an error", name)
+		}
+	}
+}
+
+// An empty report beside a real one adds nothing and loses nothing; a
+// malformed report fails the ingest and names its file, and the set from the
+// last good ingest stays on disk.
+// @verifies results:INV-7
+func TestIngestEmptyAndMalformedReports(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, s string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	empty := write("empty.xml", `<?xml version="1.0" encoding="UTF-8" ?>`+"\n"+`<testsuites name="vitest tests" tests="0" failures="0" errors="0" time="0"></testsuites>`)
+	unit := write("unit.xml", `<testsuite name="u"><testcase classname="tests.fees" name="test_rounds_up"/></testsuite>`)
+	set, err := Ingest(dir, "abc123", empty, unit)
+	if err != nil {
+		t.Fatalf("ingest with an empty report: %v", err)
+	}
+	if o, ok := Load(dir).Lookup("tests.fees.test_rounds_up"); !ok || o != Pass {
+		t.Errorf("the other report was lost: %+v", set)
+	}
+
+	broken := write("broken.xml", `<testsuites><testsuite name="s"><testcase classname="a"`)
+	_, err = Ingest(dir, "def456", unit, broken)
+	if err == nil || !strings.Contains(err.Error(), broken) {
+		t.Fatalf("a malformed report should fail naming %s: %v", broken, err)
+	}
+	if got := Load(dir); got.Commit != "abc123" {
+		t.Errorf("a failed ingest replaced the saved set: commit %q", got.Commit)
 	}
 }

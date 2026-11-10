@@ -220,6 +220,53 @@ func TestCheckCLICIRefusesLocalEvidence(t *testing.T) {
 	}
 }
 
+// A local check after a later commit sets the earlier ingest aside: it reads
+// unknown (EVIDENCE_STALE), and a red suite from that commit is not a fall.
+// Results ingested at HEAD count again.
+// @verifies check:INV-8
+func TestCheckCLIStaleEvidenceIsSetAside(t *testing.T) {
+	clearCIEnv(t)
+	f := newCheckFixture(t)
+	f.git("checkout", "-q", "-b", "edit")
+	f.write("shop/shop.go", strings.Replace(shopGo(true), "n > 0", "n >= 1", 1))
+	f.commit("edit")
+
+	junit := filepath.Join(f.dir, "junit.xml")
+	red := `<testsuites><testsuite name="s"><testcase classname="shop" name="TestPriceIsPositive"><failure message="x"/></testcase></testsuite></testsuites>`
+	if err := os.WriteFile(junit, []byte(red), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := run(t, f.dir, newResultsCommand, "ingest", junit); err != nil {
+		t.Fatalf("ingest: %v\n%s", err, out)
+	}
+	ingestedAt := f.git("rev-parse", "HEAD")
+	if rep, _ := f.check("--base", "main"); !rep.Evidence.Results.Counted || rep.Verdict.State != check.Broken {
+		t.Fatalf("results at HEAD count, and a red suite at HEAD falls: %s %+v", rep.Verdict.State, rep.Evidence.Results)
+	}
+
+	// A later commit: the ingest is now for an earlier commit.
+	f.write("docs/notes.md", "notes\n")
+	f.commit("notes")
+	rep, _ := f.check("--base", "main")
+	ev := rep.Evidence.Results
+	if ev.Counted || ev.Code != check.CodeEvidenceStale || ev.Commit != ingestedAt || rep.Evidence.Suite.Present {
+		t.Fatalf("stale results in a local run: %+v", rep.Evidence)
+	}
+	if !strings.Contains(ev.Text, "not HEAD") || !strings.Contains(ev.Text, "re-run the tests and ingest") {
+		t.Errorf("text = %q", ev.Text)
+	}
+	if rep.Verdict.State == check.Broken || rep.Verdict.State == check.Assured {
+		t.Errorf("stale evidence is a gap, never a fall and never a pass: %s %+v", rep.Verdict.State, rep.Weakenings)
+	}
+	var stale bool
+	for _, g := range rep.Gaps {
+		stale = stale || (g.Signal == check.SigSuiteGreen && g.State == check.Unknown && g.Code == check.CodeEvidenceStale)
+	}
+	if !stale {
+		t.Errorf("suite_green must read unknown (EVIDENCE_STALE): %+v", rep.Gaps)
+	}
+}
+
 // Usage errors exit 2, and the Markdown form starts with the marker.
 func TestCheckCLIUsageAndMarkdown(t *testing.T) {
 	clearCIEnv(t)

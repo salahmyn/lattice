@@ -42,15 +42,17 @@ type baseline struct {
 // Execute breaks each promise's enforcer on a temporary worktree and reports
 // whether its verifiers noticed. The report is returned, not written.
 // Without AllowDirty a working tree with uncommitted changes is refused.
-// @enforces breaktest:INV-2
+// With it, the report records dirty: true; Lattice's own state (the
+// workspace's .ledger/ and .cache/) never makes the tree dirty.
+// @enforces breaktest:INV-2, breaktest:INV-9
 func Execute(ctx context.Context, kg schema.KnowledgeGraph, opts Options) (Report, error) {
 	rep := Report{Schema: Schema, GeneratedAt: time.Now().UTC().Format(time.RFC3339), Runs: []Run{}}
-	repo, err := OpenRepo(ctx, opts.CodeRoot)
+	repo, err := OpenRepo(ctx, opts.CodeRoot, opts.LatticeDir)
 	if err != nil {
 		return rep, err
 	}
 	if repo.Dirty && !opts.AllowDirty {
-		return rep, ErrDirty
+		return rep, fmt.Errorf("%w: %s", ErrDirty, nameFew(repo.DirtyFiles, 5))
 	}
 	rep.Commit, rep.Dirty = repo.Head, repo.Dirty
 	if opts.Timeout <= 0 {
@@ -757,4 +759,12 @@ func keys(m map[string]bool) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// nameFew joins up to n paths, then says how many more there are.
+func nameFew(paths []string, n int) string {
+	if len(paths) <= n {
+		return strings.Join(paths, ", ")
+	}
+	return fmt.Sprintf("%s and %d more", strings.Join(paths[:n], ", "), len(paths)-n)
 }

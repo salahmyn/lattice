@@ -73,7 +73,14 @@ func Run(ctx context.Context, ws *workspace.Workspace, kg schema.KnowledgeGraph,
 	}
 	headAudit := audit.Compute(ev.Apply(src))
 	if opt.SaveSnapshot {
-		_, _ = SaveSnapshot(ws.LatticeDir, headAudit)
+		// The snapshot is the base side of a later check: it keeps its own
+		// rule (GatherSnapshot), so the stale rule of the head side does not
+		// change what it records.
+		snap := headAudit
+		if sev := GatherSnapshot(ws.LatticeDir, head, opt.CI); sev.counted() != ev.counted() {
+			snap = audit.Compute(sev.Apply(src))
+		}
+		_, _ = SaveSnapshot(ws.LatticeDir, snap)
 	}
 
 	baseSHA, err := GitRev(top, opt.Base)
