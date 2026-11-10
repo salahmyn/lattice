@@ -53,7 +53,10 @@ export GITHUB_REPOSITORY=example/repo GITHUB_STEP_SUMMARY="$tmp/summary.md"
 : >"$FAKE_LOG"
 
 # touches-go: the change from BASE touches Go here; an empty range does not.
-[ "$("$SCRIPT" touches-go "$BASE")" = true ] && ok "touches-go sees a Go change" || bad "touches-go sees a Go change"
+# Use the parent of the last commit that touched Go, so the assertion does not
+# depend on what the newest commit happens to change.
+go_base="$(git log -1 --format=%H -- '*.go')~1"
+[ "$("$SCRIPT" touches-go "$go_base")" = true ] && ok "touches-go sees a Go change" || bad "touches-go sees a Go change"
 [ "$("$SCRIPT" touches-go HEAD)" = false ] && ok "touches-go on an empty range is false" || bad "touches-go on an empty range is false"
 
 # snapshot: the audit of HEAD is saved and its path printed.
