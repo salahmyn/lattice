@@ -2,6 +2,70 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.15.1] — 2026-11-10
+
+Hardening from running the v0.15.0 assurance features on a real downstream project: evidence
+that could be stale, forged or misread now reads `unknown` or `UNPROVEN`, never a pass.
+
+### Fixed
+
+- **`lattice check` sets aside evidence for another commit in local runs too.** Results,
+  coverage and breaks stamped with a commit other than HEAD (or with none) read `unknown`
+  (`EVIDENCE_STALE`: "results are for <sha>, not HEAD <sha>: re-run the tests and ingest"),
+  so an earlier ingest can no longer produce `ASSURED` or `BROKEN`. `--ci` still requires a
+  CI run (`EVIDENCE_NOT_CI`); base audit snapshots keep their own rule. Evidence ingested at
+  HEAD with uncommitted changes still counts: the stamp is a commit, not a tree.
+- **Touched lines no promise guards keep `lattice check` at `UNPROVEN`.** A change to code an
+  entry point reaches but no enforcer span or checked reference covers read `ASSURED`
+  `NOTHING_TOUCHED` ("touches no promise and no production line"). It now reads `UNPROVEN`
+  `UNGUARDED_LINES` ("touches N production lines that no promise guards"). `merge_allowed` is
+  unchanged: these lines are reported, not blocking. `lattice.check/1` adds
+  `blind_spot.unguarded_lines`, `guarded_lines` and a per-symbol `unguarded` list. A removed
+  symbol that enforced nothing counts as unguarded, so a pure dead-code removal reads
+  `UNPROVEN` (still mergeable).
+- **`lattice results ingest` accepts an empty JUnit report** (`<testsuites/>`,
+  `<testsuites tests="0"></testsuites>`, with or without a declaration or byte-order mark) as
+  zero results, instead of aborting the ingest and losing the other reports. A malformed report
+  shows its real XML error, still prefixed with its file.
+- **`lattice break` runs right after `lattice results ingest`.** The workspace's own `.ledger/`
+  and `.cache/` are left out of the dirty check wherever the workspace sits and whether or not
+  the cache is gitignored. `breaks.json` `dirty` now matches the tree actually tested,
+  including untracked files when `status.showUntrackedFiles` hides them, and the refusal names
+  the dirty files.
+- **Re-confirming a promise never overwrites an earlier decision.** Preparing again after an
+  edit hit `BRANCH_EXISTS`, and once the old branch was deleted the new decision overwrote the
+  first one's file.
+
+### Added
+
+- **`lattice audit` names the enforcer a row is about.** Each `lattice.audit/1` row has
+  `enforcers: [{symbol, file, line, outcome, reason}]` (`killed | survived | unknown |
+  not_run`), and the reason of a multi-enforcer row ends with a tally ("1 of 3 enforcers
+  survived: X; 2 killed: …"). The class is unchanged: one survivor with every verifier run is
+  still `fake` / `passes_when_broken`. Text, Markdown and `/audit` print one line per enforcer
+  for fake, partial and mixed rows.
+- **`lattice audit --promise <f:INV-n>`** (repeatable or a comma list), and `?promise=` on
+  `/audit` and `/api/v1/audit`. It narrows output only; an unknown id exits 2
+  (`AUDIT_UNKNOWN_PROMISE`) or answers 400.
+
+### Behaviour changes to plan for
+
+- **`confirm.json` carries a stamp, and only an intact one confirms.** `lattice confirm` stamps
+  `lattice/.cache/confirm.json` with the commit, the CI run (or `local`), the platform and a
+  digest of its verdicts. The audit's `confirmed` signal, `validate` and `/api/v2` accept
+  `human` only from an intact stamp; unstamped, edited or git-tracked files read `unknown`
+  (`CONFIRM_UNSTAMPED`, `CONFIRM_TAMPERED`, `CONFIRM_TRACKED`). A local file shows
+  `human (local, not CI)`, and under `lattice check --ci` a local or other-commit file reads
+  `unknown` (`EVIDENCE_NOT_CI`). The stamp is a checksum, not a signature: the protection is
+  `--ci` plus refusing a committed copy. **Files written by v0.15.0 have no stamp and now read
+  unknown: re-run `lattice confirm`.**
+- **Decision branches and files are named by their packet**: `<id>-v<N>[.<action>]-<packet8>`.
+  Preparing the same packet again reports the existing branch and exits 0. A same-named branch
+  holding other content is refused (`BRANCH_EXISTS`), and a decision already on HEAD is refused
+  (`DECISION_EXISTS`). `lattice confirm` and `lattice check` still read files with the old names.
+- **`lattice check` reads `UNPROVEN` more often** (stale evidence, unguarded lines). Neither
+  changes `merge_allowed`.
+
 ## [0.15.0] — 2026-11-10
 
 ### Fixed
