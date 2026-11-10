@@ -99,6 +99,12 @@ func WriteText(w io.Writer, r Report) {
 		}
 		fmt.Fprintf(w, "  %s:%s  %s%s\n      %s\n", u.File, u.Lines, u.Symbol, n, u.Reason)
 	}
+	for _, u := range r.BlindSpot.Unguarded {
+		fmt.Fprintf(w, "  %s:%s  %s  (unguarded)\n      %s\n", u.File, u.Lines, u.Symbol, u.Reason)
+	}
+	if r.BlindSpot.UnguardedLines > 0 {
+		fmt.Fprintf(w, "  %s\n", unguardedNote)
+	}
 	for _, o := range r.BlindSpot.OutOfReach {
 		fmt.Fprintf(w, "  out of reach: %s  %s\n", o.Promise, o.Reason)
 	}
@@ -178,6 +184,9 @@ func WriteMarkdown(w io.Writer, r Report) {
 	if r.Verdict.State == Unproven {
 		fmt.Fprintln(w, "- **UNPROVEN is not a pass.** Nothing fell, and something is not shown. Read the gaps below.")
 	}
+	if r.Verdict.Code == CodeUnguardedLines && r.MergeAllowed {
+		fmt.Fprintln(w, "- **UNPROVEN here is not a refusal.** The merge rule allows this change: the touched lines no promise guards are reported in the blind spot, not blocking.")
+	}
 	if !r.Evidence.BaseAudit.Present {
 		fmt.Fprintf(w, "- **No base audit:** evidence is not compared with base (%s).\n", r.Evidence.BaseAudit.Text)
 	}
@@ -239,12 +248,19 @@ func WriteMarkdown(w io.Writer, r Report) {
 	}
 
 	fmt.Fprintf(w, "### Blind spot\n\n%s\n", r.BlindSpot.Text)
+	if bs := r.BlindSpot; bs.UnguardedLines > 0 {
+		fmt.Fprintf(w, "\n**%d of %d touched production lines no promise guards; %d are guarded.** %s\n\n",
+			bs.UnguardedLines, bs.UnguardedLines+bs.GuardedLines, bs.GuardedLines, unguardedNote)
+	}
 	for _, u := range r.BlindSpot.Untraced {
 		n := ""
 		if u.New {
 			n = " (new)"
 		}
 		fmt.Fprintf(w, "- `%s:%s` `%s`%s: %s\n", u.File, u.Lines, u.Symbol, n, u.Reason)
+	}
+	for _, u := range r.BlindSpot.Unguarded {
+		fmt.Fprintf(w, "- `%s:%s` `%s` (unguarded): %s\n", u.File, u.Lines, u.Symbol, u.Reason)
 	}
 	for _, o := range r.BlindSpot.OutOfReach {
 		fmt.Fprintf(w, "- `%s` is marked out of reach: %s\n", o.Promise, o.Reason)
@@ -257,6 +273,11 @@ func WriteMarkdown(w io.Writer, r Report) {
 	}
 	fmt.Fprintf(w, "\n<sub>Only CI's verdict counts. Unknown is never a pass.</sub>\n")
 }
+
+// unguardedNote says what unguarded lines mean for the merge, so nobody reads
+// UNPROVEN as refused.
+const unguardedNote = "Unguarded lines are reported, not blocking: they keep the verdict at UNPROVEN, and they do not change merge_allowed " +
+	"(only a new (promise, signal) gap, a rise in new untraced lines, or a tier-3 promise does)."
 
 func cell(s string) string {
 	return strings.ReplaceAll(s, "|", "\\|")

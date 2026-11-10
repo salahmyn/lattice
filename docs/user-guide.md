@@ -1329,8 +1329,8 @@ lattice check --snapshot                      # save the audit of HEAD, for a ba
 | Verdict | Means | Merge |
 |---|---|---|
 | `BROKEN` | Something fell: a promise's class dropped to a known-bad class (`fake`, `unenforced`, `unverified`, `not_demonstrated`) against base; an enforcer or verifier was removed; a break killed at base survives at head; the suite is red; or the statement, tier or mapping of a confirmed promise was edited without its re-confirmation (see below) | Never |
-| `UNPROVEN` | Nothing fell, but a touched promise is unconfirmed, not exercised, not break-tested where its tier needs it, or unknown, or touched lines are untraced. It is never drawn as a pass: no check mark, and the comment says so | Only if the merge rule holds |
-| `ASSURED` | Every touched line is traced, every touched promise has the signals its tier needs, and nothing fell | Yes |
+| `UNPROVEN` | Nothing fell, but a touched promise is unconfirmed, not exercised, not break-tested where its tier needs it, or unknown, or touched lines are untraced, or touched production lines have no promise guarding them (`UNGUARDED_LINES`). It is never drawn as a pass: no check mark, and the comment says so | Only if the merge rule holds |
+| `ASSURED` | Every touched production line is guarded by a promise (or none is touched), every touched promise has the signals its tier needs, and nothing fell. `NOTHING_TOUCHED` means the change touches no promise and no production line at all | Yes |
 
 **Editing a confirmed promise.** The edit voids the confirmation. To keep the change mergeable, put the re-confirmation in the same pull request: run `lattice prepare brd approve <id> --version <N>` (or `prepare promise confirm`) on the pull request's branch, then `git merge --ff-only` the decision branch it prints, so its decision file rides with the edit. That makes the promise's `confirmed` gap read *pending*. A pending confirmation does not block the merge, tier 3 included, because the merge needs the human approval that confirms it; `lattice confirm` records it once the pull request merges. Without the decision file the edit reads `BROKEN` (`CONFIRMATION_VOIDED`).
 
@@ -1353,6 +1353,21 @@ criterion's `enforced_by`), or an entry point of its feature reaches it. A
 file-level `@module-feature` tag alone never counts. The rest goes in the blind
 spot, with the promises a human marked out of reach, and keeps the verdict at
 `UNPROVEN`. Lines are counted by the touched symbol's extent, an upper bound.
+
+Traced is not guarded. A line is **guarded** only when a promise covers it: an
+enforcer span or a checked reference, the lines `lattice impact` attributes to a
+promise. A touched line that an entry point reaches, but that no promise guards,
+is traced and **unguarded**; so is a removed symbol that enforced nothing. Such a
+change reads `UNPROVEN` (`UNGUARDED_LINES`, "touches N production lines that no
+promise guards"), never `ASSURED`, because nothing checks those lines. Unguarded
+lines are reported, not blocking: they never change `merge_allowed`, and the PR
+comment says so, so an allowed `UNPROVEN` is not a refusal. To make such a
+change read `ASSURED`, anchor a promise on the code (`@enforces`) and verify it.
+
+`lattice.check/1` carries the counts in `blind_spot`: `unguarded_lines` (every
+touched production line no promise guards, untraced ones included),
+`guarded_lines`, and `unguarded`, the per-symbol list of unguarded lines that are
+not already in `untraced` (reached only by an entry point, or removed).
 
 ### The base audit, and how CI gets it
 
