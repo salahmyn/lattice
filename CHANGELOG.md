@@ -6,6 +6,10 @@ All notable changes to Lattice are documented in this file.
 
 ### Added
 
+- **Re-confirm in the same pull request.** An edit to a confirmed promise that carries a
+  `lattice prepare` decision for its new version reads its `confirmed` gap as pending, not
+  `BROKEN`, and does not block the merge (tier 3 included): the merge's human approval is the
+  confirmation. Without the decision the edit still reads `CONFIRMATION_VOIDED`.
 - **`lattice check --base <rev> [--json | --markdown] [--ci]`** gives one
   verdict for a change, from `merge-base(<rev>, HEAD)` to the working tree:
   `BROKEN` (something fell: a level dropped, an enforcer or verifier removed, a

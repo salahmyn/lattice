@@ -21,3 +21,5 @@ invariants:
     statement: With --ci, evidence not stamped with the head commit and a CI run is set aside and reads unknown (EVIDENCE_NOT_CI).
   - id: INV-5
     statement: A touched line counts as traced only when an enforcer span, a checked reference or an entry point that reaches it covers it; a file-level module tag alone never does, and such lines go in the blind spot.
+  - id: INV-6
+    statement: A change that edits a confirmed promise and carries a decision file approving, acking or confirming it at its new version is not a weakening; its confirmed gap is pending on the change's own human approval and does not block the merge, tier 3 included. Without the decision file the edit voids the confirmation.

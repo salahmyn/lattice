@@ -29,6 +29,10 @@ type Input struct {
 	KG       schema.KnowledgeGraph
 	Evidence Evidence
 	Waivers  []Waiver
+	// Reconfirm lists the promises a decision file in this change re-confirms
+	// (Reconfirmed): its confirmed gap is pending on this pull request's
+	// approval rather than a weakening.
+	Reconfirm map[string]bool
 }
 
 // Compute builds the report. It is a pure function of its input.
@@ -369,8 +373,8 @@ func (c *computation) findWeakenings() {
 		if !(why["promise_edited"] || why["criterion_edited"] || why["promise_removed"]) {
 			continue
 		}
-		if !c.wasConfirmed(p) {
-			continue
+		if !c.wasConfirmed(p) || c.in.Reconfirm[p] {
+			continue // nothing to void, or this change carries its re-confirmation
 		}
 		voided[p] = true
 	}

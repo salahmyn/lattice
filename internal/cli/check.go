@@ -4,6 +4,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -15,7 +16,9 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/check"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/impact"
+	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/scip"
+	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
 // exitCodeError ends the process with a given code after the command has
@@ -140,6 +143,7 @@ disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
 			rep := check.Compute(check.Input{
 				Rev: base, CI: ci, Head: headAudit, Base: baseAudit, BaseNote: note,
 				Impact: im, KG: kg, Evidence: ev, Waivers: check.LoadWaivers(ws.LatticeDir),
+				Reconfirm: reconfirmedBy(ws, im, kg),
 			})
 
 			switch {
@@ -172,4 +176,34 @@ func gitRev(top, rev string) (string, error) {
 		return "", fmt.Errorf("cannot resolve %s", rev)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// reconfirmedBy reads the decision files this change adds or edits and lists
+// the promises they re-confirm (check.Reconfirmed). Changed paths are relative
+// to the repository top.
+func reconfirmedBy(ws *workspace.Workspace, im impact.Report, kg schema.KnowledgeGraph) map[string]bool {
+	out, err := exec.Command("git", "-C", ws.LatticeDir, "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return nil
+	}
+	top := strings.TrimSpace(string(out))
+	if real, err := filepath.EvalSymlinks(top); err == nil {
+		top = real
+	}
+	dir := ws.LatticeDir
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
+	}
+	rel, err := filepath.Rel(top, dir)
+	if err != nil {
+		return nil
+	}
+	var paths []string
+	for _, f := range im.ChangedFiles {
+		if f.NewPath != "" && f.Status != "D" {
+			paths = append(paths, filepath.ToSlash(f.NewPath))
+		}
+	}
+	read := func(p string) ([]byte, error) { return os.ReadFile(filepath.Join(top, filepath.FromSlash(p))) }
+	return check.Reconfirmed(paths, filepath.ToSlash(rel), read, kg.BRDs)
 }

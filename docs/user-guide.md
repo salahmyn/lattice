@@ -1328,9 +1328,11 @@ lattice check --snapshot                      # save the audit of HEAD, for a ba
 
 | Verdict | Means | Merge |
 |---|---|---|
-| `BROKEN` | Something fell: a promise's class dropped to a known-bad class (`fake`, `unenforced`, `unverified`, `not_demonstrated`) against base; an enforcer or verifier was removed; a break killed at base survives at head; the suite is red; or the statement, tier or mapping of a confirmed promise was edited (the edit voids the confirmation, and the row says to re-confirm it) | Never |
+| `BROKEN` | Something fell: a promise's class dropped to a known-bad class (`fake`, `unenforced`, `unverified`, `not_demonstrated`) against base; an enforcer or verifier was removed; a break killed at base survives at head; the suite is red; or the statement, tier or mapping of a confirmed promise was edited without its re-confirmation (see below) | Never |
 | `UNPROVEN` | Nothing fell, but a touched promise is unconfirmed, not exercised, not break-tested where its tier needs it, or unknown, or touched lines are untraced. It is never drawn as a pass: no check mark, and the comment says so | Only if the merge rule holds |
 | `ASSURED` | Every touched line is traced, every touched promise has the signals its tier needs, and nothing fell | Yes |
+
+**Editing a confirmed promise.** The edit voids the confirmation. To keep the change mergeable, put the re-confirmation in the same pull request: run `lattice prepare brd approve <id> --version <N>` (or `prepare promise confirm`) on the pull request's branch, then `git merge --ff-only` the decision branch it prints, so its decision file rides with the edit. That makes the promise's `confirmed` gap read *pending*. A pending confirmation does not block the merge, tier 3 included, because the merge needs the human approval that confirms it; `lattice confirm` records it once the pull request merges. Without the decision file the edit reads `BROKEN` (`CONFIRMATION_VOIDED`).
 
 Tier defaults until the owner decides: tier 1 needs `exercised` or
 `break_tested`; tier 2 and 3 need `break_tested`; every tier needs the promise

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
+	"github.com/salahmyn/lattice/pkg/lattice/confirm"
 	"github.com/salahmyn/lattice/pkg/lattice/impact"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
@@ -652,5 +653,67 @@ func TestCheckContractGolden(t *testing.T) {
 	}
 	if generic["contract"] != "lattice.check/1" {
 		t.Errorf("contract = %v", generic["contract"])
+	}
+}
+
+// An edit to a confirmed promise that carries its own decision file is
+// re-confirmed by the change's approval: not BROKEN, the confirmed gap is
+// pending and does not block the merge, tier 3 included.
+// @verifies check:INV-6
+func TestEditCarryingDecisionIsPending(t *testing.T) {
+	p := "bookshop:INV-1"
+	base := auditOf("base", good(p, 3))
+	head := auditOf("head", good(p, 3, unconfirmed()))
+	im := impact.Report{ManifestDiff: impact.ManifestDiff{Features: impact.KindDiff{Changed: []impact.ManifestChange{{
+		ID: "bookshop", Fields: []impact.FieldChange{{Field: "invariants[INV-1].statement", Change: "changed"}}}}}}}
+	in := scenario(&base, head, im)
+	in.Reconfirm = map[string]bool{p: true}
+	rep := Compute(in)
+	if hasWeakening(rep, CodeConfirmationVoid) || rep.Verdict.State == Broken {
+		t.Fatalf("an edit carrying its decision is not a weakening: %s %+v", rep.Verdict.State, rep.Weakenings)
+	}
+	g, ok := gapOf(rep, p, SigConfirmed)
+	if !ok || g.Blocks || !strings.Contains(g.Text, "pending") {
+		t.Errorf("confirmed gap = %+v", g)
+	}
+	if !rep.MergeAllowed {
+		t.Errorf("merge refused: %+v", rep.Merge)
+	}
+
+	// Without the decision file the same edit voids the confirmation.
+	in.Reconfirm = nil
+	if rep := Compute(in); rep.Verdict.State != Broken || !hasWeakening(rep, CodeConfirmationVoid) {
+		t.Errorf("without a decision: %s %+v", rep.Verdict.State, rep.Weakenings)
+	}
+}
+
+// Reconfirmed reads only decision files under decisions/approvals: an approve
+// at the BRD's head version covers its promises, one for another version
+// covers nothing, and a promise confirm names its rows.
+// @verifies check:INV-6
+func TestReconfirmed(t *testing.T) {
+	brds := []schema.BRD{{ID: "brd.bookshop", Version: 4, SuccessCriteria: []schema.BRDCriterion{
+		{ID: "SC-1", MapsToInvariant: schema.InvariantRefs{"bookshop:INV-1", "bookshop:INV-2"}}}}}
+	files := map[string]confirm.Decision{
+		"lattice/decisions/approvals/brd.bookshop-v4.yaml":   {Action: confirm.ActionApprove, ID: "brd.bookshop", Version: 4},
+		"lattice/decisions/approvals/brd.bookshop-v3.yaml":   {Action: confirm.ActionApprove, ID: "brd.bookshop", Version: 3},
+		"lattice/decisions/approvals/brd.shelf-v1.yaml":      {Action: confirm.ActionPromiseConfirm, ID: "brd.shelf", Version: 1, Rows: []confirm.Row{{Promise: "shelf:INV-3"}}},
+		"lattice/decisions/approvals/brd.bookshop-v4.r.yaml": {Action: confirm.ActionReturn, ID: "brd.bookshop", Version: 4},
+		"lattice/features/bookshop.yaml":                     {Action: confirm.ActionApprove, ID: "brd.bookshop", Version: 4},
+	}
+	read := func(p string) ([]byte, error) { return files[p].Marshal() }
+	var paths []string
+	for p := range files {
+		paths = append(paths, p)
+	}
+	got := Reconfirmed(paths, "lattice", read, brds)
+	want := map[string]bool{"bookshop:INV-1": true, "bookshop:INV-2": true, "shelf:INV-3": true}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for p := range want {
+		if !got[p] {
+			t.Errorf("missing %s in %v", p, got)
+		}
 	}
 }

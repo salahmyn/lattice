@@ -251,7 +251,11 @@ func (c *computation) gaps(touchedAny bool) []Gap {
 					g.Delta = DeltaNew
 				}
 			}
-			g.Blocks = (g.Delta == DeltaNew || g.Delta == DeltaUnknown) && !(g.NewPromise && name == SigConfirmed)
+			pending := name == SigConfirmed && c.in.Reconfirm[p]
+			if pending {
+				g.Text = "pending: confirmed by the human approval of this change when it merges"
+			}
+			g.Blocks = (g.Delta == DeltaNew || g.Delta == DeltaUnknown) && !(name == SigConfirmed && (g.NewPromise || pending))
 			g.NextAction = gapNext(p, name)
 			mine = append(mine, g)
 		}
@@ -478,9 +482,18 @@ func (c *computation) merge(v Verdict, gaps []Gap, newUntraced int, rows []Promi
 	case Broken:
 		return false, MergeRule{Code: CodeBroken, Text: "something fell: BROKEN never merges"}
 	}
+	// A tier-3 promise needs ASSURED. The one gap it may carry into a merge is
+	// a confirmation pending on this change's own approval, which the merge
+	// itself supplies; anything else blocks.
+	open := map[string]bool{}
+	for _, g := range gaps {
+		if g.State != Pass && !(g.Signal == SigConfirmed && c.in.Reconfirm[g.Promise]) {
+			open[g.Promise] = true
+		}
+	}
 	var tier3 []string
 	for _, r := range rows {
-		if r.Tier >= 3 {
+		if r.Tier >= 3 && open[r.Promise] {
 			tier3 = append(tier3, r.Promise)
 		}
 	}
