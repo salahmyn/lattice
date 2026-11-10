@@ -1,0 +1,24 @@
+id: api
+version: 1
+status: production
+purpose: |
+  The /api/v2 contracts of `lattice serve` that the React UI and agents bind to:
+  lattice.meta/1, lattice.queue/1, lattice.brd/1 (the BRD page, the review packet and the
+  feature drawer), lattice.health/1, plus lattice.check/1 and lattice.prepare/1 as the check
+  and prepare packages return them. The API computes nothing that counts: every value is read
+  from the audit, check, confirm and prepare packages, and a field with no kernel source reads
+  NOT_COMPUTED. /api/v1 is unchanged.
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+invariants:
+  - id: INV-1
+    statement: Every /api/v2 payload carries its contract and the commit it describes, every assurance value has the shape {state, honesty, code, params, text}, and a field the kernel has no source for reads unknown with the code NOT_COMPUTED rather than a guess.
+  - id: INV-2
+    statement: No /api/v2 payload shows unknown, UNPROVEN, partial or not-computed as a pass. Every payload passes the contract lint before it is sent, and a scope that is not a change (a promise, a feature, a BRD) never reads ASSURED or BROKEN.
+  - id: INV-3
+    statement: POST /api/v2/prepare is refused unless the connection comes from loopback with the CSRF token that /api/v2/meta issued to it, from the same origin; it writes one local decision branch, never pushes, and returns nothing that confirms.
+  - id: INV-4
+    statement: Every GET under /api/v2 only reads. The graph is built read-only, and a request writes nothing to the workspace.
+  - id: INV-5
+    statement: GET /api/v2/check returns exactly the report of `lattice check --json`, because both call check.Run and encode it the same way, with no new arithmetic.

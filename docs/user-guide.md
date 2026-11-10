@@ -1577,6 +1577,40 @@ Notes:
 - **Called workflows.** A job in a workflow called with `uses:` cannot ask for more
   permissions than its caller grants. If your release workflow calls your CI
   workflow with `contents: write` only, keep this in a workflow of its own.
+## 4n. The /api/v2 contracts
+
+`lattice serve` also serves the JSON the coming React UI and agents bind to, under `/api/v2`.
+`/api/v1` is unchanged. Every payload carries `contract` and `commit` (and `ci_run` and
+`evidence_tied` for the results it stands on), and every assurance value has one shape:
+`{state, honesty, code, params, text}`.
+
+| Endpoint | Contract | Returns |
+|---|---|---|
+| `GET /api/v2/meta` | `lattice.meta/1` | kernel version and commit, dirty flag, the provenance of the results, coverage, breaks, audit snapshot and `confirm.json` (commit, `ci_run`, tied to head or not), and the CSRF token for `prepare` |
+| `GET /api/v2/queue` | `lattice.queue/1` | what needs a human, ranked by tier, then blast radius (entry points, then promises), then age; each with a `reason` and a `link` |
+| `GET /api/v2/brds`, `GET /api/v2/brds/{id}` | `lattice.brd/1` | the BRD page; its state (DRAFT, PROPOSED, CONFIRMED, DRIFTED, SUPERSEDED) with sub-chips such as "reviewed by council" |
+| `GET /api/v2/brds/{id}?version=N` | `lattice.brd/1` | the review packet: the structural diff since the last confirmed version, the `packet_hash` exactly as `lattice prepare` pins it, the promise counts, the out-of-reach promises |
+| `GET /api/v2/features/{id}` | `lattice.brd/1` | the feature drawer: promises with signals, gaps, enforcers and verifiers, entry points, related features |
+| `GET /api/v2/check?base=<rev>[&ci=1]` | `lattice.check/1` | exactly `lattice check --json` |
+| `GET /api/v2/health` | `lattice.health/1` | the evidence matrix per feature: results, per-test coverage, breaks, confirm data, each with its commit and whether CI stamped it |
+| `POST /api/v2/prepare` | `lattice.prepare/1` | what `lattice prepare` prints: `{branch, files, packet_hash, command}`, or its refusal `{refused, params, text, next}` |
+
+The API computes nothing that counts. Every value comes from the audit, the check, `confirm`
+and `prepare`, and a field the kernel has no source for reads
+`{"state": "unknown", "code": "NOT_COMPUTED"}`, never a guess (the story, sources, cases, the
+text-only diff, the blind spot outside a change, where a feature runs, open proposals). A view
+of one promise, feature or BRD is never `ASSURED` or `BROKEN`: those need a base, so ask
+`/api/v2/check`. Unknown, `UNPROVEN` and partial are never a `pass`; every payload is checked
+against that rule before it is sent, and a payload that breaks it is a 500, not a response.
+
+`POST /api/v2/prepare` is the one write, and it writes one local decision branch. It is
+refused unless the connection comes from this machine (not through a proxy), carries the
+token `GET /api/v2/meta` issued to it in the `X-Lattice-CSRF` header, and comes from the
+same origin. It never pushes, never opens a pull request and never returns anything that
+confirms: a decision counts only when `lattice confirm` reads the platform's approval of the
+merged pull request. Send `packet_hash` from the review packet to refuse the decision if the
+packet moved after you read it (`PACKET_STALE`). Prepare is not an MCP tool; agents use
+`propose`.
 
 ## 5. Day-to-day commands
 

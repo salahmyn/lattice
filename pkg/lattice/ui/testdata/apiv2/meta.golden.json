@@ -1,0 +1,72 @@
+{
+  "contract": "lattice.meta/1",
+  "commit": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+  "ci_run": "4812",
+  "evidence_tied": true,
+  "kernel": {
+    "version": "0.9.0",
+    "commit": "none",
+    "date": "unknown"
+  },
+  "dirty": null,
+  "evidence": {
+    "results": {
+      "present": true,
+      "commit": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      "ci_run": "4812",
+      "tie": {
+        "state": "pass",
+        "honesty": "fact",
+        "text": "stamped with the head commit and a CI run"
+      }
+    },
+    "coverage": {
+      "present": false,
+      "commit": "",
+      "ci_run": "",
+      "tie": {
+        "state": "unknown",
+        "honesty": "fact",
+        "code": "NO_FILE",
+        "text": "no file: nothing to tie to the head commit"
+      }
+    },
+    "breaks": {
+      "present": true,
+      "commit": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      "ci_run": "4812",
+      "tie": {
+        "state": "pass",
+        "honesty": "fact",
+        "text": "stamped with the head commit and a CI run"
+      }
+    },
+    "audit_snapshot": {
+      "present": false,
+      "commit": "",
+      "ci_run": "",
+      "tie": {
+        "state": "unknown",
+        "honesty": "fact",
+        "code": "NO_FILE",
+        "text": "no audit snapshot for the head commit"
+      }
+    },
+    "confirm": {
+      "present": true,
+      "commit": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      "ci_run": "",
+      "tie": {
+        "state": "unknown",
+        "honesty": "fact",
+        "code": "NOT_COMPUTED",
+        "text": "confirm.json carries no ci_run, so the kernel cannot tie it to a CI run"
+      }
+    }
+  },
+  "prepare": {
+    "enabled": true,
+    "header": "X-Lattice-CSRF",
+    "csrf_token": "<token>"
+  }
+}

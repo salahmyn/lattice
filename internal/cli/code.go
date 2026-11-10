@@ -3,27 +3,16 @@ package cli
 // @module-feature cli
 
 import (
-	"path/filepath"
-
 	"github.com/spf13/cobra"
 
-	"github.com/salahmyn/lattice/pkg/lattice/adapters/all"
-	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/check"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/scip"
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
 // scipIndexPaths returns the .scip index paths for every adapter.
-func scipIndexPaths(ws *workspace.Workspace) []string {
-	adCfg, _ := config.LoadAdapters(ws.LatticeDir)
-	reg := all.Registry(adCfg)
-	var paths []string
-	for _, lang := range reg.Names() {
-		paths = append(paths, filepath.Join(ws.SCIPDir(), lang+".scip"))
-	}
-	return paths
-}
+func scipIndexPaths(ws *workspace.Workspace) []string { return check.SCIPIndexPaths(ws) }
 
 func newBlastRadiusCommand(io *IO) *cobra.Command {
 	return &cobra.Command{

@@ -14,6 +14,19 @@ All notable changes to Lattice are documented in this file.
   does. Break runs on master and on pull requests that touch Go. It is a workflow of its own
   because `release.yml` grants the called `ci.yml` only `contents: write`. User guide section 4m
   has the snippet to copy.
+- **`/api/v2` contracts for the React UI** (in `lattice serve`; `/api/v1` is unchanged).
+  `GET /api/v2/meta` (`lattice.meta/1`), `/queue` (`lattice.queue/1`), `/brds`,
+  `/brds/{id}[?version=N]` and `/features/{id}` (`lattice.brd/1`: the BRD page, the review
+  packet with its structural diff and `packet_hash`, and the feature drawer), `/check?base=`
+  (exactly `lattice check --json`) and `/health` (`lattice.health/1`), and
+  `POST /api/v2/prepare`. The shapes live in `pkg/lattice/contract`. The API computes
+  nothing that counts: a field with no kernel source reads unknown `NOT_COMPUTED`, a scope
+  that is not a change never reads `ASSURED` or `BROKEN`, and every payload passes a lint
+  (unknown, `UNPROVEN` and partial are never a `pass`) before it is sent.
+  `prepare` is refused unless the request comes from loopback with the CSRF token
+  `/meta` issued, writes only a local branch, and confirms nothing. `lattice check`'s body is
+  now `check.Run`, shared by the CLI and the API; `prepare.Request` takes an optional
+  `packet_hash` (`PACKET_STALE`).
 - **Re-confirm in the same pull request.** An edit to a confirmed promise that carries a
   `lattice prepare` decision for its new version reads its `confirmed` gap as pending, not
   `BROKEN`, and does not block the merge (tier 3 included): the merge's human approval is the
