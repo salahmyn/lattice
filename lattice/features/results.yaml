@@ -21,3 +21,5 @@ invariants:
     statement: The test list gives each test the filter its runner takes to run it alone, and the slug its per-test coverage report is named by.
   - id: INV-6
     statement: An ingested run is stamped with the CI run that produced it (GITHUB_RUN_ID, CI_PIPELINE_ID and similar) or "local", so a check can tell CI evidence from a local run.
+  - id: INV-7
+    statement: A JUnit report with no test cases (an empty <testsuites> or <testsuite>, in any spelling) is an empty set, not an error; a report that cannot be parsed fails the ingest and names its file.
