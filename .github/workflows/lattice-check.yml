@@ -40,8 +40,6 @@ jobs:
       contents: read
       actions: read # find and download the base commit's audit artifact
     env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
       LATTICE_BIN: dist/lattice
     steps:
       - uses: actions/checkout@v4
@@ -100,6 +98,10 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
+          # Only this step needs the token; the pull request's own tests above
+          # run without it.
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: scripts/ci-lattice-check.sh fetch-base "origin/$BASE_REF"
       - name: Check the change
         if: github.event_name == 'pull_request'
