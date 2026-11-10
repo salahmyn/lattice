@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/salahmyn/lattice/pkg/lattice/confirm"
 	"github.com/salahmyn/lattice/pkg/lattice/rtm"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
@@ -15,6 +16,30 @@ import (
 // `brd.` prefix so a quick `grep '^id: brd\.'` finds every BRD on disk
 // and prevents collision with the feature-id namespace.
 var brdIDPattern = regexp.MustCompile(`^brd\.[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$`)
+
+// humanConfirmed reports whether the platform confirmed this version of the
+// BRD: a verified approve or ack decision at exactly that version, not voided
+// by a confirmed return or overturn. It reads only the confirm data, never the
+// BRD's own approval block.
+// @enforces brds:INV-9
+func humanConfirmed(cf *confirm.File, id string, version int) bool {
+	if cf == nil {
+		return false
+	}
+	ok := false
+	for _, r := range cf.Records {
+		if r.ID != id || r.Version != version || r.State != confirm.StateConfirmed || r.ApproverLogin == "" {
+			continue
+		}
+		switch r.Action {
+		case confirm.ActionApprove, confirm.ActionAck:
+			ok = true
+		case confirm.ActionReturn, confirm.ActionOverturn:
+			return false
+		}
+	}
+	return ok
+}
 
 // checkBRDs runs every BRD integrity rule. All rules are conservative
 // by design — the BRD axis is opt-in; the validator never errors on
@@ -136,7 +161,10 @@ func (c *corpus) checkBRDs() []schema.Violation {
 		// BRD_UNAPPROVED_LLM — a machine-written BRD still in draft:
 		// LLM-regenerated, or authored by an agent whatever its source
 		// says (`brd new` run by an agent records source: human).
-		if b.MachineWritten() && (b.Status == schema.BRDDraft || b.Status == "") {
+		// A BRD whose current version a human confirmed on the platform
+		// (lattice/.cache/confirm.json) counts as approved; a typed
+		// approved_by never does.
+		if b.MachineWritten() && (b.Status == schema.BRDDraft || b.Status == "") && !humanConfirmed(c.opts.Confirm, b.ID, b.Version) {
 			msg := fmt.Sprintf("BRD %q was LLM-regenerated and still draft — needs human review", b.ID)
 			if b.Provenance.Source != schema.BRDSourceLLMFromCode {
 				msg = fmt.Sprintf("BRD %q was written by %s and still draft — needs human review",

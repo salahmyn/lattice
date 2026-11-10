@@ -25,3 +25,5 @@ invariants:
     statement: A machine-written draft BRD (regenerated from code by an LLM, or authored by an agent) needs human review.
   - id: INV-8
     statement: A BRD and a feature that disagree about their link (implements_via without implements_brd, or the reverse) raise BRD_LINK_ONE_SIDED.
+  - id: INV-9
+    statement: A machine-written draft BRD whose current version a human confirmed on the platform (confirm.json) is not BRD_UNAPPROVED_LLM, and a typed approved_by never makes it so.

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/confirm"
 	"github.com/salahmyn/lattice/pkg/lattice/coverage"
 	"github.com/salahmyn/lattice/pkg/lattice/lease"
 	"github.com/salahmyn/lattice/pkg/lattice/ledger"
@@ -103,6 +104,12 @@ type Options struct {
 	// run never reads clean while a meaning question is open. nil means
 	// no flag store.
 	FlagsOf func(unit string) []string
+
+	// Confirm is lattice/.cache/confirm.json (confirm.LoadCache): the
+	// platform's verified human decisions. A machine-written draft BRD whose
+	// current version it confirms is not BRD_UNAPPROVED_LLM. nil means no
+	// confirm data, so nothing is confirmed.
+	Confirm *confirm.File
 
 	// Coverage is the ingested coverage set bound to the graph (rnd/0009).
 	// nil means none was ingested: no coverage finding fires and nothing is

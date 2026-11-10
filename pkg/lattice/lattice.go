@@ -13,6 +13,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/agentic"
 	"github.com/salahmyn/lattice/pkg/lattice/analyze"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/confirm"
 	"github.com/salahmyn/lattice/pkg/lattice/extract"
 	"github.com/salahmyn/lattice/pkg/lattice/graph"
 	"github.com/salahmyn/lattice/pkg/lattice/patch"
@@ -70,7 +71,7 @@ func (l *Lattice) Validate(ctx context.Context) ([]schema.Violation, error) {
 	if err != nil {
 		return nil, err
 	}
-	return validate.Validate(kg, l.cfg, validate.Options{ReviewMode: l.ws.Review}), nil
+	return validate.Validate(kg, l.cfg, validate.Options{ReviewMode: l.ws.Review, Confirm: confirm.LoadCache(l.ws.LatticeDir)}), nil
 }
 
 // ListFeatures returns every feature manifest.

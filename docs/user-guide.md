@@ -1473,6 +1473,12 @@ merged_sha, verified_at}` per decision. `lattice audit` reads the `confirmed`
 signal from that file only. Set branch protection to require a current review;
 `confirm` does not rely on it, but it keeps the platform's own state in step.
 
+`lattice validate` reads the same file: a machine-written draft BRD (`llm_from_code`
+or agent-authored) whose current version has a confirmed `approve` or `ack` there
+no longer raises `BRD_UNAPPROVED_LLM`. A typed `approved_by`, a decision for another
+version, a `pending` or `stale` verdict, or a confirmed `return` or `overturn` does
+not satisfy it.
+
 ### The local commands
 
 `lattice brd approve`, `brd ack` and `brd overturn` still work for now. Each
@@ -1481,7 +1487,97 @@ prints a deprecation line and records `local: true`, and the audit shows
 decide`) stay as advice: a council's approval reads "reviewed by council, awaiting
 you" until a human ack is confirmed.
 
-## 4m. The /api/v2 contracts
+## 4m. Running the check in CI
+
+Lattice runs `lattice check` on itself in `.github/workflows/lattice-check.yml`,
+report only. Copy it for your repository and swap the test command for yours.
+
+```yaml
+name: Lattice check
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read            # find and download the base commit's audit
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      # Install lattice (a release binary on PATH) and your toolchain here.
+      - name: Test suite, as JUnit
+        continue-on-error: true            # a red suite is evidence, not a stop
+        run: ./run-your-tests --junit "$RUNNER_TEMP/unit.xml"
+      - run: lattice results ingest "$RUNNER_TEMP/unit.xml"
+      - run: lattice break --timeout 180s  # on the base branch, and on PRs that touch code
+      # Base branch: save this commit's audit for later pull requests.
+      - if: github.event_name == 'push'
+        run: lattice check --snapshot
+      - if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lattice-audit-${{ github.sha }}
+          path: lattice/.cache/audit/${{ github.sha }}.json
+          if-no-files-found: error
+          retention-days: 30
+      # Pull request: restore the merge base's audit, then judge the change.
+      - if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          mb="$(git merge-base "origin/$BASE_REF" HEAD)"
+          run="$(gh run list --workflow lattice-check.yml --branch "$BASE_REF" --commit "$mb" \
+            --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+          mkdir -p lattice/.cache/audit
+          [ -z "$run" ] || gh run download "$run" --name "lattice-audit-$mb" --dir lattice/.cache/audit || true
+      - if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          rc=0
+          lattice check --base "origin/$BASE_REF" --ci --markdown >lattice-check.md || rc=$?
+          cat lattice-check.md >>"$GITHUB_STEP_SUMMARY"
+          [ "$rc" -le 1 ]     # 1 is a verdict (report only); 2 is a setup error and fails
+```
+
+Post the report as one sticky comment in a second job that has
+`pull-requests: write` and nothing else beyond `contents: read`: upload
+`lattice-check.md` from the job above, download it there, find the comment whose
+body starts with `<!-- lattice-check -->` (`gh api repos/$GITHUB_REPOSITORY/issues/<n>/comments`),
+and `PATCH` it, or `POST` one if none exists. Lattice's own
+`scripts/ci-lattice-check.sh` does this (`touches-go`, `snapshot`, `fetch-base`,
+`check`, `comment`) and `scripts/ci-lattice-check.test.sh` tests it with a fake
+`gh`. Mark that job `continue-on-error`: a fork's token is read-only.
+
+Notes:
+
+- **Report only.** The `check` step tolerates the verdict's exit code (1) and
+  nothing else. Making it blocking is a choice for the owner (which tier blocks,
+  and from when): drop the tolerance and require the job in branch protection.
+- **Evidence is CI's.** `--ci` reads evidence only when it is stamped with the head
+  commit and a CI run id, so the ingest and `break` steps must run in the same job
+  as `check` and on the commit it judges (hence checking out the pull request's
+  head, not the merge commit).
+- **No base audit** (first run, an expired artifact, a base that predates the
+  workflow) reads `UNPROVEN` with "no base audit", never `BROKEN`.
+- **Cost.** `lattice break` re-runs each promise's verifiers once per enforcer. On
+  Lattice (187 promises) it took about four minutes on top of the 35-second test
+  run. Run it on the base branch and on pull requests that touch code only.
+- **Called workflows.** A job in a workflow called with `uses:` cannot ask for more
+  permissions than its caller grants. If your release workflow calls your CI
+  workflow with `contents: write` only, keep this in a workflow of its own.
+## 4n. The /api/v2 contracts
 
 `lattice serve` also serves the JSON the coming React UI and agents bind to, under `/api/v2`.
 `/api/v1` is unchanged. Every payload carries `contract` and `commit` (and `ci_run` and
