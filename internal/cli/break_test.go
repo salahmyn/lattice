@@ -352,3 +352,112 @@ func TestBreakNoRunnerConfigured(t *testing.T) {
 		t.Errorf("template runner: %+v", r)
 	}
 }
+
+// ingestFixture is breakFixture laid out with its workspace at ws (relative
+// to the checkout) and the given .gitignore, with the ledger committed as
+// `lattice init` leaves it. It returns the checkout and the workspace.
+func ingestFixture(t *testing.T, ws, gitignore string) (string, string) {
+	t.Helper()
+	dir := breakFixture(t)
+	runGit(t, dir, "rm", "-q", "-r", "--cached", ".")
+	if ws != "lattice" {
+		if err := os.Rename(filepath.Join(dir, "lattice"), filepath.Join(dir, ws)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]string{
+		".gitignore": gitignore,
+		filepath.Join(ws, ".ledger", "ledger.jsonl"): "",
+	}
+	for name, body := range files {
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, dir, "add", "-A")
+	runGit(t, dir, "commit", "-q", "-m", "layout")
+	return dir, filepath.Join(dir, ws)
+}
+
+// A fresh `results ingest` in a clean checkout leaves `break` able to run
+// without --allow-dirty, wherever the workspace sits and whether or not the
+// project's .gitignore (written before `lattice init`) ignores the cache:
+// the ledger and the cache that ingest writes are Lattice's own state.
+// @verifies breaktest:INV-9
+func TestBreakAfterIngestIsClean(t *testing.T) {
+	junit := filepath.Join(t.TempDir(), "junit.xml")
+	if err := os.WriteFile(junit, []byte(`<testsuite name="guard"><testcase classname="fixture/guard" name="TestPositiveRejectsZero"/></testsuite>`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for name, layout := range map[string]struct{ ws, gitignore string }{
+		"default layout":                {"lattice", "lattice/.cache/\nlattice/lattice.json\n"},
+		"cache not ignored":             {"lattice", "lattice/lattice.json\n"},
+		"workspace not named lattice":   {"specs", "specs/.cache/\nspecs/lattice.json\n"},
+		"other name, cache not ignored": {"specs", "specs/lattice.json\n"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir, ws := ingestFixture(t, layout.ws, layout.gitignore)
+			if out, err := run(t, ws, newResultsCommand, "ingest", junit); err != nil {
+				t.Fatalf("ingest: %v\n%s", err, out)
+			}
+			if st := runGit(t, dir, "status", "--porcelain"); !strings.Contains(st, layout.ws+"/.ledger/") {
+				t.Fatalf("ingest should have appended the tracked ledger:\n%s", st)
+			}
+			rep, out, err := runBreak(t, ws, "--promise", "guard:INV-1")
+			if err != nil {
+				t.Fatalf("break after ingest was refused: %v\n%s", err, out)
+			}
+			if rep.Dirty {
+				t.Error("Lattice's own state was recorded as dirty: true")
+			}
+			if r := byPromise(rep)["guard:INV-1"]; r.Outcome != breaktest.Killed {
+				t.Errorf("the promise was not broken: %+v", r)
+			}
+		})
+	}
+}
+
+// dirty in breaks.json is the tree's real state with --allow-dirty: an
+// edited source file or an untracked one is dirty, even when git is set not
+// to show untracked files, and the tree as it stands is what was tested.
+// The refusal without --allow-dirty names the files.
+// @verifies breaktest:INV-9
+func TestBreakAllowDirtyRecordsDirty(t *testing.T) {
+	dir := breakFixture(t)
+	edited := strings.Replace(breakFixtureGuard, "return n > 0", "return n > 0 // edited", 1)
+	if err := os.WriteFile(filepath.Join(dir, "guard", "guard.go"), []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, out, err := runBreak(t, dir); err == nil || !strings.Contains(out, "guard/guard.go") {
+		t.Errorf("the refusal should name the dirty file: %v\n%s", err, out)
+	}
+	if _, _, err := runBreak(t, dir, "--allow-dirty", "--promise", "guard:INV-1"); err != nil {
+		t.Fatal(err)
+	}
+	if rep := breaktest.Read(filepath.Join(dir, "lattice")); !rep.Dirty {
+		t.Error("breaks.json: an edited source file must be dirty: true")
+	}
+	runGit(t, dir, "checkout", "--", "guard/guard.go")
+
+	// Only an untracked source file, with untracked files hidden from
+	// `git status`. It makes the baseline fail, so its presence is visible.
+	runGit(t, dir, "config", "status.showUntrackedFiles", "no")
+	extra := "package guard\n\nfunc init() { panic(\"untracked\") }\n"
+	if err := os.WriteFile(filepath.Join(dir, "guard", "extra.go"), []byte(extra), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rep, out, err := runBreak(t, dir, "--allow-dirty", "--promise", "guard:INV-1")
+	if err != nil {
+		t.Fatalf("break: %v\n%s", err, out)
+	}
+	if !rep.Dirty || !breaktest.Read(filepath.Join(dir, "lattice")).Dirty {
+		t.Error("an untracked source file must be recorded as dirty: true")
+	}
+	if r := byPromise(rep)["guard:INV-1"]; r.Baseline != "fail" {
+		t.Errorf("the untracked file was not in the tested tree: %+v", r)
+	}
+}
