@@ -6,6 +6,14 @@ All notable changes to Lattice are documented in this file.
 
 ### Added
 
+- **Lattice runs `check` on itself in CI, report only** (`.github/workflows/lattice-check.yml`,
+  `scripts/ci-lattice-check.sh`). On a push to master: the suite as JUnit, `results ingest`,
+  `break`, `check --snapshot`, and the artifact `lattice-audit-<sha>`. On a pull request:
+  the merge base's artifact (if any), `check --base --ci --markdown`, the job summary and one
+  sticky comment (`<!-- lattice-check -->`). The verdict never fails the job; a setup error
+  does. Break runs on master and on pull requests that touch Go. It is a workflow of its own
+  because `release.yml` grants the called `ci.yml` only `contents: write`. User guide section 4m
+  has the snippet to copy.
 - **Re-confirm in the same pull request.** An edit to a confirmed promise that carries a
   `lattice prepare` decision for its new version reads its `confirmed` gap as pending, not
   `BROKEN`, and does not block the merge (tier 3 included): the merge's human approval is the
@@ -77,6 +85,11 @@ All notable changes to Lattice are documented in this file.
 
 ### Changed
 
+- **A platform confirmation approves a machine-written BRD.** `BRD_UNAPPROVED_LLM` no longer
+  fires for an `llm_from_code` or agent-drafted BRD whose current version has a confirmed
+  `approve` or `ack` in `lattice/.cache/confirm.json`. A typed `approved_by`, another version,
+  a `pending` or `stale` verdict, or a confirmed `return` or `overturn` never satisfies it.
+  `lattice validate` and the library read the file with `confirm.LoadCache`.
 - **`lattice break` runs per framework, not per language.** `break.runners`
   lists `{name, match, command, dir}` entries (`{files}`, `{filter}`, `{junit}`);
   a promise's verifiers are grouped by the first runner whose glob matches and
