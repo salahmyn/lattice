@@ -1,0 +1,67 @@
+{
+  "contract": "lattice.brd/1",
+  "commit": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+  "ci_run": "4812",
+  "evidence_tied": true,
+  "id": "reports",
+  "status": "production",
+  "purpose": "Monthly reports.",
+  "owners": {
+    "business": "finance",
+    "engineering": "team-ledger"
+  },
+  "origin": {
+    "state": "unknown",
+    "honesty": "fact",
+    "code": "NOT_COMPUTED",
+    "text": "not computed: origin has no kernel source yet"
+  },
+  "verdict": {
+    "state": "unknown",
+    "code": "NO_PROMISES",
+    "text": "no promise is in this scope"
+  },
+  "no_promise": true,
+  "counts": {
+    "promises": 0,
+    "unproven": 0,
+    "unknown": 0,
+    "out_of_reach": 0
+  },
+  "blind_spot": {
+    "state": "unknown",
+    "honesty": "fact",
+    "code": "NOT_COMPUTED",
+    "text": "not computed: the blind spot (untraced touched lines are measured per change: lattice check) has no kernel source yet"
+  },
+  "promises": [],
+  "runs_in": {
+    "state": "unknown",
+    "honesty": "fact",
+    "code": "NOT_COMPUTED",
+    "text": "not computed: where it runs (systems and apps) has no kernel source yet"
+  },
+  "entry_points": [],
+  "related": {
+    "depends_on": [],
+    "depended_by": [],
+    "effect": {
+      "state": "unknown",
+      "honesty": "fact",
+      "code": "NOT_COMPUTED",
+      "text": "not computed: the effect of a related feature breaking has no kernel source yet"
+    }
+  },
+  "sources": {
+    "state": "unknown",
+    "honesty": "fact",
+    "code": "NOT_COMPUTED",
+    "text": "not computed: sources has no kernel source yet"
+  },
+  "history": {
+    "state": "unknown",
+    "honesty": "fact",
+    "code": "NOT_COMPUTED",
+    "text": "not computed: history has no kernel source yet"
+  }
+}

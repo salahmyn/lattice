@@ -5,13 +5,13 @@ package cli
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/salahmyn/lattice/pkg/lattice/check"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/coverage"
 	"github.com/salahmyn/lattice/pkg/lattice/ledger"
@@ -254,32 +254,7 @@ func configInputs(base string, c config.Coverage) []coverage.Input {
 // changes, naming up to ten. Lattice's own runtime state (lattice/.ledger,
 // lattice/.cache) is not code and does not count; untracked files, such as
 // the coverage reports themselves, do not either. Outside git it is clean.
-func gitDirty(dir string) (bool, []string) {
-	out, err := exec.Command("git", "-C", dir, "status", "--porcelain", "--untracked-files=no", "--", ".").Output()
-	if err != nil {
-		return false, nil
-	}
-	var files []string
-	for _, line := range strings.Split(string(out), "\n") {
-		if len(line) < 4 {
-			continue
-		}
-		p := strings.TrimSpace(line[3:])
-		if i := strings.Index(p, " -> "); i >= 0 {
-			p = p[i+4:]
-		}
-		if strings.Contains("/"+p, "/lattice/.ledger/") || strings.Contains("/"+p, "/lattice/.cache/") {
-			continue
-		}
-		files = append(files, p)
-	}
-	sort.Strings(files)
-	dirty := len(files) > 0
-	if len(files) > 10 {
-		files = append(files[:10], fmt.Sprintf("and %d more", len(files)-10))
-	}
-	return dirty, files
-}
+func gitDirty(dir string) (bool, []string) { return check.GitDirty(dir) }
 
 // langAliases maps --lang spellings to adapter languages.
 var langAliases = map[string]string{

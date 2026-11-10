@@ -1,0 +1,277 @@
+{
+  "contract": "lattice.brd/1",
+  "commit": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+  "ci_run": "4812",
+  "evidence_tied": true,
+  "id": "brd.checkout",
+  "version": 4,
+  "status": "approved",
+  "state": "PROPOSED",
+  "chips": [
+    {
+      "code": "REVIEWED_BY_COUNCIL",
+      "params": {
+        "approve": 2,
+        "seats": 2
+      },
+      "text": "reviewed by council, awaiting you"
+    }
+  ],
+  "title": "Paid orders",
+  "summary": "Unpaid baskets became orders.",
+  "verdict": {
+    "state": "UNPROVEN",
+    "code": "GAPS",
+    "params": {
+      "n": 2,
+      "of": 1,
+      "promises": 1
+    },
+    "text": "2 gaps in 1 of 1 promises"
+  },
+  "provenance": {},
+  "confirmation": {
+    "state": {
+      "state": "unknown",
+      "honesty": "proxy",
+      "code": "COUNCIL_AWAITING_HUMAN",
+      "text": "reviewed by council:orders, awaiting a human decision"
+    }
+  },
+  "features": [
+    "checkout"
+  ],
+  "tier_max": 1,
+  "counts": {
+    "promises": 1,
+    "unproven": 1,
+    "unknown": 0,
+    "out_of_reach": 0
+  },
+  "intent": {
+    "story": {
+      "state": "unknown",
+      "honesty": "fact",
+      "code": "NOT_COMPUTED",
+      "text": "not computed: the story (the story layer is not in code) has no kernel source yet"
+    },
+    "business_problem": "Unpaid baskets became orders.",
+    "goals": [],
+    "scenarios": [],
+    "out_of_scope": [],
+    "open_questions": []
+  },
+  "criteria": [
+    {
+      "id": "SC-1",
+      "statement": "Only a paid basket becomes an order.",
+      "tier": 1,
+      "maps_to": [
+        "checkout:INV-1"
+      ]
+    }
+  ],
+  "promises": [
+    {
+      "id": "checkout:INV-1",
+      "feature": "checkout",
+      "statement": "Only a paid basket becomes an order.",
+      "tier": 1,
+      "class": "fake",
+      "kind": "passes_when_broken",
+      "reason": "the verifiers passed with checkout.Pay broken (early_return): they cannot tell the code is broken",
+      "verdict": {
+        "state": "UNPROVEN",
+        "code": "GAPS",
+        "params": {
+          "n": 2
+        },
+        "text": "2 gaps"
+      },
+      "criteria": [
+        "SC-1"
+      ],
+      "signals": {
+        "traced": {
+          "state": "pass",
+          "honesty": "fact",
+          "text": "an enforcer is anchored"
+        },
+        "confirmed": {
+          "state": "fail",
+          "honesty": "proxy",
+          "code": "CONFIRMED_AGENT",
+          "text": "reviewed by an agent or council, awaiting a human: brd.checkout: reviewed by council:orders, awaiting a human decision; a fact about the platform's record of who confirmed, not proof the intent is right"
+        },
+        "live": {
+          "state": "pass",
+          "honesty": "upper_bound",
+          "text": "an entry point reaches an enforcer"
+        },
+        "exercised": {
+          "state": "unknown",
+          "honesty": "proxy",
+          "code": "NO_COVERAGE",
+          "text": "no per-test coverage ingested (lattice results ingest --per-test)"
+        },
+        "break_tested": {
+          "state": "fail",
+          "honesty": "fact",
+          "code": "BREAK_SURVIVED",
+          "text": "the verifiers passed with checkout.Pay broken"
+        },
+        "nothing_fell": {
+          "state": "unknown",
+          "honesty": "fact",
+          "code": "NOT_COMPUTED",
+          "text": "not computed: nothing_fell (it is measured against a base: lattice check) has no kernel source yet"
+        }
+      },
+      "gaps": [
+        {
+          "signal": "confirmed",
+          "state": "fail",
+          "honesty": "proxy",
+          "code": "CONFIRMED_AGENT",
+          "text": "reviewed by an agent or council, awaiting a human: brd.checkout: reviewed by council:orders, awaiting a human decision; a fact about the platform's record of who confirmed, not proof the intent is right",
+          "next": "a human confirms the promise: lattice prepare promise confirm checkout:INV-1"
+        },
+        {
+          "signal": "exercised",
+          "state": "unknown",
+          "honesty": "proxy",
+          "code": "NO_COVERAGE",
+          "text": "no per-test coverage ingested (lattice results ingest --per-test)",
+          "next": "add a verifier whose own run executes the enforcer, and ingest per-test coverage in CI"
+        }
+      ],
+      "enforcers": [
+        {
+          "fqn": "checkout.Pay",
+          "file": "checkout/pay.go",
+          "line": 8,
+          "live": {
+            "state": "pass",
+            "honesty": "upper_bound",
+            "text": "an entry point reaches it"
+          }
+        }
+      ],
+      "verifiers": [
+        {
+          "fqn": "checkout.TestPaid",
+          "result": "pass",
+          "ran_enforcer": false
+        }
+      ],
+      "cases": {
+        "state": "unknown",
+        "honesty": "fact",
+        "code": "NOT_COMPUTED",
+        "text": "not computed: cases (happy, edge, error) has no kernel source yet"
+      },
+      "notes": [
+        {
+          "reader": "ana",
+          "verdict": "confirmed_fake",
+          "note": "the test never asserts"
+        }
+      ],
+      "next_action": "a human confirms the promise: lattice prepare promise confirm checkout:INV-1"
+    }
+  ],
+  "constraints": [],
+  "council": {
+    "mandate": "orders",
+    "delegated_by": "owner",
+    "summary": "Both seats approve.",
+    "human_review": "pending",
+    "votes": [
+      {
+        "seat": "intent",
+        "actor": "agent:intent",
+        "verdict": "approve",
+        "reason": "the intent is clear"
+      },
+      {
+        "seat": "risk",
+        "actor": "agent:risk",
+        "verdict": "approve",
+        "reason": "no tier-3 criterion"
+      }
+    ]
+  },
+  "entry_points": [
+    {
+      "id": "ep.post_refunds",
+      "kind": "http_route",
+      "label": "POST /refunds",
+      "live": {
+        "state": "pass",
+        "honesty": "upper_bound",
+        "text": "reached from POST /refunds (a path the code allows, not one that ran)"
+      },
+      "step": 1,
+      "of": 2
+    }
+  ],
+  "waivers": [],
+  "blind_spot": {
+    "state": "unknown",
+    "honesty": "fact",
+    "code": "NOT_COMPUTED",
+    "text": "not computed: the blind spot (untraced touched lines are measured per change: lattice check) has no kernel source yet"
+  },
+  "sources": {
+    "state": "unknown",
+    "honesty": "fact",
+    "code": "NOT_COMPUTED",
+    "text": "not computed: sources (ADRs and tickets) has no kernel source yet"
+  },
+  "history": {
+    "state": {
+      "state": "info",
+      "honesty": "fact",
+      "code": "FROM_CONFIRM_JSON",
+      "text": "decisions read from confirm.json"
+    },
+    "entries": []
+  },
+  "packet": {
+    "version": 4,
+    "diff": {
+      "never_confirmed": true,
+      "structural": [
+        "initial"
+      ],
+      "text_only": {
+        "state": "unknown",
+        "honesty": "fact",
+        "code": "NOT_COMPUTED",
+        "text": "not computed: the text-only diff (the kernel diffs structure only) has no kernel source yet"
+      }
+    },
+    "packet_hash": "sha256:6141863081722da803e8c7e095404fb0683ac7807147441b7496c3dec7981d4a",
+    "hash_state": {
+      "state": "info",
+      "honesty": "fact",
+      "code": "PACKET_HASH",
+      "text": "computed as `lattice prepare` pins it"
+    },
+    "votes_hash": "sha256:578f0f278ad407f70c99cbe1e5af3fdf2645878c5cf5b5bc2d78df6e51141c1f",
+    "ack_packet_hash": "sha256:f419a349a8c1d769d9a41a6cd3241b5d400251507943a2181eab2931558fa1da",
+    "counts": {
+      "promises": 1,
+      "unproven": 1,
+      "unknown": 0,
+      "out_of_reach": 0
+    },
+    "blind_spot": {
+      "state": "unknown",
+      "honesty": "fact",
+      "code": "NOT_COMPUTED",
+      "text": "not computed: the blind spot (untraced touched lines are measured per change: lattice check) has no kernel source yet"
+    },
+    "out_of_reach": []
+  }
+}
