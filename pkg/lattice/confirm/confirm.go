@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/salahmyn/lattice/pkg/lattice/confirm/stamp"
 )
 
 // Schema is the contract of lattice/.cache/confirm.json.
@@ -46,6 +48,10 @@ type Record struct {
 	Assurance   Assurance `json:"assurance"`
 }
 
+// Stamp is the provenance of a confirm.json: the commit and CI run that
+// produced it, the platform, and a digest of its verdicts.
+type Stamp = stamp.Stamp
+
 // File is lattice/.cache/confirm.json: derived, cached by commit, never committed.
 type File struct {
 	Contract    string    `json:"contract"`
@@ -56,6 +62,19 @@ type File struct {
 	Assurance   Assurance `json:"assurance"`
 	Records     []Record  `json:"records"`
 	Warnings    []string  `json:"warnings,omitempty"`
+	// Stamp says what produced the file. A file without one, or whose digest
+	// no longer matches its records, is read as unknown, never confirmed.
+	Stamp *Stamp `json:"stamp,omitempty"`
+}
+
+// SetAside reports the code a reader gave this file when it refused its
+// verdicts (CONFIRM_UNSTAMPED, CONFIRM_TAMPERED, CONFIRM_TRACKED), or "".
+func (f File) SetAside() string {
+	switch f.Assurance.Code {
+	case stamp.CodeUnstamped, stamp.CodeTampered, stamp.CodeTracked, stamp.CodeNotCI:
+		return f.Assurance.Code
+	}
+	return ""
 }
 
 // PacketFunc recomputes a decision's packet hash as of now. current is false
@@ -77,6 +96,12 @@ type Input struct {
 	// Refresh ignores Cache.
 	Refresh bool
 	Now     func() time.Time
+	// CIRun is the CI run this process is part of (results.CIRunID); empty
+	// reads "local". PlatformName and Repository name the code host. All
+	// three go into the file's stamp.
+	CIRun        string
+	PlatformName string
+	Repository   string
 }
 
 func (r Record) key() string {
@@ -94,10 +119,14 @@ func Compute(ctx context.Context, in Input) File {
 		now = in.Now
 	}
 	f := File{Contract: Schema, Commit: in.Commit, Branch: in.Branch, GeneratedAt: now().UTC().Format(time.RFC3339), Records: []Record{}}
+	ciRun := strings.TrimSpace(in.CIRun)
+	if ciRun == "" {
+		ciRun = stamp.LocalRun
+	}
 	cached := map[string]Record{}
-	if in.Cache != nil && !in.Refresh {
+	if reusable(in.Cache, ciRun) && !in.Refresh {
 		for _, r := range in.Cache.Records {
-			if r.ApproverLogin != "" && r.PR != 0 {
+			if r.ApproverLogin != "" && r.PR != 0 && (r.State == StateConfirmed || r.State == StateStale) {
 				cached[r.key()] = r
 			}
 		}
@@ -158,6 +187,40 @@ func Compute(ctx context.Context, in Input) File {
 		}
 		return a.Action < b.Action
 	})
+	return Seal(f, Stamp{Commit: in.Commit, CIRun: ciRun, Platform: in.PlatformName, Repository: in.Repository})
+}
+
+// reusable reports whether a previous confirm.json's verdicts may stand in
+// for asking the platform again. Only an intact stamp counts, and a CI run
+// never takes a verdict from a local file: otherwise a hand-written cache
+// would come back out of CI with a CI stamp.
+// @enforces confirm:INV-6
+func reusable(cache *File, ciRun string) bool {
+	if cache == nil || cache.Stamp == nil || cache.SetAside() != "" {
+		return false
+	}
+	if cache.Stamp.Local() && ciRun != stamp.LocalRun {
+		return false
+	}
+	return true
+}
+
+// Seal stamps f with what produced it and a digest of its records. A reader
+// accepts the verdicts only while the digest matches.
+func Seal(f File, st Stamp) File {
+	if f.Records == nil {
+		f.Records = []Record{}
+	}
+	if st.CIRun == "" {
+		st.CIRun = stamp.LocalRun
+	}
+	st.Commit = f.Commit
+	sealed, err := stamp.Seal(st, f.Records)
+	if err != nil {
+		f.Stamp = nil
+		return f
+	}
+	f.Stamp = &sealed
 	return f
 }
 
@@ -171,7 +234,9 @@ func Offline(cache *File, commit string) File {
 	}
 	out := *cache
 	out.Offline = true
-	out.Assurance = Assurance{State: "pass", Honesty: "fact", Code: "FROM_CACHE", Text: "read from the cache written at " + short(cache.Commit)}
+	if cache.SetAside() == "" {
+		out.Assurance = Assurance{State: "pass", Honesty: "fact", Code: "FROM_CACHE", Text: "read from the cache written at " + short(cache.Commit)}
+	}
 	return out
 }
 
@@ -181,8 +246,14 @@ func CachePath(latticeDir string) string {
 }
 
 // LoadCache reads confirm.json; nil when absent, unreadable or another schema.
+// A file whose stamp is missing or broken, or that git tracks, is returned
+// set aside: its assurance carries the code (CONFIRM_UNSTAMPED,
+// CONFIRM_TAMPERED, CONFIRM_TRACKED) and every record reads unknown, so no
+// reader takes a confirmed verdict from it.
+// @enforces confirm:INV-6
 func LoadCache(latticeDir string) *File {
-	data, err := os.ReadFile(CachePath(latticeDir))
+	p := CachePath(latticeDir)
+	data, err := os.ReadFile(p)
 	if err != nil {
 		return nil
 	}
@@ -190,11 +261,34 @@ func LoadCache(latticeDir string) *File {
 	if json.Unmarshal(data, &f) != nil || f.Contract != Schema {
 		return nil
 	}
+	if res := stamp.Check(p, data); !res.OK() {
+		f = SetAside(f, res.Code, res.Text)
+	}
 	return &f
 }
 
-// SaveCache writes confirm.json.
+// SetAside returns f with every verdict read as unknown and the file's
+// assurance carrying code and text. The records stay, for display.
+func SetAside(f File, code, text string) File {
+	recs := make([]Record, len(f.Records))
+	for i, r := range f.Records {
+		r.State = StateUnknown
+		r.Assurance = Assurance{State: StateUnknown, Honesty: "fact", Code: code, Text: text}
+		recs[i] = r
+	}
+	f.Records = recs
+	f.Assurance = Assurance{State: StateUnknown, Honesty: "fact", Code: code, Text: text}
+	return f
+}
+
+// SaveCache writes confirm.json, sealed: a file without a stamp is stamped as
+// a local run at its commit.
 func SaveCache(latticeDir string, f File) error {
+	st := Stamp{Commit: f.Commit, CIRun: stamp.LocalRun}
+	if f.Stamp != nil {
+		st = *f.Stamp
+	}
+	f = Seal(f, st)
 	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return err

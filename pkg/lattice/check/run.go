@@ -68,6 +68,9 @@ func Run(ctx context.Context, ws *workspace.Workspace, kg schema.KnowledgeGraph,
 
 	ev := Gather(ws.LatticeDir, head, opt.CI)
 	src := audit.Collect(ws.LatticeDir, kg, dirty)
+	if opt.CI {
+		src.Confirm = src.Confirm.ForCI(head)
+	}
 	headAudit := audit.Compute(ev.Apply(src))
 	if opt.SaveSnapshot {
 		_, _ = SaveSnapshot(ws.LatticeDir, headAudit)

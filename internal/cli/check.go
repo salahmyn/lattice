@@ -64,7 +64,9 @@ verdict reads UNPROVEN, never BROKEN, and the merge rule is not met.
 
 --ci counts only evidence stamped with the head commit and a CI run (the
 GITHUB_RUN_ID or CI_PIPELINE_ID that 'results ingest' and 'break' record);
-anything else reads unknown (EVIDENCE_NOT_CI). Only CI's verdict counts.
+anything else reads unknown (EVIDENCE_NOT_CI). That includes confirm.json:
+under --ci a confirm file of a local run or of another commit confirms
+nothing. Only CI's verdict counts.
 
 Exit codes: 0 for ASSURED or an allowed UNPROVEN; 1 for BROKEN or a
 disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
@@ -97,7 +99,11 @@ disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
 				}
 				dirty, _ := gitDirty(filepath.Dir(ws.LatticeDir))
 				ev := check.Gather(ws.LatticeDir, head, ci)
-				headAudit := audit.Compute(ev.Apply(audit.Collect(ws.LatticeDir, kg, dirty)))
+				src := audit.Collect(ws.LatticeDir, kg, dirty)
+				if ci {
+					src.Confirm = src.Confirm.ForCI(head)
+				}
+				headAudit := audit.Compute(ev.Apply(src))
 				saved, serr := check.SaveSnapshot(ws.LatticeDir, headAudit)
 				if serr != nil {
 					return io.fail("SNAPSHOT_FAILED", serr.Error(), nil)
