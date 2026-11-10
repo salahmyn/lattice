@@ -13,9 +13,11 @@ package results
 // @module-feature results
 
 import (
+	"bytes"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -86,29 +88,55 @@ type junitOutcome struct {
 
 // ParseJUnit reads a junit-family XML report and returns a normalized
 // Set. A top-level <testsuite> (no <testsuites> wrapper) is accepted too,
-// and so are <testcase> elements directly under <testsuites>.
+// and so are <testcase> elements directly under <testsuites>. A report with
+// no cases at all (a runner whose project has no tests writes an empty
+// <testsuites/>) is an empty set, not an error.
+// @enforces results:INV-7
 func ParseJUnit(data []byte) (Set, error) {
 	set := Set{Results: map[string]Outcome{}, Cases: map[string]string{}}
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")) // a UTF-8 byte-order mark
 
-	var suites junitSuites
-	if err := xml.Unmarshal(data, &suites); err == nil && (len(suites.Suites) > 0 || len(suites.Cases) > 0) {
+	switch root, err := junitRoot(data); {
+	case err != nil:
+		return set, fmt.Errorf("parse junit xml: %w", err)
+	case root == "testsuites":
+		var suites junitSuites
+		if err := xml.Unmarshal(data, &suites); err != nil {
+			return set, fmt.Errorf("parse junit xml: %w", err)
+		}
 		for _, s := range suites.Suites {
 			collect(s, set.Results, set.Cases)
 		}
 		collect(junitSuite{Cases: suites.Cases}, set.Results, set.Cases)
 		return set, nil
+	case root == "testsuite":
+		var single junitSuite
+		if err := xml.Unmarshal(data, &single); err != nil {
+			return set, fmt.Errorf("parse junit xml: %w", err)
+		}
+		collect(single, set.Results, set.Cases)
+		return set, nil
+	default:
+		return set, fmt.Errorf("parse junit xml: root is <%s>, want <testsuites> or <testsuite>", root)
 	}
+}
 
-	// Fall back to a bare <testsuite> root.
-	var single junitSuite
-	if err := xml.Unmarshal(data, &single); err != nil {
-		return set, fmt.Errorf("parse junit xml: %w", err)
+// junitRoot returns the local name of the report's root element, skipping
+// the XML declaration, comments, processing instructions and whitespace.
+func junitRoot(data []byte) (string, error) {
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			return "", fmt.Errorf("no root element")
+		}
+		if err != nil {
+			return "", err
+		}
+		if el, ok := tok.(xml.StartElement); ok {
+			return el.Name.Local, nil
+		}
 	}
-	if single.XMLName.Local != "testsuite" {
-		return set, fmt.Errorf("parse junit xml: no <testsuites> or <testsuite> root")
-	}
-	collect(single, set.Results, set.Cases)
-	return set, nil
 }
 
 // collect walks a suite (and nested suites) recording one Outcome per
