@@ -77,6 +77,17 @@ func openRepo(top string) (repoGit, func(), error) {
 		cleanup()
 		return g, func() {}, err
 	}
+	// Keep the index's modification time on the copy. Git compares file
+	// times to the second and treats an entry no older than the index as
+	// "racy", checking its content; a copy stamped now would make a file
+	// rewritten at the same size in the same second as the last `git add`
+	// look unchanged.
+	if st, err := os.Stat(idx); err == nil {
+		if err := os.Chtimes(f.Name(), st.ModTime(), st.ModTime()); err != nil {
+			cleanup()
+			return g, func() {}, err
+		}
+	}
 	g.env = []string{"GIT_INDEX_FILE=" + f.Name()}
 	return g, cleanup, nil
 }

@@ -6,6 +6,11 @@ All notable changes to Lattice are documented in this file.
 
 ### Fixed
 
+- **`lattice impact` keeps the index's time on its private copy.** Git content-checks an
+  entry no older than the index and trusts stat data otherwise; the copy was stamped with the
+  current time, so a file rewritten at the same size in the same second as the last `git add`
+  could read unchanged. The likely cause of an intermittent `TestMovedSymbolIsNotChanged`
+  failure in CI.
 - **Missing results are not a fall in `lattice check`.** A promise that reads
   `not_demonstrated` only because no result is ingested at head (`no_results`) was a
   `LEVEL_DROPPED` weakening, so a commit without a test run read `BROKEN`. It is now a gap

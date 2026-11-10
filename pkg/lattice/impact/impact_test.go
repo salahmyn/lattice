@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	scippb "github.com/sourcegraph/scip/bindings/go/scip"
 	"google.golang.org/protobuf/proto"
@@ -95,6 +96,37 @@ func TestMovedSymbolIsNotChanged(t *testing.T) {
 	}
 	if len(rep.ChangedSymbols) != 0 {
 		t.Errorf("a moved, unchanged function is not changed: %+v", rep.ChangedSymbols)
+	}
+}
+
+// The private index copy keeps the index's modification time. Git
+// content-checks an entry no older than the index ("racy") and trusts stat
+// data otherwise; a copy stamped now could make a file rewritten at the same
+// size in the same second as the last `git add` look unchanged.
+// @verifies impact:INV-2
+func TestPrivateIndexKeepsIndexTime(t *testing.T) {
+	r := newRepo(t)
+	r.write("p/p.go", "package p\n")
+	r.commit("base")
+	idx := filepath.Join(r.dir, ".git", "index")
+	old := time.Now().Add(-time.Hour).Truncate(time.Second)
+	if err := os.Chtimes(idx, old, old); err != nil {
+		t.Fatal(err)
+	}
+	g, cleanup, err := openRepo(r.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if len(g.env) != 1 {
+		t.Fatalf("env = %v", g.env)
+	}
+	st, err := os.Stat(strings.TrimPrefix(g.env[0], "GIT_INDEX_FILE="))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.ModTime().Equal(old) {
+		t.Errorf("index copy time = %v, want the index's %v", st.ModTime(), old)
 	}
 }
 
