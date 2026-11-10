@@ -4,6 +4,14 @@ All notable changes to Lattice are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Missing results are not a fall in `lattice check`.** A promise that reads
+  `not_demonstrated` only because no result is ingested at head (`no_results`) was a
+  `LEVEL_DROPPED` weakening, so a commit without a test run read `BROKEN`. It is now a gap
+  (`UNPROVEN`); a red result still falls. Lattice's own `lattice-check` workflow now runs the
+  test suite on every pull request, and only the break run is skipped when no Go changed.
+
 ### Added
 
 - **Lattice runs `check` on itself in CI, report only** (`.github/workflows/lattice-check.yml`,
