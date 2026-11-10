@@ -62,6 +62,11 @@ reverse proxy in front and run Lattice with --host 127.0.0.1.`,
 				GraphBuilder: func(ctx context.Context) (schema.KnowledgeGraph, error) {
 					return buildGraph(ctx, ws, false)
 				},
+				// /api/v2 only reads: no LLM labelling, no writes to lattice/
+				ReadOnlyGraphBuilder: func(ctx context.Context) (schema.KnowledgeGraph, error) {
+					return buildGraphWith(ctx, ws, buildOptions{readOnly: true})
+				},
+				Actor: io.actor(),
 			})
 			ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer cancel()

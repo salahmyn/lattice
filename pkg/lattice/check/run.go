@@ -54,6 +54,7 @@ type RunOptions struct {
 // The CLI and the web API both call it, so `lattice check --json` and
 // GET /api/v2/check return the same report, byte for byte. kg is the head
 // graph; the caller builds it (read-only for the API).
+// @enforces api:INV-5
 func Run(ctx context.Context, ws *workspace.Workspace, kg schema.KnowledgeGraph, opt RunOptions) (Report, error) {
 	top, err := impact.TopLevel(ws.LatticeDir)
 	if err != nil {

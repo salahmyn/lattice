@@ -1,0 +1,310 @@
+{
+  "contract": "lattice.brd/1",
+  "commit": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+  "ci_run": "4812",
+  "evidence_tied": true,
+  "id": "refunds",
+  "status": "production",
+  "purpose": "Gives a reader's money back.",
+  "owners": {
+    "business": "commerce",
+    "engineering": "team-payments"
+  },
+  "origin": {
+    "state": "unknown",
+    "honesty": "fact",
+    "code": "NOT_COMPUTED",
+    "text": "not computed: origin has no kernel source yet"
+  },
+  "brd": {
+    "id": "brd.refunds",
+    "version": 3,
+    "state": "DRIFTED",
+    "confirmed_version": 2,
+    "confirmed_by": "owner",
+    "via": "PR #33"
+  },
+  "verdict": {
+    "state": "UNPROVEN",
+    "code": "GAPS",
+    "params": {
+      "n": 6,
+      "of": 2,
+      "promises": 2
+    },
+    "text": "6 gaps in 2 of 2 promises"
+  },
+  "no_promise": false,
+  "counts": {
+    "promises": 2,
+    "unproven": 2,
+    "unknown": 0,
+    "out_of_reach": 1
+  },
+  "blind_spot": {
+    "state": "unknown",
+    "honesty": "fact",
+    "code": "NOT_COMPUTED",
+    "text": "not computed: the blind spot (untraced touched lines are measured per change: lattice check) has no kernel source yet"
+  },
+  "promises": [
+    {
+      "id": "refunds:INV-2",
+      "feature": "refunds",
+      "statement": "A refund reaches the provider within a day.",
+      "tier": 3,
+      "class": "unenforced",
+      "reason": "no symbol is anchored as an enforcer of this invariant",
+      "verdict": {
+        "state": "UNPROVEN",
+        "code": "GAPS",
+        "params": {
+          "n": 4
+        },
+        "text": "4 gaps"
+      },
+      "criteria": [
+        "SC-2"
+      ],
+      "signals": {
+        "traced": {
+          "state": "fail",
+          "honesty": "fact",
+          "code": "NO_ENFORCER",
+          "text": "no enforcer is anchored to this promise"
+        },
+        "confirmed": {
+          "state": "drifted",
+          "honesty": "proxy",
+          "code": "CONFIRMED_DRIFTED",
+          "text": "confirmed for an earlier version: brd.refunds: confirmed at version 2, now version 3; a fact about the platform's record of who confirmed, not proof the intent is right"
+        },
+        "live": {
+          "state": "unknown",
+          "honesty": "upper_bound",
+          "code": "LIVE_UNKNOWN",
+          "text": "no enforcer to reach"
+        },
+        "exercised": {
+          "state": "unknown",
+          "honesty": "proxy",
+          "code": "NO_COVERAGE",
+          "text": "no per-test coverage ingested (lattice results ingest --per-test)"
+        },
+        "break_tested": {
+          "state": "unknown",
+          "honesty": "fact",
+          "code": "NO_BREAK_RUN",
+          "text": "no break run for this promise (lattice break)"
+        },
+        "nothing_fell": {
+          "state": "unknown",
+          "honesty": "fact",
+          "code": "NOT_COMPUTED",
+          "text": "not computed: nothing_fell (it is measured against a base: lattice check) has no kernel source yet"
+        }
+      },
+      "gaps": [
+        {
+          "signal": "traced",
+          "state": "fail",
+          "honesty": "fact",
+          "code": "NO_ENFORCER",
+          "text": "no enforcer is anchored to this promise",
+          "next": "anchor an enforcer: add @enforces refunds:INV-2 to the code that keeps it"
+        },
+        {
+          "signal": "confirmed",
+          "state": "drifted",
+          "honesty": "proxy",
+          "code": "CONFIRMED_DRIFTED",
+          "text": "confirmed for an earlier version: brd.refunds: confirmed at version 2, now version 3; a fact about the platform's record of who confirmed, not proof the intent is right",
+          "next": "a human confirms the promise: lattice prepare promise confirm refunds:INV-2"
+        },
+        {
+          "signal": "live",
+          "state": "unknown",
+          "honesty": "upper_bound",
+          "code": "LIVE_UNKNOWN",
+          "text": "no enforcer to reach",
+          "next": "wire an entry point that reaches the enforcer, or have a human mark it out of reach"
+        },
+        {
+          "signal": "break_tested",
+          "state": "unknown",
+          "honesty": "fact",
+          "code": "NO_BREAK_RUN",
+          "text": "no break run for this promise (lattice break)",
+          "next": "run lattice break in CI (a scripted break where no tool exists)"
+        }
+      ],
+      "enforcers": [],
+      "verifiers": [],
+      "cases": {
+        "state": "unknown",
+        "honesty": "fact",
+        "code": "NOT_COMPUTED",
+        "text": "not computed: cases (happy, edge, error) has no kernel source yet"
+      },
+      "out_of_reach": {
+        "subject": "refunds:INV-2",
+        "kind": "out_of_reach",
+        "code": "NO_LIVE",
+        "reason": "the provider job runs outside this repo"
+      },
+      "waivers": [
+        {
+          "subject": "refunds:INV-2",
+          "kind": "out_of_reach",
+          "code": "NO_LIVE",
+          "reason": "the provider job runs outside this repo"
+        }
+      ],
+      "next_action": "anchor an enforcer: add @enforces refunds:INV-2 to the code that keeps it"
+    },
+    {
+      "id": "refunds:INV-1",
+      "feature": "refunds",
+      "statement": "A refund never exceeds what was paid.",
+      "tier": 2,
+      "class": "demonstrated_only",
+      "kind": "no_tool",
+      "reason": "a verifier passed; no per-test coverage is ingested, so whether it runs an enforcer is unknown (not a fake) (break test unknown: no break run for this promise (lattice break))",
+      "verdict": {
+        "state": "UNPROVEN",
+        "code": "GAPS",
+        "params": {
+          "n": 2
+        },
+        "text": "2 gaps"
+      },
+      "criteria": [
+        "SC-1"
+      ],
+      "signals": {
+        "traced": {
+          "state": "pass",
+          "honesty": "fact",
+          "text": "an enforcer is anchored"
+        },
+        "confirmed": {
+          "state": "drifted",
+          "honesty": "proxy",
+          "code": "CONFIRMED_DRIFTED",
+          "text": "confirmed for an earlier version: brd.refunds: confirmed at version 2, now version 3; a fact about the platform's record of who confirmed, not proof the intent is right"
+        },
+        "live": {
+          "state": "pass",
+          "honesty": "upper_bound",
+          "text": "an entry point reaches an enforcer"
+        },
+        "exercised": {
+          "state": "unknown",
+          "honesty": "proxy",
+          "code": "NO_COVERAGE",
+          "text": "no per-test coverage ingested (lattice results ingest --per-test)"
+        },
+        "break_tested": {
+          "state": "unknown",
+          "honesty": "fact",
+          "code": "NO_BREAK_RUN",
+          "text": "no break run for this promise (lattice break)"
+        },
+        "nothing_fell": {
+          "state": "unknown",
+          "honesty": "fact",
+          "code": "NOT_COMPUTED",
+          "text": "not computed: nothing_fell (it is measured against a base: lattice check) has no kernel source yet"
+        }
+      },
+      "gaps": [
+        {
+          "signal": "confirmed",
+          "state": "drifted",
+          "honesty": "proxy",
+          "code": "CONFIRMED_DRIFTED",
+          "text": "confirmed for an earlier version: brd.refunds: confirmed at version 2, now version 3; a fact about the platform's record of who confirmed, not proof the intent is right",
+          "next": "a human confirms the promise: lattice prepare promise confirm refunds:INV-1"
+        },
+        {
+          "signal": "break_tested",
+          "state": "unknown",
+          "honesty": "fact",
+          "code": "NO_BREAK_RUN",
+          "text": "no break run for this promise (lattice break)",
+          "next": "run lattice break in CI (a scripted break where no tool exists)"
+        }
+      ],
+      "enforcers": [
+        {
+          "fqn": "refunds.Cap",
+          "file": "refunds/cap.go",
+          "line": 12,
+          "live": {
+            "state": "pass",
+            "honesty": "upper_bound",
+            "text": "an entry point reaches it"
+          }
+        }
+      ],
+      "verifiers": [
+        {
+          "fqn": "refunds.TestCap",
+          "result": "pass",
+          "ran_enforcer": false
+        }
+      ],
+      "cases": {
+        "state": "unknown",
+        "honesty": "fact",
+        "code": "NOT_COMPUTED",
+        "text": "not computed: cases (happy, edge, error) has no kernel source yet"
+      },
+      "next_action": "a human confirms the promise: lattice prepare promise confirm refunds:INV-1"
+    }
+  ],
+  "runs_in": {
+    "state": "unknown",
+    "honesty": "fact",
+    "code": "NOT_COMPUTED",
+    "text": "not computed: where it runs (systems and apps) has no kernel source yet"
+  },
+  "entry_points": [
+    {
+      "id": "ep.post_refunds",
+      "kind": "http_route",
+      "label": "POST /refunds",
+      "live": {
+        "state": "pass",
+        "honesty": "upper_bound",
+        "text": "reached from POST /refunds (a path the code allows, not one that ran)"
+      },
+      "step": 2,
+      "of": 2
+    }
+  ],
+  "related": {
+    "depends_on": [
+      "checkout"
+    ],
+    "depended_by": [],
+    "effect": {
+      "state": "unknown",
+      "honesty": "fact",
+      "code": "NOT_COMPUTED",
+      "text": "not computed: the effect of a related feature breaking has no kernel source yet"
+    }
+  },
+  "sources": {
+    "state": "unknown",
+    "honesty": "fact",
+    "code": "NOT_COMPUTED",
+    "text": "not computed: sources has no kernel source yet"
+  },
+  "history": {
+    "state": "unknown",
+    "honesty": "fact",
+    "code": "NOT_COMPUTED",
+    "text": "not computed: history has no kernel source yet"
+  }
+}

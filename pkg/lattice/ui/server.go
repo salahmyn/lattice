@@ -52,6 +52,13 @@ type Options struct {
 	// reflected on the next page load — no daemon-staleness surprises.
 	// In tests this can be swapped for a fixture.
 	GraphBuilder func(ctx context.Context) (schema.KnowledgeGraph, error)
+	// ReadOnlyGraphBuilder builds the graph for /api/v2 without writing
+	// anything (no LLM labelling of entry points, no indexer run). Nil falls
+	// back to GraphBuilder.
+	ReadOnlyGraphBuilder func(ctx context.Context) (schema.KnowledgeGraph, error)
+	// Actor is the identity `lattice serve` runs as (--actor, LATTICE_ACTOR).
+	// POST /api/v2/prepare refuses an agent actor, as the CLI does.
+	Actor string
 	// Store serves the block graph behind /map and /api/graph, /api/search
 	// and /api/relations/{id}. Nil leaves those answering 503.
 	Store store.Store
@@ -73,6 +80,9 @@ type Server struct {
 	// ListenAndServe so tests that just call ServeHTTP don't spin up
 	// an fsnotify goroutine.
 	events *eventBroker
+	// csrf is the token GET /api/v2/meta issues to loopback clients and
+	// POST /api/v2/prepare requires. It lives as long as the server.
+	csrf string
 	// storeMu serializes store calls: the Postgres store holds one connection.
 	storeMu sync.Mutex
 }
@@ -87,7 +97,7 @@ func New(ws *workspace.Workspace, opts Options) *Server {
 		opts.Host = "127.0.0.1"
 	}
 	static, _ := fs.Sub(assetsFS, "assets/static")
-	return &Server{ws: ws, opts: opts, static: static}
+	return &Server{ws: ws, opts: opts, static: static, csrf: newCSRFToken()}
 }
 
 // ListenAndServe binds the configured host/port and serves until ctx is
@@ -123,6 +133,10 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		return err
 	}
 }
+
+// Handler is the server's full HTTP handler, middleware included, for tests
+// and for embedding the UI in another server.
+func (s *Server) Handler() http.Handler { return s.withMiddleware(s.routes()) }
 
 // Addr returns the bound address ("host:port") so callers can print
 // "open http://127.0.0.1:7070" without recomputing the parts.
@@ -230,6 +244,9 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/v1/events", s.apiEvents)
 	mux.HandleFunc("GET /api/v1/onboarding", s.apiOnboardingGet)
 	mux.HandleFunc("POST /api/v1/onboarding", s.apiOnboardingPost)
+
+	// JSON API v2 — the contracts the React UI and agents bind to.
+	s.routesV2(mux)
 
 	return mux
 }

@@ -1,0 +1,159 @@
+{
+  "contract": "lattice.queue/1",
+  "commit": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+  "ci_run": "4812",
+  "evidence_tied": true,
+  "items": [
+    {
+      "id": "brd_drifted:brd.refunds@3",
+      "kind": "brd_drifted",
+      "rank": 1,
+      "subject": "brd.refunds",
+      "version": 3,
+      "tier": 3,
+      "state": "DRIFTED",
+      "blast_radius": {
+        "entry_points": 1,
+        "promises": 2
+      },
+      "age": {
+        "state": "unknown",
+        "honesty": "fact",
+        "code": "NOT_COMPUTED",
+        "text": "not computed: the age of a BRD version has no kernel source yet"
+      },
+      "reason": {
+        "code": "BRD_DRIFTED",
+        "text": "confirmed at version 2, now version 3"
+      },
+      "link": "/brd/brd.refunds/v/3"
+    },
+    {
+      "id": "promise_unknown_t3:ledger:INV-1",
+      "kind": "promise_unknown_t3",
+      "rank": 2,
+      "subject": "ledger:INV-1",
+      "tier": 3,
+      "blast_radius": {
+        "entry_points": 0,
+        "promises": 1
+      },
+      "age": {
+        "state": "unknown",
+        "honesty": "fact",
+        "code": "NOT_COMPUTED",
+        "text": "not computed: the age of a finding has no kernel source yet"
+      },
+      "reason": {
+        "code": "PROMISE_UNKNOWN_T3",
+        "params": {
+          "kind": "partial_run"
+        },
+        "text": "a tier-3 promise whose evidence is unknown: breaking ledger.Post (early_return) left the verifiers green, but some could not run (ledger.TestPost): the break says nothing about them (not a fake)"
+      },
+      "link": "/features?f=ledger"
+    },
+    {
+      "id": "brd_awaiting:brd.checkout@4",
+      "kind": "brd_awaiting",
+      "rank": 3,
+      "subject": "brd.checkout",
+      "version": 4,
+      "tier": 1,
+      "state": "PROPOSED",
+      "chips": [
+        {
+          "code": "REVIEWED_BY_COUNCIL",
+          "params": {
+            "approve": 2,
+            "seats": 2
+          },
+          "text": "reviewed by council, awaiting you"
+        }
+      ],
+      "blast_radius": {
+        "entry_points": 1,
+        "promises": 1
+      },
+      "age": {
+        "state": "info",
+        "honesty": "proxy",
+        "code": "WAITING_SINCE",
+        "params": {
+          "since": "2026-10-30T09:00:00Z",
+          "source": "council_vote"
+        },
+        "text": "waiting since 2026-10-30T09:00:00Z (council_vote)"
+      },
+      "reason": {
+        "code": "COUNCIL_AWAITING_ACK",
+        "params": {
+          "approve": 2,
+          "seats": 2
+        },
+        "text": "reviewed by the council; a human has not acked it"
+      },
+      "link": "/brd/brd.checkout/v/4"
+    },
+    {
+      "id": "confirmed_fake:checkout:INV-1",
+      "kind": "confirmed_fake",
+      "rank": 4,
+      "subject": "checkout:INV-1",
+      "tier": 1,
+      "blast_radius": {
+        "entry_points": 1,
+        "promises": 1
+      },
+      "age": {
+        "state": "unknown",
+        "honesty": "fact",
+        "code": "NOT_COMPUTED",
+        "text": "not computed: the age of a finding has no kernel source yet"
+      },
+      "reason": {
+        "code": "FAKE_CONFIRMED",
+        "params": {
+          "kind": "passes_when_broken",
+          "reader": "ana"
+        },
+        "text": "a second reader (ana) confirmed it is a fake: the verifiers passed with checkout.Pay broken (early_return): they cannot tell the code is broken"
+      },
+      "link": "/features?f=checkout"
+    },
+    {
+      "id": "brd_awaiting:brd.catalogue@1",
+      "kind": "brd_awaiting",
+      "rank": 5,
+      "subject": "brd.catalogue",
+      "version": 1,
+      "tier": 1,
+      "state": "DRAFT",
+      "blast_radius": {
+        "entry_points": 0,
+        "promises": 0
+      },
+      "age": {
+        "state": "info",
+        "honesty": "proxy",
+        "code": "WAITING_SINCE",
+        "params": {
+          "since": "2026-10-01T00:00:00Z",
+          "source": "generated_at"
+        },
+        "text": "waiting since 2026-10-01T00:00:00Z (generated_at)"
+      },
+      "reason": {
+        "code": "BRD_DRAFT",
+        "text": "a draft: no human has confirmed any version"
+      },
+      "link": "/brd/brd.catalogue/v/1"
+    }
+  ],
+  "proposals": {
+    "state": "unknown",
+    "honesty": "fact",
+    "code": "NOT_COMPUTED",
+    "text": "not computed: open proposals (none are stored) has no kernel source yet"
+  }
+}
