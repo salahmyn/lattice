@@ -717,3 +717,23 @@ func TestReconfirmed(t *testing.T) {
 		}
 	}
 }
+
+// A promise with no result ingested at head is missing evidence, a gap, not
+// a fall: the change reads UNPROVEN. A red result at head still falls.
+// @verifies check:INV-7
+func TestMissingResultsIsNotAFall(t *testing.T) {
+	p := "bookshop:INV-1"
+	base := auditOf("base", good(p, 1))
+	noResults := func(r *audit.Row) { r.Class, r.Kind = audit.ClassNotDemonstrated, audit.KindNoResults }
+	failing := func(r *audit.Row) { r.Class, r.Kind = audit.ClassNotDemonstrated, audit.KindFailing }
+
+	rep := Compute(scenario(&base, auditOf("head", good(p, 1, noResults)), impact.Report{}))
+	if rep.Verdict.State == Broken || hasWeakening(rep, CodeLevelDropped) {
+		t.Errorf("no results at head is not a fall: %s %+v", rep.Verdict.State, rep.Weakenings)
+	}
+
+	rep = Compute(scenario(&base, auditOf("head", good(p, 1, failing)), impact.Report{}))
+	if rep.Verdict.State != Broken || !hasWeakening(rep, CodeLevelDropped) {
+		t.Errorf("a red result at head falls: %s %+v", rep.Verdict.State, rep.Weakenings)
+	}
+}
