@@ -12,6 +12,7 @@ package prepare
 // @module-feature confirm
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path"
@@ -161,22 +162,35 @@ func run(env Env, req Request) (*Result, *Refusal) {
 	if !validBranch(g, branch) {
 		return nil, refuse("BAD_ID", fmt.Sprintf("%q cannot be a branch name", branch), "use an id of letters, digits, dots and dashes", map[string]interface{}{"branch": branch})
 	}
+	file := path.Join(rel, d.RelPath())
+	again := false
 	if branchExists(g, branch) {
-		return nil, refuse("BRANCH_EXISTS", "decision branch "+branch+" already exists", "open its pull request, or delete the branch to prepare again", map[string]interface{}{"branch": branch})
+		// The name is derived from the packet, so an existing branch of this
+		// name is this decision prepared before, unless someone changed it.
+		if !holdsDecision(g, "refs/heads/"+branch, file, d) {
+			return nil, refuse("BRANCH_EXISTS", "decision branch "+branch+" already exists and does not hold this decision ("+file+" with packet "+d.PacketHash+")",
+				"inspect it (git log "+branch+"); if it is not a decision you want, delete it (git branch -D "+branch+") and prepare again",
+				map[string]interface{}{"branch": branch, "file": file})
+		}
+		again = true
+	} else if ref := neverOverwrite(g, file, d); ref != nil {
+		return nil, ref
 	}
 
 	body, err := d.Marshal()
 	if err != nil {
 		return nil, refuse("WRITE_FAILED", err.Error(), "", nil)
 	}
-	files := map[string][]byte{path.Join(rel, d.RelPath()): body}
+	files := map[string][]byte{file: body}
 	for p, b := range extra {
 		files[p] = b
 	}
-	msg := fmt.Sprintf("decision: %s %s v%d\n\nPrepared by lattice prepare. Packet %s.\nNot a confirmation: it counts when a human other than the author approves the head and merges.",
-		d.Action, d.ID, d.Version, d.PacketHash)
-	if _, err := commitBranch(g, branch, msg, name, email, files); err != nil {
-		return nil, refuse("WRITE_FAILED", err.Error(), "", nil)
+	if !again {
+		msg := fmt.Sprintf("decision: %s %s v%d\n\nPrepared by lattice prepare. Packet %s.\nNot a confirmation: it counts when a human other than the author approves the head and merges.",
+			d.Action, d.ID, d.Version, d.PacketHash)
+		if _, err := commitBranch(g, branch, msg, name, email, files); err != nil {
+			return nil, refuse("WRITE_FAILED", err.Error(), "", nil)
+		}
 	}
 
 	out := make([]string, 0, len(files))
@@ -188,11 +202,71 @@ func run(env Env, req Request) (*Result, *Refusal) {
 	title := fmt.Sprintf("decision: %s %s v%d", d.Action, d.ID, d.Version)
 	prBody := fmt.Sprintf("Prepared by `lattice prepare`. Action: %s. ID: %s. Version: %d. Packet: %s. This counts only when a human other than the author approves the current head and merges.",
 		d.Action, d.ID, d.Version, d.PacketHash)
+	note := "Push the branch first (git push origin " + branch + "). Recorded only when a human other than the author approves the merged head and CI reads the approver."
+	if again {
+		note = "Already prepared: " + branch + " holds this decision, unchanged. " + note
+	}
 	return &Result{
 		Contract: Schema, Commit: head, Branch: branch, Base: base, Files: out, PacketHash: d.PacketHash,
 		Command: fmt.Sprintf("gh pr create --head %s --base %s --title %s --body %s", branch, base, shellQuote(title), shellQuote(prBody)),
-		Note:    "Push the branch first (git push origin " + branch + "). Recorded only when a human other than the author approves the merged head and CI reads the approver.",
+		Note:    note,
 	}, nil
+}
+
+// neverOverwrite refuses a decision whose file is already on HEAD: a
+// decision file, once written, is a record and is never replaced. The file
+// name carries the packet, so this is the same decision prepared and merged
+// before (or, past an 8-digit collision, another one).
+// @enforces confirm:INV-7
+func neverOverwrite(g confirm.Git, file string, d confirm.Decision) *Refusal {
+	prev, ok := fileAt(g, "HEAD", file)
+	if !ok {
+		return nil
+	}
+	return refuse("DECISION_EXISTS", "decision file "+file+" is already on HEAD"+sameText(prev, d),
+		"nothing to prepare: it is recorded when the pull request that adds it is approved and merged; run `lattice confirm` to read its verdict",
+		map[string]interface{}{"file": file})
+}
+
+// holdsDecision reports whether rev holds, at file, the same decision as d:
+// the same action, BRD, version, packet, rows, reason, votes and waiver. Who
+// prepared it and when are left out, so preparing the same packet twice is
+// the same decision.
+func holdsDecision(g confirm.Git, rev, file string, d confirm.Decision) bool {
+	data, ok := fileAt(g, rev, file)
+	if !ok {
+		return false
+	}
+	prev, err := confirm.ParseDecision(data)
+	if err != nil {
+		return false
+	}
+	return sameDecision(prev, d)
+}
+
+func sameDecision(a, b confirm.Decision) bool {
+	a.PreparedBy, a.PreparedAt, b.PreparedBy, b.PreparedAt = "", "", "", ""
+	if a.Waiver != nil {
+		w := *a.Waiver
+		w.AddedBy, w.AddedAt = "", ""
+		a.Waiver = &w
+	}
+	if b.Waiver != nil {
+		w := *b.Waiver
+		w.AddedBy, w.AddedAt = "", ""
+		b.Waiver = &w
+	}
+	x, errA := a.Marshal()
+	y, errB := b.Marshal()
+	return errA == nil && errB == nil && bytes.Equal(x, y)
+}
+
+// sameText says whether the decision on HEAD is this one.
+func sameText(data []byte, d confirm.Decision) string {
+	if prev, err := confirm.ParseDecision(data); err == nil && sameDecision(prev, d) {
+		return ", with this packet"
+	}
+	return ", with other content"
 }
 
 // brdDecision validates brd.approve, brd.return, brd.ack and brd.overturn.

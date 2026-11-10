@@ -269,8 +269,8 @@ func TestDecisionFile(t *testing.T) {
 	if err != nil || back.ID != d.ID || back.Version != 2 || back.PacketHash != d.PacketHash || len(back.Rows) != 1 {
 		t.Fatalf("round trip: %+v %v", back, err)
 	}
-	if d.Branch() != "decision/brd.x-v2" || d.RelPath() != "decisions/approvals/brd.x-v2.yaml" {
-		t.Errorf("approval names: %s %s", d.Branch(), d.RelPath())
+	if d.Branch() != "decision/brd.x-v2-aa" || d.RelPath() != "decisions/approvals/brd.x-v2-aa.yaml" || d.LegacyStem() != "brd.x-v2" {
+		t.Errorf("approval names: %s %s %s", d.Branch(), d.RelPath(), d.LegacyStem())
 	}
 	for _, a := range []string{ActionReturn, ActionAck, ActionOverturn} {
 		x := d
@@ -318,7 +318,9 @@ func TestGitHubClient(t *testing.T) {
 }
 
 // Scan finds a decision on the default branch with the commit that added it,
-// and a decision that exists only on a decision branch.
+// and a decision that exists only on a decision branch, whichever naming
+// style the file has.
+// @verifies confirm:INV-7
 func TestScan(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
@@ -349,6 +351,10 @@ func TestScan(t *testing.T) {
 	merged := decision(ActionApprove)
 	data, _ := merged.Marshal()
 	write("lattice/"+merged.RelPath(), string(data))
+	// A file named the way decisions were before names carried the packet.
+	older := Decision{Action: ActionApprove, ID: "brd.w", Version: 1, PacketHash: "sha256:bb", PreparedBy: "d", PreparedAt: "2025-01-01T00:00:00Z"}
+	data, _ = older.Marshal()
+	write("lattice/"+ApprovalsDir+"/"+older.LegacyStem()+".yaml", string(data))
 	run("add", "-A")
 	run("commit", "-q", "-m", "decision")
 	addedAt, _ := g.Head()
@@ -374,6 +380,12 @@ func TestScan(t *testing.T) {
 	}
 	if f := byID["brd.y"]; f.OnDefault || f.Ref != "refs/heads/decision/brd.y-v1" {
 		t.Errorf("prepared decision: %+v", f)
+	}
+	if f := byID["brd.w"]; !f.OnDefault || f.Path != "lattice/decisions/approvals/brd.w-v1.yaml" || f.AddedSHA != addedAt {
+		t.Errorf("a decision file with a legacy name must still be read: %+v", f)
+	}
+	if f := byID["brd.x"]; f.Path != "lattice/decisions/approvals/brd.x-v2-aa.yaml" {
+		t.Errorf("a decision file with a packet name: %+v", f)
 	}
 	if got := DefaultBranch(g); got != "main" {
 		t.Errorf("default branch %s", got)

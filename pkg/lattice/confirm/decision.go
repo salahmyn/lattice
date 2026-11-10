@@ -84,7 +84,10 @@ var WaiverKinds = map[string]bool{
 	"accepted_risk":  true,  // the owner accepts the gap, with a decision on record
 }
 
-// Decision is one decision file: lattice/decisions/approvals/<stem>.yaml.
+// Decision is one decision file: lattice/decisions/approvals/<stem>.yaml,
+// where the stem is <id>-v<N>[.<action>]-<packet8> (or, for files written
+// before v0.15.1, <id>-v<N>[.<action>]). Readers take any name: the file's
+// content says what it decides.
 // Field order is the file's order.
 type Decision struct {
 	Action     string `yaml:"action"`
@@ -109,10 +112,34 @@ func Slug(s string) string {
 	return strings.Trim(unsafe.ReplaceAllString(s, "-"), "-.")
 }
 
-// Stem is the file and branch stem of a decision. An approval is
-// <id>-v<N>; every other action adds a suffix so several decisions on one
-// version never share a file.
+// Stem is the file and branch stem of a decision: its LegacyStem, then a
+// dash and the first 8 hex digits of its packet hash. The name is derived
+// from the decision's content, so the same packet always gets the same name
+// and a different packet (the BRD or a promise changed since) gets a new
+// one: a decision file is never overwritten by a later decision.
+// @enforces confirm:INV-7
 func (d Decision) Stem() string {
+	if p := d.PacketShort(); p != "" {
+		return d.LegacyStem() + "-" + p
+	}
+	return d.LegacyStem()
+}
+
+// PacketShort is the first 8 hex digits of the packet hash, or "" when the
+// decision has none.
+func (d Decision) PacketShort() string {
+	h := Slug(d.PacketHash[strings.LastIndex(d.PacketHash, ":")+1:])
+	if len(h) > 8 {
+		h = h[:8]
+	}
+	return h
+}
+
+// LegacyStem is the stem decision files had before names carried the packet:
+// an approval is <id>-v<N>; every other action adds a suffix so several
+// decisions on one version never share a file. Files with these names are
+// still read; prepare no longer writes them.
+func (d Decision) LegacyStem() string {
 	base := fmt.Sprintf("%s-v%d", d.ID, d.Version)
 	switch d.Action {
 	case ActionApprove, ActionWaiverAdd:

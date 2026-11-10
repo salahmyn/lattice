@@ -20,3 +20,5 @@ invariants:
     statement: Unknown is never confirmed. No platform token, no cache, or an unreadable platform reads unknown or pending, and an offline run reads the cache only.
   - id: INV-5
     statement: Prepare builds the decision branch with git plumbing from HEAD and never switches the checkout, touches the index or working tree, pushes or opens a pull request; the kernel refuses with a code when a rule is broken.
+  - id: INV-7
+    statement: A decision file is never overwritten. Its name carries the first 8 digits of its packet hash, so preparing the same packet again reports the existing branch, a changed packet gets a new branch and file, and a same-named branch or file holding something else is refused; readers accept both the old and the new names.
