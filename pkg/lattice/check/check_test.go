@@ -10,6 +10,7 @@ import (
 
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm"
+	"github.com/salahmyn/lattice/pkg/lattice/coverage"
 	"github.com/salahmyn/lattice/pkg/lattice/impact"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
@@ -512,6 +513,87 @@ func TestCIRefusesEvidenceNotTiedToHead(t *testing.T) {
 	g, ok := gapOf(rep, "*", SigSuiteGreen)
 	if !ok || g.State != Unknown || g.Code != CodeEvidenceNotCI || rep.Verdict.State != Unproven {
 		t.Fatalf("suite gap = %+v verdict %s", g, rep.Verdict.State)
+	}
+}
+
+// In a local run too, evidence stamped with another commit is set aside: it
+// reads unknown (EVIDENCE_STALE), the verdict is not ASSURED, and a stale red
+// suite is not a fall. Evidence at head still counts. The snapshot side keeps
+// its own rule.
+// @verifies check:INV-8
+func TestStaleEvidenceIsSetAsideLocally(t *testing.T) {
+	dir := t.TempDir()
+	saveAll := func(commit string, outcome results.Outcome) {
+		t.Helper()
+		set := results.Set{Commit: commit, CIRun: results.LocalRun, Results: map[string]results.Outcome{"bookshop.TestGuard": outcome}}
+		if err := results.Save(dir, set); err != nil {
+			t.Fatal(err)
+		}
+		if err := coverage.Save(dir, coverage.Set{Commit: commit, CIRun: results.LocalRun}); err != nil {
+			t.Fatal(err)
+		}
+		bf := []byte(`{"commit":"` + commit + `","ci_run":"local"}`)
+		if err := os.WriteFile(filepath.Join(dir, ".cache", "results", "breaks.json"), bf, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	saveAll("old", results.Pass)
+	ev := Gather(dir, "head", false)
+	for name, it := range map[string]EvidenceItem{"results": ev.Results, "coverage": ev.Coverage, "breaks": ev.Breaks} {
+		if it.Counted || it.Code != CodeEvidenceStale || !strings.Contains(it.Text, "not HEAD head") {
+			t.Errorf("%s at another commit, local run: %+v", name, it)
+		}
+	}
+	if ev.Suite.Present {
+		t.Errorf("a stale suite must not read green: %+v", ev.Suite)
+	}
+	if !strings.Contains(ev.Results.Text, "results are for old") || !strings.Contains(ev.Results.Text, "re-run the tests and ingest") {
+		t.Errorf("results text = %q", ev.Results.Text)
+	}
+	src := ev.Apply(audit.Sources{Results: results.Load(dir)})
+	if len(src.Results.Results) != 0 {
+		t.Errorf("stale results still reach the audit: %+v", src.Results)
+	}
+
+	// The verdict: suite_green reads unknown (EVIDENCE_STALE), never ASSURED.
+	p := "bookshop:INV-1"
+	base := auditOf("base", good(p, 1))
+	in := scenario(&base, auditOf("head", good(p, 1)), impact.Report{ChangedSymbols: []impact.ChangedSymbol{guardEdited(p)}})
+	in.Evidence = ev
+	rep := Compute(in)
+	g, ok := gapOf(rep, "*", SigSuiteGreen)
+	if !ok || g.State != Unknown || g.Code != CodeEvidenceStale || rep.Verdict.State == Assured {
+		t.Fatalf("suite gap = %+v verdict %s", g, rep.Verdict.State)
+	}
+
+	// A stale red suite is a gap, never a fall.
+	saveAll("old", results.Fail)
+	in.Evidence = Gather(dir, "head", false)
+	if rep := Compute(in); rep.Verdict.State == Broken || hasWeakening(rep, CodeSuiteRed) {
+		t.Errorf("a stale red suite fell: %s %+v", rep.Verdict.State, rep.Weakenings)
+	}
+
+	// The snapshot side keeps its own rule: without --ci it counts the file.
+	if sev := GatherSnapshot(dir, "head", false); !sev.Results.Counted || !sev.Suite.Present {
+		t.Errorf("snapshot evidence: %+v", sev.Results)
+	}
+
+	// Evidence at head still counts in a local run.
+	saveAll("head", results.Pass)
+	ev = Gather(dir, "head", false)
+	if !ev.Results.Counted || !ev.Coverage.Counted || !ev.Breaks.Counted || !ev.Suite.Present || ev.Results.Code != "" {
+		t.Fatalf("evidence at head: %+v", ev)
+	}
+	in.Evidence = ev
+	if rep := Compute(in); rep.Verdict.State != Assured {
+		t.Errorf("evidence at head: verdict %s gaps %+v", rep.Verdict.State, rep.Gaps)
+	}
+
+	// An unstamped file cannot be tied to head either.
+	saveAll("", results.Pass)
+	if ev := Gather(dir, "head", false); ev.Results.Counted || ev.Results.Code != CodeEvidenceStale {
+		t.Errorf("unstamped results: %+v", ev.Results)
 	}
 }
 

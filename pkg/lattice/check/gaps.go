@@ -143,7 +143,11 @@ func (c *computation) suiteAssurance() Assurance {
 	s := c.in.Evidence.Suite
 	switch {
 	case !s.Present && !c.in.Evidence.Results.Counted:
-		return Assurance{State: Unknown, Honesty: Fact, Code: CodeEvidenceNotCI, Text: c.in.Evidence.Results.Text}
+		code := c.in.Evidence.Results.Code
+		if code == "" {
+			code = CodeEvidenceNotCI
+		}
+		return Assurance{State: Unknown, Honesty: Fact, Code: code, Text: c.in.Evidence.Results.Text}
 	case !s.Present:
 		return Assurance{State: Unknown, Honesty: Fact, Code: CodeNoResults, Text: "no test results ingested (lattice results ingest)"}
 	case s.Failed > 0:

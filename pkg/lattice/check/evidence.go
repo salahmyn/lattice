@@ -17,19 +17,42 @@ import (
 )
 
 // Gather reads the provenance stamps of the evidence files under latticeDir
-// and decides which of them the check may count. Under ci, a file counts only
-// when it is stamped with the head commit and a CI run; anything else is set
-// aside and reads unknown (EVIDENCE_NOT_CI). Without ci, every file counts
-// (a local run is advice) and Tied only reports the stamp.
+// and decides which of them the check may count. Evidence stamped with a
+// commit that is not head (or with no commit) is set aside in every mode,
+// local runs included: it says nothing about this commit, so it reads unknown
+// (EVIDENCE_STALE), never a pass and never a fall. Under ci, a file must also
+// come from a CI run; anything else is set aside (EVIDENCE_NOT_CI). Without
+// ci, a local run at head counts (a local run is advice) and Tied only
+// reports the stamp.
+//
+// The stamp is a commit, not a tree: evidence ingested at head while the
+// working tree has uncommitted changes still counts, since the stamp cannot
+// tell whether the run saw those edits.
 // @enforces check:INV-4
+// @enforces check:INV-8
 func Gather(latticeDir, head string, ci bool) Evidence {
+	return gather(latticeDir, head, ci, true)
+}
+
+// GatherSnapshot reads the evidence for the audit snapshot of head, the
+// base side of a later check. It keeps the snapshot's own rule: only ci sets
+// evidence aside. The stale rule belongs to the head side of a check; it does
+// not rewrite what a snapshot records.
+func GatherSnapshot(latticeDir, head string, ci bool) Evidence {
+	return gather(latticeDir, head, ci, false)
+}
+
+func gather(latticeDir, head string, ci, stale bool) Evidence {
 	var ev Evidence
+	j := func(name string, present bool, commit, ciRun string) EvidenceItem {
+		return judge(name, present, commit, ciRun, head, ci, stale)
+	}
 
 	rs := results.Load(latticeDir)
-	ev.Results = judge(len(rs.Results) > 0, rs.Commit, rs.CIRun, head, ci)
+	ev.Results = j("results", len(rs.Results) > 0, rs.Commit, rs.CIRun)
 
 	if cs, ok := coverage.Load(latticeDir); ok {
-		ev.Coverage = judge(true, cs.Commit, cs.CIRun, head, ci)
+		ev.Coverage = j("coverage", true, cs.Commit, cs.CIRun)
 	} else {
 		ev.Coverage = EvidenceItem{Counted: true}
 	}
@@ -39,7 +62,7 @@ func Gather(latticeDir, head string, ci bool) Evidence {
 		CIRun  string `json:"ci_run"`
 	}
 	if data, err := os.ReadFile(filepath.Join(latticeDir, ".cache", "results", "breaks.json")); err == nil && json.Unmarshal(data, &bf) == nil {
-		ev.Breaks = judge(true, bf.Commit, bf.CIRun, head, ci)
+		ev.Breaks = j("breaks", true, bf.Commit, bf.CIRun)
 	} else {
 		ev.Breaks = EvidenceItem{Counted: true}
 	}
@@ -51,15 +74,25 @@ func Gather(latticeDir, head string, ci bool) Evidence {
 	return ev
 }
 
-// judge reads one file's stamp.
-func judge(present bool, commit, ciRun, head string, ci bool) EvidenceItem {
+// staleWords are the subject of the stale text and how to refresh the file.
+var staleWords = map[string][2]string{
+	"results":  {"results are", "re-run the tests and ingest (lattice results ingest)"},
+	"coverage": {"coverage is", "re-run the tests with coverage and ingest it"},
+	"breaks":   {"break results are", "re-run lattice break"},
+}
+
+// judge reads one file's stamp. Under ci, a file not tied to head and a CI
+// run reads EVIDENCE_NOT_CI, as before. With stale set, a file whose commit
+// is not head reads EVIDENCE_STALE in a local run too.
+func judge(name string, present bool, commit, ciRun, head string, ci, stale bool) EvidenceItem {
 	it := EvidenceItem{Present: present, Commit: commit, CIRun: ciRun, Counted: true}
 	if !present {
 		return it
 	}
 	local := ciRun == "" || ciRun == results.LocalRun
 	it.Tied = commit != "" && commit == head && !local
-	if ci && !it.Tied {
+	switch {
+	case ci && !it.Tied:
 		it.Counted = false
 		it.Code = CodeEvidenceNotCI
 		switch {
@@ -67,6 +100,15 @@ func judge(present bool, commit, ciRun, head string, ci bool) EvidenceItem {
 			it.Text = "evidence was produced outside CI (ci_run " + orNone(ciRun) + "): it reads unknown"
 		default:
 			it.Text = fmt.Sprintf("evidence is for commit %s, not head %s: it reads unknown", short(commit), short(head))
+		}
+	case stale && (commit == "" || commit != head):
+		it.Counted = false
+		it.Code = CodeEvidenceStale
+		w := staleWords[name]
+		if commit == "" {
+			it.Text = fmt.Sprintf("%s stamped with no commit, not HEAD %s: %s", w[0], short(head), w[1])
+		} else {
+			it.Text = fmt.Sprintf("%s for %s, not HEAD %s: %s", w[0], short(commit), short(head), w[1])
 		}
 	}
 	return it
@@ -105,6 +147,11 @@ func (e Evidence) Apply(src audit.Sources) audit.Sources {
 		src.Stamps.Breaks = audit.BreaksInput{}
 	}
 	return src
+}
+
+// counted says which of the three files the check counts.
+func (e Evidence) counted() [3]bool {
+	return [3]bool{e.Results.Counted, e.Coverage.Counted, e.Breaks.Counted}
 }
 
 // --- base audit snapshots ---
