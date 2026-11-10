@@ -1,0 +1,12 @@
+{
+  "contract": "lattice.prepare/1",
+  "commit": "<head>",
+  "refused": "REGULATED_MACHINE_WRITTEN",
+  "params": {
+    "author": "agent:impl-2",
+    "constraint": "C-1",
+    "kind": "legal"
+  },
+  "text": "constraint C-1 (legal) was written by agent:impl-2",
+  "next": "rewrite it yourself, then re-open this review"
+}

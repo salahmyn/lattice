@@ -1,0 +1,12 @@
+{
+  "contract": "lattice.prepare/1",
+  "commit": "<head>",
+  "branch": "decision/brd.x-v1",
+  "base": "main",
+  "files": [
+    "lattice/decisions/approvals/brd.x-v1.yaml"
+  ],
+  "packet_hash": "sha256:0be88eb2a8d17a1f059f94b5ed84a1ad9725a7d2d0f1394ac09f922768076e4d",
+  "command": "gh pr create --head decision/brd.x-v1 --base main --title 'decision: brd.approve brd.x v1' --body 'Prepared by `lattice prepare`. Action: brd.approve. ID: brd.x. Version: 1. Packet: sha256:0be88eb2a8d17a1f059f94b5ed84a1ad9725a7d2d0f1394ac09f922768076e4d. This counts only when a human other than the author approves the current head and merges.'",
+  "note": "Push the branch first (git push origin decision/brd.x-v1). Recorded only when a human other than the author approves the merged head and CI reads the approver."
+}

@@ -286,6 +286,11 @@ type BRDApproval struct {
 	HumanReview HumanReviewState `yaml:"human_review,omitempty"`
 	ReviewedBy  string           `yaml:"reviewed_by,omitempty"`
 	ReviewedAt  string           `yaml:"reviewed_at,omitempty"`
+
+	// Local marks an approval or acknowledgement made by a deprecated local
+	// command (`lattice brd approve`, `brd ack`). It is a typed string, not a
+	// confirmation: the audit reads it as "prepared by a local session".
+	Local bool `yaml:"local,omitempty"`
 }
 
 // HumanReviewState is where a council decision stands with its human.
