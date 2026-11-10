@@ -14,6 +14,7 @@
     "code": "GAPS",
     "params": {
       "n": 2,
+      "unguarded": 12,
       "untraced": 1
     },
     "text": "2 gaps in the touched promises"
@@ -259,8 +260,10 @@
     "honesty": "fact",
     "code": "UNTRACED_LINES",
     "params": {
+      "guarded": 30,
       "new": 12,
       "of": 42,
+      "unguarded": 12,
       "untraced": 12
     },
     "text": "12 of 42 touched lines untraced",
@@ -274,7 +277,10 @@
         "reason": "file or module tag only: no enforcer span, checked reference or entry point reaches it"
       }
     ],
-    "out_of_reach": []
+    "out_of_reach": [],
+    "unguarded_lines": 12,
+    "guarded_lines": 30,
+    "unguarded": []
   },
   "waivers": [
     {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm"
+	"github.com/salahmyn/lattice/pkg/lattice/coverage"
 	"github.com/salahmyn/lattice/pkg/lattice/impact"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
@@ -460,6 +461,96 @@ func TestFileTagOnlyIsUntraced(t *testing.T) {
 	}
 }
 
+// A change that touches a function an entry point reaches and no promise
+// guards is traced but unguarded: UNPROVEN with a reason that names the
+// lines, never ASSURED and never NOTHING_TOUCHED, and the merge rule is not
+// changed. A change touching no production line still reads NOTHING_TOUCHED,
+// and one touching only a promise's enforcer can still read ASSURED.
+// @verifies check:INV-9
+func TestReachedButUnguardedLinesAreUnproven(t *testing.T) {
+	p := "orders:INV-1"
+	base := auditOf("base", good(p, 1))
+	head := auditOf("head", good(p, 1))
+	kg := schema.KnowledgeGraph{
+		Symbols: []schema.GraphSymbol{
+			{FQN: "orders.Handle", File: "orders/handler.go", Feature: "orders", Reach: schema.ReachEntry},
+			{FQN: "orders.Guard", File: "orders/guard.go", Feature: "orders", Reach: schema.ReachEntry},
+		},
+		EntryPoints: []schema.EntryPoint{{ID: "POST /orders", Flow: []schema.FlowStep{{Feature: "orders"}}}},
+	}
+	handler := impact.ChangedSymbol{Symbol: "orders.Handle", Kind: "function", File: "orders/handler.go", Lines: "3-22",
+		Change: impact.ChangeModified, Feature: "orders"}
+	md := func(r Report) string {
+		var b bytes.Buffer
+		WriteMarkdown(&b, r)
+		return b.String()
+	}
+
+	in := scenario(&base, head, impact.Report{ChangedSymbols: []impact.ChangedSymbol{handler}})
+	in.KG = kg
+	rep := Compute(in)
+	if rep.Verdict.State != Unproven || rep.Verdict.Code != CodeUnguardedLines {
+		t.Fatalf("verdict %+v, want UNPROVEN %s", rep.Verdict, CodeUnguardedLines)
+	}
+	if !rep.MergeAllowed || rep.Merge.Code != CodeMergeOK {
+		t.Errorf("unguarded lines are reported, not blocking: merge %v %+v", rep.MergeAllowed, rep.Merge)
+	}
+	if !strings.Contains(rep.Verdict.Text, "20 production lines that no promise guards") {
+		t.Errorf("verdict text = %q", rep.Verdict.Text)
+	}
+	bs := rep.BlindSpot
+	if bs.UnguardedLines != 20 || bs.GuardedLines != 0 || len(bs.Untraced) != 0 || len(bs.Unguarded) != 1 ||
+		bs.Unguarded[0].Symbol != "orders.Handle" || bs.Unguarded[0].Count != 20 || !strings.Contains(bs.Unguarded[0].Reason, "entry point reaches it") {
+		t.Errorf("blind spot = %+v", bs)
+	}
+	if bs.State != "info" || strings.Contains(bs.Text, "no production line") || strings.Contains(rep.Verdict.Text, "no production line") {
+		t.Errorf("the text must not say no production line was touched: %q / %q", bs.Text, rep.Verdict.Text)
+	}
+	if m := md(rep); !strings.Contains(m, "not a refusal") || !strings.Contains(m, "reported, not blocking") ||
+		!strings.Contains(m, "`orders/handler.go:3-22` `orders.Handle` (unguarded)") || strings.Contains(m, "✅") {
+		t.Errorf("markdown:\n%s", m)
+	}
+
+	// A removed symbol that enforced nothing is unguarded too.
+	removed := impact.ChangedSymbol{Symbol: "orders.Legacy", Kind: "function", File: "orders/legacy.go", OldLines: "1-5", Change: impact.ChangeRemoved, Feature: "orders"}
+	in.Impact.ChangedSymbols = []impact.ChangedSymbol{removed}
+	if rep := Compute(in); rep.Verdict.Code != CodeUnguardedLines || rep.BlindSpot.UnguardedLines != 5 || !rep.MergeAllowed {
+		t.Errorf("removed unguarded symbol: %+v %+v", rep.Verdict, rep.BlindSpot)
+	}
+
+	// Only docs: no production line, ASSURED, NOTHING_TOUCHED.
+	in.Impact.ChangedSymbols = nil
+	in.Impact.ChangedFiles = []impact.FileChange{{Status: "M", OldPath: "docs/guide.md", NewPath: "docs/guide.md"}}
+	rep = Compute(in)
+	if rep.Verdict.State != Assured || rep.Verdict.Code != CodeNothingTouched || !rep.MergeAllowed ||
+		rep.BlindSpot.Text != "the change touches no production line" || rep.BlindSpot.UnguardedLines != 0 {
+		t.Errorf("docs only: %+v %+v", rep.Verdict, rep.BlindSpot)
+	}
+
+	// Only a promise's enforcer, every signal passing: ASSURED.
+	in.Impact = impact.Report{ChangedSymbols: []impact.ChangedSymbol{guardEdited(p)}}
+	rep = Compute(in)
+	if rep.Verdict.State != Assured || rep.Verdict.Code != CodeAllSignals || rep.BlindSpot.GuardedLines != 10 || rep.BlindSpot.UnguardedLines != 0 {
+		t.Errorf("enforcer only: %+v %+v", rep.Verdict, rep.BlindSpot)
+	}
+
+	// The enforcer and the handler: the handler keeps it at UNPROVEN.
+	in.Impact.ChangedSymbols = append(in.Impact.ChangedSymbols, handler)
+	rep = Compute(in)
+	if rep.Verdict.Code != CodeUnguardedLines || rep.BlindSpot.GuardedLines != 10 || rep.BlindSpot.UnguardedLines != 20 || !rep.MergeAllowed {
+		t.Errorf("enforcer and handler: %+v %+v", rep.Verdict, rep.BlindSpot)
+	}
+
+	// A checked reference guards a line: ASSURED, and not NOTHING_TOUCHED.
+	in.KG.BRDs = []schema.BRD{{ID: "brd.orders", SuccessCriteria: []schema.BRDCriterion{
+		{ID: "SC-1", DirectWire: true, EnforcedBy: []string{"orders.Handle"}}}}}
+	in.Impact.ChangedSymbols = []impact.ChangedSymbol{handler}
+	rep = Compute(in)
+	if rep.Verdict.State != Assured || rep.Verdict.Code != CodeAllSignals || rep.BlindSpot.GuardedLines != 20 {
+		t.Errorf("checked reference: %+v %+v", rep.Verdict, rep.BlindSpot)
+	}
+}
+
 // --- evidence provenance ---
 
 // Under --ci, evidence from a local run, or for another commit, is set aside
@@ -512,6 +603,87 @@ func TestCIRefusesEvidenceNotTiedToHead(t *testing.T) {
 	g, ok := gapOf(rep, "*", SigSuiteGreen)
 	if !ok || g.State != Unknown || g.Code != CodeEvidenceNotCI || rep.Verdict.State != Unproven {
 		t.Fatalf("suite gap = %+v verdict %s", g, rep.Verdict.State)
+	}
+}
+
+// In a local run too, evidence stamped with another commit is set aside: it
+// reads unknown (EVIDENCE_STALE), the verdict is not ASSURED, and a stale red
+// suite is not a fall. Evidence at head still counts. The snapshot side keeps
+// its own rule.
+// @verifies check:INV-8
+func TestStaleEvidenceIsSetAsideLocally(t *testing.T) {
+	dir := t.TempDir()
+	saveAll := func(commit string, outcome results.Outcome) {
+		t.Helper()
+		set := results.Set{Commit: commit, CIRun: results.LocalRun, Results: map[string]results.Outcome{"bookshop.TestGuard": outcome}}
+		if err := results.Save(dir, set); err != nil {
+			t.Fatal(err)
+		}
+		if err := coverage.Save(dir, coverage.Set{Commit: commit, CIRun: results.LocalRun}); err != nil {
+			t.Fatal(err)
+		}
+		bf := []byte(`{"commit":"` + commit + `","ci_run":"local"}`)
+		if err := os.WriteFile(filepath.Join(dir, ".cache", "results", "breaks.json"), bf, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	saveAll("old", results.Pass)
+	ev := Gather(dir, "head", false)
+	for name, it := range map[string]EvidenceItem{"results": ev.Results, "coverage": ev.Coverage, "breaks": ev.Breaks} {
+		if it.Counted || it.Code != CodeEvidenceStale || !strings.Contains(it.Text, "not HEAD head") {
+			t.Errorf("%s at another commit, local run: %+v", name, it)
+		}
+	}
+	if ev.Suite.Present {
+		t.Errorf("a stale suite must not read green: %+v", ev.Suite)
+	}
+	if !strings.Contains(ev.Results.Text, "results are for old") || !strings.Contains(ev.Results.Text, "re-run the tests and ingest") {
+		t.Errorf("results text = %q", ev.Results.Text)
+	}
+	src := ev.Apply(audit.Sources{Results: results.Load(dir)})
+	if len(src.Results.Results) != 0 {
+		t.Errorf("stale results still reach the audit: %+v", src.Results)
+	}
+
+	// The verdict: suite_green reads unknown (EVIDENCE_STALE), never ASSURED.
+	p := "bookshop:INV-1"
+	base := auditOf("base", good(p, 1))
+	in := scenario(&base, auditOf("head", good(p, 1)), impact.Report{ChangedSymbols: []impact.ChangedSymbol{guardEdited(p)}})
+	in.Evidence = ev
+	rep := Compute(in)
+	g, ok := gapOf(rep, "*", SigSuiteGreen)
+	if !ok || g.State != Unknown || g.Code != CodeEvidenceStale || rep.Verdict.State == Assured {
+		t.Fatalf("suite gap = %+v verdict %s", g, rep.Verdict.State)
+	}
+
+	// A stale red suite is a gap, never a fall.
+	saveAll("old", results.Fail)
+	in.Evidence = Gather(dir, "head", false)
+	if rep := Compute(in); rep.Verdict.State == Broken || hasWeakening(rep, CodeSuiteRed) {
+		t.Errorf("a stale red suite fell: %s %+v", rep.Verdict.State, rep.Weakenings)
+	}
+
+	// The snapshot side keeps its own rule: without --ci it counts the file.
+	if sev := GatherSnapshot(dir, "head", false); !sev.Results.Counted || !sev.Suite.Present {
+		t.Errorf("snapshot evidence: %+v", sev.Results)
+	}
+
+	// Evidence at head still counts in a local run.
+	saveAll("head", results.Pass)
+	ev = Gather(dir, "head", false)
+	if !ev.Results.Counted || !ev.Coverage.Counted || !ev.Breaks.Counted || !ev.Suite.Present || ev.Results.Code != "" {
+		t.Fatalf("evidence at head: %+v", ev)
+	}
+	in.Evidence = ev
+	if rep := Compute(in); rep.Verdict.State != Assured {
+		t.Errorf("evidence at head: verdict %s gaps %+v", rep.Verdict.State, rep.Gaps)
+	}
+
+	// An unstamped file cannot be tied to head either.
+	saveAll("", results.Pass)
+	if ev := Gather(dir, "head", false); ev.Results.Counted || ev.Results.Code != CodeEvidenceStale {
+		t.Errorf("unstamped results: %+v", ev.Results)
 	}
 }
 

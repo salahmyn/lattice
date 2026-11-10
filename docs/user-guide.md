@@ -1251,11 +1251,17 @@ lattice audit                 # summary by class, then one row per invariant
 lattice audit --json          # lattice.audit/1
 lattice audit --markdown      # for a PR comment or a report
 lattice audit --class fake --feature wallet
+lattice audit --promise wallet:INV-1          # one promise (repeat, or a comma list)
 ```
 
+`--promise`, `--feature` and `--class` only narrow what is printed; the audit
+is always computed over the whole workspace, so a row reads the same filtered
+or not. An unknown `--promise` id is a usage error (exit 2).
+
 The same rows are on the `/audit` page of `lattice serve`, filterable by class
-and feature; each fake opens to its verifiers, enforcers, the evidence behind
-the class and any reader's note. `GET /api/v1/audit` returns the JSON.
+and feature (and `?promise=`); each fake opens to its verifiers, enforcers, the
+evidence behind the class and any reader's note. `GET /api/v1/audit` returns
+the JSON, with the same filters; an unknown `promise` is a 400.
 
 ### Classes, in precedence order
 
@@ -1303,6 +1309,19 @@ with all verifiers run. A row's evidence lists the outcome of each enforcer, wit
 its unrun verifiers and failed tests. A `breaks.json` from before these fields
 reads as it always did.
 
+Each row also carries `enforcers`: every enforcer of the promise as
+`{symbol, file, line, outcome, reason}`, with `outcome` one of `killed`,
+`survived` (its break left every verifier green), `unknown` (no runner, a red
+baseline, or a survival while a verifier could not run) or `not_run` (no break
+run of it). It says *which* enforcer a class is about and never changes the
+class: one survived enforcer still makes the promise `fake` /
+`passes_when_broken`, even when the others were killed. When a promise has
+several enforcers, the reason of a row decided by breaks counts them and names
+the survivors, for example `1 of 3 enforcers survived: wallet.LimitPanel; 2
+killed: wallet.Cap, wallet.Check`. The text and Markdown output and the
+`/audit` page print one line per enforcer for fakes, partial runs, and rows
+whose enforcers' breaks disagree.
+
 ### Second readers
 
 `lattice/audit-notes.yaml` lists `{promise, reader, verdict, note}` entries,
@@ -1329,8 +1348,8 @@ lattice check --snapshot                      # save the audit of HEAD, for a ba
 | Verdict | Means | Merge |
 |---|---|---|
 | `BROKEN` | Something fell: a promise's class dropped to a known-bad class (`fake`, `unenforced`, `unverified`, `not_demonstrated`) against base; an enforcer or verifier was removed; a break killed at base survives at head; the suite is red; or the statement, tier or mapping of a confirmed promise was edited without its re-confirmation (see below) | Never |
-| `UNPROVEN` | Nothing fell, but a touched promise is unconfirmed, not exercised, not break-tested where its tier needs it, or unknown, or touched lines are untraced. It is never drawn as a pass: no check mark, and the comment says so | Only if the merge rule holds |
-| `ASSURED` | Every touched line is traced, every touched promise has the signals its tier needs, and nothing fell | Yes |
+| `UNPROVEN` | Nothing fell, but a touched promise is unconfirmed, not exercised, not break-tested where its tier needs it, or unknown, or touched lines are untraced, or touched production lines have no promise guarding them (`UNGUARDED_LINES`). It is never drawn as a pass: no check mark, and the comment says so | Only if the merge rule holds |
+| `ASSURED` | Every touched production line is guarded by a promise (or none is touched), every touched promise has the signals its tier needs, and nothing fell. `NOTHING_TOUCHED` means the change touches no promise and no production line at all | Yes |
 
 **Editing a confirmed promise.** The edit voids the confirmation. To keep the change mergeable, put the re-confirmation in the same pull request: run `lattice prepare brd approve <id> --version <N>` (or `prepare promise confirm`) on the pull request's branch, then `git merge --ff-only` the decision branch it prints, so its decision file rides with the edit. That makes the promise's `confirmed` gap read *pending*. A pending confirmation does not block the merge, tier 3 included, because the merge needs the human approval that confirms it; `lattice confirm` records it once the pull request merges. Without the decision file the edit reads `BROKEN` (`CONFIRMATION_VOIDED`).
 
@@ -1353,6 +1372,21 @@ criterion's `enforced_by`), or an entry point of its feature reaches it. A
 file-level `@module-feature` tag alone never counts. The rest goes in the blind
 spot, with the promises a human marked out of reach, and keeps the verdict at
 `UNPROVEN`. Lines are counted by the touched symbol's extent, an upper bound.
+
+Traced is not guarded. A line is **guarded** only when a promise covers it: an
+enforcer span or a checked reference, the lines `lattice impact` attributes to a
+promise. A touched line that an entry point reaches, but that no promise guards,
+is traced and **unguarded**; so is a removed symbol that enforced nothing. Such a
+change reads `UNPROVEN` (`UNGUARDED_LINES`, "touches N production lines that no
+promise guards"), never `ASSURED`, because nothing checks those lines. Unguarded
+lines are reported, not blocking: they never change `merge_allowed`, and the PR
+comment says so, so an allowed `UNPROVEN` is not a refusal. To make such a
+change read `ASSURED`, anchor a promise on the code (`@enforces`) and verify it.
+
+`lattice.check/1` carries the counts in `blind_spot`: `unguarded_lines` (every
+touched production line no promise guards, untraced ones included),
+`guarded_lines`, and `unguarded`, the per-symbol list of unguarded lines that are
+not already in `untraced` (reached only by an entry point, or removed).
 
 ### The base audit, and how CI gets it
 
@@ -1377,9 +1411,26 @@ of missing data, and the merge rule is not met.
 
 `lattice results ingest`, coverage ingest and `lattice break` stamp their files
 with the head commit and a `ci_run` (from `GITHUB_RUN_ID`, `CI_PIPELINE_ID` and
-similar, else `local`). With `--ci`, evidence whose commit is not `HEAD` or whose
-`ci_run` is `local` is set aside and reads `unknown` (`EVIDENCE_NOT_CI`). Only
-CI's verdict counts; a local run is advice.
+similar, else `local`).
+
+- In every run, local included, evidence whose commit is not `HEAD` (or that
+  carries no commit) is set aside and reads `unknown` (`EVIDENCE_STALE`, "results
+  are for <sha>, not HEAD <sha>: re-run the tests and ingest"). Old passes never
+  count, so stale evidence can never read `ASSURED`; and an old red result is not
+  a fall either: stale evidence is a gap (`UNPROVEN`), never `BROKEN`. After a
+  failed `results ingest`, the previous file is still on disk; this rule is what
+  keeps it out of the verdict.
+- With `--ci`, evidence must also come from a CI run: a file whose `ci_run` is
+  `local`, or whose commit is not `HEAD`, reads `unknown` (`EVIDENCE_NOT_CI`).
+- The stamp is a commit, not a tree. Evidence ingested at `HEAD` still counts
+  while the working tree has uncommitted changes, because the stamp cannot tell
+  whether the run saw those edits. Re-run and ingest before you trust a local
+  verdict on a dirty tree.
+- The base audit snapshot (`lattice check --snapshot`, and the snapshot a check
+  of a clean tree saves) keeps its own rule: only `--ci` sets evidence aside
+  there.
+
+Only CI's verdict counts; a local run is advice.
 
 ### Exit codes
 
@@ -1489,6 +1540,32 @@ never committed), with `{id, version, action, state, approver_login, pr,
 merged_sha, verified_at}` per decision. `lattice audit` reads the `confirmed`
 signal from that file only. Set branch protection to require a current review;
 `confirm` does not rely on it, but it keeps the platform's own state in step.
+
+The file is stamped with what produced it:
+
+```json
+"stamp": { "commit": "cad25d1...", "ci_run": "4812", "platform": "github",
+           "repository": "acme/shop", "digest": "sha256:..." }
+```
+
+`ci_run` is the CI run id (`GITHUB_RUN_ID`, `CI_PIPELINE_ID`, ..., the same one
+`results ingest` and `break` record) or `local`. `digest` covers the records and
+the other stamp fields. The stamp is provenance, not a signature: there is no
+secret, so it shows an edited or hand-written file for what it is rather than
+proving who wrote it. Every reader (the audit's `confirmed` signal, `validate`,
+`/api/v2`) takes a verdict only from a file whose stamp is intact:
+
+| The file | Reads |
+|---|---|
+| has no stamp (hand-written, or written before v0.15.1) | `unknown`, `CONFIRM_UNSTAMPED` |
+| has a digest that does not match its records, commit or `ci_run` | `unknown`, `CONFIRM_TAMPERED` |
+| is tracked by git (someone committed it) | `unknown`, `CONFIRM_TRACKED` |
+| is stamped by a local run | `human (local, not CI)` in a local audit or check |
+| under `lattice check --ci`: is local, or of another commit than head | `unknown`, `EVIDENCE_NOT_CI` |
+
+`confirm` reuses a previous file's verdicts only when its stamp is intact, and a
+CI run never reuses a local file's verdicts. Keep `lattice/.cache/` in
+`.gitignore`; `lattice init` adds it when it creates the `.gitignore`.
 
 `lattice validate` reads the same file: a machine-written draft BRD (`llm_from_code`
 or agent-authored) whose current version has a confirmed `approve` or `ack` there

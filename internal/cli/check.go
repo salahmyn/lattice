@@ -35,7 +35,8 @@ func newCheckCommand(io *IO) *cobra.Command {
 		Short: "One verdict for a change: BROKEN, UNPROVEN or ASSURED",
 		Long: `Judges the change from merge-base(<rev>, HEAD) to the working tree and prints
 one page: the verdict, one row per touched promise with its signals, the gaps
-against the base, and the blind spot (touched lines no promise covers).
+against the base, and the blind spot (touched lines no promise covers or
+guards).
 
 It finds the touched promises and lines with 'lattice impact', and the signals
 (traced, confirmed, live, exercised, break_tested) with 'lattice audit' at head.
@@ -46,9 +47,10 @@ It finds the touched promises and lines with 'lattice impact', and the signals
             mapping was edited (the edit voids the confirmation).
   UNPROVEN  nothing fell, but a touched promise is unconfirmed, not exercised,
             not break-tested where its tier needs it, unknown, or touched lines
-            are untraced. It is not a pass.
-  ASSURED   every touched line is traced and every touched promise has the
-            signals its tier needs.
+            are untraced, or no promise guards them (UNGUARDED_LINES: an entry
+            point reaches them, but no enforcer covers them). It is not a pass.
+  ASSURED   every touched production line is guarded by a promise (or none is
+            touched) and every touched promise has the signals its tier needs.
 
 Tier defaults: tier 1 needs exercised or break_tested; tier 2 and 3 need
 break_tested; tier 3 always needs ASSURED.
@@ -56,15 +58,24 @@ break_tested; tier 3 always needs ASSURED.
 merge_allowed is true for ASSURED, and for UNPROVEN only when no (promise,
 signal) pair has a gap it did not have at base, the new untraced lines did not
 rise, and no tier-3 promise is involved. A waiver never removes a gap.
+Unguarded lines are reported, not blocking: they never change merge_allowed.
 
 The base audit is lattice/.cache/audit/<merge-base sha>.json, written by
 'lattice check' (or 'lattice check --snapshot') on that commit; CI restores it
 from a cache or artifact. With none, evidence is not compared with base: the
 verdict reads UNPROVEN, never BROKEN, and the merge rule is not met.
 
+Evidence (results, coverage, breaks) stamped with a commit that is not HEAD
+is set aside in every run, local included: it reads unknown (EVIDENCE_STALE),
+never a pass and never a fall. Re-run the tests and ingest at HEAD. Evidence
+ingested at HEAD still counts when the working tree has uncommitted changes:
+the stamp is a commit, not a tree.
+
 --ci counts only evidence stamped with the head commit and a CI run (the
 GITHUB_RUN_ID or CI_PIPELINE_ID that 'results ingest' and 'break' record);
-anything else reads unknown (EVIDENCE_NOT_CI). Only CI's verdict counts.
+anything else reads unknown (EVIDENCE_NOT_CI). That includes confirm.json:
+under --ci a confirm file of a local run or of another commit confirms
+nothing. Only CI's verdict counts.
 
 Exit codes: 0 for ASSURED or an allowed UNPROVEN; 1 for BROKEN or a
 disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
@@ -96,8 +107,12 @@ disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
 					return usageError(io, "GIT_FAILED", err.Error())
 				}
 				dirty, _ := gitDirty(filepath.Dir(ws.LatticeDir))
-				ev := check.Gather(ws.LatticeDir, head, ci)
-				headAudit := audit.Compute(ev.Apply(audit.Collect(ws.LatticeDir, kg, dirty)))
+				ev := check.GatherSnapshot(ws.LatticeDir, head, ci)
+				src := audit.Collect(ws.LatticeDir, kg, dirty)
+				if ci {
+					src.Confirm = src.Confirm.ForCI(head)
+				}
+				headAudit := audit.Compute(ev.Apply(src))
 				saved, serr := check.SaveSnapshot(ws.LatticeDir, headAudit)
 				if serr != nil {
 					return io.fail("SNAPSHOT_FAILED", serr.Error(), nil)

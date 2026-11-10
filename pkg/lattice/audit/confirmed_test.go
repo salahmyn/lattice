@@ -1,10 +1,14 @@
 package audit
 
 import (
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/salahmyn/lattice/pkg/lattice/confirm/stamp"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
@@ -122,4 +126,123 @@ func TestLoadConfirm(t *testing.T) {
 	if src := Collect(dir, schema.KnowledgeGraph{}, false); src.Confirm == nil {
 		t.Error("Collect must carry confirm.json")
 	}
+}
+
+// confirm.json is read as the record of a run only while its stamp is intact:
+// a hand-written file with no stamp, a stamped file with a verdict edited, or
+// a file git tracks reads unknown, never human. A local run's file still
+// shows, marked local; under --ci a local or other-commit file reads unknown.
+// @verifies confirm:INV-6
+func TestConfirmJSONProvenance(t *testing.T) {
+	b := brdFor("b", schema.BRDDraft, 2, nil)
+	prepared := []ConfirmRecord{{ID: "b", Version: 2, Action: "brd.approve", State: "pending"}}
+	approved := []ConfirmRecord{{ID: "b", Version: 2, Action: "brd.approve", State: "confirmed", ApproverLogin: "ana", PR: 7}}
+	sealed := func(ciRun string, recs []ConfirmRecord) *stamp.Stamp {
+		st, err := stamp.Seal(stamp.Stamp{Commit: "h1", CIRun: ciRun, Platform: "github"}, recs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &st
+	}
+	write := func(dir string, st *stamp.Stamp, recs []ConfirmRecord) {
+		t.Helper()
+		body, err := json.MarshalIndent(map[string]interface{}{"contract": confirmSchema, "commit": "h1", "stamp": st, "records": recs}, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := filepath.Join(dir, ".cache", "confirm.json")
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	state := func(cd *ConfirmData) Signal {
+		t.Helper()
+		return confirmedOf(t, []schema.BRD{b}, cd).Signals.Confirmed
+	}
+
+	t.Run("hand-written, no stamp", func(t *testing.T) {
+		dir := t.TempDir()
+		write(dir, nil, approved)
+		cd := LoadConfirm(dir)
+		if cd == nil || cd.SetAside != stamp.CodeUnstamped {
+			t.Fatalf("want %s, got %+v", stamp.CodeUnstamped, cd)
+		}
+		if s := state(cd); s.Value != ConfirmedUnknown || !strings.Contains(s.Detail, stamp.CodeUnstamped) {
+			t.Errorf("an unstamped file must read unknown: %+v", s)
+		}
+	})
+	t.Run("stamped, one verdict edited", func(t *testing.T) {
+		dir := t.TempDir()
+		write(dir, sealed("4812", prepared), approved) // the digest is of the pending verdict
+		cd := LoadConfirm(dir)
+		if cd == nil || cd.SetAside != stamp.CodeTampered {
+			t.Fatalf("want %s, got %+v", stamp.CodeTampered, cd)
+		}
+		if s := state(cd); s.Value != ConfirmedUnknown {
+			t.Errorf("an edited file must read unknown: %+v", s)
+		}
+	})
+	t.Run("stamped, ci_run edited", func(t *testing.T) {
+		dir := t.TempDir()
+		st := sealed(stamp.LocalRun, approved)
+		st.CIRun = "4812"
+		write(dir, st, approved)
+		if cd := LoadConfirm(dir); cd == nil || cd.SetAside != stamp.CodeTampered {
+			t.Fatalf("a local stamp relabelled as CI must read tampered: %+v", cd)
+		}
+	})
+	t.Run("valid CI file", func(t *testing.T) {
+		dir := t.TempDir()
+		write(dir, sealed("4812", approved), approved)
+		cd := LoadConfirm(dir)
+		if cd == nil || cd.SetAside != "" || cd.Local() {
+			t.Fatalf("an intact CI file is read: %+v", cd)
+		}
+		if s := state(cd); s.Value != ConfirmedHuman || strings.Contains(s.Detail, "local") {
+			t.Errorf("an intact CI file confirms: %+v", s)
+		}
+		if s := state(cd.ForCI("h1")); s.Value != ConfirmedHuman {
+			t.Errorf("under --ci, a CI file at head confirms: %+v", s)
+		}
+		if s := state(cd.ForCI("h2")); s.Value != ConfirmedUnknown || !strings.Contains(s.Detail, stamp.CodeNotCI) {
+			t.Errorf("under --ci, a file of another commit reads unknown: %+v", s)
+		}
+	})
+	t.Run("local file", func(t *testing.T) {
+		dir := t.TempDir()
+		write(dir, sealed(stamp.LocalRun, approved), approved)
+		cd := LoadConfirm(dir)
+		if s := state(cd); s.Value != ConfirmedHuman || !strings.Contains(s.Detail, "human (local, not CI)") {
+			t.Errorf("a local file shows, marked local: %+v", s)
+		}
+		ci := cd.ForCI("h1")
+		if s := state(ci); s.Value != ConfirmedUnknown || ci.SetAside != stamp.CodeNotCI {
+			t.Errorf("under --ci, a local file reads unknown: %+v", s)
+		}
+	})
+	t.Run("tracked by git", func(t *testing.T) {
+		if _, err := exec.LookPath("git"); err != nil {
+			t.Skip("git not installed")
+		}
+		root := t.TempDir()
+		dir := filepath.Join(root, "lattice")
+		write(dir, sealed("4812", approved), approved)
+		for _, args := range [][]string{{"init", "-q"}, {"add", "-f", "lattice/.cache/confirm.json"}} {
+			cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+			cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("git %v: %v\n%s", args, err, out)
+			}
+		}
+		cd := LoadConfirm(dir)
+		if cd == nil || cd.SetAside != stamp.CodeTracked {
+			t.Fatalf("want %s, got %+v", stamp.CodeTracked, cd)
+		}
+		if s := state(cd); s.Value != ConfirmedUnknown {
+			t.Errorf("a committed confirm.json must read unknown: %+v", s)
+		}
+	})
 }

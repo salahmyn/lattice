@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -409,5 +410,186 @@ func TestReportShapeAndFilter(t *testing.T) {
 		if !strings.Contains(sb.String(), want) {
 			t.Errorf("render lacks %q", want)
 		}
+	}
+}
+
+// threeEnforcers is one promise enforced by two functions and one UI
+// component, verified by one test: the shape where one enforcer has no test
+// that notices it while the other two do.
+func threeEnforcers() schema.KnowledgeGraph {
+	kg := graph(inv("INV-1"), nil, map[string][]string{"INV-1": {"f.TestOne"}})
+	for _, s := range []schema.GraphSymbol{
+		{FQN: "f.CapAmount", File: "f/cap.go", Line: 10},
+		{FQN: "f.CheckLimit", File: "f/limit.go", Line: 20},
+		{FQN: "f.LimitPanel", File: "web/LimitPanel.tsx", Line: 30},
+	} {
+		s.Feature, s.EnforcesInvariants = "f", []string{"INV-1"}
+		kg.Symbols = append(kg.Symbols, s)
+	}
+	return kg
+}
+
+// With three enforcers and one survived break, the row is still fake /
+// passes_when_broken, lists the three with their outcomes, and its reason
+// names the one that survived and counts the rest.
+// @verifies audit:INV-6
+// @verifies audit:INV-3
+func TestPerEnforcerBreakdown(t *testing.T) {
+	kg := threeEnforcers()
+	set := pass("f.TestOne")
+	r := Compute(Sources{KG: kg, Results: set, Breaks: breaks("abc123",
+		run("f:INV-1", "f.CapAmount", "killed"),
+		run("f:INV-1", "f.CheckLimit", "killed"),
+		run("f:INV-1", "f.LimitPanel", "survived"))}).Rows[0]
+
+	if r.Class != ClassFake || r.Kind != KindPassesWhenBroken {
+		t.Fatalf("class = %s/%s, want fake/passes_when_broken (%s)", r.Class, r.Kind, r.Reason)
+	}
+	want := map[string][3]string{
+		"f.CapAmount":  {OutcomeKilled, "f/cap.go", "10"},
+		"f.CheckLimit": {OutcomeKilled, "f/limit.go", "20"},
+		"f.LimitPanel": {OutcomeSurvived, "web/LimitPanel.tsx", "30"},
+	}
+	if len(r.Enforcers) != 3 {
+		t.Fatalf("enforcers = %+v, want 3", r.Enforcers)
+	}
+	for _, e := range r.Enforcers {
+		w, ok := want[e.Symbol]
+		if !ok || e.Outcome != w[0] || e.File != w[1] || strconv.Itoa(e.Line) != w[2] || e.Reason == "" {
+			t.Errorf("enforcer %+v, want %v", e, w)
+		}
+	}
+	for _, s := range []string{"1 of 3 enforcers survived: f.LimitPanel", "2 killed: f.CapAmount, f.CheckLimit"} {
+		if !strings.Contains(r.Reason, s) {
+			t.Errorf("reason %q lacks %q", r.Reason, s)
+		}
+	}
+	if !r.ShowsEnforcers() {
+		t.Error("a fake with break runs shows its enforcers")
+	}
+
+	// Every outcome: a partial survival reads unknown, a missing run not_run,
+	// and a run of a symbol the graph does not list is kept.
+	partial := run("f:INV-1", "f.CheckLimit", "survived")
+	partial.NotRunVerifiers = []string{"f.TestJourney"}
+	m := Compute(Sources{KG: kg, Results: set, Breaks: breaks("abc123",
+		run("f:INV-1", "f.CapAmount", "killed"), partial, run("f:INV-1", "f.Gone", "unknown"))}).Rows[0]
+	got := map[string]string{}
+	for _, e := range m.Enforcers {
+		got[e.Symbol] = e.Outcome
+	}
+	wantOut := map[string]string{"f.CapAmount": OutcomeKilled, "f.CheckLimit": OutcomeUnknown, "f.LimitPanel": OutcomeNotRun, "f.Gone": OutcomeUnknown}
+	if len(got) != len(wantOut) {
+		t.Errorf("enforcers = %+v", m.Enforcers)
+	}
+	for s, o := range wantOut {
+		if got[s] != o {
+			t.Errorf("%s = %q, want %q", s, got[s], o)
+		}
+	}
+	if m.Class != ClassBreakTested || !strings.Contains(m.Reason, "1 of 4 enforcers killed: f.CapAmount") ||
+		!strings.Contains(m.Reason, "1 never broken (no break run): f.LimitPanel") || !m.ShowsEnforcers() {
+		t.Errorf("mixed: %s %q", m.Class, m.Reason)
+	}
+
+	// A single enforcer: the reason is as before, the list has one entry.
+	one := Compute(Sources{KG: graph(inv("INV-1"), []string{"INV-1"}, map[string][]string{"INV-1": {"f.TestOne"}}),
+		Results: set, Breaks: breaks("abc123", run("f:INV-1", "f.EnfINV-1", "survived"))}).Rows[0]
+	if len(one.Enforcers) != 1 || one.Enforcers[0].Outcome != OutcomeSurvived || strings.Contains(one.Reason, "enforcers survived") {
+		t.Errorf("one enforcer: %+v %q", one.Enforcers, one.Reason)
+	}
+	// No break run at all: every enforcer not_run, and no breakdown printed.
+	none := Compute(Sources{KG: kg, Results: set}).Rows[0]
+	if len(none.Enforcers) != 3 || none.Enforcers[0].Outcome != OutcomeNotRun || none.ShowsEnforcers() {
+		t.Errorf("no runs: %+v", none.Enforcers)
+	}
+}
+
+// Text and Markdown print one line per enforcer for a fake and for a row
+// whose enforcers' breaks disagree.
+// @verifies audit:INV-6
+func TestRenderPerEnforcer(t *testing.T) {
+	kg := threeEnforcers()
+	rep := Compute(Sources{KG: kg, Results: pass("f.TestOne"), Breaks: breaks("abc123",
+		run("f:INV-1", "f.CapAmount", "killed"), run("f:INV-1", "f.CheckLimit", "killed"), run("f:INV-1", "f.LimitPanel", "survived"))})
+	var text, md strings.Builder
+	WriteText(&text, rep)
+	WriteMarkdown(&md, rep)
+	for _, want := range []string{"enforcer survived  f.LimitPanel (web/LimitPanel.tsx:30)", "enforcer killed    f.CapAmount (f/cap.go:10)"} {
+		if !strings.Contains(text.String(), want) {
+			t.Errorf("text lacks %q:\n%s", want, text.String())
+		}
+	}
+	for _, want := range []string{"- break of `f.LimitPanel` (web/LimitPanel.tsx:30): **survived**", "- break of `f.CheckLimit` (f/limit.go:20): **killed**"} {
+		if !strings.Contains(md.String(), want) {
+			t.Errorf("markdown lacks %q:\n%s", want, md.String())
+		}
+	}
+
+	mixed := Compute(Sources{KG: kg, Results: pass("f.TestOne"), Breaks: breaks("abc123", run("f:INV-1", "f.CapAmount", "killed"))})
+	md.Reset()
+	WriteMarkdown(&md, mixed)
+	if !strings.Contains(md.String(), "### Partial or mixed break runs") || !strings.Contains(md.String(), "**not_run**") {
+		t.Errorf("mixed markdown:\n%s", md.String())
+	}
+}
+
+// The promise filter keeps only the named rows and leaves each row as the
+// whole-workspace audit computed it; unknown ids are reported.
+// @verifies audit:INV-7
+func TestPromiseFilter(t *testing.T) {
+	kg := graph(inv("INV-1", "INV-2", "INV-3"), []string{"INV-1", "INV-2", "INV-3"},
+		map[string][]string{"INV-1": {"f.TestOne"}, "INV-2": {"f.TestTwo"}, "INV-3": {"f.TestThree"}})
+	full := Compute(Sources{KG: kg, Results: pass("f.TestOne", "f.TestTwo", "f.TestThree"),
+		Breaks: breaks("abc123", run("f:INV-2", "f.EnfINV-2", "survived"))})
+	f := Filter{Promises: []string{"f:INV-2"}}.Apply(full)
+	if len(f.Rows) != 1 || f.Rows[0].Promise != "f:INV-2" || f.Summary.Total != 1 || f.Summary.Fakes != 1 {
+		t.Fatalf("filter = %+v", f.Summary)
+	}
+	if f.Rows[0].Reason != rowOf(t, full, "f:INV-2").Reason || f.Rows[0].Class != ClassFake {
+		t.Errorf("a filtered row must be the full audit's row: %+v", f.Rows[0])
+	}
+	if two := (Filter{Promises: []string{"f:INV-1", "f:INV-3"}, Feature: "f"}).Apply(full); len(two.Rows) != 2 {
+		t.Errorf("two promises = %d rows", len(two.Rows))
+	}
+	if u := full.UnknownPromises([]string{"f:INV-2", "f:INV-9", "nope", "f:INV-9"}); len(u) != 2 || u[0] != "f:INV-9" || u[1] != "nope" {
+		t.Errorf("unknown = %v", u)
+	}
+}
+
+// The shape of lattice.audit/1 is frozen by a golden file. Fields may only be
+// added. Run with UPDATE_GOLDEN=1 to rewrite it after a deliberate change.
+// @verifies audit:INV-6
+func TestAuditContractGolden(t *testing.T) {
+	kg := threeEnforcers()
+	kg.Features[0].Invariants = append(kg.Features[0].Invariants, schema.Invariant{ID: "INV-2", Statement: "statement INV-2"})
+	kg.Symbols = append(kg.Symbols, schema.GraphSymbol{FQN: "f.Second", File: "f/second.go", Line: 4, Feature: "f",
+		EnforcesInvariants: []string{"INV-2"}, Reach: schema.ReachEntry})
+	kg.Tests = append(kg.Tests, schema.GraphSymbol{FQN: "f.TestTwo", File: "f_test.go", Feature: "f", IsTest: true, Verifies: []string{"INV-2"}})
+	killed := run("f:INV-2", "f.Second", "killed")
+	killed.FailedTests = []string{"f.TestTwo"}
+	rep := Compute(Sources{KG: kg, Results: pass("f.TestOne", "f.TestTwo"), Breaks: breaks("abc123",
+		run("f:INV-1", "f.CapAmount", "killed"), run("f:INV-1", "f.CheckLimit", "killed"),
+		run("f:INV-1", "f.LimitPanel", "survived"), killed)})
+	got, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = append(got, '\n')
+	golden := filepath.Join("testdata", "audit.golden.json")
+	if os.Getenv("UPDATE_GOLDEN") != "" {
+		if err := os.MkdirAll("testdata", 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(golden, got, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatalf("%v (run with UPDATE_GOLDEN=1)", err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("lattice.audit/1 differs from %s (UPDATE_GOLDEN=1 rewrites it):\n%s", golden, got)
 	}
 }

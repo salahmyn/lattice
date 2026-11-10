@@ -152,6 +152,10 @@ type Row struct {
 
 	Signals  Signals  `json:"signals"`
 	Evidence Evidence `json:"evidence"`
+	// Enforcers is every enforcer of the promise with what breaking it did,
+	// read from the break runs in Evidence.Breaks. It names the enforcer a
+	// class is about; it never changes the class.
+	Enforcers []EnforcerOutcome `json:"enforcers"`
 	// Notes are second readers' notes. They are shown and never change Class.
 	Notes []Note `json:"notes,omitempty"`
 }
@@ -379,6 +383,7 @@ func buildRow(ref, feature string, inv schema.Invariant, rr rtm.Row, src Sources
 	var bt Signal
 	bt, r.Evidence.Breaks = breakSignal(breaks[ref])
 	r.Signals.BreakTested = bt
+	r.Enforcers = enforcerOutcomes(r.Evidence.Enforcers, r.Evidence.Breaks)
 	r.Signals.Confirmed, r.Evidence.Approvals = confirmed(crit, src.Confirm)
 
 	classify(&r, rr, cov, len(ver) > 0)
@@ -537,16 +542,17 @@ func classify(r *Row, rr rtm.Row, cov coverageVerdict, hasVerifiers bool) {
 		return
 	case wired && bt.Value == "survived":
 		r.Class, r.Kind = ClassFake, KindPassesWhenBroken
-		r.Reason = "the verifiers passed with " + strings.Join(bt.Items, ", ") + " broken (" + bt.Method + "): they cannot tell the code is broken"
+		r.Reason = "the verifiers passed with " + strings.Join(bt.Items, ", ") + " broken (" + bt.Method + "): they cannot tell the code is broken" +
+			tally(r.Enforcers, OutcomeSurvived)
 		return
 	case wired && bt.Value == "killed" && !failing:
 		r.Class = ClassBreakTested
-		r.Reason = "breaking " + strings.Join(bt.Items, ", ") + " (" + bt.Method + ") made the verifiers fail"
+		r.Reason = "breaking " + strings.Join(bt.Items, ", ") + " (" + bt.Method + ") made the verifiers fail" + tally(r.Enforcers, OutcomeKilled)
 		return
 	case wired && bt.Value == "partial_run" && !failing:
 		r.Class, r.Kind = ClassUnknown, KindPartialRun
 		r.Reason = "breaking " + strings.Join(bt.Items, ", ") + " (" + bt.Method + ") left the verifiers green, but some could not run (" +
-			strings.Join(notRun(r.Evidence.Breaks), ", ") + "): the break says nothing about them (not a fake)"
+			strings.Join(notRun(r.Evidence.Breaks), ", ") + "): the break says nothing about them (not a fake)" + tally(r.Enforcers, OutcomeUnknown)
 		return
 	case rr.Status == rtm.StatusExercised:
 		r.Class = ClassExercised

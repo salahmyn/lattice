@@ -143,7 +143,11 @@ func (c *computation) suiteAssurance() Assurance {
 	s := c.in.Evidence.Suite
 	switch {
 	case !s.Present && !c.in.Evidence.Results.Counted:
-		return Assurance{State: Unknown, Honesty: Fact, Code: CodeEvidenceNotCI, Text: c.in.Evidence.Results.Text}
+		code := c.in.Evidence.Results.Code
+		if code == "" {
+			code = CodeEvidenceNotCI
+		}
+		return Assurance{State: Unknown, Honesty: Fact, Code: code, Text: c.in.Evidence.Results.Text}
 	case !s.Present:
 		return Assurance{State: Unknown, Honesty: Fact, Code: CodeNoResults, Text: "no test results ingested (lattice results ingest)"}
 	case s.Failed > 0:
@@ -432,24 +436,34 @@ func countOpen(gaps []Gap) int {
 	return n
 }
 
+// verdict reads the one answer. A touched production line no promise guards
+// keeps it at UNPROVEN, even when an entry point reaches the line: reached is
+// not checked. ASSURED needs every touched line guarded, or no production
+// line touched at all; NOTHING_TOUCHED says the second only when it is true.
+// @enforces check:INV-9
 func (c *computation) verdict(gaps []Gap, untraced []UntracedLine, oor []OutOfReach) Verdict {
 	open := countOpen(gaps)
+	unguarded := c.lines.unguardedLines()
 	switch {
 	case len(c.weak) > 0:
 		return Verdict{State: Broken, Code: CodeBroken, Params: map[string]interface{}{"n": len(c.weak)},
 			Text: plural(len(c.weak), "thing") + " fell: " + c.weak[0].Text}
 	case open > 0:
-		return Verdict{State: Unproven, Code: CodeGaps, Params: map[string]interface{}{"n": open, "untraced": len(untraced)},
+		return Verdict{State: Unproven, Code: CodeGaps, Params: map[string]interface{}{"n": open, "untraced": len(untraced), "unguarded": unguarded},
 			Text: plural(open, "gap") + " in the touched promises"}
 	case len(untraced) > 0 || len(oor) > 0:
-		return Verdict{State: Unproven, Code: CodeUntracedLines, Params: map[string]interface{}{"untraced": len(untraced), "out_of_reach": len(oor)},
+		return Verdict{State: Unproven, Code: CodeUntracedLines, Params: map[string]interface{}{"untraced": len(untraced), "out_of_reach": len(oor), "unguarded": unguarded},
 			Text: "touched code no promise covers, or promises marked out of reach"}
+	case unguarded > 0:
+		symbols := len(c.lines.unguarded)
+		return Verdict{State: Unproven, Code: CodeUnguardedLines, Params: map[string]interface{}{"unguarded": unguarded, "symbols": symbols},
+			Text: fmt.Sprintf("touches %s that no promise guards (%s): reported, not blocking", plural(unguarded, "production line"), plural(symbols, "symbol"))}
 	}
-	if len(c.touched) == 0 {
+	if len(c.touched) == 0 && c.lines.total == 0 {
 		return Verdict{State: Assured, Code: CodeNothingTouched, Text: "the change touches no promise and no production line"}
 	}
 	return Verdict{State: Assured, Code: CodeAllSignals, Params: map[string]interface{}{"promises": len(c.touched)},
-		Text: "every touched line is traced, every touched promise has the signals its tier needs, and nothing fell"}
+		Text: "every touched line is guarded by a promise, every touched promise has the signals its tier needs, and nothing fell"}
 }
 
 // listN joins the first n items and counts the rest.
@@ -522,6 +536,10 @@ func (c *computation) merge(v Verdict, gaps []Gap, newUntraced int, rows []Promi
 	case newUntraced > 0:
 		return false, MergeRule{Code: CodeUntracedRose, Params: map[string]interface{}{"new_untraced": newUntraced},
 			Text: fmt.Sprintf("%d new touched lines are untraced", newUntraced)}
+	}
+	if v.Code == CodeUnguardedLines {
+		return true, MergeRule{Code: CodeMergeOK, Params: map[string]interface{}{"unguarded": v.Params["unguarded"]},
+			Text: "UNPROVEN only because touched lines no promise guards: they are reported, not blocking, and the merge rule allows it (not a pass)"}
 	}
 	return true, MergeRule{Code: CodeMergeOK, Text: "UNPROVEN, and no gap is new: the merge rule allows it (not a pass)"}
 }

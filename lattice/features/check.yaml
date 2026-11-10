@@ -25,3 +25,7 @@ invariants:
     statement: A change that edits a confirmed promise and carries a decision file approving, acking or confirming it at its new version is not a weakening; its confirmed gap is pending on the change's own human approval and does not block the merge, tier 3 included. Without the decision file the edit voids the confirmation.
   - id: INV-7
     statement: Missing evidence is never a fall. A promise whose head row reads not_demonstrated only because no result is ingested (no_results) is a gap that reads UNPROVEN, never BROKEN; a red result still falls.
+  - id: INV-8
+    statement: Evidence (results, coverage, breaks) stamped with a commit that is not HEAD is set aside in every run, local included, and reads unknown (EVIDENCE_STALE); it never counts as a pass, never reads ASSURED and never makes a fall. The base audit snapshot keeps its own rule.
+  - id: INV-9
+    statement: A touched production line that no promise guards (no enforcer span or checked reference covers it), including one only an entry point reaches, keeps the verdict at UNPROVEN (UNGUARDED_LINES) and is counted in the blind spot; it is reported and does not change merge_allowed. NOTHING_TOUCHED reads only when the change touches no promise and no production line.

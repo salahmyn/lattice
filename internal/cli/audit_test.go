@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -159,5 +160,45 @@ func TestAuditReadsBreaksAndNotes(t *testing.T) {
 				t.Errorf("%v output lacks %q:\n%s", c.args, w, out.String())
 			}
 		}
+	}
+}
+
+// --promise narrows the output to one promise (or a comma list) and leaves the
+// row as the whole-workspace audit computed it; an unknown id is a usage
+// error that exits 2 and names the id.
+// @verifies audit:INV-7
+func TestAuditPromiseFilter(t *testing.T) {
+	repo := copyTree(t, "../../examples/coverage-prototype")
+	abs := func(p string) string { return filepath.Join(repo, p) }
+	if out, err := run(t, repo, newResultsCommand, "ingest", abs("coverage/junit.xml"), abs("coverage/all.lcov"),
+		"--per-test", abs("coverage/per-test")); err != nil {
+		t.Fatalf("ingest: %v\n%s", err, out)
+	}
+	full := auditJSON(t, repo)
+
+	one := auditJSON(t, repo, "--promise", "wallet:INV-1")
+	if len(one.Rows) != 1 || one.Rows[0].Promise != "wallet:INV-1" || one.Summary.Total != 1 {
+		t.Fatalf("--promise wallet:INV-1 = %d rows %+v", len(one.Rows), one.Summary)
+	}
+	if want := auditRow(t, full, "wallet:INV-1"); one.Rows[0].Class != want.Class || one.Rows[0].Reason != want.Reason {
+		t.Errorf("the filtered row differs from the full audit's: %s/%s vs %s/%s", one.Rows[0].Class, one.Rows[0].Reason, want.Class, want.Reason)
+	}
+	if two := auditJSON(t, repo, "--promise", "wallet:INV-1,fees:INV-1"); len(two.Rows) != 2 {
+		t.Errorf("comma list = %d rows", len(two.Rows))
+	}
+	if two := auditJSON(t, repo, "--promise", "wallet:INV-1", "--promise", "wallet:INV-2"); len(two.Rows) != 2 {
+		t.Errorf("repeated flag = %d rows", len(two.Rows))
+	}
+	if f := auditJSON(t, repo, "--promise", "wallet:INV-1", "--feature", "fees"); len(f.Rows) != 0 {
+		t.Errorf("--promise and --feature combine: %d rows", len(f.Rows))
+	}
+
+	out, err := run(t, repo, newAuditCommand, "--promise", "wallet:INV-9")
+	var ec exitCodeError
+	if !errors.As(err, &ec) || ec.code != 2 {
+		t.Fatalf("unknown promise: err %v, want exit 2\n%s", err, out)
+	}
+	if !strings.Contains(out, "wallet:INV-9") || !strings.Contains(out, "AUDIT_UNKNOWN_PROMISE") {
+		t.Errorf("the usage error should name the id: %s", out)
 	}
 }

@@ -6,8 +6,9 @@
 // of its Input, so the verdict can be tested without git or a run.
 //
 // The floor: the kernel computes facts; unknown is never a pass; only CI's
-// verdict counts (`--ci` refuses evidence that is not tied to the head
-// commit and a CI run); a waiver is shown and never counted as proof.
+// verdict counts (evidence for another commit is set aside in every run, and
+// `--ci` also refuses evidence that is not from a CI run); a waiver is shown
+// and never counted as proof.
 package check
 
 // @module-feature check
@@ -55,12 +56,14 @@ const (
 	CodeAllSignals       = "ALL_SIGNALS"
 	CodeNothingTouched   = "NOTHING_TOUCHED"
 	CodeUntracedLines    = "UNTRACED_LINES"
+	CodeUnguardedLines   = "UNGUARDED_LINES"
 	CodeNoBaseAudit      = "NO_BASE_AUDIT"
 	CodeNewGap           = "NEW_GAP"
 	CodeUntracedRose     = "UNTRACED_ROSE"
 	CodeTier3            = "TIER3_INVOLVED"
 	CodeMergeOK          = "MERGE_OK"
 	CodeEvidenceNotCI    = "EVIDENCE_NOT_CI"
+	CodeEvidenceStale    = "EVIDENCE_STALE"
 	CodeNoResults        = "NO_RESULTS"
 	CodeSuiteRed         = "SUITE_RED"
 	CodeEnforcerRemoved  = "ENFORCER_REMOVED"
@@ -236,6 +239,18 @@ type BlindSpot struct {
 	// Untraced lists touched lines no promise covers, by file and symbol.
 	Untraced   []UntracedLine `json:"untraced"`
 	OutOfReach []OutOfReach   `json:"out_of_reach"`
+	// UnguardedLines counts the touched production lines no promise guards
+	// (no enforcer span or checked reference covers them): the untraced
+	// lines, plus the lines an entry point reaches (so they are traced) and
+	// the lines of removed symbols that enforced nothing. They keep the
+	// verdict at UNPROVEN and never fail the merge rule by themselves.
+	UnguardedLines int `json:"unguarded_lines"`
+	// GuardedLines counts the touched production lines a promise guards.
+	GuardedLines int `json:"guarded_lines"`
+	// Unguarded lists the unguarded symbols that are not in Untraced: traced
+	// by an entry point only, or removed. With Untraced it covers every
+	// unguarded line.
+	Unguarded []UntracedLine `json:"unguarded"`
 }
 
 // Waiver is a human-written exception from lattice/waivers.yaml. It is shown

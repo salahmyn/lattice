@@ -105,6 +105,15 @@
         {{else}}<p class="text-slate-500">none anchored</p>{{end}}
       </div>
 
+      {{if .ShowsEnforcers}}
+      <div class="audit-enforcers">
+        <h3 class="uppercase tracking-wide text-slate-500 mb-1">What breaking each enforcer did</h3>
+        {{range .Enforcers}}
+        <p class="font-mono text-slate-800"><span class="{{if eq .Outcome "survived"}}text-rose-700 font-medium{{else}}text-slate-500{{end}}">{{.Outcome}}</span> {{.Symbol}} <span class="text-slate-500">{{if .File}}{{.File}}{{if .Line}}:{{.Line}}{{end}} {{end}}{{.Reason}}</span></p>
+        {{end}}
+      </div>
+      {{end}}
+
       {{if .Evidence.Breaks}}
       <div>
         <h3 class="uppercase tracking-wide text-slate-500 mb-1">Break runs</h3>

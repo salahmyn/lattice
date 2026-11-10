@@ -59,5 +59,10 @@
         "text": "prepared on decision/brd.y-v1.return, not merged to the default branch"
       }
     }
-  ]
+  ],
+  "stamp": {
+    "commit": "deadbeef",
+    "ci_run": "local",
+    "digest": "sha256:5e279d540d55806a9349613734a069b4b5de6dfe5d571447c86aa6ce2efb8e48"
+  }
 }
