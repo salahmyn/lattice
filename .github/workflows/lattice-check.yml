@@ -1,0 +1,143 @@
+name: Lattice check
+
+# Lattice runs its own check on itself (docs/rnd/0008, user guide section 4k).
+#
+# REPORT ONLY. Nothing here fails a build on a verdict. Making `lattice check`
+# a required status is the owner's decision (which tier blocks, and when): to do
+# it, drop the exit-code tolerance in scripts/ci-lattice-check.sh (`check`) and
+# mark the `check` job required in branch protection.
+#
+# Why a workflow of its own and not a job in ci.yml: release.yml calls ci.yml
+# and grants it `contents: write` only, and a called workflow may not ask for
+# more (`actions: read`, `pull-requests: write`). Keeping this here leaves ci.yml
+# and the release path untouched.
+#
+#   push to master   test suite -> results ingest -> break -> audit snapshot
+#                    -> artifact lattice-audit-<sha> (lattice/.cache/audit/<sha>.json)
+#   pull request     fetch the merge base's artifact (if any) -> check --base
+#                    --ci --markdown -> job summary + one sticky PR comment
+#
+# Break (about four minutes on this repo) runs on master and on pull requests
+# that touch Go; other pull requests get the check without it.
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+concurrency:
+  group: lattice-check-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read # find and download the base commit's audit artifact
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      LATTICE_BIN: dist/lattice
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the base is merge-base(origin/<base>, HEAD).
+          fetch-depth: 0
+          # The pull request's own head, not the synthetic merge commit, so
+          # HEAD is the commit the evidence is stamped with and the author sees.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod # caches the module and build caches, keyed on go.sum
+      - run: go build -o dist/lattice ./cmd/lattice
+      - name: Decide whether the evidence runs
+        id: scope
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            echo "go=$(scripts/ci-lattice-check.sh touches-go "origin/$BASE_REF")" >>"$GITHUB_OUTPUT"
+          else
+            echo "go=true" >>"$GITHUB_OUTPUT"
+          fi
+      - name: Install gotestsum
+        if: steps.scope.outputs.go == 'true'
+        run: go install gotest.tools/gotestsum@v1.12.3
+      # A red suite is recorded as evidence (the check reads it as BROKEN) and
+      # is gated by the `test` job in ci.yml, so it does not stop this one.
+      - name: Test suite, as JUnit
+        if: steps.scope.outputs.go == 'true'
+        continue-on-error: true
+        run: gotestsum --junitfile "$RUNNER_TEMP/unit.xml" -- ./...
+      - name: Ingest results
+        if: steps.scope.outputs.go == 'true'
+        run: dist/lattice results ingest "$RUNNER_TEMP/unit.xml"
+      - name: Break the enforcers
+        if: steps.scope.outputs.go == 'true'
+        run: dist/lattice break --timeout 180s
+
+      # Push to master: save the audit of this commit for later pull requests.
+      - name: Save the audit snapshot
+        if: github.event_name == 'push'
+        run: scripts/ci-lattice-check.sh snapshot
+      - name: Upload the audit
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lattice-audit-${{ github.sha }}
+          path: lattice/.cache/audit/${{ github.sha }}.json
+          if-no-files-found: error
+          retention-days: 30
+
+      # Pull request: compare with the base's audit and report.
+      - name: Fetch the base audit
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: scripts/ci-lattice-check.sh fetch-base "origin/$BASE_REF"
+      - name: Check the change
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: scripts/ci-lattice-check.sh check "origin/$BASE_REF" lattice-check.md
+      - name: Keep the report for the comment job
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lattice-check-report
+          path: lattice-check.md
+          retention-days: 7
+
+  comment:
+    # The only job with write access, and it runs no pull request code: it
+    # checks out the base branch's script, not the head's.
+    if: github.event_name == 'pull_request'
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: read # download the report artifact
+    # A fork's token is read-only, so the comment may fail; the job summary
+    # in the check job still has the report.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: lattice-check-report
+      - name: Post or update the sticky comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: scripts/ci-lattice-check.sh comment "$PR_NUMBER" lattice-check.md
