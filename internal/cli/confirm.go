@@ -13,6 +13,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/brd"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm"
+	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
@@ -33,7 +34,14 @@ hash still matches the BRD, its promises and the diff since the last
 confirmed version (otherwise it reads stale).
 
 Writes lattice/.cache/confirm.json (lattice.confirm/1), derived and never
-committed, cached by commit. 'lattice audit' reads the confirmed signal from
+committed, cached by commit. The file is stamped with what produced it: the
+commit, the CI run (GITHUB_RUN_ID, CI_PIPELINE_ID, ... or "local"), the
+platform, and a digest of its verdicts. Readers take a confirmed verdict only
+from a file whose digest matches; a file with no stamp reads unknown
+(CONFIRM_UNSTAMPED), an edited one reads unknown (CONFIRM_TAMPERED), and one
+tracked by git reads unknown (CONFIRM_TRACKED). The stamp is provenance, not a
+signature. Under 'lattice check --ci' a local or other-commit file reads
+unknown (EVIDENCE_NOT_CI). 'lattice audit' reads the confirmed signal from
 that file only. --offline reads the cache and nothing else: missing data reads
 unknown, never confirmed. Run it in CI on the default branch.`,
 		Args: cobra.NoArgs,
@@ -99,9 +107,14 @@ unknown, never confirmed. Run it in CI on the default branch.`,
 			}
 
 			plat := githubFor(g)
+			repo := ""
+			if gh, ok := plat.(confirm.GitHub); ok {
+				repo = gh.Owner + "/" + gh.Repo
+			}
 			f := confirm.Compute(cmd.Context(), confirm.Input{
 				Commit: head, Branch: branch, Found: found, Platform: plat, Packet: packet,
 				Cache: cache, Refresh: refresh,
+				CIRun: results.CIRunID(), PlatformName: platform, Repository: repo,
 			})
 			f.Warnings = warnings
 			if plat != nil {

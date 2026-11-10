@@ -1524,6 +1524,32 @@ merged_sha, verified_at}` per decision. `lattice audit` reads the `confirmed`
 signal from that file only. Set branch protection to require a current review;
 `confirm` does not rely on it, but it keeps the platform's own state in step.
 
+The file is stamped with what produced it:
+
+```json
+"stamp": { "commit": "cad25d1...", "ci_run": "4812", "platform": "github",
+           "repository": "acme/shop", "digest": "sha256:..." }
+```
+
+`ci_run` is the CI run id (`GITHUB_RUN_ID`, `CI_PIPELINE_ID`, ..., the same one
+`results ingest` and `break` record) or `local`. `digest` covers the records and
+the other stamp fields. The stamp is provenance, not a signature: there is no
+secret, so it shows an edited or hand-written file for what it is rather than
+proving who wrote it. Every reader (the audit's `confirmed` signal, `validate`,
+`/api/v2`) takes a verdict only from a file whose stamp is intact:
+
+| The file | Reads |
+|---|---|
+| has no stamp (hand-written, or written before v0.15.1) | `unknown`, `CONFIRM_UNSTAMPED` |
+| has a digest that does not match its records, commit or `ci_run` | `unknown`, `CONFIRM_TAMPERED` |
+| is tracked by git (someone committed it) | `unknown`, `CONFIRM_TRACKED` |
+| is stamped by a local run | `human (local, not CI)` in a local audit or check |
+| under `lattice check --ci`: is local, or of another commit than head | `unknown`, `EVIDENCE_NOT_CI` |
+
+`confirm` reuses a previous file's verdicts only when its stamp is intact, and a
+CI run never reuses a local file's verdicts. Keep `lattice/.cache/` in
+`.gitignore`; `lattice init` adds it when it creates the `.gitignore`.
+
 `lattice validate` reads the same file: a machine-written draft BRD (`llm_from_code`
 or agent-authored) whose current version has a confirmed `approve` or `ack` there
 no longer raises `BRD_UNAPPROVED_LLM`. A typed `approved_by`, a decision for another

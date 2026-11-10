@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/salahmyn/lattice/pkg/lattice/confirm/stamp"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
@@ -44,12 +45,58 @@ type ConfirmRecord struct {
 type ConfirmData struct {
 	Commit  string          `json:"commit"`
 	Records []ConfirmRecord `json:"records"`
+	// Stamp is what produced the file: commit, CI run, platform and digest.
+	Stamp *stamp.Stamp `json:"stamp,omitempty"`
+	// SetAside is the code the reader gave the file when it refused its
+	// verdicts (CONFIRM_UNSTAMPED, CONFIRM_TAMPERED, CONFIRM_TRACKED, or
+	// EVIDENCE_NOT_CI under --ci), with why in SetAsideText. A set-aside
+	// file's records all read unknown.
+	SetAside     string `json:"-"`
+	SetAsideText string `json:"-"`
+}
+
+// Local reports whether the file was stamped by a run outside CI. Its human
+// verdicts are shown as human (local, not CI).
+func (cd *ConfirmData) Local() bool {
+	return cd != nil && cd.Stamp != nil && cd.Stamp.Local()
+}
+
+// setAside returns a copy of cd whose records all read unknown, with code
+// and text saying why.
+func (cd *ConfirmData) setAside(code, text string) *ConfirmData {
+	out := *cd
+	out.Records = make([]ConfirmRecord, len(cd.Records))
+	for i, r := range cd.Records {
+		r.State = ConfirmedUnknown
+		out.Records[i] = r
+	}
+	out.SetAside, out.SetAsideText = code, text
+	return &out
+}
+
+// ForCI is the --ci rule for confirm.json, as for every other evidence file:
+// only a file stamped by a CI run at the head commit counts. Any other file
+// is set aside with EVIDENCE_NOT_CI, so its verdicts read unknown.
+// @enforces confirm:INV-6
+func (cd *ConfirmData) ForCI(head string) *ConfirmData {
+	if cd == nil || cd.SetAside != "" {
+		return cd
+	}
+	if code, text := stamp.ForCI(cd.Stamp, head); code != "" {
+		return cd.setAside(code, text)
+	}
+	return cd
 }
 
 // LoadConfirm reads lattice/.cache/confirm.json. It returns nil when the file
-// is absent, unreadable or another schema: no confirm data.
+// is absent, unreadable or another schema: no confirm data. A file with no
+// stamp, a digest that does not match its records, or that git tracks is set
+// aside (CONFIRM_UNSTAMPED, CONFIRM_TAMPERED, CONFIRM_TRACKED): it is
+// returned so the reason can be shown, and none of its verdicts reads human.
+// @enforces confirm:INV-6
 func LoadConfirm(latticeDir string) *ConfirmData {
-	data, err := os.ReadFile(filepath.Join(latticeDir, ".cache", "confirm.json"))
+	p := filepath.Join(latticeDir, ".cache", "confirm.json")
+	data, err := os.ReadFile(p)
 	if err != nil {
 		return nil
 	}
@@ -61,6 +108,9 @@ func LoadConfirm(latticeDir string) *ConfirmData {
 		return nil
 	}
 	cd := f.ConfirmData
+	if res := stamp.Check(p, data); !res.OK() {
+		return cd.setAside(res.Code, res.Text)
+	}
 	return &cd
 }
 
@@ -92,6 +142,13 @@ func criteriaByPromise(kg schema.KnowledgeGraph) map[string][]criterionRef {
 func approvalState(b schema.BRD, promise string, cd *ConfirmData) (state, detail string, approver string) {
 	var human, stale, pending, voided *ConfirmRecord
 	var olderHuman *ConfirmRecord
+	if cd != nil && cd.SetAside != "" {
+		for _, r := range cd.Records {
+			if r.ID == b.ID {
+				return ConfirmedUnknown, "confirm.json set aside (" + cd.SetAside + "): " + cd.SetAsideText, ""
+			}
+		}
+	}
 	if cd != nil {
 		for i := range cd.Records {
 			r := &cd.Records[i]
@@ -119,7 +176,11 @@ func approvalState(b schema.BRD, promise string, cd *ConfirmData) (state, detail
 	case voided != nil:
 		return ConfirmedDraft, "v" + v + " was " + strings.TrimPrefix(voided.Action, "brd.") + "ed by " + voided.ApproverLogin + " (PR #" + strconv.Itoa(voided.PR) + ")", ""
 	case human != nil:
-		return ConfirmedHuman, "confirmed at v" + v + " by " + human.ApproverLogin + " (PR #" + strconv.Itoa(human.PR) + ")", human.ApproverLogin
+		local := ""
+		if cd.Local() {
+			local = "human (local, not CI): "
+		}
+		return ConfirmedHuman, local + "confirmed at v" + v + " by " + human.ApproverLogin + " (PR #" + strconv.Itoa(human.PR) + ")", human.ApproverLogin
 	case stale != nil:
 		return ConfirmedDrifted, "confirmed by " + stale.ApproverLogin + ", but the packet changed since: confirm again", ""
 	case olderHuman != nil:
@@ -143,7 +204,10 @@ func approvalState(b schema.BRD, promise string, cd *ConfirmData) (state, detail
 		return ConfirmedPending, "prepared by a local session, not confirmed: " + a.ApprovedBy + " is a typed name", ""
 	}
 	why := "no confirm data (run `lattice confirm` in CI)"
-	if cd != nil {
+	switch {
+	case cd != nil && cd.SetAside != "":
+		why = "confirm.json set aside (" + cd.SetAside + ")"
+	case cd != nil:
 		why = "no platform approval on record for it"
 	}
 	return ConfirmedUnknown, "the approval block names " + a.ApprovedBy + " (display only); " + why, ""
