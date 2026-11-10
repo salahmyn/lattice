@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/confirm"
 	"github.com/salahmyn/lattice/pkg/lattice/flags"
 	"github.com/salahmyn/lattice/pkg/lattice/lease"
 	"github.com/salahmyn/lattice/pkg/lattice/ledger"
@@ -79,6 +80,7 @@ func newValidateCommand(io *IO) *cobra.Command {
 				FlagsOf:       flagReasons(flags.OpenByUnit(ws.LatticeDir)),
 				Coverage:      coverageIndex(ws, kg),
 				Reach:         rr,
+				Confirm:       confirm.LoadCache(ws.LatticeDir),
 			})
 			violations = append(violations, ambiguousResults(kg, set)...)
 			kg.Violations = violations
