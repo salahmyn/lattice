@@ -142,4 +142,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: scripts/ci-lattice-check.sh comment "$PR_NUMBER" lattice-check.md
+        # The base branch may predate the script (the first pull request that
+        # adds it, or an old release branch): say so instead of failing.
+        run: |
+          if [ ! -x scripts/ci-lattice-check.sh ]; then
+            echo "the base branch has no scripts/ci-lattice-check.sh yet; the report is in the check job summary"
+            exit 0
+          fi
+          scripts/ci-lattice-check.sh comment "$PR_NUMBER" lattice-check.md
