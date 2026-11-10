@@ -21,3 +21,7 @@ invariants:
     statement: A breaks file of another commit, or of a schema the audit does not know, is set aside and never counted.
   - id: INV-5
     statement: The confirmed signal is read from the BRD approval record as human, agent, draft or drifted, and the least confirmed BRD behind a promise decides.
+  - id: INV-6
+    statement: Each row lists every enforcer of the promise with what breaking it did (killed, survived, unknown or not_run), read from its break runs; the list never changes the class, and the reason of a row decided by breaks names how many enforcers survived and which.
+  - id: INV-7
+    statement: The --promise, --feature and --class filters only narrow the rows shown, never the computation or a row's class; an unknown promise id is a usage error.

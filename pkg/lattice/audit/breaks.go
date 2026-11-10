@@ -209,3 +209,137 @@ func perEnforcer(runs []BreakRun, skip string) string {
 	}
 	return strings.Join(parts, "; ")
 }
+
+// Per-enforcer outcomes: the audit's reading of the break runs of one
+// enforcer. survived needs every verifier run; a break that survived while a
+// verifier could not run reads unknown, as the row does.
+const (
+	OutcomeKilled   = "killed"
+	OutcomeSurvived = "survived"
+	OutcomeUnknown  = "unknown"
+	OutcomeNotRun   = "not_run" // no break run of this enforcer
+)
+
+// EnforcerOutcome is one enforcer of a promise and what breaking it did.
+type EnforcerOutcome struct {
+	Symbol  string `json:"symbol"`
+	File    string `json:"file,omitempty"`
+	Line    int    `json:"line,omitempty"`
+	Outcome string `json:"outcome"` // killed | survived | unknown | not_run
+	Reason  string `json:"reason,omitempty"`
+}
+
+// enforcerOutcomes reads one outcome per enforcer from the promise's break
+// runs, in the order breakSignal folds them: a full survival wins over a
+// kill, a kill over a partial survival, and that over unknown. An enforcer
+// with no run reads not_run; a run of a symbol the graph does not list as an
+// enforcer is kept, after the graph's, so no run goes unshown.
+// @enforces audit:INV-6
+func enforcerOutcomes(enf []EnforcerEvidence, runs []BreakRun) []EnforcerOutcome {
+	byEnf := map[string][]BreakRun{}
+	for _, r := range runs {
+		byEnf[r.Enforcer] = append(byEnf[r.Enforcer], r)
+	}
+	out := make([]EnforcerOutcome, 0, len(enf))
+	listed := map[string]bool{}
+	for _, e := range enf {
+		listed[e.FQN] = true
+		o := readEnforcer(byEnf[e.FQN])
+		o.Symbol, o.File, o.Line = e.FQN, e.File, e.Line
+		out = append(out, o)
+	}
+	var extra []string
+	for name := range byEnf {
+		if !listed[name] {
+			extra = append(extra, name)
+		}
+	}
+	sort.Strings(extra)
+	for _, name := range extra {
+		o := readEnforcer(byEnf[name])
+		o.Symbol, o.File = name, byEnf[name][0].EnforcerFile
+		out = append(out, o)
+	}
+	return out
+}
+
+// readEnforcer folds the runs of one enforcer into its outcome and reason.
+func readEnforcer(runs []BreakRun) EnforcerOutcome {
+	if len(runs) == 0 {
+		return EnforcerOutcome{Outcome: OutcomeNotRun, Reason: "no break run of this enforcer (lattice break)"}
+	}
+	pick := func(match func(BreakRun) bool) (BreakRun, bool) {
+		for _, r := range runs {
+			if match(r) {
+				return r, true
+			}
+		}
+		return BreakRun{}, false
+	}
+	if r, ok := pick(func(r BreakRun) bool { return r.Outcome == "survived" && len(r.NotRunVerifiers) == 0 }); ok {
+		return EnforcerOutcome{Outcome: OutcomeSurvived, Reason: "the verifiers passed with it broken" + methodNote(r)}
+	}
+	if r, ok := pick(func(r BreakRun) bool { return r.Outcome == "killed" }); ok {
+		return EnforcerOutcome{Outcome: OutcomeKilled, Reason: "breaking it" + methodNote(r) + " made the verifiers fail"}
+	}
+	if r, ok := pick(func(r BreakRun) bool { return r.Outcome == "survived" }); ok {
+		return EnforcerOutcome{Outcome: OutcomeUnknown,
+			Reason: "survived" + methodNote(r) + ", but verifiers did not run: " + strings.Join(r.NotRunVerifiers, ", ")}
+	}
+	r := runs[0]
+	why := r.Reason
+	if why == "" {
+		why = "outcome " + r.Outcome
+	}
+	return EnforcerOutcome{Outcome: OutcomeUnknown, Reason: why}
+}
+
+func methodNote(r BreakRun) string {
+	if r.Method == "" {
+		return ""
+	}
+	return " (" + r.Method + ")"
+}
+
+// tally is the row's per-enforcer count, led by the outcome that decides the
+// class and naming the symbols, as "; 1 of 3 enforcers survived: a; 2
+// killed: b, c". It is empty for a promise with fewer than two enforcers,
+// whose reason already names the one.
+// @enforces audit:INV-6
+func tally(outs []EnforcerOutcome, lead string) string {
+	if len(outs) < 2 {
+		return ""
+	}
+	by := map[string][]string{}
+	for _, o := range outs {
+		by[o.Outcome] = append(by[o.Outcome], o.Symbol)
+	}
+	label := map[string]string{
+		OutcomeSurvived: "survived", OutcomeKilled: "killed",
+		OutcomeUnknown: "could not be judged", OutcomeNotRun: "never broken (no break run)",
+	}
+	s := fmt.Sprintf("; %d of %d enforcers %s: %s", len(by[lead]), len(outs), label[lead], strings.Join(by[lead], ", "))
+	for _, k := range []string{OutcomeSurvived, OutcomeKilled, OutcomeUnknown, OutcomeNotRun} {
+		if k == lead || len(by[k]) == 0 {
+			continue
+		}
+		s += fmt.Sprintf("; %d %s: %s", len(by[k]), label[k], strings.Join(by[k], ", "))
+	}
+	return s
+}
+
+// ShowsEnforcers reports whether the per-enforcer breakdown belongs on the
+// row when it is printed: a fake, a partial run, or enforcers whose breaks
+// disagree, and at least one break run behind them.
+func (r Row) ShowsEnforcers() bool {
+	ran, mixed := false, false
+	for i, o := range r.Enforcers {
+		if o.Outcome != OutcomeNotRun {
+			ran = true
+		}
+		if i > 0 && o.Outcome != r.Enforcers[0].Outcome {
+			mixed = true
+		}
+	}
+	return ran && (r.Class == ClassFake || r.Kind == KindPartialRun || mixed)
+}

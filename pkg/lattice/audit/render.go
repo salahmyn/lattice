@@ -9,18 +9,26 @@ import (
 )
 
 // Filter narrows a report's rows; empty fields match everything. The summary
-// is recomputed over the kept rows.
+// is recomputed over the kept rows. It only narrows what is shown: the rows
+// themselves were computed over the whole workspace and are not changed.
 type Filter struct {
 	Class   string
 	Feature string
+	// Promises keeps only these promises (<feature>:INV-n); empty keeps all.
+	Promises []string
 }
 
 // Apply returns a copy of the report with only the matching rows.
+// @enforces audit:INV-7
 func (f Filter) Apply(r Report) Report {
-	if f.Class == "" && f.Feature == "" {
+	if f.Class == "" && f.Feature == "" && len(f.Promises) == 0 {
 		return r
 	}
-	var rows []Row
+	want := map[string]bool{}
+	for _, p := range f.Promises {
+		want[p] = true
+	}
+	rows := []Row{}
 	for _, row := range r.Rows {
 		if f.Class != "" && row.Class != f.Class {
 			continue
@@ -28,11 +36,33 @@ func (f Filter) Apply(r Report) Report {
 		if f.Feature != "" && row.Feature != f.Feature {
 			continue
 		}
+		if len(want) > 0 && !want[row.Promise] {
+			continue
+		}
 		rows = append(rows, row)
 	}
 	r.Rows = rows
 	r.Summary = summarize(rows)
 	return r
+}
+
+// UnknownPromises lists the ids that name no row of the report, in the order
+// given, once each.
+// @enforces audit:INV-7
+func (r Report) UnknownPromises(ids []string) []string {
+	known := map[string]bool{}
+	for _, row := range r.Rows {
+		known[row.Promise] = true
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if !known[id] && !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func (r Report) head() string {
@@ -110,6 +140,11 @@ func WriteText(w io.Writer, r Report) {
 	for _, row := range r.Rows {
 		fmt.Fprintf(w, "%-18s %-26s %-20s %-9s %s\n", row.Class, trunc(row.Promise, 26), row.Kind,
 			row.Signals.Confirmed.Value, row.Reason)
+		if row.ShowsEnforcers() {
+			for _, e := range row.Enforcers {
+				fmt.Fprintf(w, "%-18s enforcer %-9s %s%s: %s\n", "", e.Outcome, e.Symbol, at(e.File, e.Line), e.Reason)
+			}
+		}
 		for _, n := range row.Notes {
 			fmt.Fprintf(w, "%-18s second reader %s: %s %s\n", "", n.Reader, n.Verdict, n.Note)
 		}
@@ -165,21 +200,62 @@ func WriteMarkdown(w io.Writer, r Report) {
 			for _, v := range row.Evidence.Verifiers {
 				fmt.Fprintf(w, "- verifier `%s`: result %s, coverage %s, ran enforcer %t\n", v.FQN, v.Result, orDash(v.Coverage), v.RanEnforcer)
 			}
-			for _, b := range row.Evidence.Breaks {
-				fmt.Fprintf(w, "- break of `%s` (%s): %s\n", b.Enforcer, b.Method, b.Outcome)
-				if len(b.NotRunVerifiers) > 0 {
-					fmt.Fprintf(w, "  - verifiers not run: %s\n", strings.Join(b.NotRunVerifiers, ", "))
-				}
-				if len(b.FailedTests) > 0 {
-					fmt.Fprintf(w, "  - failed after the break: %s\n", strings.Join(b.FailedTests, "; "))
-				}
-			}
+			writeMarkdownBreaks(w, row)
 			for _, n := range row.Notes {
 				fmt.Fprintf(w, "- second reader %s: %s. %s\n", n.Reader, n.Verdict, n.Note)
 			}
 		}
 	}
+
+	var split []Row
+	for _, row := range r.Rows {
+		if row.Class != ClassFake && row.ShowsEnforcers() {
+			split = append(split, row)
+		}
+	}
+	if len(split) > 0 {
+		fmt.Fprintf(w, "\n### Partial or mixed break runs\n")
+		for _, row := range split {
+			fmt.Fprintf(w, "\n**`%s`** (%s): %s\n\n", row.Promise, row.Describe(), mdCell(row.Statement))
+			fmt.Fprintf(w, "- %s\n", row.Reason)
+			writeMarkdownBreaks(w, row)
+		}
+	}
 	fmt.Fprintf(w, "\n_%s_\n", r.Note)
+}
+
+// writeMarkdownBreaks prints what breaking each enforcer did, one line per
+// enforcer, with the verifiers a run left unrun and the tests that failed.
+func writeMarkdownBreaks(w io.Writer, row Row) {
+	if len(row.Evidence.Breaks) == 0 {
+		return
+	}
+	runs := map[string][]BreakRun{}
+	for _, b := range row.Evidence.Breaks {
+		runs[b.Enforcer] = append(runs[b.Enforcer], b)
+	}
+	for _, e := range row.Enforcers {
+		fmt.Fprintf(w, "- break of `%s`%s: **%s**: %s\n", e.Symbol, at(e.File, e.Line), e.Outcome, mdCell(e.Reason))
+		for _, b := range runs[e.Symbol] {
+			if len(b.NotRunVerifiers) > 0 {
+				fmt.Fprintf(w, "  - verifiers not run: %s\n", strings.Join(b.NotRunVerifiers, ", "))
+			}
+			if len(b.FailedTests) > 0 {
+				fmt.Fprintf(w, "  - failed after the break: %s\n", strings.Join(b.FailedTests, "; "))
+			}
+		}
+	}
+}
+
+// at is " (file:line)", or "" when the file is not known.
+func at(file string, line int) string {
+	switch {
+	case file == "":
+		return ""
+	case line > 0:
+		return fmt.Sprintf(" (%s:%d)", file, line)
+	}
+	return " (" + file + ")"
 }
 
 func mdCell(s string) string {
