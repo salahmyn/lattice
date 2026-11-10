@@ -42,6 +42,9 @@ type Request struct {
 	// return refers to.
 	Refs   []string
 	Waiver *confirm.WaiverEntry
+	// PacketHash, when set, is the hash of the packet the human reviewed. The
+	// decision is refused (PACKET_STALE) when the packet now hashes otherwise.
+	PacketHash string
 }
 
 // Env is what prepare reads. It never builds a graph itself.
@@ -147,6 +150,11 @@ func run(env Env, req Request) (*Result, *Refusal) {
 	default:
 		return nil, refuse("UNKNOWN_ACTION", fmt.Sprintf("%q is not an action", req.Action),
 			"use one of "+strings.Join(confirm.Actions, ", "), nil)
+	}
+
+	if req.PacketHash != "" && req.PacketHash != d.PacketHash {
+		return nil, refuse("PACKET_STALE", "the packet changed since you opened it: "+d.PacketHash+" now, "+req.PacketHash+" reviewed",
+			"re-open the review packet and decide on what it now says", map[string]interface{}{"reviewed": req.PacketHash, "now": d.PacketHash})
 	}
 
 	branch := d.Branch()
@@ -265,11 +273,50 @@ func (env Env) packet(d *confirm.Decision, b schema.BRD, rel, extra string) stri
 	})
 }
 
+// Packet is a BRD version's review packet as a decision would pin it.
+type Packet struct {
+	// Hash is confirm.PacketHash over the BRD, its promises' structural
+	// signals and Diff, with Extra pinned.
+	Hash string
+	// Diff is the structural change since the last confirmed version
+	// (confirm.StructuralDiff); "initial" when none was ever confirmed.
+	Diff []string
+	// Since is the confirmed version the diff is against; nil when never confirmed.
+	Since *confirm.Since
+	// Err is set when a confirmed version exists but could not be read from
+	// git: the diff and the hash are then not those a decision would pin.
+	Err error
+}
+
+// Packet computes the review packet of b exactly as a decision does: the same
+// hash, the same diff against the last confirmed version in the confirm
+// cache. extra pins what lies outside the BRD (the votes hash of an ack).
+func (env Env) Packet(b schema.BRD, extra string) Packet {
+	rel := ""
+	if top, err := env.Git.Top(); err == nil {
+		rel, _ = relTo(top, env.LatticeDir)
+	}
+	prev, since, err := env.lastConfirmedErr(b.ID, b.Version, rel)
+	p := Packet{Since: since, Err: err}
+	p.Diff = confirm.StructuralDiff(prev, b)
+	p.Hash = confirm.PacketHash(confirm.PacketInput{
+		BRD: b, Promises: confirm.FactsFor(env.Report.Rows, confirm.PromisesOf(b)), Diff: p.Diff, Extra: extra,
+	})
+	return p
+}
+
 // lastConfirmed finds the last version of a BRD a human confirmed before
 // `before`, from the confirm cache, and reads it from the commit it merged in.
 func (env Env) lastConfirmed(id string, before int, rel string) (*schema.BRD, *confirm.Since) {
+	prev, since, _ := env.lastConfirmedErr(id, before, rel)
+	return prev, since
+}
+
+// lastConfirmedErr is lastConfirmed, and says when a confirmed version exists
+// but could not be read.
+func (env Env) lastConfirmedErr(id string, before int, rel string) (*schema.BRD, *confirm.Since, error) {
 	if env.Cache == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	var best *confirm.Record
 	for i, r := range env.Cache.Records {
@@ -284,13 +331,13 @@ func (env Env) lastConfirmed(id string, before int, rel string) (*schema.BRD, *c
 		}
 	}
 	if best == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	prev, err := confirm.BRDAt(env.Git, rel, best.MergedSHA, id)
 	if err != nil {
-		return nil, nil
+		return nil, nil, err
 	}
-	return prev, &confirm.Since{Version: best.Version, SHA: best.MergedSHA}
+	return prev, &confirm.Since{Version: best.Version, SHA: best.MergedSHA}, nil
 }
 
 // regulatedMachineWritten refuses a version whose regulatory, legal or

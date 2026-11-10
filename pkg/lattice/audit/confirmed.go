@@ -202,3 +202,15 @@ func confirmed(crit []criterionRef, cd *ConfirmData) (Signal, []Approval) {
 	}
 	return s, out
 }
+
+// BRDStanding is the standing of one BRD version as a whole, read from
+// confirm.json the way a promise's confirmed signal is: a verified platform
+// approval of the version (human), a confirmation of an earlier version or a
+// changed packet (drifted), a council or agent approval awaiting a human
+// (agent), a prepared decision not yet verified (pending), a typed approval
+// with no platform record (unknown), or none (draft). A promise.confirm
+// record does not confirm the BRD. detail says why, and approver is the
+// platform login for a human standing.
+func BRDStanding(b schema.BRD, cd *ConfirmData) (state, detail, approver string) {
+	return approvalState(b, "", cd)
+}

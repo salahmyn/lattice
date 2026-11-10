@@ -3,22 +3,15 @@ package cli
 // @module-feature check
 
 import (
+	"errors"
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/salahmyn/lattice/pkg/lattice/adapters/all"
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/check"
-	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/impact"
-	"github.com/salahmyn/lattice/pkg/lattice/schema"
-	"github.com/salahmyn/lattice/pkg/lattice/scip"
-	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
 // exitCodeError ends the process with a given code after the command has
@@ -96,18 +89,16 @@ disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
-			head, err := gitRev(top, "HEAD")
-			if err != nil {
-				return usageError(io, "GIT_FAILED", err.Error())
-			}
-			dirty, _ := gitDirty(filepath.Dir(ws.LatticeDir))
-
-			ev := check.Gather(ws.LatticeDir, head, ci)
-			src := audit.Collect(ws.LatticeDir, kg, dirty)
-			headAudit := audit.Compute(ev.Apply(src))
-			saved, serr := check.SaveSnapshot(ws.LatticeDir, headAudit)
 
 			if snapshot {
+				head, err := check.GitRev(top, "HEAD")
+				if err != nil {
+					return usageError(io, "GIT_FAILED", err.Error())
+				}
+				dirty, _ := gitDirty(filepath.Dir(ws.LatticeDir))
+				ev := check.Gather(ws.LatticeDir, head, ci)
+				headAudit := audit.Compute(ev.Apply(audit.Collect(ws.LatticeDir, kg, dirty)))
+				saved, serr := check.SaveSnapshot(ws.LatticeDir, headAudit)
 				if serr != nil {
 					return io.fail("SNAPSHOT_FAILED", serr.Error(), nil)
 				}
@@ -122,29 +113,18 @@ disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
 				return nil
 			}
 
-			baseSHA, err := gitRev(top, base)
+			rep, err := check.Run(cmd.Context(), ws, kg, check.RunOptions{Base: base, CI: ci, SaveSnapshot: true})
 			if err != nil {
-				return usageError(io, "BAD_BASE", fmt.Sprintf("--base %q is not a commit: %v", base, err))
-			}
-			adCfg, err := config.LoadAdapters(ws.LatticeDir)
-			if err != nil {
+				var re *check.RunError
+				if errors.As(err, &re) {
+					switch re.Code {
+					case check.RunGitFailed, check.RunBadBase, check.RunNotARepo:
+						return usageError(io, re.Code, re.Error())
+					}
+					return io.fail(re.Code, re.Error(), nil)
+				}
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
-			in := impact.Input{Workspace: ws, Registry: all.Registry(adCfg), Graph: kg, Since: base, IncludeDrafts: true}
-			if corpus, cerr := scip.Load(scipIndexPaths(ws)...); cerr == nil {
-				in.Corpus = corpus
-			}
-			im, err := impact.Compute(cmd.Context(), in)
-			if err != nil {
-				return usageError(io, "BAD_BASE", fmt.Sprintf("--base %q (%s): %v", base, baseSHA[:min(10, len(baseSHA))], err))
-			}
-
-			baseAudit, note := check.LoadSnapshot(ws.LatticeDir, im.Base)
-			rep := check.Compute(check.Input{
-				Rev: base, CI: ci, Head: headAudit, Base: baseAudit, BaseNote: note,
-				Impact: im, KG: kg, Evidence: ev, Waivers: check.LoadWaivers(ws.LatticeDir),
-				Reconfirm: reconfirmedBy(ws, im, kg),
-			})
 
 			switch {
 			case io.JSON:
@@ -167,43 +147,4 @@ disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
 	cmd.Flags().BoolVar(&ci, "ci", false, "count only evidence stamped with the head commit and a CI run")
 	cmd.Flags().BoolVar(&snapshot, "snapshot", false, "only save the audit of HEAD as lattice/.cache/audit/<sha>.json (for a base branch job)")
 	return cmd
-}
-
-// gitRev resolves a rev to a commit sha.
-func gitRev(top, rev string) (string, error) {
-	out, err := exec.Command("git", "-C", top, "rev-parse", "--verify", "--quiet", rev+"^{commit}").Output()
-	if err != nil {
-		return "", fmt.Errorf("cannot resolve %s", rev)
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-// reconfirmedBy reads the decision files this change adds or edits and lists
-// the promises they re-confirm (check.Reconfirmed). Changed paths are relative
-// to the repository top.
-func reconfirmedBy(ws *workspace.Workspace, im impact.Report, kg schema.KnowledgeGraph) map[string]bool {
-	out, err := exec.Command("git", "-C", ws.LatticeDir, "rev-parse", "--show-toplevel").Output()
-	if err != nil {
-		return nil
-	}
-	top := strings.TrimSpace(string(out))
-	if real, err := filepath.EvalSymlinks(top); err == nil {
-		top = real
-	}
-	dir := ws.LatticeDir
-	if real, err := filepath.EvalSymlinks(dir); err == nil {
-		dir = real
-	}
-	rel, err := filepath.Rel(top, dir)
-	if err != nil {
-		return nil
-	}
-	var paths []string
-	for _, f := range im.ChangedFiles {
-		if f.NewPath != "" && f.Status != "D" {
-			paths = append(paths, filepath.ToSlash(f.NewPath))
-		}
-	}
-	read := func(p string) ([]byte, error) { return os.ReadFile(filepath.Join(top, filepath.FromSlash(p))) }
-	return check.Reconfirmed(paths, filepath.ToSlash(rel), read, kg.BRDs)
 }
