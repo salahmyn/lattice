@@ -1251,11 +1251,17 @@ lattice audit                 # summary by class, then one row per invariant
 lattice audit --json          # lattice.audit/1
 lattice audit --markdown      # for a PR comment or a report
 lattice audit --class fake --feature wallet
+lattice audit --promise wallet:INV-1          # one promise (repeat, or a comma list)
 ```
 
+`--promise`, `--feature` and `--class` only narrow what is printed; the audit
+is always computed over the whole workspace, so a row reads the same filtered
+or not. An unknown `--promise` id is a usage error (exit 2).
+
 The same rows are on the `/audit` page of `lattice serve`, filterable by class
-and feature; each fake opens to its verifiers, enforcers, the evidence behind
-the class and any reader's note. `GET /api/v1/audit` returns the JSON.
+and feature (and `?promise=`); each fake opens to its verifiers, enforcers, the
+evidence behind the class and any reader's note. `GET /api/v1/audit` returns
+the JSON, with the same filters; an unknown `promise` is a 400.
 
 ### Classes, in precedence order
 
@@ -1302,6 +1308,19 @@ verifiers. `break_tested` needs at least one enforcer killed and none survived
 with all verifiers run. A row's evidence lists the outcome of each enforcer, with
 its unrun verifiers and failed tests. A `breaks.json` from before these fields
 reads as it always did.
+
+Each row also carries `enforcers`: every enforcer of the promise as
+`{symbol, file, line, outcome, reason}`, with `outcome` one of `killed`,
+`survived` (its break left every verifier green), `unknown` (no runner, a red
+baseline, or a survival while a verifier could not run) or `not_run` (no break
+run of it). It says *which* enforcer a class is about and never changes the
+class: one survived enforcer still makes the promise `fake` /
+`passes_when_broken`, even when the others were killed. When a promise has
+several enforcers, the reason of a row decided by breaks counts them and names
+the survivors, for example `1 of 3 enforcers survived: wallet.LimitPanel; 2
+killed: wallet.Cap, wallet.Check`. The text and Markdown output and the
+`/audit` page print one line per enforcer for fakes, partial runs, and rows
+whose enforcers' breaks disagree.
 
 ### Second readers
 

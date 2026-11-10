@@ -4,6 +4,7 @@ package cli
 
 import (
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -15,6 +16,7 @@ import (
 func newAuditCommand(io *IO) *cobra.Command {
 	var markdown bool
 	var class, feature string
+	var promises []string
 	cmd := &cobra.Command{
 		Use:   "audit",
 		Short: "Classify every invariant: fake, break_tested, exercised, demonstrated_only, a gap, or unknown",
@@ -39,7 +41,14 @@ proxy, and one class, in this precedence:
 Only break_tested and exercised are positive. Unknown is never a pass and
 never a fail. 'confirmed' is a fact about the approval record, not proof the
 intent is right. lattice/audit-notes.yaml holds optional second-reader notes,
-which are shown and never change a class. Nothing here blocks a merge.`,
+which are shown and never change a class. Nothing here blocks a merge.
+
+Each row lists its enforcers with what breaking each did (killed, survived,
+unknown, not_run), so a fake names the enforcer no test notices.
+
+--promise, --feature and --class only narrow what is printed: the audit is
+always computed over the whole workspace. An unknown --promise id is a usage
+error (exit 2).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			kg, ws, err := graphFor(io, cmd, false)
@@ -51,7 +60,11 @@ which are shown and never change a class. Nothing here blocks a merge.`,
 			}
 			dirty, _ := gitDirty(filepath.Dir(ws.LatticeDir))
 			rep := audit.Compute(audit.Collect(ws.LatticeDir, kg, dirty))
-			rep = audit.Filter{Class: class, Feature: feature}.Apply(rep)
+			ids := splitPromises(promises)
+			if unknown := rep.UnknownPromises(ids); len(unknown) > 0 {
+				return usageError(io, "AUDIT_UNKNOWN_PROMISE", "unknown promise "+strings.Join(unknown, ", ")+" (want <feature>:INV-n, as listed by lattice audit)")
+			}
+			rep = audit.Filter{Class: class, Feature: feature, Promises: ids}.Apply(rep)
 			switch {
 			case io.JSON:
 				return io.printJSON(rep)
@@ -66,7 +79,19 @@ which are shown and never change a class. Nothing here blocks a merge.`,
 	cmd.Flags().BoolVar(&markdown, "markdown", false, "print Markdown for a PR comment or a report")
 	cmd.Flags().StringVar(&class, "class", "", "show only rows of this class")
 	cmd.Flags().StringVar(&feature, "feature", "", "show only rows of this feature")
+	cmd.Flags().StringSliceVar(&promises, "promise", nil, "show only this promise, as <feature>:INV-n (repeatable, or a comma list)")
 	return cmd
+}
+
+// splitPromises trims the --promise values and drops empty ones.
+func splitPromises(in []string) []string {
+	var out []string
+	for _, p := range in {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func knownAuditClass(c string) bool {

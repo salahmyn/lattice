@@ -3,8 +3,10 @@ package ui
 // @module-feature audit
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
 )
@@ -60,7 +62,7 @@ func (s *Server) pageAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	class, feature := r.URL.Query().Get("class"), r.URL.Query().Get("feature")
-	shown := audit.Filter{Class: class, Feature: feature}.Apply(full)
+	shown := audit.Filter{Class: class, Feature: feature, Promises: promisesParam(r)}.Apply(full)
 
 	seen := map[string]bool{}
 	var features []string
@@ -100,12 +102,31 @@ func (s *Server) pageAudit(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// apiAudit exposes the report as lattice.audit/1, with the same filters.
+// apiAudit exposes the report as lattice.audit/1, with the same filters. An
+// unknown promise id is a bad request, as it is a usage error on the CLI.
 func (s *Server) apiAudit(w http.ResponseWriter, r *http.Request) {
 	full, err := s.auditReport(r)
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, audit.Filter{Class: r.URL.Query().Get("class"), Feature: r.URL.Query().Get("feature")}.Apply(full))
+	ids := promisesParam(r)
+	if unknown := full.UnknownPromises(ids); len(unknown) > 0 {
+		writeJSONError(w, fmt.Errorf("unknown promise %s", strings.Join(unknown, ", ")), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, audit.Filter{Class: r.URL.Query().Get("class"), Feature: r.URL.Query().Get("feature"), Promises: ids}.Apply(full))
+}
+
+// promisesParam reads ?promise=, repeated or as a comma list.
+func promisesParam(r *http.Request) []string {
+	var out []string
+	for _, v := range r.URL.Query()["promise"] {
+		for _, p := range strings.Split(v, ",") {
+			if p = strings.TrimSpace(p); p != "" {
+				out = append(out, p)
+			}
+		}
+	}
+	return out
 }

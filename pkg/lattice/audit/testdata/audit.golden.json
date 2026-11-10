@@ -1,0 +1,276 @@
+{
+  "schema": "lattice.audit/1",
+  "commit": "abc123",
+  "dirty": false,
+  "inputs": {
+    "results": {
+      "present": false,
+      "matches_head": true
+    },
+    "coverage": {
+      "present": false,
+      "per_test": 0,
+      "matches_head": true
+    },
+    "reach": {
+      "present": true
+    },
+    "breaks": {
+      "present": true,
+      "commit": "abc123",
+      "runs": 4
+    },
+    "notes": {
+      "present": false,
+      "count": 0
+    }
+  },
+  "summary": {
+    "total": 2,
+    "by_class": {
+      "break_tested": 1,
+      "demonstrated_only": 0,
+      "exercised": 0,
+      "fake": 1,
+      "not_demonstrated": 0,
+      "unenforced": 0,
+      "unknown": 0,
+      "unverified": 0
+    },
+    "by_kind": {
+      "fake:passes_when_broken": 1
+    },
+    "fakes": 1
+  },
+  "note": "confirmed is a fact about the approval record (who signed which version), not proof the promise is the right one. Only break_tested and exercised are positive; unknown is never a pass.",
+  "rows": [
+    {
+      "promise": "f:INV-1",
+      "feature": "f",
+      "invariant": "INV-1",
+      "statement": "statement INV-1",
+      "tier": 1,
+      "class": "fake",
+      "kind": "passes_when_broken",
+      "reason": "the verifiers passed with f.LimitPanel broken (early_return): they cannot tell the code is broken; 1 of 3 enforcers survived: f.LimitPanel; 2 killed: f.CapAmount, f.CheckLimit",
+      "signals": {
+        "declared": {
+          "value": "yes",
+          "honesty": "fact"
+        },
+        "enforced": {
+          "value": "yes",
+          "honesty": "fact",
+          "items": [
+            "f.CapAmount",
+            "f.CheckLimit",
+            "f.LimitPanel"
+          ]
+        },
+        "verified": {
+          "value": "yes",
+          "honesty": "fact",
+          "items": [
+            "f.TestOne"
+          ]
+        },
+        "demonstrated": {
+          "value": "yes",
+          "honesty": "fact",
+          "detail": "every verifier with a result passed, and at least one has one"
+        },
+        "exercised": {
+          "value": "unknown",
+          "honesty": "proxy",
+          "detail": "no per-test coverage ingested (lattice results ingest --per-test)"
+        },
+        "live": {
+          "value": "unknown",
+          "honesty": "upper_bound",
+          "detail": "reach is unknown for at least one enforcer (no roots, no reference data, or an unresolved call)"
+        },
+        "break_tested": {
+          "value": "survived",
+          "honesty": "fact",
+          "items": [
+            "f.LimitPanel"
+          ],
+          "method": "early_return"
+        },
+        "confirmed": {
+          "value": "none",
+          "honesty": "proxy",
+          "detail": "no BRD criterion maps to this promise"
+        }
+      },
+      "evidence": {
+        "enforcers": [
+          {
+            "fqn": "f.CapAmount",
+            "file": "f/cap.go",
+            "line": 10
+          },
+          {
+            "fqn": "f.CheckLimit",
+            "file": "f/limit.go",
+            "line": 20
+          },
+          {
+            "fqn": "f.LimitPanel",
+            "file": "web/LimitPanel.tsx",
+            "line": 30
+          }
+        ],
+        "verifiers": [
+          {
+            "fqn": "f.TestOne",
+            "file": "f_test.go",
+            "result": "pass",
+            "ran_enforcer": false
+          }
+        ],
+        "breaks": [
+          {
+            "promise": "f:INV-1",
+            "enforcer": "f.CapAmount",
+            "method": "early_return",
+            "baseline": "pass",
+            "outcome": "killed"
+          },
+          {
+            "promise": "f:INV-1",
+            "enforcer": "f.CheckLimit",
+            "method": "early_return",
+            "baseline": "pass",
+            "outcome": "killed"
+          },
+          {
+            "promise": "f:INV-1",
+            "enforcer": "f.LimitPanel",
+            "method": "early_return",
+            "baseline": "pass",
+            "outcome": "survived"
+          }
+        ]
+      },
+      "enforcers": [
+        {
+          "symbol": "f.CapAmount",
+          "file": "f/cap.go",
+          "line": 10,
+          "outcome": "killed",
+          "reason": "breaking it (early_return) made the verifiers fail"
+        },
+        {
+          "symbol": "f.CheckLimit",
+          "file": "f/limit.go",
+          "line": 20,
+          "outcome": "killed",
+          "reason": "breaking it (early_return) made the verifiers fail"
+        },
+        {
+          "symbol": "f.LimitPanel",
+          "file": "web/LimitPanel.tsx",
+          "line": 30,
+          "outcome": "survived",
+          "reason": "the verifiers passed with it broken (early_return)"
+        }
+      ]
+    },
+    {
+      "promise": "f:INV-2",
+      "feature": "f",
+      "invariant": "INV-2",
+      "statement": "statement INV-2",
+      "tier": 1,
+      "class": "break_tested",
+      "reason": "breaking f.Second (early_return) made the verifiers fail",
+      "signals": {
+        "declared": {
+          "value": "yes",
+          "honesty": "fact"
+        },
+        "enforced": {
+          "value": "yes",
+          "honesty": "fact",
+          "items": [
+            "f.Second"
+          ]
+        },
+        "verified": {
+          "value": "yes",
+          "honesty": "fact",
+          "items": [
+            "f.TestTwo"
+          ]
+        },
+        "demonstrated": {
+          "value": "yes",
+          "honesty": "fact",
+          "detail": "every verifier with a result passed, and at least one has one"
+        },
+        "exercised": {
+          "value": "unknown",
+          "honesty": "proxy",
+          "detail": "no per-test coverage ingested (lattice results ingest --per-test)"
+        },
+        "live": {
+          "value": "entry",
+          "honesty": "upper_bound"
+        },
+        "break_tested": {
+          "value": "killed",
+          "honesty": "fact",
+          "items": [
+            "f.Second"
+          ],
+          "method": "early_return"
+        },
+        "confirmed": {
+          "value": "none",
+          "honesty": "proxy",
+          "detail": "no BRD criterion maps to this promise"
+        }
+      },
+      "evidence": {
+        "enforcers": [
+          {
+            "fqn": "f.Second",
+            "file": "f/second.go",
+            "line": 4,
+            "reach": "entry"
+          }
+        ],
+        "verifiers": [
+          {
+            "fqn": "f.TestTwo",
+            "file": "f_test.go",
+            "result": "pass",
+            "ran_enforcer": false
+          }
+        ],
+        "breaks": [
+          {
+            "promise": "f:INV-2",
+            "enforcer": "f.Second",
+            "method": "early_return",
+            "baseline": "pass",
+            "outcome": "killed",
+            "failed_tests": [
+              "f.TestTwo"
+            ]
+          }
+        ]
+      },
+      "enforcers": [
+        {
+          "symbol": "f.Second",
+          "file": "f/second.go",
+          "line": 4,
+          "outcome": "killed",
+          "reason": "breaking it (early_return) made the verifiers fail"
+        }
+      ]
+    }
+  ]
+}
