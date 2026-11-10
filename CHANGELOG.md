@@ -2,7 +2,7 @@
 
 All notable changes to Lattice are documented in this file.
 
-## [Unreleased]
+## [0.15.0] — 2026-11-10
 
 ### Fixed
 
@@ -139,6 +139,19 @@ All notable changes to Lattice are documented in this file.
   `not_run_verifiers` the row reads `unknown` / `partial_run`, with a reason naming
   it, and each enforcer's outcome is in the row's evidence. `breaks.json` files
   without the new fields read as before.
+
+### Behaviour changes to plan for
+
+- **`lattice brd approve`, `brd ack` and `brd overturn` are deprecated.** They still work and
+  still set `status: approved`, so `validate` reads existing approvals as before. They now print
+  a deprecation line and add `local: true` to the approval block, so expect one new key in the
+  next approval diff. Move to `lattice prepare` (a decision branch you merge through a reviewed
+  pull request) and `lattice confirm` (reads the platform's approval).
+- **`lattice audit` and `lattice check` count only a platform confirmation.** Their `confirmed`
+  signal reads `lattice/.cache/confirm.json`, which `lattice confirm` writes; `approved_by` is
+  display only. Until you run `lattice confirm` (in CI, with a token that can read pull request
+  reviews), every promise reads unconfirmed there and `check` reports UNPROVEN, never ASSURED.
+  `validate` is unchanged for BRDs that are already approved.
 
 ## [0.14.0] — 2026-10-26
 
