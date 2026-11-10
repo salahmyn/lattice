@@ -1456,19 +1456,36 @@ lattice prepare waiver add --code NO_BREAK_RUN --subject refunds:INV-1 \
 ```
 
 `prepare` checks the action against the kernel, then writes a branch
-`decision/<id>-v<N>` holding one file, `lattice/decisions/approvals/<id>-v<N>.yaml`
-(`brd ack`, `return`, `overturn` and `promise confirm` add a suffix, so several
-decisions on one version never share a file; a waiver also writes the protected
-`lattice/waivers.yaml`). The branch is built from HEAD with git plumbing, so your
-checkout, index and working tree are never touched. It never pushes and never opens
-a pull request. It prints `lattice.prepare/1`:
+`decision/<id>-v<N>-<packet8>` holding one file,
+`lattice/decisions/approvals/<id>-v<N>-<packet8>.yaml`, where `<packet8>` is the
+first 8 hex digits of the decision's packet hash (`brd ack`, `return`, `overturn`
+and `promise confirm` add a suffix before it, such as `.ack` or `.confirm-<refs>`,
+so several decisions on one version never share a file; a waiver also writes the
+protected `lattice/waivers.yaml`). The branch is built from HEAD with git plumbing,
+so your checkout, index and working tree are never touched. It never pushes and
+never opens a pull request. It prints `lattice.prepare/1`:
 
 ```json
-{ "contract": "lattice.prepare/1", "commit": "cad25d1", "branch": "decision/brd.refunds-v3",
-  "base": "main", "files": ["lattice/decisions/approvals/brd.refunds-v3.yaml"],
-  "packet_hash": "sha256:9e1f...", "command": "gh pr create --head decision/brd.refunds-v3 --base main ...",
+{ "contract": "lattice.prepare/1", "commit": "cad25d1", "branch": "decision/brd.refunds-v3-9e1f04ab",
+  "base": "main", "files": ["lattice/decisions/approvals/brd.refunds-v3-9e1f04ab.yaml"],
+  "packet_hash": "sha256:9e1f04ab...", "command": "gh pr create --head decision/brd.refunds-v3-9e1f04ab --base main ...",
   "note": "Push the branch first ..." }
 ```
+
+Because the name comes from the packet, a decision file is never overwritten:
+
+- Preparing the same packet again reports the branch it already wrote and exits 0
+  (the `note` starts with "Already prepared").
+- After the BRD or a promise changes, the packet differs, so `prepare` writes a new
+  branch and a new file. The earlier decision files stay in the tree as they were.
+  This is how you re-confirm a promise after `CONFIRMATION_VOIDED`.
+- A local branch of the same name that does not hold this decision is refused
+  (`BRANCH_EXISTS`). A decision that is already on HEAD is refused
+  (`DECISION_EXISTS`); `lattice confirm` reads its verdict once it merges.
+
+Decision files written before v0.15.1 are named `<id>-v<N>[.<action>].yaml`.
+`lattice confirm` and `lattice check` still read them: they go by the file's
+content, not its name.
 
 When the kernel says no, it prints `{refused, params, text, next}` and exits 1:
 
@@ -1486,7 +1503,7 @@ Refusal codes: `BRD_NOT_FOUND`, `VERSION_REQUIRED`, `VERSION_MISMATCH`,
 `COUNCIL_TOUCHED`, `COUNCIL_HUMAN_ONLY`, `COUNCIL_OVERTURNED`, `COUNCIL_INVALID`,
 `MANDATE_NOT_PINNED`, `UNKNOWN_WAIVER_KIND`, `ADR_REQUIRED`, `ADR_NOT_FOUND`,
 `WAIVER_TIER3`, `WAIVER_DUPLICATE`, `SUBJECT_NOT_FOUND`, `DIRTY_LATTICE`,
-`BRANCH_EXISTS`, `BAD_ID`, `NOT_A_REPO`. Waiver kinds are closed: `no_tool`,
+`BRANCH_EXISTS`, `DECISION_EXISTS`, `BAD_ID`, `NOT_A_REPO`. Waiver kinds are closed: `no_tool`,
 `generated_code`, `out_of_reach` and `accepted_risk` (the last two need an ADR). A
 waiver is shown and never counted as proof.
 

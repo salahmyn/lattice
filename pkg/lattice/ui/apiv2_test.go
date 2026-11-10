@@ -620,12 +620,15 @@ func TestAPIV2PrepareWritesABranchAndConfirmsNothing(t *testing.T) {
 		Files      []string `json:"files"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &res)
-	if res.Contract != "lattice.prepare/1" || res.Branch != "decision/brd.shop-v1" || res.PacketHash != page.Packet.PacketHash ||
+	if res.Contract != "lattice.prepare/1" || !strings.HasPrefix(res.Branch, "decision/brd.shop-v1-") || res.PacketHash != page.Packet.PacketHash ||
 		!strings.Contains(res.Command, "gh pr create") || len(res.Files) != 1 {
 		t.Errorf("result = %+v", res)
 	}
 	// The hash the page showed is the hash the decision pinned: one computation.
-	if show := gitIn(t, root, "show", "decision/brd.shop-v1:lattice/decisions/approvals/brd.shop-v1.yaml"); !strings.Contains(show, page.Packet.PacketHash) {
+	if len(res.Files) != 1 {
+		t.Fatalf("files = %v", res.Files)
+	}
+	if show := gitIn(t, root, "show", res.Branch+":"+res.Files[0]); !strings.Contains(show, page.Packet.PacketHash) {
 		t.Errorf("the decision file does not pin the packet hash:\n%s", show)
 	}
 	// Nothing confirms: no confirm.json, no remote, the checkout untouched.
@@ -635,9 +638,17 @@ func TestAPIV2PrepareWritesABranchAndConfirmsNothing(t *testing.T) {
 	if gitIn(t, root, "remote") != "" || gitIn(t, root, "rev-parse", "--abbrev-ref", "HEAD") != "main" || gitIn(t, root, "status", "--porcelain") != "" {
 		t.Error("prepare must touch nothing but a local branch")
 	}
-	// The same decision again is refused: the branch exists.
-	if w := postPrepare(srv, "127.0.0.1:5000", hdr, `{"action":"brd.approve","id":"brd.shop","version":1}`); refusedCode(t, w) != "BRANCH_EXISTS" {
-		t.Errorf("second prepare: %s", w.Body.String())
+	// The same decision again is idempotent: it reports the branch it wrote.
+	tip := gitIn(t, root, "rev-parse", res.Branch)
+	w = postPrepare(srv, "127.0.0.1:5000", hdr, `{"action":"brd.approve","id":"brd.shop","version":1}`)
+	var again struct {
+		Branch string `json:"branch"`
+	}
+	if _ = json.Unmarshal(w.Body.Bytes(), &again); w.Code != 200 || again.Branch != res.Branch {
+		t.Errorf("second prepare: %d %s", w.Code, w.Body.String())
+	}
+	if gitIn(t, root, "rev-parse", res.Branch) != tip {
+		t.Error("a second prepare of the same packet must leave its branch alone")
 	}
 
 	// An agent never prepares a decision.

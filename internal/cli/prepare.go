@@ -21,10 +21,21 @@ func newPrepareCommand(io *IO) *cobra.Command {
 		Use:   "prepare",
 		Short: "Prepare a decision branch for a human to approve on the platform",
 		Long: `Validates a decision against the kernel and writes a decision branch
-(decision/<id>-v<N>) holding one decision file, lattice/decisions/approvals/<id>-v<N>.yaml.
-The branch is built from HEAD with git plumbing: your checkout, index and working
-tree are never touched, and nothing is pushed or opened. The JSON it prints
+(decision/<id>-v<N>-<packet8>) holding one decision file,
+lattice/decisions/approvals/<id>-v<N>-<packet8>.yaml, where <packet8> is the
+first 8 hex digits of the decision's packet hash (actions other than approve
+and waiver add a suffix before it, e.g. <id>-v<N>.ack-<packet8>). The branch is
+built from HEAD with git plumbing: your checkout, index and working tree are
+never touched, and nothing is pushed or opened. The JSON it prints
 (lattice.prepare/1) carries the 'gh pr create' command to run.
+
+The name comes from the packet, so a decision file is never overwritten.
+Preparing the same packet again reports the existing branch and exits 0.
+After the BRD or a promise changes (for example to re-confirm a promise that
+CONFIRMATION_VOIDED reports), the packet differs and prepare writes a new
+branch and file beside the earlier ones. A branch of the same name that holds
+something else is refused (BRANCH_EXISTS); a decision already on HEAD is
+refused (DECISION_EXISTS).
 
 Nothing here confirms anything. A decision counts only when a user other than
 the pull request's author approves the merged head and 'lattice confirm' reads

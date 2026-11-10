@@ -159,16 +159,19 @@ func TestPrepareWritesBranchAndLeavesCheckoutAlone(t *testing.T) {
 		t.Error("the working tree changed")
 	}
 
-	if res.Branch != "decision/brd.x-v1" || res.Commit != head || res.Base != "main" {
+	// The name is the BRD, the version and the first 8 digits of the packet.
+	stem := "brd.x-v1-" + strings.TrimPrefix(res.PacketHash, "sha256:")[:8]
+	branch, file := "decision/"+stem, "lattice/decisions/approvals/"+stem+".yaml"
+	if res.Branch != branch || res.Commit != head || res.Base != "main" {
 		t.Errorf("result %+v", res)
 	}
-	if got := f.git("rev-parse", "refs/heads/decision/brd.x-v1^"); got != head {
+	if got := f.git("rev-parse", "refs/heads/"+branch+"^"); got != head {
 		t.Errorf("the branch must start at HEAD: parent %s, HEAD %s", got, head)
 	}
-	if got := f.git("diff", "--name-only", head, "decision/brd.x-v1"); got != "lattice/decisions/approvals/brd.x-v1.yaml" {
+	if got := f.git("diff", "--name-only", head, branch); got != file {
 		t.Errorf("the branch changes %q", got)
 	}
-	d, err := confirm.ParseDecision([]byte(f.git("show", "decision/brd.x-v1:lattice/decisions/approvals/brd.x-v1.yaml")))
+	d, err := confirm.ParseDecision([]byte(f.git("show", branch+":"+file)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,17 +179,12 @@ func TestPrepareWritesBranchAndLeavesCheckoutAlone(t *testing.T) {
 		!strings.Contains(d.PreparedBy, "dev@example.com") || d.PreparedAt != "2026-01-02T03:04:05Z" {
 		t.Errorf("decision file %+v", d)
 	}
-	if !strings.HasPrefix(res.Command, "gh pr create --head decision/brd.x-v1 --base main ") || !strings.Contains(res.Command, "--title ") {
+	if !strings.HasPrefix(res.Command, "gh pr create --head "+branch+" --base main ") || !strings.Contains(res.Command, "--title ") {
 		t.Errorf("command %q", res.Command)
 	}
 	// The BRD file on the branch is the one at HEAD: prepare decides, it does not edit.
-	if f.git("rev-parse", "decision/brd.x-v1:lattice/brds/brd.x.yaml") != f.git("rev-parse", "HEAD:lattice/brds/brd.x.yaml") {
+	if f.git("rev-parse", branch+":lattice/brds/brd.x.yaml") != f.git("rev-parse", "HEAD:lattice/brds/brd.x.yaml") {
 		t.Error("the BRD file differs on the branch")
-	}
-
-	// Preparing the same decision again does not overwrite the branch.
-	if _, ref := Run(f.env(""), approveReq("brd.x", 1)); ref == nil || ref.Refused != "BRANCH_EXISTS" {
-		t.Errorf("second prepare: %+v", ref)
 	}
 }
 
@@ -194,20 +192,22 @@ func TestPrepareWritesBranchAndLeavesCheckoutAlone(t *testing.T) {
 func TestPacketHashIsDeterministic(t *testing.T) {
 	f := newFixture(t)
 	a, _ := Run(f.env(""), approveReq("brd.x", 1))
-	f.git("branch", "-D", "decision/brd.x-v1")
+	if a == nil {
+		t.Fatal("first prepare refused")
+	}
+	f.git("branch", "-D", a.Branch)
 	b, _ := Run(f.env(""), approveReq("brd.x", 1))
-	if a == nil || b == nil || a.PacketHash != b.PacketHash {
+	if b == nil || a.PacketHash != b.PacketHash || a.Branch != b.Branch {
 		t.Fatalf("hashes differ: %+v %+v", a, b)
 	}
-	f.git("branch", "-D", "decision/brd.x-v1")
 	x := *f.brd("brd.x")
 	x.SuccessCriteria[0].Statement = "changed"
 	f.setBRD(x)
 	f.saveBRD(x)
 	f.commit("edit")
 	c, _ := Run(f.env(""), approveReq("brd.x", 1))
-	if c == nil || c.PacketHash == a.PacketHash {
-		t.Fatalf("an edited BRD must change the packet hash: %+v", c)
+	if c == nil || c.PacketHash == a.PacketHash || c.Branch == a.Branch {
+		t.Fatalf("an edited BRD must change the packet hash and the name: %+v", c)
 	}
 }
 
@@ -353,10 +353,10 @@ func TestPrepareAckWaiverAndConfirm(t *testing.T) {
 	if ref != nil {
 		t.Fatalf("ack refused: %+v", ref)
 	}
-	if res.Branch != "decision/brd.x-v1.ack" {
-		t.Errorf("ack branch %s", res.Branch)
+	if !strings.HasPrefix(res.Branch, "decision/brd.x-v1.ack-") || len(res.Files) != 1 || res.Files[0] != "lattice/decisions/approvals/"+strings.TrimPrefix(res.Branch, "decision/")+".yaml" {
+		t.Errorf("ack branch %s, files %v", res.Branch, res.Files)
 	}
-	d, _ := confirm.ParseDecision([]byte(f.git("show", res.Branch+":lattice/decisions/approvals/brd.x-v1.ack.yaml")))
+	d, _ := confirm.ParseDecision([]byte(f.git("show", res.Branch+":"+res.Files[0])))
 	if d.VotesHash == "" || d.Action != confirm.ActionAck {
 		t.Errorf("ack decision %+v", d)
 	}
@@ -437,5 +437,71 @@ func golden(t *testing.T, rel string, v interface{}) {
 	}
 	if string(want) != buf.String() {
 		t.Errorf("%s changed; the contract is frozen. got:\n%s", rel, buf.String())
+	}
+}
+
+// A decision's name comes from its packet. Preparing the same packet twice
+// reports the branch it already wrote; once that decision is on HEAD it is
+// never written again; and after the promise changes, re-confirming writes a
+// second branch with a new file, leaving the first decision file as it was.
+// A branch of the same name that holds something else is refused.
+// @verifies confirm:INV-7
+func TestPrepareNeverOverwritesADecision(t *testing.T) {
+	f := newFixture(t)
+	// A decision file with a name from before names carried the packet.
+	legacy := "lattice/decisions/approvals/brd.x-v1.confirm-legacy.yaml"
+	f.write(legacy, "action: promise.confirm\nid: brd.x\nversion: 1\npacket_hash: sha256:00\nrows:\n  - promise: f:INV-1\nprepared_by: Dev <dev@example.com>\nprepared_at: \"2025-12-01T00:00:00Z\"\n")
+	f.commit("an earlier confirmation")
+	req := Request{Action: confirm.ActionPromiseConfirm, Refs: []string{"f:INV-1"}}
+
+	first, ref := Run(f.env(""), req)
+	if ref != nil {
+		t.Fatalf("first prepare refused: %+v", ref)
+	}
+	if !strings.HasSuffix(first.Branch, "-"+strings.TrimPrefix(first.PacketHash, "sha256:")[:8]) || len(first.Files) != 1 {
+		t.Fatalf("the name must carry the packet: %+v", first)
+	}
+	tip := f.git("rev-parse", first.Branch)
+	if f.git("show", first.Branch+":"+legacy) != f.git("show", "HEAD:"+legacy) {
+		t.Error("the earlier decision file changed on the new branch")
+	}
+
+	// The same packet again: the same branch, untouched, and no error.
+	again, ref := Run(f.env(""), req)
+	if ref != nil || again.Branch != first.Branch || again.Files[0] != first.Files[0] || !strings.HasPrefix(again.Note, "Already prepared") {
+		t.Fatalf("a second prepare of the same packet must be idempotent: %+v %+v", again, ref)
+	}
+	if f.git("rev-parse", first.Branch) != tip {
+		t.Error("the second prepare moved the branch")
+	}
+
+	// Merged, the branch deleted: the same packet is never written again.
+	f.git("merge", "-q", "--ff-only", first.Branch)
+	f.git("branch", "-D", first.Branch)
+	recorded := f.git("show", "HEAD:"+first.Files[0])
+	if _, ref := Run(f.env(""), req); ref == nil || ref.Refused != "DECISION_EXISTS" {
+		t.Fatalf("a decision on HEAD must not be prepared again: %+v", ref)
+	}
+
+	// The promise is edited, as CONFIRMATION_VOIDED says, and confirmed again.
+	f.kg.Features[0].Invariants[0].Statement = "one, edited"
+	second, ref := Run(f.env(""), req)
+	if ref != nil {
+		t.Fatalf("re-confirm refused: %+v", ref)
+	}
+	if second.Branch == first.Branch || second.Files[0] == first.Files[0] || second.PacketHash == first.PacketHash {
+		t.Fatalf("a new packet needs a new branch and file: %+v vs %+v", second, first)
+	}
+	if got := f.git("show", second.Branch+":"+first.Files[0]); got != recorded {
+		t.Errorf("the first decision file changed on the second branch:\n%s\nwant\n%s", got, recorded)
+	}
+	if got := f.git("diff", "--name-only", "HEAD", second.Branch); got != second.Files[0] {
+		t.Errorf("the second branch must only add its own file: %q", got)
+	}
+
+	// A branch of the same name that holds another decision is refused.
+	f.git("branch", "-f", second.Branch, "HEAD")
+	if _, ref := Run(f.env(""), req); ref == nil || ref.Refused != "BRANCH_EXISTS" {
+		t.Errorf("a same-named branch without this decision: %+v", ref)
 	}
 }

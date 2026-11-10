@@ -22,3 +22,5 @@ invariants:
     statement: Prepare builds the decision branch with git plumbing from HEAD and never switches the checkout, touches the index or working tree, pushes or opens a pull request; the kernel refuses with a code when a rule is broken.
   - id: INV-6
     statement: confirm.json is read as confirmed only when its stamp is intact. A file with no stamp, a digest that does not match its records, commit or CI run, or one tracked by git reads unknown; under --ci a file of a local run or of another commit reads unknown; and a CI run never reuses a local file's verdicts.
+  - id: INV-7
+    statement: A decision file is never overwritten. Its name carries the first 8 digits of its packet hash, so preparing the same packet again reports the existing branch, a changed packet gets a new branch and file, and a same-named branch or file holding something else is refused; readers accept both the old and the new names.

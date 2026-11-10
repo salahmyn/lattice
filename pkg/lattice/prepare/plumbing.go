@@ -86,6 +86,15 @@ func branchExists(g confirm.Git, branch string) bool {
 	return err == nil
 }
 
+// fileAt returns a file's content at a revision, and whether it exists there.
+func fileAt(g confirm.Git, rev, file string) ([]byte, bool) {
+	if _, err := g.Line("cat-file", "-e", rev+":"+file); err != nil {
+		return nil, false
+	}
+	data, err := g.Show(rev, file)
+	return data, err == nil
+}
+
 func validBranch(g confirm.Git, branch string) bool {
 	_, err := g.Run("check-ref-format", "--branch", branch)
 	return err == nil
