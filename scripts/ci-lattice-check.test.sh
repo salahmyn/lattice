@@ -48,7 +48,7 @@ echo "fake gh: unexpected $*" >&2
 exit 9
 GH
 chmod +x "$tmp/bin/gh"
-export GH_BIN="$tmp/bin/gh" FAKE_LOG="$tmp/api.log" FAKE_COMMENT="$tmp/comment-id" FAKE_SHA="$mb"
+export FAKE_SNAP="$tmp/snap.json" GH_BIN="$tmp/bin/gh" FAKE_LOG="$tmp/api.log" FAKE_COMMENT="$tmp/comment-id" FAKE_SHA="$mb"
 export GITHUB_REPOSITORY=example/repo GITHUB_STEP_SUMMARY="$tmp/summary.md"
 : >"$FAKE_LOG"
 

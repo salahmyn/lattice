@@ -53,7 +53,7 @@ cmd_snapshot() {
   local head path
   head="$(git rev-parse HEAD)"
   path="lattice/.cache/audit/${head}.json"
-  "$LATTICE_BIN" check --snapshot
+  "$LATTICE_BIN" check --snapshot >&2
   if [ ! -s "$path" ]; then
     log "no audit snapshot at $path: the working tree must be clean"
     return 1
