@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -30,11 +31,17 @@ type Repo struct {
 	Top    string // the checkout's top-level directory
 	Prefix string // the code root relative to Top, "" when they are the same
 	Head   string // HEAD's sha
-	Dirty  bool   // anything uncommitted, untracked files included
+	// Dirty is true when anything differs from HEAD (tracked changes and
+	// untracked files that are not ignored) outside Lattice's own state.
+	Dirty bool
+	// DirtyFiles are those paths, relative to Top, sorted.
+	DirtyFiles []string
 }
 
 // OpenRepo reads the checkout around codeRoot. It does not change it.
-func OpenRepo(ctx context.Context, codeRoot string) (Repo, error) {
+// latticeDirs are the workspace directories whose .ledger/ and .cache/ are
+// Lattice's own state; every lattice/.ledger/ and lattice/.cache/ is too.
+func OpenRepo(ctx context.Context, codeRoot string, latticeDirs ...string) (Repo, error) {
 	var r Repo
 	top, err := git(ctx, codeRoot, "rev-parse", "--show-toplevel")
 	if err != nil {
@@ -58,14 +65,85 @@ func OpenRepo(ctx context.Context, codeRoot string) (Repo, error) {
 	if r.Head, err = git(ctx, r.Top, "rev-parse", "HEAD"); err != nil {
 		return r, err
 	}
-	// Lattice's own ledger is appended by ingest and validate runs; it is
-	// not code, so it does not make the tree dirty for a break run.
-	status, err := git(ctx, r.Top, "status", "--porcelain", "--", ".", ":(exclude,glob)**/lattice/.ledger/**")
+	// The dirty state is read from the same file list the overlay copies, so
+	// what the report says matches what was tested, whatever the user's
+	// status.showUntrackedFiles is.
+	changed, err := uncommitted(ctx, r.Top)
 	if err != nil {
 		return r, err
 	}
-	r.Dirty = status != ""
+	owned := ownedPrefixes(topReal, latticeDirs)
+	for _, rel := range changed {
+		if !latticeOwned(rel, owned) {
+			r.DirtyFiles = append(r.DirtyFiles, rel)
+		}
+	}
+	sort.Strings(r.DirtyFiles)
+	r.Dirty = len(r.DirtyFiles) > 0
 	return r, nil
+}
+
+// uncommitted lists the paths, relative to top, that differ from HEAD:
+// modified, added, deleted and untracked files that are not ignored.
+func uncommitted(ctx context.Context, top string) ([]string, error) {
+	changed, err := git(ctx, top, "-c", "core.quotepath=off", "diff", "HEAD", "--no-renames", "--name-only", "-z")
+	if err != nil {
+		return nil, err
+	}
+	untracked, err := git(ctx, top, "ls-files", "-o", "--exclude-standard", "-z")
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, rel := range append(strings.Split(changed, "\x00"), strings.Split(untracked, "\x00")...) {
+		if rel != "" {
+			out = append(out, rel)
+		}
+	}
+	return out, nil
+}
+
+// ownedPrefixes returns the .ledger/ and .cache/ directories of each
+// workspace inside the checkout, as slash paths relative to its top.
+func ownedPrefixes(top string, latticeDirs []string) []string {
+	var out []string
+	for _, d := range latticeDirs {
+		if d == "" {
+			continue
+		}
+		if real, err := filepath.EvalSymlinks(d); err == nil {
+			d = real
+		}
+		rel, err := filepath.Rel(top, d)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue // a workspace in another checkout writes nothing here
+		}
+		base := ""
+		if rel != "." {
+			base = filepath.ToSlash(rel) + "/"
+		}
+		out = append(out, base+".ledger/", base+".cache/")
+	}
+	return out
+}
+
+// latticeOwned reports whether a changed path is Lattice's own runtime
+// state: the ledger that ingest, validate and check runs append to, and the
+// cache that holds ingested results, coverage and breaks.json. Neither is an
+// input of a break run. Source files, manifests and lattice.json are not
+// Lattice's own state and always count.
+// @enforces breaktest:INV-9
+func latticeOwned(rel string, owned []string) bool {
+	p := "/" + filepath.ToSlash(rel)
+	if strings.Contains(p, "/lattice/.ledger/") || strings.Contains(p, "/lattice/.cache/") {
+		return true
+	}
+	for _, o := range owned {
+		if strings.HasPrefix(p, "/"+o) {
+			return true
+		}
+	}
+	return false
 }
 
 // Worktree is a temporary detached `git worktree` at HEAD. Dir is the code
@@ -116,18 +194,11 @@ func (w *Worktree) Close() {
 
 // applyOverlay copies the working tree's uncommitted state into the worktree.
 func (w *Worktree) applyOverlay(ctx context.Context) error {
-	changed, err := git(ctx, w.repo.Top, "-c", "core.quotepath=off", "diff", "HEAD", "--no-renames", "--name-only", "-z")
+	changed, err := uncommitted(ctx, w.repo.Top)
 	if err != nil {
 		return err
 	}
-	untracked, err := git(ctx, w.repo.Top, "ls-files", "-o", "--exclude-standard", "-z")
-	if err != nil {
-		return err
-	}
-	for _, rel := range append(strings.Split(changed, "\x00"), strings.Split(untracked, "\x00")...) {
-		if rel == "" {
-			continue
-		}
+	for _, rel := range changed {
 		src, dst := filepath.Join(w.repo.Top, rel), filepath.Join(w.root, rel)
 		info, err := os.Lstat(src)
 		if os.IsNotExist(err) {
