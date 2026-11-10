@@ -62,6 +62,12 @@ The base audit is lattice/.cache/audit/<merge-base sha>.json, written by
 from a cache or artifact. With none, evidence is not compared with base: the
 verdict reads UNPROVEN, never BROKEN, and the merge rule is not met.
 
+Evidence (results, coverage, breaks) stamped with a commit that is not HEAD
+is set aside in every run, local included: it reads unknown (EVIDENCE_STALE),
+never a pass and never a fall. Re-run the tests and ingest at HEAD. Evidence
+ingested at HEAD still counts when the working tree has uncommitted changes:
+the stamp is a commit, not a tree.
+
 --ci counts only evidence stamped with the head commit and a CI run (the
 GITHUB_RUN_ID or CI_PIPELINE_ID that 'results ingest' and 'break' record);
 anything else reads unknown (EVIDENCE_NOT_CI). Only CI's verdict counts.
@@ -96,7 +102,7 @@ disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
 					return usageError(io, "GIT_FAILED", err.Error())
 				}
 				dirty, _ := gitDirty(filepath.Dir(ws.LatticeDir))
-				ev := check.Gather(ws.LatticeDir, head, ci)
+				ev := check.GatherSnapshot(ws.LatticeDir, head, ci)
 				headAudit := audit.Compute(ev.Apply(audit.Collect(ws.LatticeDir, kg, dirty)))
 				saved, serr := check.SaveSnapshot(ws.LatticeDir, headAudit)
 				if serr != nil {

@@ -6,8 +6,9 @@
 // of its Input, so the verdict can be tested without git or a run.
 //
 // The floor: the kernel computes facts; unknown is never a pass; only CI's
-// verdict counts (`--ci` refuses evidence that is not tied to the head
-// commit and a CI run); a waiver is shown and never counted as proof.
+// verdict counts (evidence for another commit is set aside in every run, and
+// `--ci` also refuses evidence that is not from a CI run); a waiver is shown
+// and never counted as proof.
 package check
 
 // @module-feature check
@@ -61,6 +62,7 @@ const (
 	CodeTier3            = "TIER3_INVOLVED"
 	CodeMergeOK          = "MERGE_OK"
 	CodeEvidenceNotCI    = "EVIDENCE_NOT_CI"
+	CodeEvidenceStale    = "EVIDENCE_STALE"
 	CodeNoResults        = "NO_RESULTS"
 	CodeSuiteRed         = "SUITE_RED"
 	CodeEnforcerRemoved  = "ENFORCER_REMOVED"

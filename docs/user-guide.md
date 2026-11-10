@@ -1396,9 +1396,26 @@ of missing data, and the merge rule is not met.
 
 `lattice results ingest`, coverage ingest and `lattice break` stamp their files
 with the head commit and a `ci_run` (from `GITHUB_RUN_ID`, `CI_PIPELINE_ID` and
-similar, else `local`). With `--ci`, evidence whose commit is not `HEAD` or whose
-`ci_run` is `local` is set aside and reads `unknown` (`EVIDENCE_NOT_CI`). Only
-CI's verdict counts; a local run is advice.
+similar, else `local`).
+
+- In every run, local included, evidence whose commit is not `HEAD` (or that
+  carries no commit) is set aside and reads `unknown` (`EVIDENCE_STALE`, "results
+  are for <sha>, not HEAD <sha>: re-run the tests and ingest"). Old passes never
+  count, so stale evidence can never read `ASSURED`; and an old red result is not
+  a fall either: stale evidence is a gap (`UNPROVEN`), never `BROKEN`. After a
+  failed `results ingest`, the previous file is still on disk; this rule is what
+  keeps it out of the verdict.
+- With `--ci`, evidence must also come from a CI run: a file whose `ci_run` is
+  `local`, or whose commit is not `HEAD`, reads `unknown` (`EVIDENCE_NOT_CI`).
+- The stamp is a commit, not a tree. Evidence ingested at `HEAD` still counts
+  while the working tree has uncommitted changes, because the stamp cannot tell
+  whether the run saw those edits. Re-run and ingest before you trust a local
+  verdict on a dirty tree.
+- The base audit snapshot (`lattice check --snapshot`, and the snapshot a check
+  of a clean tree saves) keeps its own rule: only `--ci` sets evidence aside
+  there.
+
+Only CI's verdict counts; a local run is advice.
 
 ### Exit codes
 
