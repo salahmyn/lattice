@@ -267,6 +267,41 @@ func TestCheckCLIStaleEvidenceIsSetAside(t *testing.T) {
 	}
 }
 
+// Rewiring a handler an entry point reaches, which no promise guards, reads
+// UNPROVEN (UNGUARDED_LINES), not ASSURED NOTHING_TOUCHED, and it may still
+// merge: unguarded lines are reported, not blocking.
+// @verifies check:INV-9
+func TestCheckCLIReachedButUnguardedIsUnproven(t *testing.T) {
+	clearCIEnv(t)
+	f := newCheckFixture(t)
+	handler := func(body string) string {
+		return "package shop\n\n// @module-feature shop\n\n// Handle answers a price request.\nfunc Handle(n int) string {\n" + body + "}\n"
+	}
+	f.write("shop/handler.go", handler("\tif Positive(n) {\n\t\treturn \"ok\"\n\t}\n\treturn \"no\"\n"))
+	f.write("lattice/entry-points/ep.http.price.yaml", "id: ep.http.price\nversion: 1\nstatus: production\nkind: http\npurpose: Quote a price.\n"+
+		"owners:\n  business: b\n  engineering: e\ntrigger:\n  method: GET\n  path: /price\nhandler:\n  symbol: shop.Handle\n  file: shop/handler.go\nflow:\n  - feature: shop\n")
+	f.commit("a handler")
+
+	f.git("checkout", "-q", "-b", "rewire")
+	f.write("shop/handler.go", handler("\tif !Positive(n) {\n\t\treturn \"no\"\n\t}\n\treturn \"ok\"\n"))
+	f.commit("rewire the handler")
+
+	rep, code := f.check("--base", "main")
+	if rep.Verdict.State != check.Unproven || rep.Verdict.Code != check.CodeUnguardedLines {
+		t.Fatalf("verdict %+v, blind spot %+v", rep.Verdict, rep.BlindSpot)
+	}
+	if code != 0 || !rep.MergeAllowed {
+		t.Errorf("unguarded lines must not block: exit %d merge %v %+v", code, rep.MergeAllowed, rep.Merge)
+	}
+	bs := rep.BlindSpot
+	if bs.UnguardedLines == 0 || len(bs.Unguarded) != 1 || bs.Unguarded[0].Symbol != "shop.Handle" || len(bs.Untraced) != 0 {
+		t.Errorf("blind spot = %+v", bs)
+	}
+	if strings.Contains(rep.Verdict.Text, "no production line") || !strings.Contains(rep.Verdict.Text, "no promise guards") {
+		t.Errorf("verdict text = %q", rep.Verdict.Text)
+	}
+}
+
 // Usage errors exit 2, and the Markdown form starts with the marker.
 func TestCheckCLIUsageAndMarkdown(t *testing.T) {
 	clearCIEnv(t)

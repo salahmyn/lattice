@@ -51,8 +51,8 @@ type computation struct {
 	weak       []Weakening
 	// weakBy lists the weakenings of each promise.
 	weakBy map[string][]Weakening
-	// touchedLines counts the lines of the touched production symbols.
-	touchedLines int
+	// lines is the scan of the touched production symbols.
+	lines lineScan
 }
 
 func (c *computation) run() Report {
@@ -72,7 +72,8 @@ func (c *computation) run() Report {
 	c.findTouched()
 	c.findWeakenings()
 
-	untraced, newUntraced := c.untraced()
+	c.lines = c.untraced()
+	untraced, newUntraced := c.lines.untraced, c.lines.newUntraced
 	gaps := c.gaps(len(untraced) > 0)
 	rows := c.rows(gaps)
 	oor := c.outOfReach()
@@ -97,7 +98,7 @@ func (c *computation) run() Report {
 	if rep.Weakenings == nil {
 		rep.Weakenings = []Weakening{}
 	}
-	rep.BlindSpot = blindSpot(untraced, newUntraced, c.touchedLines, oor)
+	rep.BlindSpot = blindSpot(c.lines, oor)
 
 	rep.Verdict = c.verdict(gaps, untraced, oor)
 	rep.MergeAllowed, rep.Merge = c.merge(rep.Verdict, gaps, newUntraced, rows)
