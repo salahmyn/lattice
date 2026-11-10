@@ -17,8 +17,9 @@ name: Lattice check
 #   pull request     fetch the merge base's artifact (if any) -> check --base
 #                    --ci --markdown -> job summary + one sticky PR comment
 #
-# Break (about four minutes on this repo) runs on master and on pull requests
-# that touch Go; other pull requests get the check without it.
+# The test suite always runs. Break (about four minutes on this repo) runs on
+# master and on pull requests that touch Go; other pull requests get the check
+# without it, and their break signals read unknown.
 
 on:
   pull_request:
@@ -64,17 +65,18 @@ jobs:
           else
             echo "go=true" >>"$GITHUB_OUTPUT"
           fi
+      # The suite always runs (under a minute), so every commit the check
+      # reads has its own results: a commit with none would read as missing
+      # evidence. Only the break run, about four minutes, is skipped when no
+      # Go changed.
       - name: Install gotestsum
-        if: steps.scope.outputs.go == 'true'
         run: go install gotest.tools/gotestsum@v1.12.3
       # A red suite is recorded as evidence (the check reads it as BROKEN) and
       # is gated by the `test` job in ci.yml, so it does not stop this one.
       - name: Test suite, as JUnit
-        if: steps.scope.outputs.go == 'true'
         continue-on-error: true
         run: gotestsum --junitfile "$RUNNER_TEMP/unit.xml" -- ./...
       - name: Ingest results
-        if: steps.scope.outputs.go == 'true'
         run: dist/lattice results ingest "$RUNNER_TEMP/unit.xml"
       - name: Break the enforcers
         if: steps.scope.outputs.go == 'true'

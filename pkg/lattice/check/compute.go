@@ -285,6 +285,18 @@ var brokenClasses = map[string]bool{
 	audit.ClassUnverified: true, audit.ClassNotDemonstrated: true,
 }
 
+// fellTo says whether a head row's class is evidence that the promise is not
+// kept. not_demonstrated is a fall only when a verifier's result is red: with
+// no result ingested at head (no_results), the evidence is missing, which
+// reads as a gap (UNPROVEN), never BROKEN.
+// @enforces check:INV-7
+func fellTo(h audit.Row) bool {
+	if h.Class == audit.ClassNotDemonstrated && h.Kind == audit.KindNoResults {
+		return false
+	}
+	return brokenClasses[h.Class]
+}
+
 func classRank(class string) int {
 	for i, k := range audit.Classes {
 		if k == class {
@@ -348,7 +360,7 @@ func (c *computation) findWeakenings() {
 				Next:   "the verifiers no longer fail when the enforcer is broken: restore what they assert",
 			})
 		}
-		if !survived && brokenClasses[h.Class] && classRank(h.Class) < classRank(b.Class) {
+		if !survived && fellTo(h) && classRank(h.Class) < classRank(b.Class) {
 			c.addWeak(Weakening{
 				Code: CodeLevelDropped, Promise: p,
 				Params: map[string]interface{}{"from": b.Class, "to": h.Class},
