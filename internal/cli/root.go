@@ -76,6 +76,7 @@ func NewRootCommand() *cobra.Command {
 		newBreakCommand(io),
 		newPrepareCommand(io),
 		newConfirmCommand(io),
+		newSignCommand(io),
 	)
 
 	return root

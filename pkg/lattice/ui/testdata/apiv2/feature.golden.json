@@ -22,7 +22,8 @@
     "state": "DRIFTED",
     "confirmed_version": 2,
     "confirmed_by": "owner",
-    "via": "PR #33"
+    "via": "PR #33",
+    "method": "review"
   },
   "verdict": {
     "state": "UNPROVEN",

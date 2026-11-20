@@ -76,6 +76,12 @@ const (
 	// CodeStatementUnchanged is an informational note: an enforcer of the
 	// promise changed and its statement and tier did not.
 	CodeStatementUnchanged = "STATEMENT_UNCHANGED"
+	// CodeEnforcerMoved is the note on a promise whose base enforcer no
+	// longer enforces it while the same change adds another enforcer of it.
+	// It is not a weakening; the move opens a break_tested gap
+	// (CodeMoveNotBreakTested) until a break of each added enforcer is killed.
+	CodeEnforcerMoved      = "ENFORCER_MOVED"
+	CodeMoveNotBreakTested = "MOVE_NOT_BREAK_TESTED"
 )
 
 // Assurance is one measurement: the shape every assurance value has in the

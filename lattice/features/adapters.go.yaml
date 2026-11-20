@@ -19,3 +19,5 @@ invariants:
     statement: A comment line that starts with a tag name but reads as prose is not a tag.
   - id: INV-5
     statement: A production declaration renamed for a build-constrained file of the same package is reached whenever the declaration that kept the name is.
+  - id: INV-6
+    statement: A Go file is test code when it is a _test.go file, lies under a test directory, or belongs to a test-support package whose name ends in test and that imports testing; a production package is never read as test code for its name alone.

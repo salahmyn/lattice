@@ -9,9 +9,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
+
+	"github.com/salahmyn/lattice/pkg/lattice/confirm/signature"
 )
 
 // GitHub is the GitHub REST client: the only Platform that uses the network.
@@ -26,11 +27,7 @@ type GitHub struct {
 // ParseGitHubRemote reads owner and repo from a remote URL: https://github.com/o/r(.git)
 // or git@github.com:o/r(.git).
 func ParseGitHubRemote(remote string) (owner, repo string, ok bool) {
-	m := regexp.MustCompile(`github\.com[:/]+([^/]+)/([^/]+?)(?:\.git)?/?$`).FindStringSubmatch(strings.TrimSpace(remote))
-	if m == nil {
-		return "", "", false
-	}
-	return m[1], m[2], true
+	return signature.ParseGitHubRemote(remote)
 }
 
 type ghUser struct {
@@ -126,6 +123,29 @@ func (g GitHub) Reviews(ctx context.Context, number int) ([]Review, error) {
 			all = append(all, Review{User: r.User.Login, UserType: r.User.Type, State: r.State, CommitID: r.CommitID})
 		}
 		if len(rs) < 100 {
+			break
+		}
+	}
+	return all, nil
+}
+
+// SigningKeys lists a user's SSH signing keys (GET /users/{login}/ssh_signing_keys),
+// in authorized_keys form. These are the keys GitHub holds for signing, not
+// its authentication keys.
+func (g GitHub) SigningKeys(ctx context.Context, login string) ([]string, error) {
+	var all []string
+	for page := 1; page <= 10; page++ {
+		var ks []struct {
+			Key string `json:"key"`
+		}
+		p := fmt.Sprintf("/users/%s/ssh_signing_keys?per_page=100&page=%d", url.PathEscape(login), page)
+		if err := g.get(ctx, p, &ks); err != nil {
+			return nil, err
+		}
+		for _, k := range ks {
+			all = append(all, k.Key)
+		}
+		if len(ks) < 100 {
 			break
 		}
 	}

@@ -12,11 +12,11 @@ owners:
 implements_brd: brd.verification
 invariants:
   - id: INV-1
-    statement: Anything that fell reads BROKEN and never merges. That is a promise level dropped against base, an enforcer or verifier removed, a break killed at base that survives at head, a red suite, or an edit to the statement, tier or mapping of a confirmed promise.
+    statement: Anything that fell reads BROKEN and never merges. That is a promise level dropped against base, an enforcer or verifier removed (except an enforcer moved under INV-14), a break killed at base that survives at head, a red suite, or an edit to the statement, tier or mapping of a confirmed promise.
     cases:
       - id: a
         kind: error
-        statement: An enforcer removed reads BROKEN and never merges.
+        statement: An enforcer removed reads BROKEN and never merges, unless the same change moved it under INV-14.
       - id: b
         kind: error
         statement: A verifier removed reads BROKEN and never merges.
@@ -56,3 +56,5 @@ invariants:
     statement: Whether the working tree differs from HEAD is read by one rule everywhere, the dirty flag of check, audit, confirm, prepare and the web API and the uncommitted flag of impact alike. A modified, added or deleted path, or an untracked one git does not ignore, counts; Lattice's own runtime state never does, which is every lattice/.ledger/ and lattice/.cache/ and the workspace's own .ledger/ and .cache/ whatever its directory is called. A coverage ingest also leaves out the reports it reads.
   - id: INV-13
     statement: A touched line reads that an entry point reaches it only when the call graph reaches its symbol from the handler of a declared entry point, and a handler that names no symbol of the graph reaches nothing. A line whose feature is on an entry point's flow but that no handler reaches reads that weaker reason, a handler reach the graph cannot decide reads unknown and never reached, and none of these readings makes a line guarded.
+  - id: INV-14
+    statement: A base enforcer of a tier 1 or 2 promise that no longer enforces it at head reads ENFORCER_MOVED, not BROKEN, only when the same change adds an enforcer of that promise that did not enforce it at base. The move opens a (promise, break_tested) gap that is new at every tier and whatever the base read. It clears only when head break results show a killed break of each added enforcer; evidence on kept enforcers, a waiver and INV-10 never clear it. Anything else is ENFORCER_REMOVED.
