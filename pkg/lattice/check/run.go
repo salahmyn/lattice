@@ -8,13 +8,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/salahmyn/lattice/pkg/lattice/adapters/all"
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/coverage"
+	"github.com/salahmyn/lattice/pkg/lattice/gitstate"
 	"github.com/salahmyn/lattice/pkg/lattice/impact"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/scip"
@@ -69,7 +69,7 @@ func Run(ctx context.Context, ws *workspace.Workspace, kg schema.KnowledgeGraph,
 	if err != nil {
 		return Report{}, runErr(RunGitFailed, err)
 	}
-	dirty, _ := GitDirty(filepath.Dir(ws.LatticeDir))
+	dirty, _ := GitDirty(filepath.Dir(ws.LatticeDir), ws.LatticeDir)
 
 	ev := Gather(ws.LatticeDir, head, opt.CI)
 	src := audit.Collect(ws.LatticeDir, kg, dirty)
@@ -140,33 +140,20 @@ func GitRev(top, rev string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// GitDirty reports whether tracked files under dir differ from HEAD, with the
-// first few paths. Derived caches and the ledger are not source.
-func GitDirty(dir string) (bool, []string) {
-	out, err := exec.Command("git", "-C", dir, "status", "--porcelain", "--untracked-files=no", "--", ".").Output()
+// GitDirty reports whether the working tree under dir differs from HEAD, with
+// the first few paths (relative to the checkout's top, sorted, ten at most
+// and then "and N more"). It reads the one rule break and impact read
+// (gitstate): modified, added, deleted and untracked files that are not
+// ignored count; Lattice's own runtime state does not, which is every
+// lattice/.ledger/ and lattice/.cache/ and the .ledger/ and .cache/ of each
+// of latticeDirs, whatever that directory is called. Outside git it is clean.
+// @enforces check:INV-12
+func GitDirty(dir string, latticeDirs ...string) (bool, []string) {
+	files, err := gitstate.Dirty(context.Background(), dir, latticeDirs)
 	if err != nil {
 		return false, nil
 	}
-	var files []string
-	for _, line := range strings.Split(string(out), "\n") {
-		if len(line) < 4 {
-			continue
-		}
-		p := strings.TrimSpace(line[3:])
-		if i := strings.Index(p, " -> "); i >= 0 {
-			p = p[i+4:]
-		}
-		if strings.Contains("/"+p, "/lattice/.ledger/") || strings.Contains("/"+p, "/lattice/.cache/") {
-			continue
-		}
-		files = append(files, p)
-	}
-	sort.Strings(files)
-	dirty := len(files) > 0
-	if len(files) > 10 {
-		files = append(files[:10], fmt.Sprintf("and %d more", len(files)-10))
-	}
-	return dirty, files
+	return len(files) > 0, gitstate.Abbrev(files, 10)
 }
 
 // reconfirmedBy reads the decision files this change adds or edits and lists

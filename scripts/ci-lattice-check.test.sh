@@ -12,7 +12,8 @@ BASE="${1:-HEAD~1}"
 SCRIPT="$PWD/scripts/ci-lattice-check.sh"
 export LATTICE_BIN="${LATTICE_BIN:-$PWD/dist/lattice}"
 tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+in_tree="lattice-check-test-$$.md"
+trap 'rm -rf "$tmp"; rm -f "$in_tree"' EXIT
 fail=0
 ok() { printf 'ok   %s\n' "$1"; }
 bad() { printf 'FAIL %s\n' "$1"; fail=1; }
@@ -85,6 +86,30 @@ rm -f "$audit_dir/$mb.json"
 
 # a verdict exit of 1 does not fail; a usage error (exit 2) does.
 "$SCRIPT" check "not-a-rev" "$tmp/bad.md" >/dev/null 2>&1 && bad "a usage error must fail" || ok "a usage error (bad base) still fails"
+
+# check writes its report inside the checkout, as CI does, only after lattice
+# exits: while lattice runs the report is not an untracked file it could read
+# as an uncommitted change. A fake lattice records the untracked files it sees.
+cat >"$tmp/bin/lattice" <<'FL'
+#!/usr/bin/env bash
+git ls-files --others --exclude-standard >"$FAKE_UNTRACKED"
+echo "## Lattice check"
+exit "${FAKE_RC:-0}"
+FL
+chmod +x "$tmp/bin/lattice"
+export FAKE_UNTRACKED="$tmp/untracked.txt"
+for rc in 0 1; do
+  : >"$FAKE_UNTRACKED"
+  rm -f "$in_tree"
+  if FAKE_RC=$rc LATTICE_BIN="$tmp/bin/lattice" "$SCRIPT" check "$BASE" "$in_tree" >/dev/null; then
+    grep -qxF "$in_tree" "$FAKE_UNTRACKED" && bad "the report file existed in the checkout while lattice ran (exit $rc)" || ok "the report file is not in the checkout while lattice runs (exit $rc)"
+    [ "$(head -n1 "$in_tree")" = '<!-- lattice-check -->' ] && grep -qxF '## Lattice check' "$in_tree" && ok "the report is moved into place (exit $rc)" || bad "the report is moved into place (exit $rc)"
+  else
+    bad "check with a lattice exit of $rc must succeed"
+  fi
+done
+FAKE_RC=2 LATTICE_BIN="$tmp/bin/lattice" "$SCRIPT" check "$BASE" "$in_tree" >/dev/null 2>&1 && bad "a lattice exit of 2 must fail" || ok "a lattice exit of 2 still fails"
+rm -f "$in_tree"
 
 # comment: creates when no marked comment exists, updates when one does.
 : >"$FAKE_LOG"

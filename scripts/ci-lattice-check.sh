@@ -88,8 +88,14 @@ cmd_fetch_base() {
 }
 
 cmd_check() {
-  local base="${1:?usage: check <base-ref> <out.md>}" out="${2:?usage: check <base-ref> <out.md>}" rc=0
-  "$LATTICE_BIN" check --base "$base" --ci --markdown >"$out" || rc=$?
+  local base="${1:?usage: check <base-ref> <out.md>}" out="${2:?usage: check <base-ref> <out.md>}" rc=0 tmp
+  # The report goes to a file outside the checkout and is moved to $out only
+  # after lattice exits. A redirect straight to $out would create it, untracked,
+  # before lattice reads the working tree, and every report would then read
+  # base..head+uncommitted.
+  tmp="$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/lattice-check.XXXXXX")"
+  "$LATTICE_BIN" check --base "$base" --ci --markdown >"$tmp" || rc=$?
+  mv "$tmp" "$out"
   case "$rc" in
     0 | 1) ;;
     *)
