@@ -44,7 +44,11 @@ Existing related features:
 Draft a proposal manifest. Status must be "proposal". Identify:
   - whether this extends an existing feature or creates a new one
   - 1-3 new or modified capabilities
-  - 1-3 new invariants
+  - 1-3 new invariants. An invariant that makes several related claims may
+    list them as cases: each with an id (a, b, c, ...), a kind (happy, edge,
+    error or security) and a statement of one claim. Never mark a case or
+    an invariant confirmed, approved or covered: a human confirms, and the
+    kernel computes coverage.
   - 2-5 open questions needing human resolution
 
 Output a valid Lattice manifest YAML, then a line "OPEN QUESTIONS:" followed by a bullet list.`,
@@ -60,17 +64,33 @@ Output a valid Lattice manifest YAML, then a line "OPEN QUESTIONS:" followed by 
 	}
 
 	manifestYAML, questions := splitProposal(resp.Text)
-	result := ProposalResult{
-		Mode: ModeLLM, ManifestYAML: manifestYAML,
-		OpenQuestions: questions, TokensUsed: resp.TokensUsed,
-	}
-	var m schema.Manifest
-	result.SchemaValid = yaml.Unmarshal([]byte(manifestYAML), &m) == nil && m.ID != ""
-	if !result.SchemaValid {
+	canonical, ok := canonicalDraft(manifestYAML)
+	if !ok {
 		// Fall back when the model produced unusable YAML.
 		return deterministicProposal(prose, targetFeature, kg), nil
 	}
-	return result, nil
+	return ProposalResult{
+		Mode: ModeLLM, ManifestYAML: canonical, SchemaValid: true,
+		OpenQuestions: questions, TokensUsed: resp.TokensUsed,
+	}, nil
+}
+
+// canonicalDraft parses a model-drafted manifest and writes it back in
+// canonical form. Only what the schema holds survives, cases included: a
+// key it has no field for, such as a typed confirmation or coverage, is
+// dropped, so nothing machine-written can claim a case or a promise is
+// confirmed. ok is false for YAML that is not a manifest with an id.
+// @enforces agentic:INV-2
+func canonicalDraft(text string) (string, bool) {
+	var m schema.Manifest
+	if err := yaml.Unmarshal([]byte(text), &m); err != nil || m.ID == "" {
+		return "", false
+	}
+	out, err := schema.MarshalCanonical(m)
+	if err != nil {
+		return "", false
+	}
+	return string(out), true
 }
 
 // deterministicProposal builds a manifest skeleton with TODO placeholders.

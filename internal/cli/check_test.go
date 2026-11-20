@@ -115,7 +115,7 @@ func clearCIEnv(t *testing.T) {
 
 // Dropping the @enforces tag reads BROKEN and exits 1, with no base audit at
 // all: a structural fall is never missing data.
-// @verifies check:INV-1
+// @verifies check:INV-1#a
 func TestCheckCLIEnforcerRemovedIsBroken(t *testing.T) {
 	clearCIEnv(t)
 	f := newCheckFixture(t)

@@ -35,3 +35,20 @@ invariants:
     statement: require_level accepts a level per criterion tier, and a criterion must reach the level of its tier.
   - id: INV-13
     statement: A tracked derived graph is GRAPH_TRACKED and tracked cache files are CACHE_TRACKED, and without git data neither fires.
+  - id: INV-14
+    statement: A case that is malformed, a verifier ref to a case that does not exist, and a case enforcer that does not enforce the case's invariant are errors; a verifier ref to a retired case is a warning.
+    cases:
+      - id: a
+        kind: error
+        statement: A case whose id is not lowercase letters or repeats another, whose kind is not happy, edge, error or security, or whose statement is empty is an error.
+      - id: b
+        kind: error
+        statement: A verifier ref to a case its invariant does not declare is ORPHAN_ANNOTATION_CASE.
+      - id: c
+        kind: edge
+        statement: A verifier ref to a retired case is CASE_RETIRED_VERIFIED, a warning.
+      - id: d
+        kind: error
+        statement: A case enforcer that is not a symbol enforcing the case's invariant is CASE_ENFORCER_UNKNOWN.
+  - id: INV-15
+    statement: INVARIANT_BROAD is an info finding, raised only on an invariant with no cases whose statement reads as several claims.

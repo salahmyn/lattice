@@ -3,6 +3,7 @@ package ui
 // @module-feature api
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -184,6 +185,9 @@ func (w *v2world) promiseOf(row audit.Row, criteria []string) contract.Promise {
 		Gaps: []contract.Gap{}, Enforcers: []contract.Enforcer{}, Verifiers: []contract.Verifier{},
 		Cases: contract.NotComputed("cases (happy, edge, error)"),
 	}
+	if len(row.Cases) > 0 {
+		p.Cases, p.CaseRows = casesOf(row.Cases)
+	}
 	gaps := check.HeadGaps(row)
 	for _, g := range gaps {
 		gap := contract.Gap{Signal: g.Signal, State: g.State, Honesty: g.Honesty, Code: g.Code, Text: g.Text, Next: g.NextAction}
@@ -214,6 +218,41 @@ func (w *v2world) promiseOf(row audit.Row, criteria []string) contract.Promise {
 		p.Notes = append(p.Notes, contract.Note{Reader: n.Reader, Verdict: n.Verdict, Note: n.Note})
 	}
 	return p
+}
+
+// casesOf shapes a promise's acceptance cases and sums them up: pass only
+// when every case that is not retired is covered, fail when one is failing,
+// unknown otherwise. The coverage of each is the audit's.
+// @enforces api:INV-2
+func casesOf(rows []audit.CaseRow) (contract.Assurance, []contract.CaseRow) {
+	out := make([]contract.CaseRow, 0, len(rows))
+	n := map[string]int{}
+	live := 0
+	for _, c := range rows {
+		out = append(out, contract.CaseRow{ID: c.ID, Label: c.Label, Kind: c.Kind, Statement: c.Statement, Enforcer: c.Enforcer,
+			Retired: c.Retired, Coverage: c.Coverage, Reason: c.Reason, Verifiers: nonNil(c.Verifiers)})
+		if !c.Retired {
+			live++
+			n[c.Coverage]++
+		}
+	}
+	params := map[string]interface{}{"cases": live, audit.CaseCovered: n[audit.CaseCovered], audit.CasePartial: n[audit.CasePartial],
+		audit.CaseFailing: n[audit.CaseFailing], audit.CaseUncovered: n[audit.CaseUncovered]}
+	a := contract.Assurance{Honesty: contract.Fact, Params: params}
+	switch {
+	case live == 0:
+		a.State, a.Code, a.Text = contract.StateUnknown, "CASES_ALL_RETIRED", "every case is retired"
+	case n[audit.CaseFailing] > 0:
+		a.State, a.Code = contract.StateFail, "CASES_FAILING"
+		a.Text = fmt.Sprintf("%d of %d cases failing", n[audit.CaseFailing], live)
+	case n[audit.CaseCovered] == live:
+		a.State, a.Code = contract.StatePass, "CASES_COVERED"
+		a.Text = fmt.Sprintf("all %d cases covered", live)
+	default:
+		a.State, a.Code = contract.StateUnknown, "CASES_NOT_COVERED"
+		a.Text = fmt.Sprintf("%d of %d cases covered (%d partial, %d uncovered)", n[audit.CaseCovered], live, n[audit.CasePartial], n[audit.CaseUncovered])
+	}
+	return a, out
 }
 
 // countsOf counts the promises of a scope by what the check's rules say.

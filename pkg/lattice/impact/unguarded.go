@@ -84,18 +84,26 @@ func unguardedSymbols(kg schema.KnowledgeGraph, rep Report) []ChangedSymbol {
 // unguardedTests finds, for each touched symbol no promise guards, the tests
 // that exercise it, on the strongest evidence available for that symbol:
 // per-test coverage, else the static call graph, else a test file next to
-// its file. It returns the tests found with why each is selected, and the
-// symbols no evidence finds a test for.
+// its file, else, as hints, a test file that changed with its file
+// (co_change), else one that mentions its name (mentions). It returns the
+// tests found with why each is selected, the symbols only a hint found tests
+// for, and the symbols no source finds a test for. hs may be nil: no hints.
 // @enforces impact:INV-7
-func unguardedTests(in Input, pm pathMap, rep Report) (map[string][]string, []UncoveredSymbol) {
+// @enforces impact:INV-8
+func unguardedTests(in Input, pm pathMap, rep Report, hs *hintSource) (map[string][]string, []HintedSymbol, []UncoveredSymbol) {
 	kg := in.Graph
 	why := map[string][]string{}
+	hinted := []HintedSymbol{}
 	uncovered := []UncoveredSymbol{}
 	isTest := map[string]bool{}
 	for _, t := range kg.Tests {
 		isTest[t.FQN] = true
 	}
 	for _, cs := range unguardedSymbols(kg, rep) {
+		lines := cs.Lines
+		if lines == "" {
+			lines = cs.OldLines
+		}
 		via, found := ViaCoverage, byCoverage(in.Coverage, kg, cs)
 		if len(found) == 0 {
 			via, found = ViaCallGraph, byCallGraph(in.Calls, isTest, cs)
@@ -103,19 +111,31 @@ func unguardedTests(in Input, pm pathMap, rep Report) (map[string][]string, []Un
 		if len(found) == 0 {
 			via, found = ViaHeuristic, byNeighbour(kg, pm, cs)
 		}
-		if len(found) == 0 {
-			lines := cs.Lines
-			if lines == "" {
-				lines = cs.OldLines
+		var evidence map[string]string
+		if len(found) == 0 && hs != nil {
+			via = ViaCoChange
+			found, evidence = hs.byCoChange(cs)
+			if len(found) == 0 {
+				via = ViaMentions
+				found, evidence = hs.byMention(cs)
 			}
+		}
+		if len(found) == 0 {
 			uncovered = append(uncovered, UncoveredSymbol{Symbol: cs.Symbol, File: cs.File, Lines: lines, Reason: ReasonUncovered})
 			continue
 		}
+		if evidence != nil {
+			hinted = append(hinted, HintedSymbol{Symbol: cs.Symbol, File: cs.File, Lines: lines, Via: via, Tests: found})
+		}
 		for _, t := range found {
-			why[t] = appendNew(why[t], "unguarded "+cs.Symbol+" via "+via)
+			reason := "unguarded " + cs.Symbol + " via " + via
+			if ev := evidence[t]; ev != "" {
+				reason += " (" + ev + ")"
+			}
+			why[t] = appendNew(why[t], reason)
 		}
 	}
-	return why, uncovered
+	return why, hinted, uncovered
 }
 
 // byCoverage lists the tests whose own coverage run executed the symbol.

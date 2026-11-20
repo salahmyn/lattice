@@ -326,12 +326,30 @@ type Promise struct {
 	Gaps      []Gap      `json:"gaps"`
 	Enforcers []Enforcer `json:"enforcers"`
 	Verifiers []Verifier `json:"verifiers"`
-	// Cases (happy, edge, error...) have no kernel source.
+	// Cases sums up the invariant's acceptance cases (happy, edge, error,
+	// security): pass only when every live case is covered. It is
+	// NOT_COMPUTED for an invariant that declares none.
 	Cases      Assurance `json:"cases"`
 	OutOfReach *Waiver   `json:"out_of_reach,omitempty"`
 	Waivers    []Waiver  `json:"waivers,omitempty"`
 	Notes      []Note    `json:"notes,omitempty"`
 	NextAction string    `json:"next_action"`
+	// CaseRows are the cases one by one, with the audit's coverage.
+	CaseRows []CaseRow `json:"case_rows,omitempty"`
+}
+
+// CaseRow is one acceptance case of a promise. Coverage is the audit's:
+// covered, partial, failing or uncovered; only covered is positive.
+type CaseRow struct {
+	ID        string   `json:"id"`
+	Label     string   `json:"label"`
+	Kind      string   `json:"kind"`
+	Statement string   `json:"statement"`
+	Enforcer  string   `json:"enforcer,omitempty"`
+	Retired   bool     `json:"retired,omitempty"`
+	Coverage  string   `json:"coverage"`
+	Reason    string   `json:"reason"`
+	Verifiers []string `json:"verifiers"`
 }
 
 // Criterion is one success criterion.

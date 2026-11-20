@@ -22,6 +22,12 @@ A manifest is one YAML file under `features/` declaring exactly one feature.
   `INV-N` id and a precise `statement`.
 - Every invariant needs an enforcer (`@enforces_invariant` in code) and a
   verifier (a `@verifies` test) or `lattice validate` will fail.
+- An invariant that makes several related claims lists them as `cases`, one
+  claim each: `id` (`a`, `b`, … never reused; retire with `retired: true`),
+  `kind` (`happy | edge | error | security`), `statement`, and an optional
+  `enforcer` FQN. A test that checks exactly one case says so with
+  `@verifies <feature>:INV-N#a`. Split an invariant only when its claims are
+  unrelated. You may draft cases; never write a coverage or a confirmation.
 
 ## Extend vs. create
 

@@ -40,3 +40,5 @@ invariants:
     statement: lattice sign refuses without a terminal, under CI, for an agent or a non-sk key, and no MCP tool or skill offers it.
   - id: INV-15
     statement: A human verdict always shows its method, signed (login, fingerprint) or approved on a pull request.
+  - id: INV-16
+    statement: A promise's acceptance cases are part of its packet, so adding, editing or retiring one after confirmation makes the decision stale, while a promise with no cases hashes as it did before cases existed.
