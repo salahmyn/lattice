@@ -28,4 +28,4 @@ invariants:
   - id: INV-9
     statement: A machine-written draft BRD whose current version a human confirmed on the platform (confirm.json) is not BRD_UNAPPROVED_LLM, and a typed approved_by never makes it so.
   - id: INV-10
-    statement: brd link keeps a BRD's version when it completes a half the other side already declares, so the approval stands; when it adds a feature to a reviewed BRD's scope, or takes one out of it, it bumps that BRD's version.
+    statement: brd link keeps a BRD's version when it completes a half the other side already declares, so the approval stands; when it adds a feature to a reviewed BRD's scope, or takes one out of it, it bumps that BRD's version. It appends the ids it adds and never reorders the ones already listed.

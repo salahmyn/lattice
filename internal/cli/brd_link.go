@@ -4,7 +4,6 @@ package cli
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/spf13/cobra"
 
@@ -148,8 +147,9 @@ func (l *linker) link(b *schema.BRD, f *schema.Manifest) linkChange {
 		c.Bumped = l.scopeChanged(b)
 	}
 	if !inVia {
+		// Appended, never re-sorted: the diff a reviewer reads shows only
+		// the ids that were added.
 		b.ImplementsVia = append(b.ImplementsVia, f.ID)
-		sort.Strings(b.ImplementsVia)
 		l.dirtyBRD[b.ID] = true
 	}
 	if !declares {
