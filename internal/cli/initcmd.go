@@ -26,6 +26,11 @@ type initResult struct {
 	AlreadyInit bool              `json:"already_initialized"`
 	Detected    *detect.Detection `json:"detected,omitempty"`
 	Onboarding  *onboarding.State `json:"onboarding,omitempty"`
+
+	// GitignoreAdded lists the lines init appended to an existing
+	// .gitignore (the cache and the derived graph); empty when every line
+	// was already there or init created the file.
+	GitignoreAdded []string `json:"gitignore_added,omitempty"`
 }
 
 func newInitCommand(io *IO) *cobra.Command {
@@ -117,11 +122,17 @@ pre-answer the scope question in non-interactive runs (CI).`,
 			}
 			if res.AlreadyInit {
 				io.printf("Already initialized: %s\n", res.LatticeDir)
+				for _, l := range res.GitignoreAdded {
+					io.printf("  + .gitignore: %s\n", l)
+				}
 				return nil
 			}
 			io.printf("Initialized Lattice workspace (%s mode) at %s\n", res.Mode, res.LatticeDir)
 			for _, c := range res.Created {
 				io.printf("  + %s\n", c)
+			}
+			for _, l := range res.GitignoreAdded {
+				io.printf("  + .gitignore: %s\n", l)
 			}
 			if res.Detected != nil {
 				io.printf("\nDetected:\n")
@@ -304,7 +315,10 @@ func scaffold(root string, mode workspace.Mode) (initResult, error) {
 
 	if st, err := os.Stat(filepath.Join(latticeDir, "config.yaml")); err == nil && !st.IsDir() {
 		res.AlreadyInit = true
-		return res, nil
+		// An existing workspace still gets the ignore lines it lacks.
+		_, added, err := ensureGitignore(root, latticeDir)
+		res.GitignoreAdded = added
+		return res, err
 	}
 
 	if err := os.MkdirAll(latticeDir, 0o755); err != nil {
@@ -329,7 +343,6 @@ func scaffold(root string, mode workspace.Mode) (initResult, error) {
 		filepath.Join(latticeDir, "workspace.yaml"):       workspaceYAML,
 		filepath.Join(latticeDir, "context.yaml"):         defaultContextYAML,
 		filepath.Join(latticeDir, "mutation-scores.json"): "{}\n",
-		filepath.Join(root, ".gitignore"):                 defaultGitignore,
 		filepath.Join(root, ".gitattributes"):             defaultGitattributes,
 	}
 	for full, content := range files {
@@ -342,6 +355,15 @@ func scaffold(root string, mode workspace.Mode) (initResult, error) {
 		rel, _ := filepath.Rel(root, full)
 		res.Created = append(res.Created, rel)
 	}
+
+	created, added, err := ensureGitignore(root, latticeDir)
+	if err != nil {
+		return res, err
+	}
+	if created {
+		res.Created = append(res.Created, ".gitignore")
+	}
+	res.GitignoreAdded = added
 
 	// Copy the shipped agent skills so they version-control with the project.
 	if err := skills.ExportAll(filepath.Join(latticeDir, "skills")); err != nil {
@@ -481,9 +503,87 @@ const defaultContextYAML = `# C4 Level-1 (System Context): the people and extern
 #     used_by: [checkout]     # components that call this external system
 `
 
-const defaultGitignore = `# Lattice runtime cache
-lattice/.cache/
-`
+// gitignoreComment heads the lines init writes to .gitignore.
+const gitignoreComment = "# Lattice: runtime cache and the derived graph (lattice extract rewrites it)"
+
+// ignoredPaths are the workspace paths .gitignore must hold, relative to the
+// workspace directory: the runtime cache, and the graph that every extract
+// rewrites (tracking it keeps the tree dirty, so lattice break refuses).
+var ignoredPaths = []string{".cache/", "lattice.json"}
+
+// ensureGitignore makes root/.gitignore ignore the workspace's cache and
+// derived graph. A missing file is created with just those lines. An
+// existing one only gets the missing lines appended under a short comment:
+// the user's lines are never rewritten or reordered, and a re-run adds
+// nothing. It reports whether it created the file and the lines it appended.
+// @enforces cli:INV-2
+func ensureGitignore(root, latticeDir string) (bool, []string, error) {
+	rel, err := filepath.Rel(root, latticeDir)
+	if err != nil {
+		return false, nil, err
+	}
+	rel = filepath.ToSlash(rel)
+	var want []string
+	for _, p := range ignoredPaths {
+		want = append(want, rel+"/"+p)
+	}
+
+	full := filepath.Join(root, ".gitignore")
+	data, err := os.ReadFile(full)
+	if os.IsNotExist(err) {
+		body := gitignoreComment + "\n" + strings.Join(want, "\n") + "\n"
+		return true, nil, os.WriteFile(full, []byte(body), 0o644)
+	}
+	if err != nil {
+		return false, nil, err
+	}
+
+	have := map[string]bool{}
+	for _, line := range strings.Split(string(data), "\n") {
+		have[gitignoreKey(line)] = true
+	}
+	var missing []string
+	for _, w := range want {
+		if !have[gitignoreKey(w)] {
+			missing = append(missing, w)
+		}
+	}
+	if len(missing) == 0 {
+		return false, nil, nil
+	}
+	var b strings.Builder
+	if len(data) > 0 && !strings.HasSuffix(string(data), "\n") {
+		b.WriteString("\n")
+	}
+	if len(data) > 0 {
+		b.WriteString("\n")
+	}
+	b.WriteString(gitignoreComment + "\n" + strings.Join(missing, "\n") + "\n")
+	f, err := os.OpenFile(full, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return false, nil, err
+	}
+	defer f.Close()
+	if _, err := f.WriteString(b.String()); err != nil {
+		return false, nil, err
+	}
+	return false, missing, nil
+}
+
+// gitignoreKey normalizes a .gitignore line for comparison, so that
+// "/lattice/.cache", "lattice/.cache/" and "**/lattice/.cache/" all count as
+// the line init would write. Comments, negations and blanks map to "".
+func gitignoreKey(line string) string {
+	l := strings.TrimSpace(line)
+	if l == "" || strings.HasPrefix(l, "#") || strings.HasPrefix(l, "!") {
+		return ""
+	}
+	l = strings.TrimPrefix(l, "**/")
+	l = strings.TrimPrefix(l, "/")
+	l = strings.TrimSuffix(l, "/**")
+	l = strings.TrimSuffix(l, "/*")
+	return strings.TrimSuffix(l, "/")
+}
 
 // defaultGitattributes lets parallel branches merge the append-only ledger
 // without conflicts: git keeps both sides' lines.

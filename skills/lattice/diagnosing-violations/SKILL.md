@@ -70,6 +70,12 @@ per-test run executed an enforcer; only per-test coverage promotes to it.
   Request an independent review pass or adversarial verifier extension.
 - `UNATTRIBUTED_CHANGE` / `LEASE_SCOPE_OVERLAP` — fleet hygiene: set
   `--actor` (or `LATTICE_ACTOR`) and respect live leases.
+- `GRAPH_TRACKED` / `CACHE_TRACKED` (warning) — git tracks
+  `lattice/lattice.json` or files under `lattice/.cache/`. Both are rewritten
+  by ordinary runs, so the tree is never clean and `lattice break` refuses.
+  Untrack them (`git rm --cached lattice/lattice.json`,
+  `git rm -r --cached lattice/.cache`) and ignore them; `lattice init` adds
+  the lines to `.gitignore`.
 
 ## next_action kinds
 

@@ -23,7 +23,7 @@ lattice:
   artifacts:
     when: always
     paths:
-      - lattice.json
+      - lattice/lattice.json
     expire_in: 1 week
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
