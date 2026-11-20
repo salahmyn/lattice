@@ -29,5 +29,7 @@ invariants:
     statement: Evidence (results, coverage, breaks) stamped with a commit that is not HEAD is set aside in every run, local included, and reads unknown (EVIDENCE_STALE); it never counts as a pass, never reads ASSURED and never makes a fall. The base audit snapshot keeps its own rule.
   - id: INV-9
     statement: A touched production line that no promise guards (no enforcer span or checked reference covers it), including one only an entry point reaches, keeps the verdict at UNPROVEN (UNGUARDED_LINES) and is counted in the blind spot; it is reported and does not change merge_allowed. NOTHING_TOUCHED reads only when the change touches no promise and no production line.
+  - id: INV-10
+    statement: A break-based gap (break_tested, or exercised read through it) of a promise the change does not touch is not a new gap when no break run happened at head at all and the base had no gap on it; evidence not gathered is never a fall and never blocks a merge. A touched promise still needs a fresh run, and a survival or per-test coverage saying no still counts.
   - id: INV-11
     statement: An informational note on a touched promise, such as STATEMENT_UNCHANGED (an enforcer changed and its statement and tier did not), is shown on the promise's row and never changes the verdict, a gap or merge_allowed.
