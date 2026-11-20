@@ -22,6 +22,8 @@
       "decision_sha": "c0ffee",
       "decision_path": "lattice/decisions/approvals/brd.x-v2-9e1f04ab.yaml",
       "signature_base": "ba5e",
+      "pr_author": "release-agent[bot]",
+      "pr_author_bot": true,
       "assurance": {
         "state": "confirmed",
         "honesty": "fact",
@@ -85,6 +87,6 @@
     "ci_run": "4812",
     "platform": "github",
     "repository": "acme/shop",
-    "digest": "sha256:b13f0f0728812a8b8bea71ba56c91dcfec3b42824436072c8ed8d495f2412c6f"
+    "digest": "sha256:82552011124acd25d3ad0d9928530898eefa8581394908580bbd6b3a791b6ae4"
   }
 }

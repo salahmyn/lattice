@@ -14,6 +14,7 @@ import (
 
 	"github.com/salahmyn/lattice/pkg/lattice/confirm/signature"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm/stamp"
+	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
 // Schema is the contract of lattice/.cache/confirm.json.
@@ -58,8 +59,13 @@ type Record struct {
 	DecisionPath string `json:"decision_path,omitempty"`
 	// SignatureBase is the commit allowed_signers was read at: the first
 	// parent of the default-branch commit that introduced the signature.
-	SignatureBase string    `json:"signature_base,omitempty"`
-	Assurance     Assurance `json:"assurance"`
+	SignatureBase string `json:"signature_base,omitempty"`
+	// PRAuthor is who opened the pull request that merged a signed decision,
+	// and PRAuthorBot is true when that is a bot or agent account. Display
+	// only: the signer is ApproverLogin, a human login.
+	PRAuthor    string    `json:"pr_author,omitempty"`
+	PRAuthorBot bool      `json:"pr_author_bot,omitempty"`
+	Assurance   Assurance `json:"assurance"`
 }
 
 // Routes a verdict comes by.
@@ -265,6 +271,9 @@ func Compute(ctx context.Context, in Input) File {
 				o = *signed
 			}
 		}
+		if o.Via == ViaSignature {
+			rec.PRAuthor, rec.PRAuthorBot = pullAuthor(ctx, in.Platform, fd.AddedSHA)
+		}
 		if o.State == StateConfirmed && in.Packet != nil {
 			if hash, current := in.Packet(d); current && hash != d.PacketHash {
 				verb := "approved by "
@@ -299,6 +308,23 @@ func Compute(ctx context.Context, in Input) File {
 		return a.Action < b.Action
 	})
 	return Seal(f, Stamp{Commit: in.Commit, CIRun: ciRun, Platform: in.PlatformName, Repository: in.Repository})
+}
+
+// pullAuthor names who opened the pull request that merged a signed
+// decision, and whether that is a bot or agent account. The signature's
+// verdict does not depend on it: it is shown so a reviewer sees that a
+// machine prepared what a human signed.
+// @enforces confirm:INV-18
+func pullAuthor(ctx context.Context, p Platform, sha string) (string, bool) {
+	pa, ok := p.(PullAuthors)
+	if p == nil || !ok || sha == "" {
+		return "", false
+	}
+	login, kind, err := pa.PullAuthor(ctx, sha)
+	if err != nil || login == "" {
+		return "", false
+	}
+	return login, IsBot(login, kind) || schema.IsAgentActor(login)
 }
 
 // reusable reports whether a previous confirm.json's verdicts may stand in
@@ -457,6 +483,16 @@ func (f File) Text() string {
 			}
 		}
 		b.WriteString(r.State + "  " + r.Action + " " + r.ID + " v" + itoa(r.Version) + who + "  [" + r.Assurance.Code + "]\n")
+		if r.PRAuthor != "" {
+			note := "    note: the pull request was opened by " + r.PRAuthor
+			if r.PRAuthorBot {
+				note += ", a bot or agent account: it prepared the decision"
+				if r.ApproverLogin != "" {
+					note += ", and " + r.ApproverLogin + " signed it"
+				}
+			}
+			b.WriteString(note + "\n")
+		}
 	}
 	if len(f.Records) == 0 {
 		b.WriteString("no decisions (" + f.Assurance.Code + ")\n")

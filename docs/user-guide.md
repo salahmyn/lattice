@@ -1870,6 +1870,7 @@ with a `.sig` beside it, all of these must hold, natively in Go (no
 | ... and is trusted there: in the root `allowed_signers`, or added by an endorsed change (below) | `unknown`, `SIGNER_NOT_ENDORSED` |
 | ... and still at the tip of the default branch | `pending`, `SIGNER_REVOKED` |
 | The history of `allowed_signers` can be followed to its root (not a shallow clone) | `unknown`, `SIGNERS_NO_HISTORY` |
+| The login is a human's, not a bot (`...[bot]`) or agent (`agent...`) login | `pending`, `SIGNER_NOT_HUMAN` |
 | GitHub lists the key among the login's SSH signing keys (`GET /users/{login}/ssh_signing_keys`) | `pending`, `SIGNER_NOT_ON_GITHUB` |
 | GitHub can be read (a token is set and the API answers) | `unknown`, `GITHUB_ANCHOR_UNKNOWN` |
 | The base commit exists (not a root commit or a shallow clone's edge) | `unknown`, `SIGNATURE_NO_BASE` |
@@ -1880,6 +1881,17 @@ packet reads `stale` as on the review route. Review-route records carry
 `via: review`. If the signature fails and an approving review exists, the review
 counts. Text output always names the method:
 `human (signed by ana, SHA256:Xb3k9...)` or `human (approved by bo on PR #41)`.
+
+The signer is the login `allowed_signers` and GitHub's signing keys name, never
+the pull request's author, so a decision an agent prepared and a human signed
+reads `human` with the human's login. To show that a machine prepared it, a
+signature record carries `pr_author` (who opened the pull request that added the
+decision) and `pr_author_bot`, and the text adds a note under the record:
+
+```text
+confirmed  brd.approve brd.refunds v3 human (signed by ana, SHA256:Xb3k9...)  [SIGNED]
+    note: the pull request was opened by release-agent[bot], a bot or agent account: it prepared the decision, and ana signed it
+```
 
 **The base commit.** `allowed_signers` is read with git plumbing at one commit:
 the first parent of the commit on the default branch's first-parent history that

@@ -76,7 +76,16 @@ const (
 	CodeNotOnHost     = "SIGNER_NOT_ON_GITHUB"     // not among the login's GitHub signing keys
 	CodeAnchorUnknown = "GITHUB_ANCHOR_UNKNOWN"    // the signing keys could not be read
 	CodeNotReverified = "SIGNATURE_NOT_REVERIFIED" // a reader could not re-verify a claimed verdict
+	CodeNotHuman      = "SIGNER_NOT_HUMAN"         // allowed_signers names a bot or agent login for the key
 )
+
+// MachineLogin reports whether a login names a bot ("...[bot]") or an agent
+// ("agent..."), the same logins the review route refuses as approvers. Such
+// a login never signs a decision, whoever holds the key.
+func MachineLogin(login string) bool {
+	l := strings.ToLower(strings.TrimSpace(login))
+	return strings.HasSuffix(l, "[bot]") || strings.HasPrefix(l, "agent")
+}
 
 // Failure is why a signature does not count. Unknown is true when the
 // verdict cannot be reached (no base commit, no repository name): such a

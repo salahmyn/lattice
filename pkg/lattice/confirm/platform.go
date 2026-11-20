@@ -14,9 +14,11 @@ import (
 // PullRequest is what the platform says about the request that merged a commit.
 type PullRequest struct {
 	Number int
-	// Author is the login that opened the request.
-	Author string
-	Merged bool
+	// Author is the login that opened the request, and AuthorType its
+	// account type ("User", "Bot", ...).
+	Author     string
+	AuthorType string
+	Merged     bool
 	// HeadSHA is the head of the request's branch when it merged: the last
 	// commit its reviewers could have seen.
 	HeadSHA string
@@ -41,6 +43,14 @@ type Review struct {
 type Platform interface {
 	PullRequestForCommit(ctx context.Context, sha string) (*PullRequest, error)
 	Reviews(ctx context.Context, number int) ([]Review, error)
+}
+
+// PullAuthors is a Platform that names who opened the pull request that
+// merged a commit, for the note on a signature verdict. It is display only:
+// the signer of a signature is the login allowed_signers and the platform's
+// signing keys name, never the request's author.
+type PullAuthors interface {
+	PullAuthor(ctx context.Context, sha string) (login, accountType string, err error)
 }
 
 // Verdict states of a record.

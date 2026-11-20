@@ -51,9 +51,15 @@ func feesApproval() Decision {
 // would. sig nil signs the decision with the key.
 func newSigFixture(t *testing.T, kind string, sig func(f *sigFixture) []byte) *sigFixture {
 	t.Helper()
+	return newSigFixtureFor(t, kind, "ana", sig)
+}
+
+// newSigFixtureFor is newSigFixture with the key enrolled for login.
+func newSigFixtureFor(t *testing.T, kind, login string, sig func(f *sigFixture) []byte) *sigFixture {
+	t.Helper()
 	f := &sigFixture{t: t, r: sigtest.NewRepo(t), key: sigtest.NewKey(t, kind), d: feesApproval()}
-	f.r.Write("lattice/allowed_signers", f.key.AllowedLine("ana"))
-	f.enrolled = f.r.Commit("enrol ana")
+	f.r.Write("lattice/allowed_signers", f.key.AllowedLine(login))
+	f.enrolled = f.r.Commit("enrol " + login)
 	if sig == nil {
 		sig = func(f *sigFixture) []byte {
 			return f.key.SignTuple(t, SignatureTuple(f.d, sigtest.Repository), sigtest.Options{})

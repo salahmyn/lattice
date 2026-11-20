@@ -291,6 +291,7 @@ func TestConfirmSignatureContractGolden(t *testing.T) {
 			ID: "brd.x", Version: 2, Action: ActionApprove, State: StateConfirmed, Via: ViaSignature, ApproverLogin: "ana",
 			Fingerprint: "SHA256:Xb3k9abcdefghijklmnop", VerifiedAt: "2026-01-02T03:04:05Z", DecisionSHA: "c0ffee",
 			DecisionPath: "lattice/decisions/approvals/brd.x-v2-9e1f04ab.yaml", SignatureBase: "ba5e",
+			PRAuthor: "release-agent[bot]", PRAuthorBot: true,
 			Assurance: Assurance{State: StateConfirmed, Honesty: "fact", Code: signature.CodeSigned, Text: "signed by ana with hardware key SHA256:Xb3k9abcdefg"},
 		}},
 		Signers: &Signers{Root: "r00t", Changes: []signature.Change{
@@ -373,6 +374,9 @@ func TestGitHubClient(t *testing.T) {
 	o := Verify(context.Background(), g, "abc")
 	if o.State != StateConfirmed || o.Approver != "ana" || o.PR != 4 {
 		t.Errorf("%+v", o)
+	}
+	if login, kind, err := g.PullAuthor(context.Background(), "abc"); err != nil || login != "dev" || kind != "User" {
+		t.Errorf("pull author: %s %s %v", login, kind, err)
 	}
 	if o := Verify(context.Background(), GitHub{Owner: "o", Repo: "r", BaseURL: srv.URL}, "abc"); o.State != StateUnknown {
 		t.Errorf("an unauthorised read must read unknown, got %s", o.State)

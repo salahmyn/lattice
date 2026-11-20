@@ -271,6 +271,7 @@ func Recheck(latticeDir, ref string, claims []Claim) []*Failure {
 	return out
 }
 
+// @enforces confirm:INV-18
 func (r Repo) recheck(c Claim) *Failure {
 	p := path.Clean(c.DecisionPath)
 	dir := path.Join(r.LatticeRel, ApprovalsDir) + "/"
@@ -290,6 +291,8 @@ func (r Repo) recheck(c Claim) *Failure {
 	}
 	ev, f, present := r.Evaluate(p, d)
 	switch {
+	case MachineLogin(c.Login):
+		return notReverified("the claimed signer " + c.Login + " is a bot or agent login: only a human login signs a decision")
 	case !present:
 		return notReverified("there is no signature " + SigPath(p) + " on " + r.Ref)
 	case f != nil:
