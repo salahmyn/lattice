@@ -343,7 +343,7 @@ func (env Env) packet(d *confirm.Decision, b schema.BRD, rel, extra string) stri
 	d.Since = since
 	return confirm.PacketHash(confirm.PacketInput{
 		BRD: b, Promises: confirm.FactsFor(env.Report.Rows, confirm.PromisesOf(b)),
-		Diff: confirm.StructuralDiff(prev, b), Extra: extra,
+		Diff: confirm.StructuralDiff(prev, b), Extra: extra, Declared: confirm.DeclaredBy(env.KG.Features, b.ID),
 	})
 }
 
@@ -375,6 +375,7 @@ func (env Env) Packet(b schema.BRD, extra string) Packet {
 	p.Diff = confirm.StructuralDiff(prev, b)
 	p.Hash = confirm.PacketHash(confirm.PacketInput{
 		BRD: b, Promises: confirm.FactsFor(env.Report.Rows, confirm.PromisesOf(b)), Diff: p.Diff, Extra: extra,
+		Declared: confirm.DeclaredBy(env.KG.Features, b.ID),
 	})
 	return p
 }

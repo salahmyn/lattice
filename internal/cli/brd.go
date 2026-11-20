@@ -5,7 +5,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -198,80 +197,6 @@ regeneration path instead.`,
 	}
 	cmd.Flags().StringVar(&title, "title", "", "human-readable title to seed the draft with")
 	return cmd
-}
-
-func newBRDLinkCommand(io *IO) *cobra.Command {
-	return &cobra.Command{
-		Use:   "link <brd-id> <feature-id>",
-		Short: "Link a BRD to a feature (writes back to both files)",
-		Long: `Records the BRD ↔ Feature relationship on both sides of the link:
-adds the feature id to brd.implements_via and sets feature.implements_brd.
-
-The double-write is intentional — either field is enough to drive the
-validator and the UI, but having both on disk keeps a single-file grep
-discoverable in either direction.`,
-		Args: cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ws, err := openWorkspace(io)
-			if err != nil {
-				return io.fail("NO_WORKSPACE", err.Error(), nil)
-			}
-			brdID, featureID := args[0], args[1]
-
-			kg, _, err := graphFor(io, cmd, false)
-			if err != nil {
-				return io.fail("EXTRACT_FAILED", err.Error(), nil)
-			}
-			b := brd.Find(kg.BRDs, brdID)
-			if b == nil {
-				return io.fail("BRD_NOT_FOUND", "BRD not found: "+brdID, nil)
-			}
-
-			// Find the feature & confirm it exists. We need the source
-			// path to write back to.
-			var feat *schema.Manifest
-			for i := range kg.Features {
-				if kg.Features[i].ID == featureID {
-					feat = &kg.Features[i]
-					break
-				}
-			}
-			if feat == nil {
-				return io.fail("FEATURE_NOT_FOUND", "feature not found: "+featureID, nil)
-			}
-
-			// Forward link.
-			if !containsString(b.ImplementsVia, featureID) {
-				b.ImplementsVia = append(b.ImplementsVia, featureID)
-				sort.Strings(b.ImplementsVia)
-				if _, err := brd.SaveForce(ws.BRDsDir(), *b); err != nil {
-					return io.fail("BRD_SAVE_FAILED", err.Error(), nil)
-				}
-			}
-
-			// Reverse link — load the feature manifest fresh so we
-			// preserve fields the graph builder normally strips.
-			featPath := joinLattice(ws.LatticeDir, feat.SourcePath)
-			loaded, lerr := schema.LoadManifest(featPath)
-			if lerr != nil {
-				return io.fail("FEATURE_LOAD_FAILED", lerr.Error(), nil)
-			}
-			if loaded.ImplementsBRD != brdID {
-				loaded.ImplementsBRD = brdID
-				if err := schema.SaveCanonical(featPath, *loaded); err != nil {
-					return io.fail("FEATURE_SAVE_FAILED", err.Error(), nil)
-				}
-			}
-
-			if io.JSON {
-				return io.printJSON(map[string]string{
-					"brd": brdID, "feature": featureID, "status": "linked",
-				})
-			}
-			io.printf("linked %s ↔ %s\n", brdID, featureID)
-			return nil
-		},
-	}
 }
 
 func newBRDApproveCommand(io *IO) *cobra.Command {

@@ -137,6 +137,48 @@ func TestPacketHashIgnoresStatusAndApproval(t *testing.T) {
 	}
 }
 
+// The packet hashes the BRD's scope, both halves of its links: completing a
+// one-sided link keeps the hash, a feature entering or leaving changes it,
+// and a pin an older version made still matches a BRD left as it was.
+// @verifies confirm:INV-8
+func TestPacketHashCoversScope(t *testing.T) {
+	b := schema.BRD{ID: "brd.x", Version: 2, Status: schema.BRDApproved, Title: "t", ImplementsVia: []string{"orders"}}
+	hash := func(via, declared []string) string {
+		c := b
+		c.ImplementsVia = via
+		return PacketHash(PacketInput{BRD: c, Diff: []string{"initial"}, Declared: declared})
+	}
+	base := hash([]string{"orders"}, []string{"orders", "wallet"}) // wallet names the BRD, unlisted
+	if hash([]string{"orders", "wallet"}, []string{"orders", "wallet"}) != base {
+		t.Error("adding the forward half of a declared link must keep the hash")
+	}
+	if hash([]string{"wallet", "orders"}, []string{"orders"}) != base {
+		t.Error("the order of implements_via, or which half a link sits on, must not change the hash")
+	}
+	if hash([]string{"orders", "wallet", "fees"}, []string{"orders", "wallet"}) == base {
+		t.Error("a feature entering the scope must change the hash")
+	}
+	if hash([]string{"orders"}, []string{"orders"}) == base {
+		t.Error("a feature leaving the scope must change the hash")
+	}
+
+	// A decision pinned before scope hashing hashed implements_via as written.
+	in := PacketInput{BRD: schema.BRD{ID: "brd.x", Version: 2, Title: "t", ImplementsVia: []string{"wallet", "orders"}}, Diff: []string{"initial"}}
+	old := legacyPacketHash(in)
+	if PacketHash(in) == old {
+		t.Fatal("setup: an unsorted list should hash differently under scope hashing")
+	}
+	if got := PacketHashFor(in, old); got != old {
+		t.Errorf("an older pin on an unchanged BRD must still match: %s", got)
+	}
+	if got := PacketHashFor(in, "sha256:other"); got != PacketHash(in) {
+		t.Errorf("a pin that matches neither form compares as PacketHash: %s", got)
+	}
+	if sorted := (PacketInput{BRD: schema.BRD{ID: "brd.x", Version: 2, Title: "t", ImplementsVia: []string{"orders", "wallet"}}, Diff: []string{"initial"}, Declared: []string{"wallet"}}); PacketHash(sorted) != legacyPacketHash(sorted) {
+		t.Error("a sorted, two-sided scope must hash as it did before scope hashing")
+	}
+}
+
 func TestStructuralDiff(t *testing.T) {
 	prev := schema.BRD{SuccessCriteria: []schema.BRDCriterion{
 		{ID: "SC-1", Statement: "a", Tier: 1, MapsToInvariant: schema.InvariantRefs{"f:INV-1"}},

@@ -264,6 +264,16 @@ entries:
 - Keep both halves of a BRD link: a BRD's `implements_via` and the
   feature's `implements_brd`. When they disagree, `validate` warns
   `BRD_LINK_ONE_SIDED`, and `lattice brd link <brd> <feature>` writes both.
+  A BRD's scope is every feature on either half, so completing a half the
+  other side already declares is bookkeeping: `brd link` reports
+  "reconciled an existing link: approval kept", the version stays, and the
+  approval, council decision and confirmation stand (the review packet
+  hashes the scope, not the list as written). Adding a feature neither half
+  named is a scope change: a version someone reviewed is bumped, which voids
+  its approval (`BRD_DRIFT`) and sends it back for review; a draft nobody
+  reviewed keeps its version. `lattice brd link --reconcile` completes every
+  one-sided link whose other half is declared and uncontested, prints what it
+  changed, and leaves a feature that names another BRD for you to decide.
 
 ### Step 6 — Commit
 
