@@ -13,3 +13,5 @@ invariants:
     statement: Setting a top-level key of a record keeps its other keys and comments; a record that is not a mapping is refused.
   - id: INV-2
     statement: init leaves .gitignore ignoring the workspace's cache and derived graph, appending only the missing lines and never rewriting the user's.
+  - id: INV-3
+    statement: A build without link-time version flags reports the module version and the commit, time and modified state the Go toolchain embedded; values set at link time are never replaced.

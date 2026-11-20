@@ -188,7 +188,7 @@ func SaveSnapshot(latticeDir string, rep audit.Report) (string, error) {
 func LoadSnapshot(latticeDir, sha string) (*audit.Report, string) {
 	data, err := os.ReadFile(SnapshotPath(latticeDir, sha))
 	if err != nil {
-		return nil, "no base audit: " + snapshotDir + "/" + short(sha) + ".json is missing"
+		return nil, "no base audit: " + snapshotDir + "/" + short(sha) + ".json is missing (CI saves it on every push to the base branch; locally, check out " + short(sha) + ", ingest its test results and run `lattice check --snapshot`)"
 	}
 	var rep audit.Report
 	if err := json.Unmarshal(data, &rep); err != nil {
