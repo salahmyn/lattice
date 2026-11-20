@@ -6,6 +6,8 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
@@ -81,35 +83,117 @@ func unguardedSymbols(kg schema.KnowledgeGraph, rep Report) []ChangedSymbol {
 	return out
 }
 
+// testCases are the graph's tests that a test runner runs and reports by
+// name. The graph's tests also hold every other symbol of a test file (a
+// fixture builder, a fake class and its methods, a date helper): those are
+// helpers, and the test listing never names one as a test. A test is
+//   - a symbol tagged @verifies;
+//   - a test-framework case, which the adapters name <module>.test.<title>
+//     (test() and it() in TypeScript and JavaScript, a pgTAP assertion);
+//   - in Go, a TestXxx, BenchmarkXxx, FuzzXxx or ExampleXxx function or
+//     suite method, or a t.Run subtest of one;
+//   - in Python and PHP, a function or method whose name starts with test.
+//
+// @enforces impact:INV-9
+func testCases(tests []schema.GraphSymbol) map[string]bool {
+	byFQN := make(map[string]schema.GraphSymbol, len(tests))
+	for _, t := range tests {
+		byFQN[t.FQN] = t
+	}
+	memo := make(map[string]bool, len(tests))
+	var isCase func(t schema.GraphSymbol, depth int) bool
+	isCase = func(t schema.GraphSymbol, depth int) bool {
+		if v, ok := memo[t.FQN]; ok {
+			return v
+		}
+		v := false
+		switch {
+		case len(t.Verifies) > 0:
+			v = true
+		case strings.HasPrefix(t.FQN, moduleOf(t.File)+".test."):
+			v = true
+		case t.Language == "go":
+			parent, ok := byFQN[t.EnclosingFQN]
+			switch {
+			case t.Kind == "function" && t.EnclosingFQN == "", t.Kind == "method":
+				v = isGoTestName(t.Name)
+			case t.Kind == "function" && ok && depth < maxSubtestDepth:
+				v = isCase(parent, depth+1) // a t.Run subtest
+			}
+		case t.Language == "python" || t.Language == "php":
+			v = (t.Kind == "function" || t.Kind == "method") && strings.HasPrefix(t.Name, "test")
+		}
+		memo[t.FQN] = v
+		return v
+	}
+	out := make(map[string]bool, len(tests))
+	for _, t := range tests {
+		if isCase(t, 0) {
+			out[t.FQN] = true
+		}
+	}
+	return out
+}
+
+// maxSubtestDepth bounds the walk from a subtest up to its test.
+const maxSubtestDepth = 64
+
+// moduleOf is the module path the adapters prefix a file's symbols with:
+// the path without its extension, dotted (e2e/pay.spec.ts -> e2e.pay.spec).
+func moduleOf(file string) string {
+	return strings.ReplaceAll(strings.TrimSuffix(file, path.Ext(file)), "/", ".")
+}
+
+// isGoTestName reports whether a function name is one go test runs and
+// reports by name: TestXxx, BenchmarkXxx, FuzzXxx or ExampleXxx, where Xxx
+// does not start with a lower-case letter.
+func isGoTestName(name string) bool {
+	for _, prefix := range []string{"Test", "Benchmark", "Fuzz", "Example"} {
+		if !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		rest := name[len(prefix):]
+		if rest == "" {
+			return true
+		}
+		r, _ := utf8.DecodeRuneInString(rest)
+		return !unicode.IsLower(r)
+	}
+	return false
+}
+
 // unguardedTests finds, for each touched symbol no promise guards, the tests
 // that exercise it, on the strongest evidence available for that symbol:
 // per-test coverage, else the static call graph, else a test file next to
 // its file, else, as hints, a test file that changed with its file
-// (co_change), else one that mentions its name (mentions). It returns the
-// tests found with why each is selected, the symbols only a hint found tests
-// for, and the symbols no source finds a test for. hs may be nil: no hints.
+// (co_change), else one that mentions its name (mentions). Only test cases
+// (see testCases) are found: a helper the call graph passes through is
+// walked, never listed. It returns the tests found with why each is
+// selected, the symbols only a hint found tests for, and the symbols no
+// source finds a test for. hs may be nil: no hints.
 // @enforces impact:INV-7
 // @enforces impact:INV-8
-func unguardedTests(in Input, pm pathMap, rep Report, hs *hintSource) (map[string][]string, []HintedSymbol, []UncoveredSymbol) {
+// @enforces impact:INV-9
+func unguardedTests(in Input, pm pathMap, rep Report, hs *hintSource, cases map[string]bool) (map[string][]string, []HintedSymbol, []UncoveredSymbol) {
 	kg := in.Graph
 	why := map[string][]string{}
 	hinted := []HintedSymbol{}
 	uncovered := []UncoveredSymbol{}
-	isTest := map[string]bool{}
+	fileOf := map[string]string{}
 	for _, t := range kg.Tests {
-		isTest[t.FQN] = true
+		fileOf[t.FQN] = t.File
 	}
 	for _, cs := range unguardedSymbols(kg, rep) {
 		lines := cs.Lines
 		if lines == "" {
 			lines = cs.OldLines
 		}
-		via, found := ViaCoverage, byCoverage(in.Coverage, kg, cs)
+		via, found := ViaCoverage, byCoverage(in.Coverage, kg, cases, cs)
 		if len(found) == 0 {
-			via, found = ViaCallGraph, byCallGraph(in.Calls, isTest, cs)
+			via, found = ViaCallGraph, byCallGraph(in.Calls, cases, cs)
 		}
 		if len(found) == 0 {
-			via, found = ViaHeuristic, byNeighbour(kg, pm, cs)
+			via, found = ViaHeuristic, byNeighbour(kg, pm, cases, cs)
 		}
 		var evidence map[string]string
 		if len(found) == 0 && hs != nil {
@@ -125,7 +209,12 @@ func unguardedTests(in Input, pm pathMap, rep Report, hs *hintSource) (map[strin
 			continue
 		}
 		if evidence != nil {
-			hinted = append(hinted, HintedSymbol{Symbol: cs.Symbol, File: cs.File, Lines: lines, Via: via, Tests: found})
+			var files []string
+			for _, t := range found {
+				files = appendNew(files, pm.toGit(fileOf[t]))
+			}
+			sort.Strings(files)
+			hinted = append(hinted, HintedSymbol{Symbol: cs.Symbol, File: cs.File, Lines: lines, Via: via, Files: files, Tests: found})
 		}
 		for _, t := range found {
 			reason := "unguarded " + cs.Symbol + " via " + via
@@ -139,12 +228,15 @@ func unguardedTests(in Input, pm pathMap, rep Report, hs *hintSource) (map[strin
 }
 
 // byCoverage lists the tests whose own coverage run executed the symbol.
-func byCoverage(cov TestCoverage, kg schema.KnowledgeGraph, cs ChangedSymbol) []string {
+func byCoverage(cov TestCoverage, kg schema.KnowledgeGraph, cases map[string]bool, cs ChangedSymbol) []string {
 	if cov == nil {
 		return nil
 	}
 	var out []string
 	for _, t := range kg.Tests {
+		if !cases[t.FQN] {
+			continue
+		}
 		for _, s := range []string{cs.Symbol, cs.OldSymbol} {
 			if s == "" {
 				continue
@@ -158,8 +250,9 @@ func byCoverage(cov TestCoverage, kg schema.KnowledgeGraph, cs ChangedSymbol) []
 }
 
 // byCallGraph lists the tests whose static call graph reaches the symbol:
-// it walks the resolved references backwards from the symbol.
-func byCallGraph(g CallGraph, isTest map[string]bool, cs ChangedSymbol) []string {
+// it walks the resolved references backwards from the symbol, through the
+// helpers of test files too, and lists only the test cases it meets.
+func byCallGraph(g CallGraph, cases map[string]bool, cs ChangedSymbol) []string {
 	if g == nil {
 		return nil
 	}
@@ -174,7 +267,7 @@ func byCallGraph(g CallGraph, isTest map[string]bool, cs ChangedSymbol) []string
 				continue
 			}
 			seen[c] = true
-			if isTest[c] {
+			if cases[c] {
 				out = append(out, c)
 			}
 			queue = append(queue, c)
@@ -188,7 +281,7 @@ func byCallGraph(g CallGraph, isTest map[string]bool, cs ChangedSymbol) []string
 // in its directory (or a __tests__ directory beside it) with the same base
 // name, such as fees.test.ts, fees.spec.tsx, fees_test.go or test_fees.py
 // for fees.ts, fees.go or fees.py.
-func byNeighbour(kg schema.KnowledgeGraph, pm pathMap, cs ChangedSymbol) []string {
+func byNeighbour(kg schema.KnowledgeGraph, pm pathMap, cases map[string]bool, cs ChangedSymbol) []string {
 	gp, _, ok := pm.toGraph(cs.File)
 	if !ok {
 		gp = cs.File
@@ -197,7 +290,7 @@ func byNeighbour(kg schema.KnowledgeGraph, pm pathMap, cs ChangedSymbol) []strin
 	var out []string
 	for _, t := range kg.Tests {
 		td := path.Dir(t.File)
-		if (td == dir || td == path.Join(dir, "__tests__")) && baseStem(t.File) == stem && t.File != gp {
+		if cases[t.FQN] && (td == dir || td == path.Join(dir, "__tests__")) && baseStem(t.File) == stem && t.File != gp {
 			out = appendNew(out, t.FQN)
 		}
 	}

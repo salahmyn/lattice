@@ -2097,8 +2097,14 @@ that exercise them, on the strongest evidence it has for each symbol:
 | Per-test coverage (`lattice results ingest --per-test`) | `coverage` | the test's own run executed the symbol: a fact |
 | The static call graph `lattice extract` builds | `call_graph` | the test's calls reach the symbol: an upper bound, the call may not run |
 | A test file beside the symbol's file with the same base name (`fees.test.ts`, `fees.spec.tsx`, `fees_test.go`, `test_fees.py`, or one in `__tests__/`) | `heuristic` | a guess |
-| A test file that changed in the same commits as the symbol's file: in the change itself, or in two or more commits of the `break.co_change` window | `co_change` | a hint: the why names the shared commits |
+| A test file that changed in the same commits as the symbol's file: in the change itself, or in two or more commits of the `break.co_change` window that score 0.25 or more, each commit weighing 1/(the files it changes) | `co_change` | a hint: the why names the shared commits |
 | A test file whose text names the symbol as a whole word (case-sensitive; a compound name such as `TotalBanner` or `total_fee` of four characters or more, not a common one like `onClick`), or a literal route an entry point declares for its file | `mentions` | a hint: the why names the line |
+
+Only tests are selected: a test function, a `test()` or `it()` case, a pgTAP
+assertion, or a symbol tagged `@verifies`. The other symbols of a test file (a
+fixture builder, a fake class, a date helper) are never listed as tests, and a
+support file that holds only helpers is never hinted. The call graph walks
+through a helper to the tests that call it.
 
 A weaker source is used only when the stronger ones find no test. The two hints
 catch an end-to-end spec that drives the built app and imports nothing from the
@@ -2120,6 +2126,9 @@ break:
                     # within it counts as one unit, a larger one commit by commit
     min_commits: 2  # commits a test file must share (default 2); a change
                     # within max_files that edits it is enough
+    min_score: 0.25 # each shared commit adds 1/(the files it changes); a test
+                    # file needs this score (default 0.25), so one that only
+                    # changed with the file in large commits is not hinted
 ```
 
 ```sh
@@ -2152,7 +2161,7 @@ and `{filter}` filled the same way, and `{junit}` filled with
 `dir`, `command` (as configured), `run` and `argv` (filled), `files`, `filter`,
 `junit`, `tests`, `promises` and `why`, each `unmatched` file with its `tests`,
 `promises`, `reason` and `why`, each `hinted` symbol with its `symbol`, `file`,
-`lines`, `via` and `tests`, and each `uncovered` symbol with its `symbol`,
+`lines`, `via`, `files` (its tests' files) and `tests`, and each `uncovered` symbol with its `symbol`,
 `file`, `lines` and `reason`. `why` maps each test to why it is in the set:
 `promise <id>` for a verifier of a touched promise, `unguarded <symbol> via
 coverage|call_graph|heuristic` for a test of an unguarded line, and `unguarded

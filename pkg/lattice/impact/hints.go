@@ -18,8 +18,9 @@ import (
 
 // Hints: the two weakest sources of the test listing. They are used only
 // when coverage, the call graph and the neighbour heuristic find no test for
-// a touched symbol no promise guards, and only test files the adapters
-// detected (the graph's tests) count.
+// a touched symbol no promise guards, and only test files that hold a test
+// the adapters detected (see testCases) count: a support file of helpers
+// alone is never hinted.
 const (
 	// ViaCoChange: the test file changed in the same commits as the
 	// symbol's file (a hint: files that change together tend to belong
@@ -34,11 +35,14 @@ const (
 // only a hint found. The tests are selected and the symbol is listed here,
 // so a reader sees how weak the link is.
 type HintedSymbol struct {
-	Symbol string   `json:"symbol"`
-	File   string   `json:"file"`
-	Lines  string   `json:"lines,omitempty"`
-	Via    string   `json:"via"` // co_change | mentions
-	Tests  []string `json:"tests"`
+	Symbol string `json:"symbol"`
+	File   string `json:"file"`
+	Lines  string `json:"lines,omitempty"`
+	Via    string `json:"via"` // co_change | mentions
+	// Files are the test files of Tests, sorted: what a runner takes.
+	Files []string `json:"files"`
+	// Tests are test cases only, never a helper of a test file.
+	Tests []string `json:"tests"`
 }
 
 // thisChange is how the change being reported is named among the commits a
@@ -47,6 +51,11 @@ const thisChange = "this change"
 
 // maxShownCommits caps the commits a co_change why lists by name.
 const maxShownCommits = 5
+
+// scoreEpsilon absorbs float rounding when a co-change score is compared
+// with break.co_change.min_score, so three shared commits of twelve files
+// each still reach 0.25.
+const scoreEpsilon = 1e-9
 
 // minMentionLen is the shortest name the mention hint looks for.
 const minMentionLen = 4
@@ -79,7 +88,8 @@ type hintSource struct {
 	window config.CoChange
 	pm     pathMap
 	kg     schema.KnowledgeGraph
-	// testFiles maps a graph path to the tests it holds, in graph order.
+	// testFiles maps a graph path to the tests it holds, in graph order:
+	// test cases only, never the file's helpers.
 	testFiles map[string][]string
 	// changed are the git paths the change itself touches; nChanged counts
 	// its files.
@@ -114,8 +124,11 @@ type mention struct {
 
 func newHintSource(g repoGit, base string, window config.CoChange, pm pathMap, kg schema.KnowledgeGraph, changes []FileChange) *hintSource {
 	h := &hintSource{g: g, base: base, window: window, pm: pm, kg: kg, testFiles: map[string][]string{}, nChanged: len(changes)}
+	cases := testCases(kg.Tests)
 	for _, t := range kg.Tests {
-		h.testFiles[t.File] = appendNew(h.testFiles[t.File], t.FQN)
+		if cases[t.FQN] {
+			h.testFiles[t.File] = appendNew(h.testFiles[t.File], t.FQN)
+		}
 	}
 	for _, c := range changes {
 		for _, p := range []string{c.NewPath, c.OldPath} {
@@ -213,12 +226,16 @@ func reachable(commits []coCommit, from string) map[string]bool {
 
 // byCoChange lists the tests of the test files that changed in the same
 // commits as the symbol's file: in the change itself, or in at least
-// MinCommits commits of the window. The evidence of each file is the commits
-// it shared, the change first, then newest first.
+// MinCommits commits of the window whose co-change score reaches MinScore.
+// Each shared commit scores 1/(the files it changes), so a test file that
+// only ever changed with the symbol's file in large commits is not hinted.
+// The evidence of each file is the commits it shared, the change first, then
+// newest first.
 // @enforces impact:INV-8
 func (h *hintSource) byCoChange(cs ChangedSymbol) ([]string, map[string]string) {
 	h.readLog()
 	shared := map[string][]string{} // test graph path -> commits
+	score := map[string]float64{}   // test graph path -> sum of 1/files over its shared commits
 	own := map[string]bool{cs.File: true}
 	if cs.OldFile != "" {
 		own[cs.OldFile] = true
@@ -234,24 +251,37 @@ func (h *hintSource) byCoChange(cs ChangedSymbol) ([]string, map[string]string) 
 		}
 	}
 	var idx []int
+	seen := map[int]bool{}
 	for p := range own {
-		idx = append(idx, h.byPath[p]...)
+		for _, i := range h.byPath[p] {
+			if !seen[i] {
+				seen[i] = true
+				idx = append(idx, i)
+			}
+		}
 	}
 	sort.Ints(idx)
 	for _, i := range idx {
 		c := h.commits[i]
+		counted := map[string]bool{}
 		for _, f := range c.files {
 			if own[f] {
 				continue
 			}
-			if gp, ok := h.testFile(f); ok {
+			if gp, ok := h.testFile(f); ok && !counted[gp] {
+				counted[gp] = true
 				shared[gp] = appendNew(shared[gp], c.short)
+				score[gp] += 1 / float64(len(c.files))
 			}
 		}
 	}
 	_, _, _, minCommits := h.window.Window()
+	minScore := h.window.Score()
 	for gp, commits := range shared {
-		if commits[0] != thisChange && len(commits) < minCommits {
+		if commits[0] == thisChange {
+			continue
+		}
+		if len(commits) < minCommits || score[gp] < minScore-scoreEpsilon {
 			delete(shared, gp)
 		}
 	}

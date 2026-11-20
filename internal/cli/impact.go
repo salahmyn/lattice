@@ -51,10 +51,12 @@ per-test coverage (coverage), else the static call graph (call_graph), else a
 test file beside it with the same base name (heuristic), else two hints: a test
 file that changed in the same commits as its file, the change included, within
 break.co_change (co_change; by default 2 shared commits among the last 200
-within 365 days, skipping a commit of more than 50 files), else a test file
+within 365 days, skipping a commit of more than 50 files, each commit weighing
+1/(its files) toward a score of at least 0.25), else a test file
 that names the symbol (a compound name of 4+ characters, not a common one) or
 a route its file declares (mentions). Each test's "why" says which, with the shared commits or the
-mentioning line for a hint; a symbol only a hint places is listed as hinted.
+mentioning line for a hint; a symbol only a hint places is listed as hinted,
+with its test files. Only tests are listed, never the helpers of a test file.
 An unguarded symbol none of them finds a test for is listed as uncovered: run
 the full suite before merge. With --json it is {"runners": [...],
 "unmatched": [...], "hinted": [...], "uncovered": [...]}. It only lists; it
