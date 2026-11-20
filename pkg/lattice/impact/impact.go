@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/salahmyn/lattice/pkg/lattice/adapters"
+	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/scip"
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
@@ -41,6 +42,9 @@ type Input struct {
 	Since         string
 	MaxSymbols    int  // <= 0 takes DefaultMaxSymbols
 	IncludeDrafts bool // list criteria of draft and proposed BRDs
+	// Break, when set, makes the report list the verifier tests of the
+	// touched promises, grouped by its break.runners (Report.Tests).
+	Break *config.Break
 }
 
 // Report is the full impact of a change. Paths are repo-relative, as a pull
@@ -66,6 +70,9 @@ type Report struct {
 	Notes        []Note       `json:"notes"`
 	ManifestDiff ManifestDiff `json:"manifest_diff"`
 	CodeRollup   CodeRollup   `json:"code_rollup"`
+	// Tests lists the verifier tests of the touched promises by runner. It is
+	// present only when Input.Break is set.
+	Tests *TestPlan `json:"tests,omitempty"`
 }
 
 // ChangedSymbol is a symbol whose own lines a hunk touches, on the base side,
@@ -204,6 +211,10 @@ func Compute(ctx context.Context, in Input) (Report, error) {
 	}
 	rep.CodeRollup = rollup(in, pm, cc, approved, drafts)
 	rep.Notes = statementNotes(in.Graph.Features, baseFeatures, in.Graph.BRDs, md, cc)
+	if in.Break != nil {
+		plan := testPlan(in, pm, rep, drafts)
+		rep.Tests = &plan
+	}
 
 	normalize(&rep)
 	return rep, nil

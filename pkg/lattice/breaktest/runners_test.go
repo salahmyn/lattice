@@ -53,6 +53,43 @@ func TestGroupsByRunner(t *testing.T) {
 	}
 }
 
+// ByRunner lists the break.runners groups with their commands filled, and
+// returns every verifier no break.runners entry matches apart, including the
+// ones lattice break runs with go test or a break.commands template.
+// @verifies breaktest:INV-6
+func TestByRunnerListsRunnerGroups(t *testing.T) {
+	cfg := config.Break{
+		Runners: []config.Runner{
+			{Name: "vitest", Match: []string{"apps/**/*.test.ts"}, Dir: "apps/web", Command: []string{"vitest", "run", "{files}", "-t", "{filter}"}},
+		},
+		Commands: map[string]string{"python": "pytest {files}"},
+	}
+	groups, none := ByRunner(cfg, "/repo", []results.Selector{
+		sel("a b", "apps/web/a.test.ts", "typescript"),
+		sel("c", "apps/web/c.test.ts", "typescript"),
+		sel("d", "tests/d.py", "python"),
+		sel("e", "pkg/e_test.go", "go"),
+	}, nil)
+	if len(groups) != 1 {
+		t.Fatalf("groups = %+v", groups)
+	}
+	g := groups[0]
+	want := []string{"vitest", "run", "a.test.ts", "c.test.ts", "-t", "(a b|c)$"}
+	if !reflect.DeepEqual(g.Argv, want) || g.Filter != "(a b|c)$" || len(g.Tests) != 2 {
+		t.Errorf("group = %+v", g)
+	}
+	if ShellLine(g.Argv) != "vitest run a.test.ts c.test.ts -t '(a b|c)$'" {
+		t.Errorf("line = %s", ShellLine(g.Argv))
+	}
+	var names []string
+	for _, s := range none {
+		names = append(names, s.Test)
+	}
+	if !reflect.DeepEqual(names, []string{"e", "d"}) {
+		t.Errorf("unmatched = %v", names)
+	}
+}
+
 // A promise is killed when any group fails; no tests executed at all is an
 // error, never a pass; a runtime failure outranks a build failure.
 // @verifies breaktest:INV-6

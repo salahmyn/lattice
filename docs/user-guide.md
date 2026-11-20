@@ -1410,6 +1410,11 @@ touched production line no promise guards, untraced ones included),
 `guarded_lines`, and `unguarded`, the per-symbol list of unguarded lines that are
 not already in `untraced` (reached only by an entry point, or removed).
 
+`lattice.check/1` also carries `tests`: the verifier tests of the touched
+promises grouped by `break.runners`, the listing of `lattice impact --tests`
+(see [Run only the tests a change touches](#run-only-the-tests-a-change-touches)).
+It is for a script and never changes the verdict.
+
 ### The base audit, and how CI gets it
 
 The base's audit is `lattice/.cache/audit/<merge-base sha>.json`. It is derived
@@ -1929,6 +1934,67 @@ code root, so `blast-radius` and the impact roll-up read it as if it had
 been indexed from the root.
 
 ---
+
+### Run only the tests a change touches
+
+`lattice impact --since <rev> --tests` lists the verifier tests of the promises
+a change touches, grouped by the `break.runners` of `lattice/config.yaml` (see
+[Runners](#4i-break-testing-does-the-verifier-notice)). A promise is touched when
+the change edits, removes or adds one of its enforcers, or edits one of its
+verifiers, any change to a file that holds a verifier included. Every verifier of
+a touched promise is listed, not only the changed ones. The command only lists:
+it never runs a test.
+
+```sh
+lattice impact --since origin/main --tests          # a shell script, one line per runner
+lattice impact --since origin/main --tests --json   # {runners, unmatched}
+```
+
+The text form is one line per runner, with its ready-to-run command (in a
+subshell that enters the runner's `dir`) and the promises in a trailing
+comment, then one comment line per verifier file no runner matches:
+
+```sh
+(cd apps/web && pnpm vitest run src/fees.test.ts -t '(caps the fee|rejects a negative amount)$')  # vitest: fees:INV-1
+# unmatched e2e/fees.spec.ts (fees:INV-1): no break.runners entry matches
+```
+
+The verifiers are grouped exactly as `lattice break` groups them: by the first
+runner whose `match` glob covers the file, with `{files}` (relative to `dir`)
+and `{filter}` filled the same way, and `{junit}` filled with
+`junit-<runner>.xml` in the runner's `dir`. `--json` gives each runner's `name`,
+`dir`, `command` (as configured), `run` and `argv` (filled), `files`, `filter`,
+`junit`, `tests` and `promises`, and each `unmatched` file with its `tests`,
+`promises` and `reason`. A verifier no `break.runners` entry matches, Go
+verifiers and `break.commands` templates included, is listed under `unmatched`
+with the reason, never dropped; with no runner configured every verifier is
+there ("no break.runners entry matches (none is configured)"). `lattice check
+--json` carries the same listing as `tests`.
+
+In CI, run the listed commands on the pull request for fast feedback, and keep
+the full suite on the merge commit, since an unmatched verifier, or a test no
+promise names, is not in the list:
+
+```yaml
+jobs:
+  touched-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Run only the tests this change touches
+        run: |
+          lattice impact --since origin/${{ github.base_ref }} --tests > touched-tests.sh
+          cat touched-tests.sh
+          sh -e touched-tests.sh
+  full-suite:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pnpm test   # the whole suite, on the merge commit
+```
 
 ## 6. Using Lattice with an AI service
 
