@@ -69,6 +69,13 @@ type Report struct {
 	DraftsIncluded     bool                 `json:"drafts_included"`
 	DraftCriteria      []AffectedCriterion  `json:"draft_criteria,omitempty"`
 	RemovedEnforcement []RemovedEnforcement `json:"removed_enforcement"`
+	// AddedEnforcement lists every enforcement pair on the working-tree side
+	// that no symbol of the changed files held at base: a tag added to a
+	// symbol, or a new or renamed symbol (in a new file too) that carries
+	// one. A symbol that kept its name and its invariant is not listed. A
+	// check reads it to tell an enforcer moved within a change from one
+	// removed. It is an addition to the report.
+	AddedEnforcement []EnforcerChange `json:"added_enforcement"`
 	// Notes are informational readings of touched promises, such as an
 	// enforcer that changed under a statement that did not. They never
 	// change a verdict.
@@ -208,6 +215,7 @@ func Compute(ctx context.Context, in Input) (Report, error) {
 	})
 	rep.ChangedSymbols = cc.symbols
 	rep.RemovedEnforcement = cc.removed
+	rep.AddedEnforcement = cc.gained
 
 	approved, drafts := affectedCriteria(in.Graph.BRDs, cc)
 	rep.AffectedCriteria = approved
@@ -265,6 +273,9 @@ func normalize(r *Report) {
 	}
 	if r.RemovedEnforcement == nil {
 		r.RemovedEnforcement = []RemovedEnforcement{}
+	}
+	if r.AddedEnforcement == nil {
+		r.AddedEnforcement = []EnforcerChange{}
 	}
 	if r.Notes == nil {
 		r.Notes = []Note{}

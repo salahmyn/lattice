@@ -327,3 +327,126 @@ func TestCheckCLIUsageAndMarkdown(t *testing.T) {
 		t.Errorf("markdown:\n%s", out.String())
 	}
 }
+
+// moveFixture is the check fixture with a helper: shop.positive enforces
+// shop:INV-1 and so does its caller shop.Positive, which the verifier runs.
+// The base audit snapshot is saved on main.
+func moveFixture(t *testing.T) *checkFixture {
+	t.Helper()
+	f := newCheckFixture(t)
+	f.write("shop/shop.go", "package shop\n\n// @module-feature shop\n\n// Positive guards a price.\n// @enforces shop:INV-1\nfunc Positive(n int) bool {\n\treturn positive(n)\n}\n\n"+
+		"// positive is the rule.\n// @enforces shop:INV-1\nfunc positive(n int) bool {\n\treturn n > 0\n}\n")
+	f.commit("a helper")
+	if out, err := run(t, f.dir, newCheckCommand, "--snapshot"); err != nil {
+		t.Fatalf("snapshot: %v\n%s", err, out)
+	}
+	return f
+}
+
+// moveHelper moves shop.positive into a new package as shop.rules.Positive, still
+// tagged; shop.Positive keeps its own tag.
+func (f *checkFixture) moveHelper() {
+	f.t.Helper()
+	f.git("checkout", "-q", "-b", "move")
+	f.write("shop/rules/rules.go", "package rules\n\n// @module-feature shop\n\n// Positive is the rule, shared.\n// @enforces shop:INV-1\nfunc Positive(n int) bool {\n\treturn n > 0\n}\n")
+	f.write("shop/shop.go", "package shop\n\n// @module-feature shop\n\nimport \"example.com/shop/rules\"\n\n// Positive guards a price.\n// @enforces shop:INV-1\nfunc Positive(n int) bool {\n\treturn rules.Positive(n)\n}\n")
+	f.commit("move the rule to a shared package")
+}
+
+func moveGapOf(rep check.Report, promise string) (check.Gap, bool) {
+	for _, g := range rep.Gaps {
+		if g.Promise == promise && g.Signal == check.SigBreakTested && g.Code == "MOVE_NOT_BREAK_TESTED" {
+			return g, true
+		}
+	}
+	return check.Gap{}, false
+}
+
+func movedNote(rep check.Report, promise string) (check.Note, bool) {
+	for _, p := range rep.Promises {
+		if p.Promise != promise {
+			continue
+		}
+		for _, n := range p.Notes {
+			if n.Code == "ENFORCER_MOVED" {
+				return n, true
+			}
+		}
+	}
+	return check.Note{}, false
+}
+
+// A helper moved to a new file under a new name, still tagged, with no break
+// run at head: ENFORCER_MOVED, not BROKEN, and a new break_tested gap that
+// blocks the merge.
+// @verifies check:INV-14
+// @verifies check:INV-1
+func TestCheckCLIEnforcerMovedOpensGap(t *testing.T) {
+	clearCIEnv(t)
+	f := moveFixture(t)
+	f.moveHelper()
+
+	rep, code := f.check("--base", "main")
+	if rep.Verdict.State != check.Unproven || rep.MergeAllowed || rep.Merge.Code != check.CodeNewGap || code != 1 {
+		t.Fatalf("exit %d verdict %s merge %v rule %+v weak %+v", code, rep.Verdict.State, rep.MergeAllowed, rep.Merge, rep.Weakenings)
+	}
+	if len(rep.Weakenings) != 0 {
+		t.Errorf("a move is not a weakening: %+v", rep.Weakenings)
+	}
+	n, ok := movedNote(rep, "shop:INV-1")
+	if !ok || n.Text != "shop.positive no longer enforces shop:INV-1; shop.rules.Positive now does" ||
+		!strings.Contains(n.Next, "run lattice break at head so a break of shop.rules.Positive is killed") {
+		t.Errorf("note = %+v (rows %+v)", n, rep.Promises)
+	}
+	g, ok := moveGapOf(rep, "shop:INV-1")
+	if !ok || g.Delta != check.DeltaNew || !g.Blocks || g.State == check.Pass {
+		t.Errorf("move gap = %+v in %+v", g, rep.Gaps)
+	}
+}
+
+// The same move with a killed break of the added enforcer at head: the gap
+// is closed and the change may merge.
+// @verifies check:INV-14
+func TestCheckCLIEnforcerMovedKilledMayMerge(t *testing.T) {
+	clearCIEnv(t)
+	f := moveFixture(t)
+	f.moveHelper()
+	breaks := `{"schema":"lattice.breaks/1","commit":"` + f.git("rev-parse", "HEAD") + `","ci_run":"local","runs":[` +
+		`{"promise":"shop:INV-1","enforcer":"shop.rules.Positive","enforcer_file":"shop/rules/rules.go","verifiers":["shop.TestPriceIsPositive"],` +
+		`"method":"early_return","baseline":"pass","outcome":"killed"}]}`
+	f.write("lattice/.cache/results/breaks.json", breaks)
+
+	rep, code := f.check("--base", "main")
+	if g, open := moveGapOf(rep, "shop:INV-1"); open {
+		t.Fatalf("a killed break of the added enforcer closes the gap: %+v", g)
+	}
+	if !rep.MergeAllowed || code != 0 || rep.Verdict.State == check.Broken {
+		t.Fatalf("exit %d verdict %s merge %v rule %+v gaps %+v", code, rep.Verdict.State, rep.MergeAllowed, rep.Merge, rep.Gaps)
+	}
+	if n, ok := movedNote(rep, "shop:INV-1"); !ok || n.Next != "" {
+		t.Errorf("the move is still shown, with nothing left to do: %+v", n)
+	}
+}
+
+// A symbol that moves to another file under the same name, tag and all, is
+// no finding at all: not removed, not moved.
+// @verifies check:INV-1
+func TestCheckCLISameNameMoveIsNoFinding(t *testing.T) {
+	clearCIEnv(t)
+	f := moveFixture(t)
+	f.git("checkout", "-q", "-b", "split")
+	f.write("shop/shop.go", "package shop\n\n// @module-feature shop\n\n// Positive guards a price.\n// @enforces shop:INV-1\nfunc Positive(n int) bool {\n\treturn positive(n)\n}\n")
+	f.write("shop/rule.go", "package shop\n\n// @module-feature shop\n\n// positive is the rule.\n// @enforces shop:INV-1\nfunc positive(n int) bool {\n\treturn n > 0\n}\n")
+	f.commit("split the file")
+
+	rep, _ := f.check("--base", "main")
+	if rep.Verdict.State == check.Broken || len(rep.Weakenings) != 0 {
+		t.Fatalf("verdict %s weak %+v", rep.Verdict.State, rep.Weakenings)
+	}
+	if _, ok := movedNote(rep, "shop:INV-1"); ok {
+		t.Errorf("a same-name move is not ENFORCER_MOVED: %+v", rep.Promises)
+	}
+	if g, ok := moveGapOf(rep, "shop:INV-1"); ok {
+		t.Errorf("a same-name move opens no gap: %+v", g)
+	}
+}

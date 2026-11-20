@@ -12,7 +12,7 @@ owners:
 implements_brd: brd.verification
 invariants:
   - id: INV-1
-    statement: Anything that fell reads BROKEN and never merges. That is a promise level dropped against base, an enforcer or verifier removed, a break killed at base that survives at head, a red suite, or an edit to the statement, tier or mapping of a confirmed promise.
+    statement: Anything that fell reads BROKEN and never merges. That is a promise level dropped against base, an enforcer or verifier removed (except an enforcer moved under INV-14), a break killed at base that survives at head, a red suite, or an edit to the statement, tier or mapping of a confirmed promise.
   - id: INV-2
     statement: Unknown is never a pass. A missing signal is a gap that keeps the verdict at UNPROVEN, each tier needs its default signals (tier 1 exercised or break_tested, tier 2 and 3 break_tested), and UNPROVEN is never drawn as a pass.
   - id: INV-3
@@ -35,3 +35,5 @@ invariants:
     statement: An informational note on a touched promise, such as STATEMENT_UNCHANGED (an enforcer changed and its statement and tier did not), is shown on the promise's row and never changes the verdict, a gap or merge_allowed.
   - id: INV-13
     statement: A touched line reads that an entry point reaches it only when the call graph reaches its symbol from the handler of a declared entry point, and a handler that names no symbol of the graph reaches nothing. A line whose feature is on an entry point's flow but that no handler reaches reads that weaker reason, a handler reach the graph cannot decide reads unknown and never reached, and none of these readings makes a line guarded.
+  - id: INV-14
+    statement: A base enforcer of a tier 1 or 2 promise that no longer enforces it at head reads ENFORCER_MOVED, not BROKEN, only when the same change adds an enforcer of that promise that did not enforce it at base. The move opens a (promise, break_tested) gap that is new at every tier and whatever the base read. It clears only when head break results show a killed break of each added enforcer; evidence on kept enforcers, a waiver and INV-10 never clear it. Anything else is ENFORCER_REMOVED.

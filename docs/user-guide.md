@@ -1423,11 +1423,30 @@ lattice check --snapshot                      # save the audit of HEAD, for a ba
 
 | Verdict | Means | Merge |
 |---|---|---|
-| `BROKEN` | Something fell: a promise's class dropped to a known-bad class (`fake`, `unenforced`, `unverified`, `not_demonstrated`) against base; an enforcer or verifier was removed; a break killed at base survives at head; the suite is red; or the statement, tier or mapping of a confirmed promise was edited without its re-confirmation (see below) | Never |
+| `BROKEN` | Something fell: a promise's class dropped to a known-bad class (`fake`, `unenforced`, `unverified`, `not_demonstrated`) against base; an enforcer or verifier was removed (an enforcer moved within the change reads `ENFORCER_MOVED` instead, see below); a break killed at base survives at head; the suite is red; or the statement, tier or mapping of a confirmed promise was edited without its re-confirmation (see below) | Never |
 | `UNPROVEN` | Nothing fell, but a touched promise is unconfirmed, not exercised, not break-tested where its tier needs it, or unknown, or touched lines are untraced, or touched production lines have no promise guarding them (`UNGUARDED_LINES`). It is never drawn as a pass: no check mark, and the comment says so | Only if the merge rule holds |
 | `ASSURED` | Every touched production line is guarded by a promise (or none is touched), every touched promise has the signals its tier needs, and nothing fell. `NOTHING_TOUCHED` means the change touches no promise and no production line at all | Yes |
 
 **Editing a confirmed promise.** The edit voids the confirmation. To keep the change mergeable, put the re-confirmation in the same pull request: run `lattice prepare brd approve <id> --version <N>` (or `prepare promise confirm`) on the pull request's branch, then `git merge --ff-only` the decision branch it prints, so its decision file rides with the edit. That makes the promise's `confirmed` gap read *pending*. A pending confirmation does not block the merge, tier 3 included, because the merge needs the human approval that confirms it; `lattice confirm` records it once the pull request merges. Without the decision file the edit reads `BROKEN` (`CONFIRMATION_VOIDED`).
+
+**An enforcer moved.** A refactor that moves enforcement, such as a helper moved
+to a shared package or renamed, removes a base enforcer. That is not a fall when
+the same change adds an enforcer of the same promise that did not enforce it at
+base: the promise's row carries the note `ENFORCER_MOVED` ("fees.round no
+longer enforces fees:INV-1; money.Round now does") instead of the fall
+`ENFORCER_REMOVED`. A move must never weaken enforcement silently, since any
+trivial function can carry an `@enforces` tag, so it opens a `break_tested` gap,
+`MOVE_NOT_BREAK_TESTED`, at every tier. The gap is new whatever the base read and blocks the merge until the break
+results counted at head show a killed break of each added enforcer; run `lattice
+break` and re-run the check, no human step is needed. A kill of an enforcer the
+change kept never counts, a waiver never removes the gap, and stale, non-CI or
+missing break results leave it open. Several removed enforcers may move onto one
+added enforcer. A removal with only kept enforcers left, and any removal on a
+tier-3 promise, still reads `BROKEN`. A move edits no statement, tier or mapping,
+so a confirmed promise stays confirmed. In `lattice.check/1` the row's `touched`
+reads `enforcer_moved` and its `needs` include `break_tested`. `lattice impact --json` lists what the check reads as `added_enforcement:
+[{symbol, file, invariant, change}]`: every enforcement pair the base did not hold,
+new symbols in new files included.
 
 **An enforcer changed and its statement did not.** When the change edits the
 lines of an `@enforces` symbol and leaves the promise's statement and tier as they

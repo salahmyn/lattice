@@ -58,6 +58,10 @@ type computation struct {
 	lines lineScan
 	// baseNotes are the PASSES_ON_BASE notes, by promise.
 	baseNotes map[string][]Note
+	// moves is the enforcement that moved within the change, by promise;
+	// movedPair marks each moved "<symbol>\x00<promise>" removal.
+	moves     map[string]*move
+	movedPair map[string]bool
 }
 
 func (c *computation) run() Report {
@@ -74,6 +78,7 @@ func (c *computation) run() Report {
 	c.newPromise = map[string]bool{}
 	c.weakBy = map[string][]Weakening{}
 
+	c.findMoves()
 	c.findTouched()
 	c.findWeakenings()
 
@@ -169,7 +174,11 @@ func (c *computation) findTouched() {
 		}
 	}
 	for _, re := range im.RemovedEnforcement {
-		c.touch(re.Invariant, "enforcer_removed")
+		if c.moved(re) {
+			c.touch(re.Invariant, "enforcer_moved")
+		} else {
+			c.touch(re.Invariant, "enforcer_removed")
+		}
 	}
 
 	// Manifests: a feature's invariants, a BRD criterion's tier, statement
@@ -336,6 +345,9 @@ func (c *computation) findWeakenings() {
 	im := c.in.Impact
 
 	for _, re := range im.RemovedEnforcement {
+		if c.moved(re) {
+			continue // ENFORCER_MOVED: a note and a break_tested gap, not a fall (check:INV-14)
+		}
 		c.addWeak(Weakening{
 			Code: CodeEnforcerRemoved, Promise: re.Invariant,
 			Params: map[string]interface{}{"symbol": re.Symbol, "file": re.File, "line": re.Line, "reason": re.Reason},
