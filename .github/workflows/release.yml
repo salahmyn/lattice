@@ -66,6 +66,16 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      # Hosted runners sometimes fail DNS or time out on the module proxy; a
+      # retried download keeps a network blip from failing the build itself.
+      - name: Download modules
+        run: |
+          for i in 1 2 3; do
+            go mod download && exit 0
+            echo "go mod download failed (attempt $i); retrying in $((i * 15))s"
+            sleep $((i * 15))
+          done
+          exit 1
       # tree-sitter needs cgo, so each platform builds on its own runner.
       - env:
           TAG: ${{ needs.version.outputs.tag }}
