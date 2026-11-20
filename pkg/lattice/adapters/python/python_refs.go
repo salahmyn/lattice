@@ -5,7 +5,7 @@ package python
 import (
 	"strings"
 
-	sitter "github.com/smacker/go-tree-sitter"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 )
@@ -24,7 +24,7 @@ func (p *pyParser) collectRefs(root *sitter.Node) {
 	m.RefsKnown, m.Namespace = true, p.modulePath
 	names := map[string]bool{}
 	for i := 0; i < int(root.NamedChildCount()); i++ {
-		p.topLevel(root.NamedChild(i), names)
+		p.topLevel(root.NamedChild(uint(i)), names)
 	}
 	for i := range m.Symbols {
 		s := &m.Symbols[i]
@@ -42,7 +42,7 @@ func (p *pyParser) collectRefs(root *sitter.Node) {
 	mainLine := 0
 	w.emit = func(n *sitter.Node, r ir.Ref) {
 		r.Line = line(n)
-		off := n.StartByte()
+		off := uint32(n.StartByte())
 		if idx := p.owners.At(off); idx >= 0 {
 			m.Symbols[idx].Refs = append(m.Symbols[idx].Refs, r)
 			return
@@ -54,9 +54,9 @@ func (p *pyParser) collectRefs(root *sitter.Node) {
 		top = append(top, r)
 	}
 	for i := 0; i < int(root.NamedChildCount()); i++ {
-		c := root.NamedChild(i)
-		if c.Type() == "if_statement" && isMainGuard(c, p.src) && w.main == nil {
-			w.main = []uint32{c.StartByte(), c.EndByte()}
+		c := root.NamedChild(uint(i))
+		if c.Kind() == "if_statement" && isMainGuard(c, p.src) && w.main == nil {
+			w.main = []uint32{uint32(c.StartByte()), uint32(c.EndByte())}
 			mainLine = line(c)
 		}
 		w.visit(c)
@@ -75,21 +75,21 @@ func isMainGuard(n *sitter.Node, src []byte) bool {
 	if cond == nil {
 		return false
 	}
-	t := strings.Join(strings.Fields(cond.Content(src)), "")
+	t := strings.Join(strings.Fields(cond.Utf8Text(src)), "")
 	return t == `__name__=="__main__"` || t == `__name__=='__main__'` || t == `"__main__"==__name__` || t == `'__main__'==__name__`
 }
 
 // topLevel records one top-level statement's imports and bound names.
 func (p *pyParser) topLevel(n *sitter.Node, names map[string]bool) {
 	m := p.mod
-	switch n.Type() {
+	switch n.Kind() {
 	case "import_statement":
 		for i := 0; i < int(n.NamedChildCount()); i++ {
-			c := n.NamedChild(i)
-			switch c.Type() {
+			c := n.NamedChild(uint(i))
+			switch c.Kind() {
 			case "dotted_name":
 				// import a.b binds a.b as written (and a); refs say a.b.f().
-				mod := c.Content(p.src)
+				mod := c.Utf8Text(p.src)
 				names[strings.SplitN(mod, ".", 2)[0]] = true
 				m.Imports = append(m.Imports, ir.Import{Name: mod, From: mod, Line: line(n)})
 			case "aliased_import":
@@ -108,12 +108,12 @@ func (p *pyParser) topLevel(n *sitter.Node, names map[string]bool) {
 			return
 		}
 		for i := 0; i < int(n.ChildCount()); i++ {
-			if n.FieldNameForChild(i) != "name" {
+			if n.FieldNameForChild(uint32(i)) != "name" {
 				continue
 			}
-			c := n.Child(i)
-			member, local := c.Content(p.src), c.Content(p.src)
-			if c.Type() == "aliased_import" {
+			c := n.Child(uint(i))
+			member, local := c.Utf8Text(p.src), c.Utf8Text(p.src)
+			if c.Kind() == "aliased_import" {
 				member, local = p.fieldText(c, "name"), p.fieldText(c, "alias")
 			}
 			names[local] = true
@@ -127,8 +127,8 @@ func (p *pyParser) topLevel(n *sitter.Node, names map[string]bool) {
 		}
 	case "expression_statement":
 		if a := firstChildOfType(n, "assignment"); a != nil {
-			if l := a.ChildByFieldName("left"); l != nil && l.Type() == "identifier" {
-				names[l.Content(p.src)] = true
+			if l := a.ChildByFieldName("left"); l != nil && l.Kind() == "identifier" {
+				names[l.Utf8Text(p.src)] = true
 			}
 		}
 	}
@@ -141,17 +141,17 @@ func (p *pyParser) absoluteModule(n *sitter.Node) string {
 	if n == nil {
 		return ""
 	}
-	if n.Type() != "relative_import" {
-		return n.Content(p.src)
+	if n.Kind() != "relative_import" {
+		return n.Utf8Text(p.src)
 	}
 	dots, rest := 0, ""
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		c := n.NamedChild(i)
-		switch c.Type() {
+		c := n.NamedChild(uint(i))
+		switch c.Kind() {
 		case "import_prefix":
-			dots = strings.Count(c.Content(p.src), ".")
+			dots = strings.Count(c.Utf8Text(p.src), ".")
 		case "dotted_name":
-			rest = c.Content(p.src)
+			rest = c.Utf8Text(p.src)
 		}
 	}
 	pkg := strings.Split(p.modulePath, ".")
@@ -173,12 +173,12 @@ type pyRefWalker struct {
 	emit  func(n *sitter.Node, r ir.Ref)
 }
 
-func (w *pyRefWalker) text(n *sitter.Node) string { return n.Content(w.p.src) }
+func (w *pyRefWalker) text(n *sitter.Node) string { return n.Utf8Text(w.p.src) }
 
 // receiver classifies an attribute's object: self and cls are "this", a
 // dotted chain of names stays as written, anything else is "~".
 func (w *pyRefWalker) receiver(obj *sitter.Node) (string, bool) {
-	switch obj.Type() {
+	switch obj.Kind() {
 	case "identifier":
 		if t := w.text(obj); t == "self" || t == "cls" {
 			return "this", true
@@ -200,7 +200,7 @@ func (w *pyRefWalker) visit(n *sitter.Node) {
 	if n == nil {
 		return
 	}
-	switch n.Type() {
+	switch n.Kind() {
 	case "comment", "string", "integer", "float", "import_statement", "import_from_statement",
 		"keyword_argument_name":
 		return
@@ -208,9 +208,9 @@ func (w *pyRefWalker) visit(n *sitter.Node) {
 		fn, args := n.ChildByFieldName("function"), n.ChildByFieldName("arguments")
 		switch {
 		case fn == nil:
-		case fn.Type() == "identifier":
+		case fn.Kind() == "identifier":
 			w.emit(fn, ir.Ref{Name: w.text(fn), Kind: ir.RefCall})
-		case fn.Type() == "attribute":
+		case fn.Kind() == "attribute":
 			obj, attr := fn.ChildByFieldName("object"), fn.ChildByFieldName("attribute")
 			if obj == nil || attr == nil {
 				break
@@ -246,7 +246,7 @@ func (w *pyRefWalker) visit(n *sitter.Node) {
 		return
 	case "attribute":
 		obj, attr := n.ChildByFieldName("object"), n.ChildByFieldName("attribute")
-		if obj != nil && attr != nil && obj.Type() == "identifier" && w.names[w.text(obj)] {
+		if obj != nil && attr != nil && obj.Kind() == "identifier" && w.names[w.text(obj)] {
 			w.emit(attr, ir.Ref{Name: w.text(attr), Qualifier: w.text(obj), Kind: ir.RefValue})
 			return
 		}
@@ -254,13 +254,13 @@ func (w *pyRefWalker) visit(n *sitter.Node) {
 		return
 	case "function_definition", "class_definition":
 		for i := 0; i < int(n.ChildCount()); i++ {
-			if c := n.Child(i); c.IsNamed() && n.FieldNameForChild(i) != "name" && n.FieldNameForChild(i) != "parameters" {
+			if c := n.Child(uint(i)); c.IsNamed() && n.FieldNameForChild(uint32(i)) != "name" && n.FieldNameForChild(uint32(i)) != "parameters" {
 				w.visit(c)
 			}
 		}
 		if params := n.ChildByFieldName("parameters"); params != nil {
 			for i := 0; i < int(params.NamedChildCount()); i++ {
-				w.visit(params.NamedChild(i).ChildByFieldName("value")) // defaults are code
+				w.visit(params.NamedChild(uint(i)).ChildByFieldName("value")) // defaults are code
 			}
 		}
 		return
@@ -269,7 +269,7 @@ func (w *pyRefWalker) visit(n *sitter.Node) {
 		return
 	}
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		w.visit(n.NamedChild(i))
+		w.visit(n.NamedChild(uint(i)))
 	}
 }
 
@@ -278,7 +278,7 @@ func firstStringArg(args *sitter.Node, p *pyParser) (string, bool) {
 	if args == nil || args.NamedChildCount() == 0 {
 		return "", false
 	}
-	if a := args.NamedChild(0); a.Type() == "string" {
+	if a := args.NamedChild(0); a.Kind() == "string" {
 		return p.stringValue(a), true
 	}
 	return "", false

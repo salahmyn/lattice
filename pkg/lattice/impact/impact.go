@@ -45,6 +45,11 @@ type Input struct {
 	// Break, when set, makes the report list the verifier tests of the
 	// touched promises, grouped by its break.runners (Report.Tests).
 	Break *config.Break
+	// Coverage and Calls are the evidence the test listing uses to find the
+	// tests that exercise a touched symbol no promise guards: ingested
+	// per-test coverage, then the static call graph. Either may be nil.
+	Coverage TestCoverage
+	Calls    CallGraph
 }
 
 // Report is the full impact of a change. Paths are repo-relative, as a pull

@@ -50,7 +50,9 @@ the reverse-chain default.
 - `lattice brd from-code <feature-id>` — LLM-regenerate a BRD from feature
   evidence (supports `--dry-run`).
 - `lattice extract` / `lattice validate` — build and check the graph.
-- `lattice brd link <brd-id> <feature-id>` — add a forward link.
+- `lattice brd link <brd-id> <feature-id>` — add a forward link. Completing a
+  half the other side declares keeps the BRD's version and approval;
+  `lattice brd link --reconcile` does that for every `BRD_LINK_ONE_SIDED`.
 
 ## After generating
 

@@ -5,14 +5,13 @@ package breaktest
 import (
 	"bytes"
 
-	sitter "github.com/smacker/go-tree-sitter"
-	tspython "github.com/smacker/go-tree-sitter/python"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 // generatePython inserts `return None` as the first statement of a function
 // body, indented to match, ahead of any docstring.
 func generatePython(src []byte, sym Symbol) (Break, error) {
-	tree, err := parse(tspython.GetLanguage(), src)
+	tree, err := parse(pythonLanguage, src)
 	if err != nil {
 		return Break{}, noBreak("%v", err)
 	}
@@ -23,13 +22,13 @@ func generatePython(src []byte, sym Symbol) (Break, error) {
 		if found != nil {
 			return false
 		}
-		if n.Type() != "function_definition" {
+		if n.Kind() != "function_definition" {
 			return true
 		}
 		body := n.ChildByFieldName("body")
-		row := int(n.StartPoint().Row)
-		if p := n.Parent(); p != nil && p.Type() == "decorated_definition" {
-			row = int(p.StartPoint().Row)
+		row := int(n.StartPosition().Row)
+		if p := n.Parent(); p != nil && p.Kind() == "decorated_definition" {
+			row = int(p.StartPosition().Row)
 		}
 		if body != nil && text(n.ChildByFieldName("name"), src) == sym.Name && within(sym.Line, row, body) {
 			found = n

@@ -80,12 +80,12 @@ func TestParseWhere(t *testing.T) {
 
 func TestParseWhereErrors(t *testing.T) {
 	for _, bad := range []string{
-		"",                   // empty
-		"package",            // no op
-		"package>=foo",       // wrong op for string key
-		"confidence=banana",  // non-numeric
-		"unknown_key=x",      // unknown key
-		"=foo",               // missing key
+		"",                  // empty
+		"package",           // no op
+		"package>=foo",      // wrong op for string key
+		"confidence=banana", // non-numeric
+		"unknown_key=x",     // unknown key
+		"=foo",              // missing key
 	} {
 		if _, err := ParseWhere(bad); err == nil {
 			t.Errorf("expected error for %q", bad)

@@ -6,9 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	sitter "github.com/smacker/go-tree-sitter"
-	tstsx "github.com/smacker/go-tree-sitter/typescript/tsx"
-	tsts "github.com/smacker/go-tree-sitter/typescript/typescript"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 // tsFunctionNodes are the nodes that hold a function with a body: function
@@ -26,11 +24,11 @@ var tsFunctionNodes = map[string]bool{
 // any` in JavaScript), so the expression is still referenced. Constructors,
 // setters, classes and consts that are not functions read unknown.
 func generateTS(file string, src []byte, sym Symbol) (Break, error) {
-	lang := tstsx.GetLanguage()
+	lang := tsxLanguage
 	isTS := true
 	switch strings.ToLower(filepath.Ext(file)) {
 	case ".ts", ".mts", ".cts":
-		lang = tsts.GetLanguage()
+		lang = tsLanguage
 	case ".js", ".jsx", ".mjs", ".cjs":
 		isTS = false
 	}
@@ -48,14 +46,14 @@ func generateTS(file string, src []byte, sym Symbol) (Break, error) {
 	}
 	var cands []cand
 	walk(tree.RootNode(), func(n *sitter.Node) bool {
-		if !tsFunctionNodes[n.Type()] {
+		if !tsFunctionNodes[n.Kind()] {
 			return true
 		}
 		body := n.ChildByFieldName("body")
 		if body == nil || !within(sym.Line, tsHeaderRow(n), body) {
 			return true
 		}
-		cands = append(cands, cand{n, body, tsFunctionName(n, src), body.Type() != "statement_block"})
+		cands = append(cands, cand{n, body, tsFunctionName(n, src), body.Kind() != "statement_block"})
 		return true
 	})
 	var pick *cand
@@ -79,12 +77,12 @@ func generateTS(file string, src []byte, sym Symbol) (Break, error) {
 		}
 		return Break{}, noBreak("no function %s at line %d (kind %s)", sym.Name, sym.Line, sym.Kind)
 	}
-	if pick.n.Type() == "method_definition" {
+	if pick.n.Kind() == "method_definition" {
 		if pick.name == "constructor" {
 			return Break{}, noBreak("constructor: no generated break; add a script")
 		}
 		for i := 0; i < int(pick.n.ChildCount()); i++ {
-			if pick.n.Child(i).Type() == "set" {
+			if pick.n.Child(uint(i)).Kind() == "set" {
 				return Break{}, noBreak("setter: no generated break; add a script")
 			}
 		}
@@ -118,7 +116,7 @@ func tsFunctionName(n *sitter.Node, src []byte) string {
 	if p == nil {
 		return ""
 	}
-	switch p.Type() {
+	switch p.Kind() {
 	case "variable_declarator", "public_field_definition":
 		return text(p.ChildByFieldName("name"), src)
 	case "pair":
@@ -133,13 +131,13 @@ func tsFunctionName(n *sitter.Node, src []byte) string {
 // tsHeaderRow is the first row of the declaration a function belongs to,
 // counting an export, a const declaration or a class field around it.
 func tsHeaderRow(n *sitter.Node) int {
-	row := int(n.StartPoint().Row)
+	row := int(n.StartPosition().Row)
 	for p := n.Parent(); p != nil; p = p.Parent() {
-		switch p.Type() {
+		switch p.Kind() {
 		case "export_statement", "lexical_declaration", "variable_declaration",
 			"variable_declarator", "public_field_definition", "pair",
 			"assignment_expression", "expression_statement":
-			row = int(p.StartPoint().Row)
+			row = int(p.StartPosition().Row)
 		default:
 			return row
 		}

@@ -91,10 +91,10 @@ use Some\Other\Namespace as Other ;
 
 func TestHTTPEntryPointID(t *testing.T) {
 	cases := map[string]string{
-		"POST /api/v2/refunds":        "ep.http.post.api.v2.refunds",
-		"GET /users/{user}/edit":      "ep.http.get.users.user.edit",
-		"GET /":                       "ep.http.get",
-		"DELETE /api/posts/{post}":    "ep.http.delete.api.posts.post",
+		"POST /api/v2/refunds":     "ep.http.post.api.v2.refunds",
+		"GET /users/{user}/edit":   "ep.http.get.users.user.edit",
+		"GET /":                    "ep.http.get",
+		"DELETE /api/posts/{post}": "ep.http.delete.api.posts.post",
 	}
 	for in, want := range cases {
 		parts := strings.SplitN(in, " ", 2)
