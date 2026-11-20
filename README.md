@@ -123,7 +123,9 @@ verdicts. Unknown is never a pass.
 - `lattice impact --since <rev> --tests` lists the tests that matter for a
   change, grouped by runner, so a pre-push run stays short. It also finds the
   tests behind lines no promise guards (coverage, call graph, or a neighbouring
-  test file) and lists anything it can't place as `uncovered`.
+  test file), then, as labelled hints, a test file that changed in the same
+  commits or names the symbol or its route. It lists anything it can't place
+  as `uncovered`.
 - `lattice prepare` and `lattice confirm` make confirmation a human act that
   the platform vouches for. An agent can prepare a decision branch. Only a
   human's approval counts.

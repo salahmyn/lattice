@@ -43,6 +43,56 @@ type Break struct {
 	// checkout into the same relative path of the worktree. On by default;
 	// set it to false to opt out.
 	LinkNodeModules *bool `yaml:"link_node_modules,omitempty"`
+
+	// CoChange bounds the history `lattice impact --tests` reads to find the
+	// test files that changed in the same commits as a touched file no
+	// promise guards and no stronger evidence links to a test.
+	CoChange CoChange `yaml:"co_change,omitempty"`
+}
+
+// Defaults of the co-change window.
+const (
+	DefaultCoChangeCommits  = 200
+	DefaultCoChangeDays     = 365
+	DefaultCoChangeMaxFiles = 50
+	DefaultCoChangeMin      = 2
+)
+
+// CoChange is the `break.co_change:` block: the window of commits, ending at
+// HEAD, whose file lists the co-change hint reads. A zero field takes its
+// default.
+type CoChange struct {
+	// Commits is the most commits read (default 200).
+	Commits int `yaml:"commits,omitempty"`
+	// Days is how far back the window reaches, in days (default 365).
+	Days int `yaml:"days,omitempty"`
+	// MaxFiles skips a commit that changes more files than this (default
+	// 50): a sweeping commit says nothing about which files belong together.
+	// A change within it counts as one unit; a larger one counts commit by
+	// commit.
+	MaxFiles int `yaml:"max_files,omitempty"`
+	// MinCommits is how many commits of the window a test file must share
+	// with the touched file (default 2). A change within MaxFiles that
+	// edits the test file is enough on its own.
+	MinCommits int `yaml:"min_commits,omitempty"`
+}
+
+// Window returns the co-change bounds with defaults filled in.
+func (c CoChange) Window() (commits, days, maxFiles, minCommits int) {
+	commits, days, maxFiles, minCommits = c.Commits, c.Days, c.MaxFiles, c.MinCommits
+	if commits <= 0 {
+		commits = DefaultCoChangeCommits
+	}
+	if days <= 0 {
+		days = DefaultCoChangeDays
+	}
+	if maxFiles <= 0 {
+		maxFiles = DefaultCoChangeMaxFiles
+	}
+	if minCommits <= 0 {
+		minCommits = DefaultCoChangeMin
+	}
+	return commits, days, maxFiles, minCommits
 }
 
 // Runner is one test framework: the verifier files it runs and the command

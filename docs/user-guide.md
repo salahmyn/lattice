@@ -2022,25 +2022,49 @@ that exercise them, on the strongest evidence it has for each symbol:
 | Per-test coverage (`lattice results ingest --per-test`) | `coverage` | the test's own run executed the symbol: a fact |
 | The static call graph `lattice extract` builds | `call_graph` | the test's calls reach the symbol: an upper bound, the call may not run |
 | A test file beside the symbol's file with the same base name (`fees.test.ts`, `fees.spec.tsx`, `fees_test.go`, `test_fees.py`, or one in `__tests__/`) | `heuristic` | a guess |
+| A test file that changed in the same commits as the symbol's file: in the change itself, or in two or more commits of the `break.co_change` window | `co_change` | a hint: the why names the shared commits |
+| A test file whose text names the symbol as a whole word (case-sensitive; a compound name such as `TotalBanner` or `total_fee` of four characters or more, not a common one like `onClick`), or a literal route an entry point declares for its file | `mentions` | a hint: the why names the line |
 
-A weaker source is used only when the stronger ones find no test. A symbol none of
-them finds a test for is listed under `uncovered` ("no test is known to exercise
-this; run the full suite"): it is never dropped silently.
+A weaker source is used only when the stronger ones find no test. The two hints
+catch an end-to-end spec that drives the built app and imports nothing from the
+source tree. A symbol whose tests only a hint found is listed under `hinted`, so
+the weak link stays visible. A symbol none of them finds a test for is listed
+under `uncovered` ("no test is known to exercise this; run the full suite"): it
+is never dropped silently.
+
+The co-change history is one `git log --name-only` over a bounded window, and
+each test file is read at most once per run. The window is set in
+`lattice/config.yaml`:
+
+```yaml
+break:
+  co_change:
+    commits: 200    # the most commits read, from HEAD back (default 200)
+    days: 365       # how far back (default 365)
+    max_files: 50   # skip a commit that changes more files (default 50); a change
+                    # within it counts as one unit, a larger one commit by commit
+    min_commits: 2  # commits a test file must share (default 2); a change
+                    # within max_files that edits it is enough
+```
 
 ```sh
 lattice impact --since origin/main --tests          # a shell script, one line per runner
-lattice impact --since origin/main --tests --json   # {runners, unmatched, uncovered}
+lattice impact --since origin/main --tests --json   # {runners, unmatched, hinted, uncovered}
 ```
 
 The text form is one line per runner, with its ready-to-run command (in a
 subshell that enters the runner's `dir`) and, in a trailing comment, the
 promises and the unguarded symbols its tests exercise; then one comment line per
-test file no runner matches; then, when some touched line has no known test, an
+test file no runner matches; then a `hinted` block for the symbols whose tests
+only a hint found; then, when some touched line has no known test, an
 `uncovered` block:
 
 ```sh
 (cd apps/web && pnpm vitest run src/checkout.test.ts src/fees.test.ts -t '(caps the fee|rejects a negative amount|shows the total)$')  # vitest: fees:INV-1, unguarded apps.web.src.total.total via call_graph
 # unmatched e2e/fees.spec.ts (fees:INV-1): no break.runners entry matches
+# unmatched e2e/checkout.spec.ts (unguarded apps.web.src.summary.OrderSummary via co_change (hint: e2e/checkout.spec.ts changed with apps/web/src/summary.ts in this change and 2 commits (1a2b3c4, 5d6e7f8))): no break.runners entry matches
+# hinted: touched lines no promise guards whose tests only a hint (co_change, mentions) found
+#   apps/web/src/summary.ts:4-20  apps.web.src.summary.OrderSummary via co_change
 # uncovered: touched lines no promise guards and no known test exercises
 #   apps/web/src/banner.ts:3-9  apps.web.src.banner.render
 # run the full suite before merge
@@ -2052,10 +2076,12 @@ and `{filter}` filled the same way, and `{junit}` filled with
 `junit-<runner>.xml` in the runner's `dir`. `--json` gives each runner's `name`,
 `dir`, `command` (as configured), `run` and `argv` (filled), `files`, `filter`,
 `junit`, `tests`, `promises` and `why`, each `unmatched` file with its `tests`,
-`promises`, `reason` and `why`, and each `uncovered` symbol with its `symbol`,
+`promises`, `reason` and `why`, each `hinted` symbol with its `symbol`, `file`,
+`lines`, `via` and `tests`, and each `uncovered` symbol with its `symbol`,
 `file`, `lines` and `reason`. `why` maps each test to why it is in the set:
 `promise <id>` for a verifier of a touched promise, `unguarded <symbol> via
-coverage|call_graph|heuristic` for a test of an unguarded line. A test no
+coverage|call_graph|heuristic` for a test of an unguarded line, and `unguarded
+<symbol> via co_change|mentions (hint: …)` when only a hint links them. A test no
 `break.runners` entry matches, Go
 verifiers and `break.commands` templates included, is listed under `unmatched`
 with the reason, never dropped; with no runner configured every verifier is
@@ -2064,8 +2090,8 @@ there ("no break.runners entry matches (none is configured)"). `lattice check
 
 In CI, run the listed commands on the pull request for fast feedback, and keep
 the full suite on the merge commit, since an unmatched test is not run, and a
-`call_graph` or `heuristic` selection can miss a test that only reaches the line
-at run time; when the listing has an `uncovered` block, run the full suite
+`call_graph`, `heuristic`, `co_change` or `mentions` selection can miss a test
+that only reaches the line at run time; when the listing has an `uncovered` block, run the full suite
 before merge:
 
 ```yaml
