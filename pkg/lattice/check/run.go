@@ -104,7 +104,7 @@ func Run(ctx context.Context, ws *workspace.Workspace, kg schema.KnowledgeGraph,
 	return Compute(Input{
 		Rev: opt.Base, CI: opt.CI, Head: headAudit, Base: baseAudit, BaseNote: note,
 		Impact: im, KG: kg, Evidence: ev, Waivers: LoadWaivers(ws.LatticeDir),
-		Reconfirm: reconfirmedBy(ws, im, kg),
+		Reconfirm: reconfirmedBy(ws, im, kg), FailsOnBase: LoadBaseProof(ws.LatticeDir),
 	}), nil
 }
 

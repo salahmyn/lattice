@@ -826,6 +826,69 @@ func TestStatementNoteIsInformational(t *testing.T) {
 	}
 }
 
+// A verifier that passes on the base code adds a PASSES_ON_BASE note to each
+// of its touched promises, new ones included, and changes nothing else. A
+// result for another change, or a local one under --ci, is set aside.
+// @verifies check:INV-11
+func TestPassesOnBaseIsANoteOnly(t *testing.T) {
+	p, q := "bookshop:INV-1", "bookshop:INV-2"
+	base := auditOf("base", good(p, 2))
+	head := auditOf("head", good(p, 2, unconfirmed()), good(q, 1, unconfirmed()))
+	im := impact.Report{ChangedSymbols: []impact.ChangedSymbol{guardEdited(p), guardEdited(q)}}
+	proof := func(baseSHA, ciRun string) *BaseProof {
+		return &BaseProof{Schema: failsOnBaseSchema, BaseRev: "origin/main", Base: baseSHA, Head: "head", CIRun: ciRun,
+			Verifiers: []BaseProofTest{
+				{Verifier: "bookshop.TestEither", Promises: []string{p, q}, Outcome: "passes_on_base"},
+				{Verifier: "bookshop.TestFix", Promises: []string{p}, Outcome: "fails_on_base"},
+				{Verifier: "bookshop.TestNew", Promises: []string{p}, Outcome: "unknown"},
+			}}
+	}
+	without := Compute(scenario(&base, head, im))
+	in := scenario(&base, head, im)
+	in.FailsOnBase = proof("base", "local")
+	with := Compute(in)
+
+	if with.Verdict.State != without.Verdict.State || with.Verdict.Code != without.Verdict.Code ||
+		with.MergeAllowed != without.MergeAllowed || with.Merge.Code != without.Merge.Code {
+		t.Fatalf("the note changed the verdict: %+v/%v vs %+v/%v", with.Verdict, with.MergeAllowed, without.Verdict, without.MergeAllowed)
+	}
+	gw, _ := json.Marshal(with.Gaps)
+	go_, _ := json.Marshal(without.Gaps)
+	if !bytes.Equal(gw, go_) {
+		t.Fatalf("the note changed the gaps:\n%s\n%s", gw, go_)
+	}
+	if !with.Evidence.FailsOnBase.Present || !with.Evidence.FailsOnBase.Counted {
+		t.Fatalf("evidence = %+v", with.Evidence.FailsOnBase)
+	}
+	for _, row := range with.Promises {
+		if len(row.Notes) != 1 || row.Notes[0].Code != CodePassesOnBase ||
+			!strings.Contains(row.Notes[0].Text, "bookshop.TestEither") ||
+			!strings.Contains(row.Notes[0].Next, "lattice break --fails-on-base origin/main") {
+			t.Fatalf("row %s notes = %+v", row.Promise, row.Notes)
+		}
+	}
+	if len(with.Promises) != 2 || !with.Promises[1].NewPromise {
+		t.Fatalf("rows = %+v (want %s as a new promise with the note)", with.Promises, q)
+	}
+
+	for name, pr := range map[string]*BaseProof{"other base": proof("elsewhere", "local"), "local under ci": proof("base", "local")} {
+		in := scenario(&base, head, im)
+		in.FailsOnBase = pr
+		in.CI = name == "local under ci"
+		rep := Compute(in)
+		if !rep.Evidence.FailsOnBase.Present || rep.Evidence.FailsOnBase.Counted || rep.Evidence.FailsOnBase.Text == "" {
+			t.Errorf("%s: evidence = %+v", name, rep.Evidence.FailsOnBase)
+		}
+		for _, row := range rep.Promises {
+			for _, n := range row.Notes {
+				if n.Code == CodePassesOnBase {
+					t.Errorf("%s: note on %s", name, row.Promise)
+				}
+			}
+		}
+	}
+}
+
 // --- the frozen contract ---
 
 // The shape of lattice.check/1 is frozen by a golden file. A change that is
@@ -847,6 +910,8 @@ func TestCheckContractGolden(t *testing.T) {
 	}
 	in := scenario(&base, head, im)
 	in.Waivers = []Waiver{{Subject: q + "/exercised", Kind: "no_tool", Reason: "no coverage tool"}}
+	in.FailsOnBase = &BaseProof{Schema: failsOnBaseSchema, BaseRev: "main", Base: "base", Head: "head", CIRun: "local",
+		Verifiers: []BaseProofTest{{Verifier: "bookshop.TestGuard", Promises: []string{q}, Outcome: "passes_on_base"}}}
 	rep := Compute(in)
 
 	got, err := json.MarshalIndent(rep, "", "  ")

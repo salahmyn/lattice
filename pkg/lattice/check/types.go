@@ -136,6 +136,9 @@ type Evidence struct {
 	Breaks    EvidenceItem `json:"breaks"`
 	BaseAudit BaseAudit    `json:"base_audit"`
 	Suite     SuiteResult  `json:"suite"`
+	// FailsOnBase is the fails-on-base result, read for notes only. It is
+	// an addition to lattice.check/1.
+	FailsOnBase FailsOnBaseEvidence `json:"fails_on_base"`
 }
 
 // SuiteResult is the full test run at head, as ingested.

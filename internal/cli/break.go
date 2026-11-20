@@ -16,7 +16,7 @@ import (
 )
 
 func newBreakCommand(io *IO) *cobra.Command {
-	var promise, feature string
+	var promise, feature, failsOnBase string
 	var timeout time.Duration
 	var allowDirty bool
 	cmd := &cobra.Command{
@@ -40,7 +40,19 @@ func newBreakCommand(io *IO) *cobra.Command {
 			"\n" +
 			"The working tree is never edited. A tree with uncommitted changes is refused\n" +
 			"unless --allow-dirty, which tests the tree as it stands and records dirty: true.\n" +
-			"The result is written to lattice/.cache/results/breaks.json.",
+			"The result is written to lattice/.cache/results/breaks.json.\n" +
+			"\n" +
+			"--fails-on-base <rev> proves something else: that a new test fails on the old\n" +
+			"code. It takes the verifiers that the change from merge-base(<rev>, HEAD) to the\n" +
+			"working tree adds or edits (as lattice impact finds them), runs each at head,\n" +
+			"then runs it on the base commit's production code with the head's test files\n" +
+			"copied on top (the verifier files, the changed test files of their directories\n" +
+			"and their changed testdata/), with the same runners. fails_on_base: the test\n" +
+			"detects the old behaviour. passes_on_base: it does not tell old from new.\n" +
+			"unknown: it does not pass at head, does not compile on base (an API it calls is\n" +
+			"new), has no runner, timed out or did not run; unknown is never a pass. The\n" +
+			"result is written to lattice/.cache/results/fails-on-base.json, and lattice\n" +
+			"check --base adds a note (never a gap) for a verifier that passes on base.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			kg, ws, err := graphFor(io, cmd, false)
 			if err != nil {
@@ -55,7 +67,7 @@ func newBreakCommand(io *IO) *cobra.Command {
 			ctx, stop := signal.NotifyContext(commandContext(cmd), os.Interrupt)
 			defer stop()
 
-			rep, err := breaktest.Execute(ctx, kg, breaktest.Options{
+			opts := breaktest.Options{
 				Promise:    promise,
 				Feature:    feature,
 				Timeout:    timeout,
@@ -63,7 +75,11 @@ func newBreakCommand(io *IO) *cobra.Command {
 				Config:     cfg,
 				LatticeDir: ws.LatticeDir,
 				CodeRoot:   ws.PrimaryCodeRoot().Abs,
-			})
+			}
+			if failsOnBase != "" {
+				return runFailsOnBase(ctx, io, kg, ws, failsOnBase, opts)
+			}
+			rep, err := breaktest.Execute(ctx, kg, opts)
 			switch {
 			case errors.Is(err, breaktest.ErrDirty):
 				return io.fail("DIRTY_TREE", err.Error(), nil)
@@ -78,7 +94,6 @@ func newBreakCommand(io *IO) *cobra.Command {
 			}
 			// The file keeps every run of the commit; the table shows the
 			// ones this invocation asked for.
-			opts := breaktest.Options{Promise: promise, Feature: feature}
 			var shown []breaktest.Run
 			for _, r := range rep.Runs {
 				if opts.Selects(r.Promise) {
@@ -94,6 +109,7 @@ func newBreakCommand(io *IO) *cobra.Command {
 	cmd.Flags().StringVar(&feature, "feature", "", "break the promises of one feature")
 	cmd.Flags().DurationVar(&timeout, "timeout", 120*time.Second, "timeout for each test run (a timeout reads unknown)")
 	cmd.Flags().BoolVar(&allowDirty, "allow-dirty", false, "test a working tree with uncommitted changes")
+	cmd.Flags().StringVar(&failsOnBase, "fails-on-base", "", "run the new and changed verifiers on the code of merge-base(<rev>, HEAD) instead of breaking")
 	return cmd
 }
 

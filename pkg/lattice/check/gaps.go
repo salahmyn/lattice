@@ -439,6 +439,9 @@ func (c *computation) rows(gaps []Gap) []PromiseRow {
 		if row.NewPromise || row.Notes == nil {
 			row.Notes = []Note{} // a promise the change adds has nothing to re-read
 		}
+		// A verifier that passes on the base code is worth a look on any
+		// touched promise, a new one included.
+		row.Notes = append(row.Notes, c.baseNotes[p]...)
 		out = append(out, row)
 	}
 	return out

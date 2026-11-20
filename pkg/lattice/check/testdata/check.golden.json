@@ -59,6 +59,13 @@
       "present": true,
       "cases": 40,
       "failed": 0
+    },
+    "fails_on_base": {
+      "present": true,
+      "base": "base",
+      "commit": "head",
+      "ci_run": "local",
+      "counted": true
     }
   },
   "promises": [
@@ -177,7 +184,13 @@
         "nothing_fell"
       ],
       "next_action": "add a verifier whose own run executes the enforcer, and ingest per-test coverage in CI",
-      "notes": []
+      "notes": [
+        {
+          "code": "PASSES_ON_BASE",
+          "text": "verifier bookshop.TestGuard of bookshop:INV-2 passes on the base code too (base): it does not tell the old behaviour from the new",
+          "next": "make bookshop.TestGuard assert the behaviour this change fixes, so it fails on base, then re-run lattice break --fails-on-base main"
+        }
+      ]
     },
     {
       "promise": "bookshop:INV-3",
