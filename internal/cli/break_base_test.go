@@ -20,15 +20,22 @@ func featureYAML(id, statement string) string {
 // baseProofFixture is a repository whose main branch has a buggy fee
 // function, and a checked-out branch that fixes it and adds four verifiers:
 // one that fails on the bug, one that passes either way, one that calls a
-// function only the branch has, and a TypeScript one no runner covers.
+// function only the branch has, a TypeScript one no runner covers, and a
+// Python one, run by a {files} runner, that imports a name only the branch
+// has.
 func baseProofFixture(t *testing.T) *checkFixture {
 	t.Helper()
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skip("go not installed")
+	for _, tool := range []string{"go", "python3"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skip(tool + " not installed")
+		}
 	}
 	f := newCheckFixture(t)
 	f.write("go.mod", "module fixture\n\ngo 1.21\n")
-	f.write("lattice/adapters.yaml", "adapters:\n  go:\n    enabled: true\n  typescript:\n    enabled: true\n")
+	f.write("lattice/adapters.yaml", "adapters:\n  go:\n    enabled: true\n  typescript:\n    enabled: true\n  python:\n    enabled: true\n")
+	f.write("lattice/config.yaml", "agentic:\n  llm:\n    enabled: false\nbreak:\n  runners:\n    - name: py\n      match: [\"**/test_*.py\"]\n      command: [\"python3\", \"{files}\"]\n")
+	f.write("lattice/features/calc.yaml", featureYAML("calc", "A sum is capped."))
+	f.write("calc/calc.py", pyTags+"\nmodule_feature(\"calc\")\n\n\n@enforces_invariant(\"INV-1\")\ndef total(a, b):\n    return a + b\n")
 	f.write("lattice/features/fees.yaml", featureYAML("fees", "A fee is never negative."))
 	f.write("lattice/features/limits.yaml", featureYAML("limits", "A value never exceeds its cap."))
 	f.write("lattice/features/web.yaml", featureYAML("web", "A label is never empty."))
@@ -46,10 +53,18 @@ func baseProofFixture(t *testing.T) *checkFixture {
 	f.write("limits/limits.go", "package limits\n\n// @module-feature limits\n\n// @enforces limits:INV-1\nfunc Max(a, b int) int {\n\tif a > b {\n\t\treturn a\n\t}\n\treturn b\n}\n\n"+
 		"// @enforces limits:INV-1\nfunc Cap(n, c int) int {\n\tif n > c {\n\t\treturn c\n\t}\n\treturn n\n}\n")
 	f.write("limits/cap_test.go", "package limits\n\nimport \"testing\"\n\n// @verifies limits:INV-1\nfunc TestCapLimits(t *testing.T) {\n\tif Cap(5, 3) != 3 {\n\t\tt.Fatal(Cap(5, 3))\n\t}\n}\n")
+	f.write("calc/calc.py", pyTags+"\nmodule_feature(\"calc\")\n\n\n@enforces_invariant(\"INV-1\")\ndef total(a, b):\n    return a + b\n\n\n"+
+		"@enforces_invariant(\"INV-1\")\ndef cap(n, c):\n    return min(n, c)\n")
+	f.write("calc/test_calc.py", "import os\nimport sys\n\nsys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))\n\nfrom calc import cap  # noqa: E402\n\n"+
+		pyTags+"\n@verifies(\"calc:INV-1\")\ndef test_cap_limits():\n    assert cap(5, 3) == 3\n\n\nif __name__ == \"__main__\":\n    test_cap_limits()\n")
 	f.write("web/label.test.ts", "/** @module-feature web */\n\n/** @verifies web:INV-1 */\ntest('label keeps text', () => {});\n")
 	f.commit("fix")
 	return f
 }
+
+// pyTags are no-op Lattice tags, so the Python fixture runs without the
+// lattice package.
+const pyTags = "def module_feature(*_):\n    return None\n\n\ndef enforces_invariant(*_):\n    return lambda fn: fn\n\n\ndef verifies(*_):\n    return lambda fn: fn\n\n"
 
 func baseRuns(rep breaktest.FailsOnBaseReport) map[string]breaktest.BaseRun {
 	m := map[string]breaktest.BaseRun{}
@@ -114,8 +129,8 @@ func TestFailsOnBaseEndToEnd(t *testing.T) {
 		t.Fatalf("stamps = %+v", rep)
 	}
 	runs := baseRuns(rep)
-	if len(runs) != 4 {
-		t.Fatalf("want the four new verifiers, got %+v", rep.Verifiers)
+	if len(runs) != 5 {
+		t.Fatalf("want the five new verifiers, got %+v", rep.Verifiers)
 	}
 	if _, ok := runs["TestFeeOfTen"]; ok {
 		t.Errorf("an unchanged verifier was run: %+v", runs["TestFeeOfTen"])
@@ -131,6 +146,10 @@ func TestFailsOnBaseEndToEnd(t *testing.T) {
 	}
 	if r := runs["label-keeps-text"]; r.Outcome != breaktest.Unknown || !strings.Contains(r.Reason, "no runner configured") {
 		t.Errorf("the TypeScript test: %+v (%v)", r, runs)
+	}
+	if r := runs["test_cap_limits"]; r.Outcome != breaktest.Unknown || r.Head != breaktest.HeadPass ||
+		!strings.Contains(r.Reason, "does not load on base") || !strings.Contains(r.Reason, "cannot import name 'cap'") {
+		t.Errorf("the Python test of a new name: %+v", r)
 	}
 	overlay := strings.Join(rep.Overlay, " ")
 	if !strings.Contains(overlay, "fees/fees_test.go") || !strings.Contains(overlay, "limits/cap_test.go") ||

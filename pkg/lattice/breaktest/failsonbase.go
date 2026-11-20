@@ -328,31 +328,64 @@ func runOnBase(ctx context.Context, rh, rb *runner, t baseTarget) BaseRun {
 		run.Reason = "on base: " + err.Error()
 		return run
 	}
-	note := ""
 	base := rb.runGroups(ctx, groups)
+	run.Outcome, run.Reason, run.FailedTests = judgeBase(groups[0].kind == kindGo, head, base, t.test.FQN)
+	return run
+}
+
+// judgeBase reads the base run of a verifier that passed at head. A failure
+// counts only when the test itself failed: a non-Go test whose import does
+// not resolve on the base (a module or export the change adds) did not load,
+// so it reads unknown, like a Go test that does not compile there. goRun says
+// the run was Go's built-in `go test`, whose build failures are their own
+// status.
+// @enforces breaktest:INV-10
+func judgeBase(goRun bool, head, base execResult, fqn string) (outcome, reason string, failed []string) {
+	note := ""
 	if head.unchecked || base.unchecked {
 		note = " (executed test count not checked: the runner has no {junit})"
 	}
+	if !goRun && (base.status == statusFail || base.status == statusBuild) {
+		if l := loadLine(base.output); l != "" {
+			return Unknown, "does not load on base (a module or export it imports may be new in this change): " + l, nil
+		}
+	}
 	switch base.status {
 	case statusFail:
-		run.Outcome, run.Reason, run.FailedTests = FailsOnBase, base.reason+note, base.failed
+		return FailsOnBase, base.reason + note, base.failed
 	case statusOK:
-		if !contains(base.ran, t.test.FQN) {
-			run.Reason = "on base: the verifier did not run"
-			return run
+		if !contains(base.ran, fqn) {
+			return Unknown, "on base: the verifier did not run", nil
 		}
-		run.Outcome = PassesOnBase
-		run.Reason = "passes on the base code too: it does not tell the old behaviour from the new" + note
+		return PassesOnBase, "passes on the base code too: it does not tell the old behaviour from the new" + note, nil
 	case statusBuild:
 		why := strings.TrimPrefix(base.reason, "does not compile: ")
 		if l := compilerLine.FindString(base.output); l != "" {
 			why = clip(l)
 		}
-		run.Reason = "does not compile on base (an API it calls may be new in this change): " + why
-	default: // a timeout, a runner that could not run, or no test executed
-		run.Reason = "on base: " + base.reason
+		return Unknown, "does not compile on base (an API it calls may be new in this change): " + why, nil
 	}
-	return run
+	// A timeout, a runner that could not run, or no test executed.
+	return Unknown, "on base: " + base.reason, nil
+}
+
+// loadMarkers are the messages test runners print when a test file cannot
+// load because an import does not resolve: Node, vitest, jest, tsx, Vite,
+// webpack, tsc, Deno, Python and pytest. Only resolution and load errors are
+// listed; an assertion or a TypeError in a test body is a real failure.
+var loadMarkers = regexp.MustCompile(`does not provide an export named|Cannot find module|ERR_MODULE_NOT_FOUND|` +
+	`Failed to resolve import|Module not found|has no exported member|\bTS(2305|2307|2724)\b|` +
+	`SyntaxError: The requested module|\bImportError\b|\bModuleNotFoundError\b|cannot import name|ERROR collecting`)
+
+// loadLine returns the first line of a runner's output that says a test
+// file did not load, "" when there is none.
+func loadLine(out string) string {
+	for _, l := range strings.Split(out, "\n") {
+		if loadMarkers.MatchString(l) {
+			return clip(l)
+		}
+	}
+	return ""
 }
 
 // compilerLine is a compiler's "file:line:col: message" line, which says

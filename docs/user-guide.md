@@ -1264,13 +1264,20 @@ working tree adds or edits (as `lattice impact` finds them), runs each one at
 head, then runs it again on the base commit's production code with the head's
 test files copied on top. Both runs happen in temporary worktrees, with the same
 `break.runners`, `break.commands`, `break.setup` and Go's built-in `go test -run`
-as a break. Each verifier gets one outcome:
+as a break. A non-Go failure on base counts only when the test itself failed:
+output that says an import did not resolve (`Cannot find module`,
+`does not provide an export named`, `ERR_MODULE_NOT_FOUND`,
+`Failed to resolve import`, `Module not found`, `has no exported member`,
+`TS2305`/`TS2307`/`TS2724`, `ImportError`, `ModuleNotFoundError`,
+`cannot import name`, pytest's `ERROR collecting`) reads `unknown`. An assertion
+or a `TypeError` in the test body is a real failure. Each verifier gets one
+outcome:
 
 | Outcome | Meaning |
 |---|---|
 | `fails_on_base` | it passes at head and fails on the old code: it detects the old behaviour |
 | `passes_on_base` | it passes on the old code too: it does not tell the old behaviour from the new |
-| `unknown` | it fails at head, does not compile on base (it calls an API the change adds), has no runner, timed out or did not run; the reason says which. Unknown is never a pass |
+| `unknown` | it fails at head, does not compile on base (it calls an API the change adds), does not load on base (a module or export it imports does not resolve there), has no runner, timed out or did not run; the reason says which. Unknown is never a pass |
 
 The files copied onto the base are the verifier files, the changed test files in
 their directories and the changed files under their `testdata/`; `overlay` in the
