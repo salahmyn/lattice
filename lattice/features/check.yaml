@@ -33,5 +33,5 @@ invariants:
     statement: A break-based gap (break_tested, or exercised read through it) of a promise the change does not touch is not a new gap when no break run happened at head at all and the base had no gap on it; evidence not gathered is never a fall and never blocks a merge. A touched promise still needs a fresh run, and a survival or per-test coverage saying no still counts.
   - id: INV-11
     statement: An informational note on a touched promise, such as STATEMENT_UNCHANGED (an enforcer changed and its statement and tier did not), is shown on the promise's row and never changes the verdict, a gap or merge_allowed.
-  - id: INV-12
+  - id: INV-13
     statement: A touched line reads that an entry point reaches it only when the call graph reaches its symbol from the handler of a declared entry point, and a handler that names no symbol of the graph reaches nothing. A line whose feature is on an entry point's flow but that no handler reaches reads that weaker reason, a handler reach the graph cannot decide reads unknown and never reached, and none of these readings makes a line guarded.

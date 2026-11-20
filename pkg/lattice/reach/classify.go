@@ -113,7 +113,7 @@ func (g *Graph) Handlers(eps []schema.EntryPoint) []string {
 // is the reach of the declared entry points alone. Interfaces get a handler
 // reach too, by the rule types already follow in the walk: a type is reached
 // when reached code names or builds it.
-// @enforces check:INV-12
+// @enforces check:INV-13
 func (r *Result) ClassifyHandlers(handlers []string) {
 	r.Handler = map[string]string{}
 	if r.Graph == nil {

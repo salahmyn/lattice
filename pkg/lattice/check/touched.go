@@ -74,7 +74,7 @@ func (s lineScan) unguardedLines() int {
 // untraced lines fail the merge rule.
 // @enforces check:INV-5
 // @enforces check:INV-9
-// @enforces check:INV-12
+// @enforces check:INV-13
 func (c *computation) untraced() lineScan {
 	kg := c.in.KG
 	symbols := map[string][]schema.GraphSymbol{}

@@ -562,7 +562,7 @@ func TestReachedButUnguardedLinesAreUnproven(t *testing.T) {
 // the weaker reason; one a handler reaches reads entry-reached whatever the
 // flows say; an undecided handler reach is never read as reached. The labels
 // never make a line guarded, and the verdict and merge rule are unchanged.
-// @verifies check:INV-12
+// @verifies check:INV-13
 func TestEntryReachIsPerSymbol(t *testing.T) {
 	p := "orders:INV-1"
 	base := auditOf("base", good(p, 1))
@@ -634,7 +634,7 @@ func TestEntryReachIsPerSymbol(t *testing.T) {
 // end from the call graph, a symbol only func main reaches, whose feature is
 // on the flow of an entry point with such a handler, is not entry-reached;
 // the handler that resolves still reaches what it calls.
-// @verifies check:INV-12
+// @verifies check:INV-13
 func TestUnresolvedHandlerReachesNothing(t *testing.T) {
 	m, err := golang.New().Parse(context.Background(), "cmd/shop/main.go", []byte(
 		"package main\n\nfunc main() { serve(); rebuild() }\n\nfunc serve() { quote() }\n\nfunc quote() {}\n\nfunc rebuild() {}\n"))

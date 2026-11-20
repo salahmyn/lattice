@@ -140,7 +140,7 @@ func TestEntryFilesExportsAndTsconfig(t *testing.T) {
 // resolve to a symbol of the graph: what they call is reached, what only
 // func main calls is not, and a handler naming no symbol reaches nothing.
 // Annotate writes it beside the reach class.
-// @verifies check:INV-12
+// @verifies check:INV-13
 func TestHandlerReach(t *testing.T) {
 	mods := parse(t, golang.New(), map[string]string{
 		"cmd/shop/main.go": "package main\n\nfunc main() { serve(); rebuild() }\n\nfunc serve() { quote() }\n\nfunc quote() {}\n\nfunc rebuild() {}\n",
