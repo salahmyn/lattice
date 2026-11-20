@@ -363,6 +363,7 @@
         }
       }
     ],
+    "hinted": [],
     "uncovered": [
       {
         "symbol": "bookshop.Slug",
