@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/salahmyn/lattice/pkg/lattice/gitstate"
@@ -74,9 +75,28 @@ func OpenRepo(ctx context.Context, codeRoot string, latticeDirs ...string) (Repo
 	if err != nil {
 		return r, err
 	}
-	r.DirtyFiles = gitstate.Filter(changed, gitstate.Owned(topReal, latticeDirs))
+	owned := gitstate.Owned(topReal, latticeDirs)
+	seen := map[string]bool{}
+	for _, rel := range changed {
+		if !seen[rel] && !latticeOwned(rel, owned) {
+			seen[rel] = true
+			r.DirtyFiles = append(r.DirtyFiles, rel)
+		}
+	}
+	sort.Strings(r.DirtyFiles)
 	r.Dirty = len(r.DirtyFiles) > 0
 	return r, nil
+}
+
+// latticeOwned reports whether a changed path is Lattice's own runtime
+// state: the ledger of gates, CRs, flags and sign-offs, and the cache that
+// holds ingested results, coverage, the last check runs and breaks.json.
+// Neither is an input of a break run. Source files, manifests and
+// lattice.json are not Lattice's own state and always count. The rule is
+// the one check and impact read (gitstate.LatticeOwned).
+// @enforces breaktest:INV-9
+func latticeOwned(rel string, owned []string) bool {
+	return gitstate.LatticeOwned(rel, owned)
 }
 
 // uncommitted lists the paths, relative to top, that differ from HEAD:
