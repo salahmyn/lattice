@@ -139,7 +139,7 @@ func WriteText(w io.Writer, r Report) {
 	fmt.Fprintf(w, "%s\n", strings.Repeat("-", 110))
 	for _, row := range r.Rows {
 		fmt.Fprintf(w, "%-18s %-26s %-20s %-9s %s\n", row.Class, trunc(row.Promise, 26), row.Kind,
-			row.Signals.Confirmed.Value, row.Reason)
+			ConfirmedText(row), row.Reason)
 		if row.ShowsEnforcers() {
 			for _, e := range row.Enforcers {
 				fmt.Fprintf(w, "%-18s enforcer %-9s %s%s: %s\n", "", e.Outcome, e.Symbol, at(e.File, e.Line), e.Reason)
@@ -150,6 +150,27 @@ func WriteText(w io.Writer, r Report) {
 		}
 	}
 	fmt.Fprintf(w, "\nconfirmed is a fact about the approval record, not proof the intent is right.\n")
+}
+
+// ConfirmedText is a row's confirmed value for display. A human value always
+// carries its method: "human (signed by ana, SHA256:...)" or "human
+// (approved by ana on PR #7)".
+// @enforces confirm:INV-14
+func ConfirmedText(row Row) string {
+	v := row.Signals.Confirmed.Value
+	if v != ConfirmedHuman {
+		return v
+	}
+	var methods []string
+	for _, a := range row.Evidence.Approvals {
+		if a.State == ConfirmedHuman && a.Method != "" && !hasString(methods, a.Method) {
+			methods = append(methods, a.Method)
+		}
+	}
+	if len(methods) == 0 {
+		return v
+	}
+	return v + " (" + strings.Join(methods, "; ") + ")"
 }
 
 func trunc(s string, n int) string {
@@ -179,7 +200,7 @@ func WriteMarkdown(w io.Writer, r Report) {
 		fmt.Fprintf(w, "\n| Promise | Class | Kind | Confirmed | Reason |\n|---|---|---|---|---|\n")
 		for _, row := range r.Rows {
 			fmt.Fprintf(w, "| `%s` | %s | %s | %s | %s |\n", row.Promise, row.Class, row.Kind,
-				row.Signals.Confirmed.Value, mdCell(row.Reason))
+				mdCell(ConfirmedText(row)), mdCell(row.Reason))
 		}
 	}
 

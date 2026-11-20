@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/salahmyn/lattice/pkg/lattice/confirm/signature"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm/stamp"
 )
 
@@ -33,19 +34,54 @@ type Assurance struct {
 
 // Record is the verdict on one decision.
 type Record struct {
-	ID            string `json:"id"`
-	Version       int    `json:"version"`
-	Action        string `json:"action"`
-	State         string `json:"state"`
+	ID      string `json:"id"`
+	Version int    `json:"version"`
+	Action  string `json:"action"`
+	State   string `json:"state"`
+	// Via is the route the verdict came by: "review" (a platform approval
+	// on the merged pull request) or "signature" (a hardware-key signature
+	// over the decision). It is empty for a decision not on the default
+	// branch.
+	Via           string `json:"via,omitempty"`
 	ApproverLogin string `json:"approver_login,omitempty"`
-	PR            int    `json:"pr,omitempty"`
-	MergedSHA     string `json:"merged_sha,omitempty"`
-	VerifiedAt    string `json:"verified_at,omitempty"`
+	// Fingerprint is the SHA256 fingerprint of the key behind a signature.
+	Fingerprint string `json:"fingerprint,omitempty"`
+	PR          int    `json:"pr,omitempty"`
+	MergedSHA   string `json:"merged_sha,omitempty"`
+	VerifiedAt  string `json:"verified_at,omitempty"`
 	// Rows are the promises a promise.confirm decision covers.
 	Rows []string `json:"rows,omitempty"`
 	// DecisionSHA is the commit that added the decision file on the default branch.
-	DecisionSHA string    `json:"decision_sha,omitempty"`
-	Assurance   Assurance `json:"assurance"`
+	DecisionSHA string `json:"decision_sha,omitempty"`
+	// DecisionPath is the decision file a signature verdict is about, from
+	// the repository root. Readers re-verify the signature there.
+	DecisionPath string `json:"decision_path,omitempty"`
+	// SignatureBase is the commit allowed_signers was read at: the first
+	// parent of the default-branch commit that introduced the signature.
+	SignatureBase string    `json:"signature_base,omitempty"`
+	Assurance     Assurance `json:"assurance"`
+}
+
+// Routes a verdict comes by.
+const (
+	ViaReview    = "review"
+	ViaSignature = "signature"
+)
+
+// Method says how a human verdict was reached, as every display of it must:
+// "human (signed by <login>, <fingerprint>)" or "human (approved by <login>
+// on PR #<n>)". It is "" for a record that names no one.
+// @enforces confirm:INV-14
+func (r Record) Method() string {
+	switch {
+	case r.ApproverLogin == "":
+		return ""
+	case r.Via == ViaSignature:
+		return "signed by " + r.ApproverLogin + ", " + signature.Short(r.Fingerprint)
+	case r.PR != 0:
+		return "approved by " + r.ApproverLogin + " on PR #" + itoa(r.PR)
+	}
+	return "approved by " + r.ApproverLogin
 }
 
 // Stamp is the provenance of a confirm.json: the commit and CI run that
@@ -102,6 +138,9 @@ type Input struct {
 	CIRun        string
 	PlatformName string
 	Repository   string
+	// Signed reads the signatures beside decision files on the default
+	// branch. Nil leaves the signature route out.
+	Signed *signature.Repo
 }
 
 func (r Record) key() string {
@@ -138,6 +177,7 @@ func Compute(ctx context.Context, in Input) File {
 		f.Assurance = Assurance{State: "pass", Honesty: "fact", Code: "PLATFORM_READ", Text: "approvals read from the platform"}
 	}
 
+	keys := signingKeys{platform: in.Platform, lists: map[string]keyList{}}
 	for _, fd := range in.Found {
 		d := fd.Decision
 		rec := Record{ID: d.ID, Version: d.Version, Action: d.Action, DecisionSHA: fd.AddedSHA}
@@ -153,6 +193,19 @@ func Compute(ctx context.Context, in Input) File {
 		case fd.AddedSHA == "":
 			o = Outcome{State: StateUnknown, Code: "NO_COMMIT", Text: "the commit that added the decision file was not found"}
 		default:
+			// Either route suffices. A signature is checked first: it needs
+			// one platform read per signer, the review route several.
+			var signed *Outcome
+			if in.Signed != nil {
+				if ev, sf, ok := in.Signed.Evaluate(fd.Path, signatureDecision(d)); ok {
+					so := keys.outcome(ctx, ev, sf)
+					signed = &so
+				}
+			}
+			if signed != nil && signed.State == StateConfirmed {
+				o = *signed
+				break
+			}
 			if c, ok := cached[rec.key()]; ok {
 				o = Outcome{State: StateConfirmed, Code: "APPROVED", Approver: c.ApproverLogin, PR: c.PR, Merged: c.MergedSHA,
 					Text: "approved by " + c.ApproverLogin + " (cached)"}
@@ -162,15 +215,27 @@ func Compute(ctx context.Context, in Input) File {
 			} else {
 				o = Verify(ctx, in.Platform, fd.AddedSHA)
 			}
+			o.Via = ViaReview
+			if signed != nil && o.State != StateConfirmed {
+				o = *signed
+			}
 		}
 		if o.State == StateConfirmed && in.Packet != nil {
 			if hash, current := in.Packet(d); current && hash != d.PacketHash {
+				verb := "approved by "
+				if o.Via == ViaSignature {
+					verb = "signed by "
+				}
 				o.State, o.Code = StateStale, "PACKET_MISMATCH"
-				o.Text = "approved by " + o.Approver + ", but the BRD version, its promises or the diff changed since the packet was prepared"
+				o.Text = verb + o.Approver + ", but the BRD version, its promises or the diff changed since the packet was prepared"
 				o.Params = map[string]interface{}{"prepared": d.PacketHash, "now": hash}
 			}
 		}
 		rec.State, rec.ApproverLogin, rec.PR, rec.MergedSHA = o.State, o.Approver, o.PR, o.Merged
+		rec.Via, rec.Fingerprint, rec.SignatureBase = o.Via, o.Fingerprint, o.Base
+		if o.Via == ViaSignature {
+			rec.DecisionPath = fd.Path
+		}
 		if (o.State == StateConfirmed || o.State == StateStale) && rec.VerifiedAt == "" {
 			rec.VerifiedAt = now().UTC().Format(time.RFC3339)
 		}
@@ -263,8 +328,42 @@ func LoadCache(latticeDir string) *File {
 	}
 	if res := stamp.Check(p, data); !res.OK() {
 		f = SetAside(f, res.Code, res.Text)
+		return &f
 	}
+	f = Recheck(latticeDir, f)
 	return &f
+}
+
+// Recheck re-verifies, from the repository, every signature verdict f
+// claims, as every reader of confirm.json does. A claim that no longer holds
+// (the signature is gone or does not verify, a key was removed from
+// allowed_signers, or the record was written by hand) reads unknown. Only
+// the platform's word that the key is the signer's is taken from the file.
+// @enforces confirm:INV-12
+func Recheck(latticeDir string, f File) File {
+	var idx []int
+	var claims []signature.Claim
+	for i, r := range f.Records {
+		if r.Via == ViaSignature && r.State == StateConfirmed {
+			idx = append(idx, i)
+			claims = append(claims, signature.Claim{ID: r.ID, Version: r.Version, Action: r.Action, Rows: r.Rows,
+				DecisionPath: r.DecisionPath, Login: r.ApproverLogin, Fingerprint: r.Fingerprint})
+		}
+	}
+	if len(claims) == 0 {
+		return f
+	}
+	recs := append([]Record(nil), f.Records...)
+	for j, fail := range signature.Recheck(latticeDir, f.Branch, claims) {
+		if fail == nil {
+			continue
+		}
+		r := &recs[idx[j]]
+		r.State = StateUnknown
+		r.Assurance = Assurance{State: StateUnknown, Honesty: "fact", Code: fail.Code, Text: "the signature verdict does not re-verify: " + fail.Text}
+	}
+	f.Records = recs
+	return f
 }
 
 // SetAside returns f with every verdict read as unknown and the file's
@@ -305,8 +404,11 @@ func (f File) Text() string {
 	var b strings.Builder
 	for _, r := range f.Records {
 		who := ""
-		if r.ApproverLogin != "" {
-			who = " by " + r.ApproverLogin + " (PR #" + itoa(r.PR) + ")"
+		if m := r.Method(); m != "" {
+			who = " (" + m + ")"
+			if r.State == StateConfirmed {
+				who = " human" + who
+			}
 		}
 		b.WriteString(r.State + "  " + r.Action + " " + r.ID + " v" + itoa(r.Version) + who + "  [" + r.Assurance.Code + "]\n")
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/brd"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm"
+	"github.com/salahmyn/lattice/pkg/lattice/confirm/signature"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
@@ -32,6 +33,17 @@ if an approving review exists from a user other than the author, that user is
 not a bot, the review is on the head that was merged, and the decision's packet
 hash still matches the BRD, its promises and the diff since the last
 confirmed version (otherwise it reads stale).
+
+A decision also counts when a hardware-key signature sits beside it
+(<stem>.sig, written by 'lattice sign'): the key must be a security-key type
+(sk-ssh-ed25519 or sk-ecdsa-sha2-nistp256, with user presence), the signature
+must cover this repository, decision id, version, action, packet hash and
+rows in the lattice-decision namespace, the key must be listed for the
+signer's GitHub login in lattice/allowed_signers at the base commit (the first
+parent of the default-branch commit that introduced the signature) and still at
+the tip, and GitHub must list it among that login's SSH signing keys. A non-sk
+key reads SOFTWARE_KEY; an unreadable GitHub reads unknown, never confirmed.
+Records carry via: review or via: signature, with the login and fingerprint.
 
 Writes lattice/.cache/confirm.json (lattice.confirm/1), derived and never
 committed, cached by commit. The file is stamped with what produced it: the
@@ -115,6 +127,7 @@ unknown, never confirmed. Run it in CI on the default branch.`,
 				Commit: head, Branch: branch, Found: found, Platform: plat, Packet: packet,
 				Cache: cache, Refresh: refresh,
 				CIRun: results.CIRunID(), PlatformName: platform, Repository: repo,
+				Signed: &signature.Repo{Dir: top, LatticeRel: rel, Ref: branch, Repository: signature.RepositoryOf(top)},
 			})
 			f.Warnings = warnings
 			if plat != nil {

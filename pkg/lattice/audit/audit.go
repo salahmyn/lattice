@@ -127,6 +127,12 @@ type Approval struct {
 	Version         int    `json:"version"`
 	ApprovedVersion int    `json:"approved_version,omitempty"`
 	Detail          string `json:"detail,omitempty"`
+	// Via is the route of a human state (review or signature); Method says
+	// it in words ("signed by ana, SHA256:...", "approved by ana on PR #7").
+	Via         string `json:"via,omitempty"`
+	Method      string `json:"method,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+	PR          int    `json:"pr,omitempty"`
 }
 
 // Evidence is what stands behind a row's class.

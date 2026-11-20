@@ -176,6 +176,8 @@ A complete, validating three-language example lives in
 | `lattice backprop [--since <ref>]` | Code→docs scan: which grounded criteria a change touched |
 | `lattice sweep` | Forbidden-move sweep: no verifier disappears without a CR |
 | `lattice demonstrate` | QAE sign-off: every gate executed now, then ledgered |
+| `lattice confirm [--offline]` | Which decisions a human confirmed: an approving review on the merged PR, or a hardware-key signature |
+| `lattice sign <decision>` | A human signs a decision with an SSH security key (`ed25519-sk`); refuses CI, agents and software keys |
 | `lattice skills list` | List shipped agent skills |
 
 Every command supports `--json` for machine-readable output; `--actor`

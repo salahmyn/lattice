@@ -9,13 +9,14 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/salahmyn/lattice/pkg/lattice/confirm/signature"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm/stamp"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
 // Confirmed states.
 const (
-	ConfirmedHuman   = "human"   // a verified platform approval of this version, by a human other than the author
+	ConfirmedHuman   = "human"   // a verified platform approval of this version by a human other than the author, or a verified hardware-key signature
 	ConfirmedPending = "pending" // prepared, not merged, not verified, or made by a local session
 	ConfirmedAgent   = "agent"   // approved by a council or an agent; no human decision confirmed it
 	ConfirmedDraft   = "draft"   // not approved, or returned or overturned
@@ -36,14 +37,53 @@ type ConfirmRecord struct {
 	Version       int      `json:"version"`
 	Action        string   `json:"action"`
 	State         string   `json:"state"`
+	Via           string   `json:"via,omitempty"`
 	ApproverLogin string   `json:"approver_login,omitempty"`
+	Fingerprint   string   `json:"fingerprint,omitempty"`
 	PR            int      `json:"pr,omitempty"`
 	Rows          []string `json:"rows,omitempty"`
+	DecisionPath  string   `json:"decision_path,omitempty"`
+	// Note says why a signature verdict was set aside when it was re-verified.
+	Note string `json:"-"`
+}
+
+// Routes a confirm record's verdict comes by.
+const (
+	ViaReview    = "review"
+	ViaSignature = "signature"
+)
+
+// Route is the record's route: its via, or review for a record written
+// before records carried one.
+func (r ConfirmRecord) Route() string {
+	if r.Via == "" && r.PR != 0 {
+		return ViaReview
+	}
+	return r.Via
+}
+
+// Method says how the decision was made, as every display of a human
+// verdict must: "signed by <login>, <fingerprint>" or "approved by <login>
+// on PR #<n>".
+// @enforces confirm:INV-14
+func (r ConfirmRecord) Method() string {
+	switch {
+	case r.ApproverLogin == "":
+		return ""
+	case r.Route() == ViaSignature:
+		return "signed by " + r.ApproverLogin + ", " + signature.Short(r.Fingerprint)
+	case r.PR != 0:
+		return "approved by " + r.ApproverLogin + " on PR #" + strconv.Itoa(r.PR)
+	}
+	return "approved by " + r.ApproverLogin
 }
 
 // ConfirmData is lattice/.cache/confirm.json as the audit reads it.
 type ConfirmData struct {
-	Commit  string          `json:"commit"`
+	Commit string `json:"commit"`
+	// Branch is the default branch `lattice confirm` read; signature
+	// verdicts are re-verified there.
+	Branch  string          `json:"branch,omitempty"`
 	Records []ConfirmRecord `json:"records"`
 	// Stamp is what produced the file: commit, CI run, platform and digest.
 	Stamp *stamp.Stamp `json:"stamp,omitempty"`
@@ -111,7 +151,37 @@ func LoadConfirm(latticeDir string) *ConfirmData {
 	if res := stamp.Check(p, data); !res.OK() {
 		return cd.setAside(res.Code, res.Text)
 	}
-	return &cd
+	return cd.recheck(latticeDir)
+}
+
+// recheck re-verifies every signature verdict from the repository: the
+// signature, its message and key type, and allowed_signers at the base
+// commit and the tip. The file vouches only for the platform's word that the
+// key is the signer's. A claim that does not hold reads unknown, so a
+// hand-written or stale signature record never reads human.
+// @enforces confirm:INV-12
+func (cd *ConfirmData) recheck(latticeDir string) *ConfirmData {
+	var idx []int
+	var claims []signature.Claim
+	for i, r := range cd.Records {
+		if r.Route() == ViaSignature && r.State == "confirmed" {
+			idx = append(idx, i)
+			claims = append(claims, signature.Claim{ID: r.ID, Version: r.Version, Action: r.Action, Rows: r.Rows,
+				DecisionPath: r.DecisionPath, Login: r.ApproverLogin, Fingerprint: r.Fingerprint})
+		}
+	}
+	if len(claims) == 0 {
+		return cd
+	}
+	out := *cd
+	out.Records = append([]ConfirmRecord(nil), cd.Records...)
+	for j, f := range signature.Recheck(latticeDir, cd.Branch, claims) {
+		if f != nil {
+			r := &out.Records[idx[j]]
+			r.State, r.Note = ConfirmedUnknown, f.Code+": "+f.Text
+		}
+	}
+	return &out
 }
 
 // criterionRef is a BRD criterion mapped to a promise, with its BRD.
@@ -140,12 +210,21 @@ func criteriaByPromise(kg schema.KnowledgeGraph) map[string][]criterionRef {
 // intent is right. The BRD's own approval block is display only: it never
 // makes a state human.
 func approvalState(b schema.BRD, promise string, cd *ConfirmData) (state, detail string, approver string) {
-	var human, stale, pending, voided *ConfirmRecord
+	state, detail, rec := approvalRecord(b, promise, cd)
+	if rec != nil {
+		approver = rec.ApproverLogin
+	}
+	return state, detail, approver
+}
+
+// approvalRecord is approvalState with the record behind a human state.
+func approvalRecord(b schema.BRD, promise string, cd *ConfirmData) (state, detail string, human *ConfirmRecord) {
+	var stale, pending, voided, unverified *ConfirmRecord
 	var olderHuman *ConfirmRecord
 	if cd != nil && cd.SetAside != "" {
 		for _, r := range cd.Records {
 			if r.ID == b.ID {
-				return ConfirmedUnknown, "confirm.json set aside (" + cd.SetAside + "): " + cd.SetAsideText, ""
+				return ConfirmedUnknown, "confirm.json set aside (" + cd.SetAside + "): " + cd.SetAsideText, nil
 			}
 		}
 	}
@@ -166,6 +245,8 @@ func approvalState(b schema.BRD, promise string, cd *ConfirmData) (state, detail
 				stale = r
 			case r.Version == b.Version && r.State == "pending" && covers:
 				pending = r
+			case r.Version == b.Version && r.State == ConfirmedUnknown && r.Note != "" && covers:
+				unverified = r
 			case r.Version < b.Version && r.State == "confirmed" && covers:
 				olderHuman = r
 			}
@@ -174,34 +255,36 @@ func approvalState(b schema.BRD, promise string, cd *ConfirmData) (state, detail
 	v := strconv.Itoa(b.Version)
 	switch {
 	case voided != nil:
-		return ConfirmedDraft, "v" + v + " was " + strings.TrimPrefix(voided.Action, "brd.") + "ed by " + voided.ApproverLogin + " (PR #" + strconv.Itoa(voided.PR) + ")", ""
+		return ConfirmedDraft, "v" + v + " was " + strings.TrimPrefix(voided.Action, "brd.") + "ed by " + voided.ApproverLogin + " (PR #" + strconv.Itoa(voided.PR) + ")", nil
 	case human != nil:
 		local := ""
 		if cd.Local() {
 			local = "human (local, not CI): "
 		}
-		return ConfirmedHuman, local + "confirmed at v" + v + " by " + human.ApproverLogin + " (PR #" + strconv.Itoa(human.PR) + ")", human.ApproverLogin
+		return ConfirmedHuman, local + "confirmed at v" + v + ": human (" + human.Method() + ")", human
 	case stale != nil:
-		return ConfirmedDrifted, "confirmed by " + stale.ApproverLogin + ", but the packet changed since: confirm again", ""
+		return ConfirmedDrifted, stale.Method() + ", but the packet changed since: confirm again", nil
 	case olderHuman != nil:
-		return ConfirmedDrifted, "confirmed at version " + strconv.Itoa(olderHuman.Version) + ", now version " + v, ""
+		return ConfirmedDrifted, "confirmed at version " + strconv.Itoa(olderHuman.Version) + ", now version " + v, nil
 	case pending != nil:
-		return ConfirmedPending, "prepared, not merged or not approved by a human on the merged head", ""
+		return ConfirmedPending, "prepared, not merged or not approved by a human on the merged head", nil
+	case unverified != nil:
+		return ConfirmedUnknown, "a signature verdict that does not re-verify (" + unverified.Note + ")", nil
 	}
 
 	a := b.Approval
 	if b.Status != schema.BRDApproved || a == nil || strings.TrimSpace(a.ApprovedBy) == "" {
-		return ConfirmedDraft, "status " + statusName(b.Status) + ", no decision on record", ""
+		return ConfirmedDraft, "status " + statusName(b.Status) + ", no decision on record", nil
 	}
 	if a.ApprovedVersion > 0 && b.Version > a.ApprovedVersion {
-		return ConfirmedDrifted, "approved at version " + strconv.Itoa(a.ApprovedVersion) + ", now version " + v, ""
+		return ConfirmedDrifted, "approved at version " + strconv.Itoa(a.ApprovedVersion) + ", now version " + v, nil
 	}
 	council := a.Mandate != "" || strings.HasPrefix(strings.ToLower(strings.TrimSpace(a.ApprovedBy)), "council")
 	switch {
 	case council || schema.IsAgentActor(a.ApprovedBy):
-		return ConfirmedAgent, "reviewed by " + a.ApprovedBy + ", awaiting a human decision", ""
+		return ConfirmedAgent, "reviewed by " + a.ApprovedBy + ", awaiting a human decision", nil
 	case a.Local:
-		return ConfirmedPending, "prepared by a local session, not confirmed: " + a.ApprovedBy + " is a typed name", ""
+		return ConfirmedPending, "prepared by a local session, not confirmed: " + a.ApprovedBy + " is a typed name", nil
 	}
 	why := "no confirm data (run `lattice confirm` in CI)"
 	switch {
@@ -210,7 +293,7 @@ func approvalState(b schema.BRD, promise string, cd *ConfirmData) (state, detail
 	case cd != nil:
 		why = "no platform approval on record for it"
 	}
-	return ConfirmedUnknown, "the approval block names " + a.ApprovedBy + " (display only); " + why, ""
+	return ConfirmedUnknown, "the approval block names " + a.ApprovedBy + " (display only); " + why, nil
 }
 
 func hasString(list []string, s string) bool {
@@ -245,9 +328,13 @@ func confirmed(crit []criterionRef, cd *ConfirmData) (Signal, []Approval) {
 	var out []Approval
 	worst := ""
 	for _, c := range crit {
-		state, detail, approver := approvalState(c.brd, c.promise, cd)
+		state, detail, rec := approvalRecord(c.brd, c.promise, cd)
 		ap := Approval{BRD: c.brd.ID, Criterion: c.id, Tier: c.tier, State: state, Status: statusName(c.brd.Status),
-			Version: c.brd.Version, Detail: detail, ApprovedBy: approver}
+			Version: c.brd.Version, Detail: detail}
+		if rec != nil {
+			ap.ApprovedBy, ap.Via, ap.Fingerprint, ap.PR = rec.ApproverLogin, rec.Route(), rec.Fingerprint, rec.PR
+			ap.Method = rec.Method()
+		}
 		if c.brd.Approval != nil {
 			ap.ApprovedVersion = c.brd.Approval.ApprovedVersion
 		}

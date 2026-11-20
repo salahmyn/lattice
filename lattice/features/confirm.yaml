@@ -24,3 +24,17 @@ invariants:
     statement: confirm.json is read as confirmed only when its stamp is intact. A file with no stamp, a digest that does not match its records, commit or CI run, or one tracked by git reads unknown; under --ci a file of a local run or of another commit reads unknown; and a CI run never reuses a local file's verdicts.
   - id: INV-7
     statement: A decision file is never overwritten. Its name carries the first 8 digits of its packet hash, so preparing the same packet again reports the existing branch, a changed packet gets a new branch and file, and a same-named branch or file holding something else is refused; readers accept both the old and the new names.
+  - id: INV-8
+    statement: A signature counts only from an sk- key type with user presence; any other key reads SOFTWARE_KEY.
+  - id: INV-9
+    statement: The signed message, never stored, holds repository, id, version, action, packet hash and rows in namespace lattice-decision; an incomplete tuple, another tuple or namespace fails.
+  - id: INV-10
+    statement: The key must be in allowed_signers for the login at the base commit, the first parent of the default-branch commit adding the signature, and at the tip.
+  - id: INV-11
+    statement: The key must be among the login's GitHub signing keys, asked each run; an unreadable platform reads unknown.
+  - id: INV-12
+    statement: Readers re-verify a signature verdict from the repository, taking only the signing-key fact from confirm.json; a failing claim reads unknown.
+  - id: INV-13
+    statement: lattice sign refuses without a terminal, under CI, for an agent or a non-sk key, and no MCP tool or skill offers it.
+  - id: INV-14
+    statement: A human verdict always shows its method, signed (login, fingerprint) or approved on a pull request.

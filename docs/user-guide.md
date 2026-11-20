@@ -1473,11 +1473,12 @@ Only CI's verdict counts; a local run is advice.
 `0` for `ASSURED` or an allowed `UNPROVEN`; `1` for `BROKEN` or a disallowed
 `UNPROVEN`; `2` for a usage error (no `--base`, a base that is not a commit).
 
-## 4l. Confirmation: `lattice prepare` and `lattice confirm`
+## 4l. Confirmation: `lattice prepare`, `lattice confirm` and `lattice sign`
 
-Only a human confirms, and the platform vouches for who that human is. A
-`--by <email>` value is a typed string, so it proves nothing. The record is the
-platform's approving review on a merged pull request.
+Only a human confirms, and something outside the repository vouches for who
+that human is. A `--by <email>` value is a typed string, so it proves nothing.
+The record is the platform's approving review on a merged pull request, or a
+hardware-key signature over the decision (see "Confirm by signature" below).
 
 ### Prepare a decision
 
@@ -1572,7 +1573,7 @@ A decision whose hash no longer matches reads `stale`. A prepared decision that 
 not merged reads `pending`. With no token, `unknown`. `--offline`, or a missing
 cache, reads `unknown`, never confirmed. The result is
 `lattice/.cache/confirm.json` (`lattice.confirm/1`: derived, cached by commit,
-never committed), with `{id, version, action, state, approver_login, pr,
+never committed), with `{id, version, action, state, via, approver_login, pr,
 merged_sha, verified_at}` per decision. `lattice audit` reads the `confirmed`
 signal from that file only. Set branch protection to require a current review;
 `confirm` does not rely on it, but it keeps the platform's own state in step.
@@ -1608,6 +1609,156 @@ or agent-authored) whose current version has a confirmed `approve` or `ack` ther
 no longer raises `BRD_UNAPPROVED_LLM`. A typed `approved_by`, a decision for another
 version, a `pending` or `stale` verdict, or a confirmed `return` or `overturn` does
 not satisfy it.
+
+### Confirm by signature
+
+A decision also reaches `human` through a second route: a detached SSH
+signature over the decision, made with a hardware security key. Either route
+suffices. The signature route needs no second GitHub account, so it works on a
+project where one person owns the repository and an agent opens the pull
+requests.
+
+**Enrol a key once.**
+
+1. Create a security key (a FIDO2 token such as a YubiKey):
+
+   ```sh
+   ssh-keygen -t ed25519-sk -C "ana lattice decisions"   # or -t ecdsa-sk
+   ```
+
+2. Add the public key to your GitHub account as a **signing** key, not an
+   authentication key: Settings → SSH and GPG keys → New SSH key → Key type
+   *Signing Key*, or `gh ssh-key add ~/.ssh/id_ed25519_sk.pub --type signing`.
+3. Add one line to `lattice/allowed_signers` (OpenSSH allowed_signers format,
+   with your GitHub login as the principal) and merge it to the default branch
+   through a reviewed or signed change, before you sign with the key:
+
+   ```text
+   ana namespaces="lattice-decision" sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5... ana
+   ```
+
+   Only plain lines count: exact principals and at most a `namespaces` option
+   that includes `lattice-decision`. Lines with wildcard principals,
+   `cert-authority`, `valid-after` or `valid-before` are skipped.
+
+**Sign a decision.**
+
+```sh
+lattice prepare brd approve brd.refunds --version 3
+git switch decision/brd.refunds-v3-9e1f04ab
+lattice sign brd.refunds-v3-9e1f04ab            # touch the key when it blinks
+git add lattice/decisions/approvals/brd.refunds-v3-9e1f04ab.sig
+git commit -m "decision: sign brd.refunds v3"
+git push -u origin HEAD                         # open the PR and merge it
+```
+
+`lattice sign` prints the decision (action, BRD, version, packet hash,
+promises, repository) and the exact message, then runs
+`ssh-keygen -Y sign -n lattice-decision -f <key>` and writes `<stem>.sig` beside
+the decision file. `--key` names the private key file (its `.pub` must sit beside
+it); the default is the first `~/.ssh/id_ed25519_sk*` or `~/.ssh/id_ecdsa_sk*`. It
+refuses a key that is not a security-key type (`SOFTWARE_KEY`), and refuses to
+run without a terminal (`SIGN_NO_TTY`), under CI (`SIGN_CI`) or for an agent
+actor (`SIGN_AGENT`). It is the only lattice command that runs an outside
+program, it is not offered through MCP or the shipped skills, and it is a
+separate command from `confirm` so that it is easy to deny to agents in their
+permission settings.
+
+The signed message is computed by the signer and the verifier, never stored:
+
+```text
+lattice-decision/v1
+repository acme/shop
+id brd.refunds
+version 3
+action brd.approve
+packet sha256:9e1f04ab...
+rows refunds:INV-1,refunds:INV-3
+```
+
+`rows` lists the promises the decision names (`none` when it names none):
+a `promise confirm` packet hash does not say which promises the batch covers, so
+the message does. The repository is `GITHUB_REPOSITORY`, or the origin remote's
+`owner/name`, so sign in a clone whose `origin` is the repository itself, not a
+fork. A message missing any field is neither signed nor accepted.
+
+**What `lattice confirm` checks.** For a decision file on the default branch
+with a `.sig` beside it, all of these must hold, natively in Go (no
+`ssh-keygen` at verify time):
+
+| Check | Otherwise |
+|---|---|
+| The file is an SSHSIG signature | `pending`, `SIGNATURE_MALFORMED` |
+| The key is `sk-ssh-ed25519@openssh.com` or `sk-ecdsa-sha2-nistp256@openssh.com` | `pending`, `SOFTWARE_KEY` |
+| The signature carries the user-presence flag (the key was touched) | `pending`, `SIGNATURE_NO_PRESENCE` |
+| The namespace is `lattice-decision` | `pending`, `SIGNATURE_NAMESPACE` |
+| It verifies over this decision's message: a signature copied to another decision, version, action, packet, promise list or repository fails | `pending`, `SIGNATURE_INVALID` |
+| The key is listed for the login in `lattice/allowed_signers` at the base commit | `pending`, `SIGNER_NOT_ALLOWED` |
+| ... and still at the tip of the default branch | `pending`, `SIGNER_REVOKED` |
+| GitHub lists the key among the login's SSH signing keys (`GET /users/{login}/ssh_signing_keys`) | `pending`, `SIGNER_NOT_ON_GITHUB` |
+| GitHub can be read (a token is set and the API answers) | `unknown`, `GITHUB_ANCHOR_UNKNOWN` |
+| The base commit exists (not a root commit or a shallow clone's edge) | `unknown`, `SIGNATURE_NO_BASE` |
+
+The record then reads `confirmed` with `via: signature`, the signer's login,
+the key's `fingerprint`, the `decision_path` and the `signature_base`; a changed
+packet reads `stale` as on the review route. Review-route records carry
+`via: review`. If the signature fails and an approving review exists, the review
+counts. Text output always names the method:
+`human (signed by ana, SHA256:Xb3k9...)` or `human (approved by bo on PR #41)`.
+
+**The base commit.** `allowed_signers` is read with git plumbing at one commit:
+the first parent of the commit on the default branch's first-parent history that
+added (or last changed) the `.sig`. For a pull request merged with a merge commit
+or squashed, that is the default branch just before the merge, so a key added to
+`allowed_signers` in the same pull request does not count, and the pull request's
+head is never read. With rebase merging every rebased commit lands on its own, so
+the base is the commit just before the one that adds the `.sig`; merge decision
+pull requests with a merge commit or a squash.
+
+**Revocation.** Remove the key from `allowed_signers` on the default branch, or
+from your GitHub signing keys, and everything it signed reads un-confirmed: the
+tip check fails at once for every reader, and GitHub is asked again on every
+`confirm` run (nothing about the signing keys is cached across runs).
+
+**Readers re-verify.** `lattice check`, `audit`, `validate`, `/api/v2` and
+`confirm --offline` re-verify every signature verdict in `confirm.json` from
+git objects on the branch `confirm` read: the signature, its message, key type
+and flags, and `allowed_signers` at the base commit and the tip. The only fact
+they take from the stamped `confirm.json` is GitHub's word that the key is the
+login's signing key. A record claiming a signature verdict that does not
+re-verify (written by hand, or the `.sig` is gone or changed) reads `unknown`,
+`SIGNATURE_NOT_REVERIFIED`, never `human`.
+
+**Threat model.** The route is built for a project where an agent works with the
+human's own GitHub token.
+
+- An agent with that token *can* open and merge pull requests, edit decision
+  files, write `confirm.json` by hand, run `lattice confirm`, add a key to
+  `allowed_signers` in a pull request, and copy a `.sig` from one decision to
+  another. None of these produces `human`: a key enrolled in the same pull
+  request is read before the change; a copied signature fails the message; a
+  hand-written verdict is re-verified away; a key made in software is refused by
+  type.
+- An agent *cannot* touch the hardware key, so it cannot make your key sign.
+- The residual risk: the `sk-` key type is not attested. Lattice can refuse key
+  types that are certainly software, but it cannot prove a key with an `sk-`
+  type lives in hardware; such a key can be generated in software. An agent whose
+  token may manage SSH signing keys could add a key it
+  generated to your GitHub account, merge it into `allowed_signers` in one pull
+  request, and sign with it in a later one. Withhold that permission from any
+  token an agent holds (the classic `admin:ssh_signing_key` and
+  `write:ssh_signing_key` scopes, or the fine-grained "SSH signing keys" account
+  permission), review every change to `allowed_signers`, and check the
+  fingerprint every verdict shows against your own key
+  (`ssh-keygen -lf ~/.ssh/id_ed25519_sk.pub`).
+- The terminal and CI refusals of `lattice sign` are friction, not a boundary:
+  the boundary is the touch on the hardware key.
+
+**The fallback.** A project with no hardware key keeps the review route, which
+proves that an account other than the pull request's author approved the merged
+head. Delegated confirmation (`docs/rnd/0010-assurance-decisions.md`, section D)
+is the designed fallback for projects that have neither: its state is
+`delegated`, never `human`.
 
 ### The local commands
 
