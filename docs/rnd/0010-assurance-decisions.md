@@ -1,15 +1,15 @@
 # 0010 — Assurance decisions after v0.15
 
-- **Status:** accepted (owner rulings, November 2026). The items are implemented
-  across v0.15.x and v0.16; each section says where.
+- **Status:** accepted (November 2026). The items are implemented across
+  v0.15.x and v0.16.
 - **Question:** v0.15 made Lattice judge whether a change was done *right*, not
   just done: break testing, the audit, `check --base`, and confirmation by a
-  platform approval. A real adopter then ran it on a large codebase. What should
+  platform approval. An early adopter then ran it on a large codebase. What should
   change, and how should the review UI and the acceptance cases work?
 
 ## Why
 
-The adopter's run found real fakes: tests that pass when the code they verify
+That run found real fakes: tests that pass when the code they verify
 is broken. It also found ways the tool could mislead a reviewer:
 
 - results from another commit counted in a local check;
@@ -133,9 +133,9 @@ name must be settled first.
 ### D. Delegated confirmation
 
 By default, `confirmed` counts only a platform approval by a non-author human.
-An owner may delegate confirmation to an agent. That is the owner's call; the
-reviewing agent advised against it, because `confirmed` is the only signal that
-a non-agent read the intent.
+A project owner may delegate confirmation to an agent. That weakens a
+guarantee: `confirmed` is otherwise the only signal that a non-agent read the
+intent.
 
 The design keeps that concern visible:
 
