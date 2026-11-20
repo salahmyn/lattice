@@ -113,7 +113,14 @@
         "break_tested",
         "nothing_fell"
       ],
-      "next_action": "nothing to do"
+      "next_action": "nothing to do",
+      "notes": [
+        {
+          "code": "STATEMENT_UNCHANGED",
+          "text": "the enforcer of bookshop:INV-1 changed and its statement did not: re-read the statement and confirm it still holds",
+          "next": "read the statement of bookshop:INV-1 against bookshop.Guard; if it no longer describes the code, edit the statement in the feature file"
+        }
+      ]
     },
     {
       "promise": "bookshop:INV-2",
@@ -169,7 +176,8 @@
         "exercised",
         "nothing_fell"
       ],
-      "next_action": "add a verifier whose own run executes the enforcer, and ingest per-test coverage in CI"
+      "next_action": "add a verifier whose own run executes the enforcer, and ingest per-test coverage in CI",
+      "notes": []
     },
     {
       "promise": "bookshop:INV-3",
@@ -226,7 +234,8 @@
         "exercised",
         "nothing_fell"
       ],
-      "next_action": "a human confirms the promise: lattice prepare promise confirm bookshop:INV-3"
+      "next_action": "a human confirms the promise: lattice prepare promise confirm bookshop:INV-3",
+      "notes": []
     }
   ],
   "gaps": [

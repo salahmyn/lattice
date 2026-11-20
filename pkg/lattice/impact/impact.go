@@ -60,8 +60,12 @@ type Report struct {
 	DraftsIncluded     bool                 `json:"drafts_included"`
 	DraftCriteria      []AffectedCriterion  `json:"draft_criteria,omitempty"`
 	RemovedEnforcement []RemovedEnforcement `json:"removed_enforcement"`
-	ManifestDiff       ManifestDiff         `json:"manifest_diff"`
-	CodeRollup         CodeRollup           `json:"code_rollup"`
+	// Notes are informational readings of touched promises, such as an
+	// enforcer that changed under a statement that did not. They never
+	// change a verdict.
+	Notes        []Note       `json:"notes"`
+	ManifestDiff ManifestDiff `json:"manifest_diff"`
+	CodeRollup   CodeRollup   `json:"code_rollup"`
 }
 
 // ChangedSymbol is a symbol whose own lines a hunk touches, on the base side,
@@ -199,6 +203,7 @@ func Compute(ctx context.Context, in Input) (Report, error) {
 		rep.DraftCriteria = drafts
 	}
 	rep.CodeRollup = rollup(in, pm, cc, approved, drafts)
+	rep.Notes = statementNotes(in.Graph.Features, baseFeatures, in.Graph.BRDs, md, cc)
 
 	normalize(&rep)
 	return rep, nil
@@ -244,6 +249,9 @@ func normalize(r *Report) {
 	}
 	if r.RemovedEnforcement == nil {
 		r.RemovedEnforcement = []RemovedEnforcement{}
+	}
+	if r.Notes == nil {
+		r.Notes = []Note{}
 	}
 	for _, k := range []*KindDiff{&r.ManifestDiff.Features, &r.ManifestDiff.BRDs, &r.ManifestDiff.EntryPoints} {
 		k.normalize()

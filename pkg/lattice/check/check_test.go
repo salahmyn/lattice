@@ -773,6 +773,59 @@ func TestMarkdownNeverGreenForUnproven(t *testing.T) {
 	}
 }
 
+// A STATEMENT_UNCHANGED note from impact rides on its promise's row and is
+// shown once in each form; it never changes the verdict, a gap or the merge.
+// @verifies check:INV-10
+func TestStatementNoteIsInformational(t *testing.T) {
+	p, q := "fees:INV-1", "fees:INV-2"
+	note := impact.Note{Code: impact.NoteStatementUnchanged, Promise: p,
+		Text: "the enforcer of fees:INV-1 changed and its statement did not: re-read the statement and confirm it still holds",
+		Next: "read the statement of fees:INV-1 against fees.Guard"}
+	for _, heads := range []audit.Report{
+		auditOf("head", good(p, 2), good(q, 1)),
+		auditOf("head", good(p, 2, noCoverage()), good(q, 1)),
+		auditOf("head", good(p, 3, unconfirmed()), good(q, 1, survived())),
+	} {
+		base := auditOf("base", good(p, 2), good(q, 1))
+		im := impact.Report{ChangedSymbols: []impact.ChangedSymbol{guardEdited(p), guardEdited(q)}}
+		without := Compute(scenario(&base, heads, im))
+		im.Notes = []impact.Note{note}
+		with := Compute(scenario(&base, heads, im))
+
+		if with.Verdict.State != without.Verdict.State || with.Verdict.Code != without.Verdict.Code ||
+			with.MergeAllowed != without.MergeAllowed || with.Merge.Code != without.Merge.Code {
+			t.Fatalf("the note changed the verdict: %+v/%v vs %+v/%v", with.Verdict, with.MergeAllowed, without.Verdict, without.MergeAllowed)
+		}
+		gw, _ := json.Marshal(with.Gaps)
+		go_, _ := json.Marshal(without.Gaps)
+		if !bytes.Equal(gw, go_) {
+			t.Fatalf("the note changed the gaps:\n%s\n%s", gw, go_)
+		}
+		if len(with.Promises) != 2 || len(with.Promises[0].Notes) != 1 || with.Promises[0].Notes[0].Code != CodeStatementUnchanged ||
+			len(with.Promises[1].Notes) != 0 || len(without.Promises[0].Notes) != 0 {
+			t.Fatalf("rows = %+v", with.Promises)
+		}
+		var text, md bytes.Buffer
+		WriteText(&text, with)
+		WriteMarkdown(&md, with)
+		for name, out := range map[string]string{"text": text.String(), "markdown": md.String()} {
+			if strings.Count(out, CodeStatementUnchanged) != 1 || !strings.Contains(out, "re-read the statement") {
+				t.Errorf("%s shows the note %d times:\n%s", name, strings.Count(out, CodeStatementUnchanged), out)
+			}
+		}
+	}
+
+	// A promise the change adds has nothing to re-read.
+	base := auditOf("base", good(q, 1))
+	im := impact.Report{ChangedSymbols: []impact.ChangedSymbol{guardEdited(p)}, Notes: []impact.Note{note}}
+	rep := Compute(scenario(&base, auditOf("head", good(p, 2, unconfirmed()), good(q, 1)), im))
+	for _, row := range rep.Promises {
+		if row.Promise == p && (!row.NewPromise || len(row.Notes) != 0) {
+			t.Fatalf("new promise row = %+v", row)
+		}
+	}
+}
+
 // --- the frozen contract ---
 
 // The shape of lattice.check/1 is frozen by a golden file. A change that is
@@ -788,6 +841,9 @@ func TestCheckContractGolden(t *testing.T) {
 		ManifestDiff: impact.ManifestDiff{Features: impact.KindDiff{Changed: []impact.ManifestChange{{
 			ID: "bookshop", Fields: []impact.FieldChange{{Field: "invariants[INV-3]", Change: "added"}}}}}},
 		ChangedFiles: []impact.FileChange{{Status: "M", OldPath: "lattice/waivers.yaml", NewPath: "lattice/waivers.yaml"}},
+		Notes: []impact.Note{{Code: impact.NoteStatementUnchanged, Promise: p,
+			Text: "the enforcer of bookshop:INV-1 changed and its statement did not: re-read the statement and confirm it still holds",
+			Next: "read the statement of bookshop:INV-1 against bookshop.Guard; if it no longer describes the code, edit the statement in the feature file"}},
 	}
 	in := scenario(&base, head, im)
 	in.Waivers = []Waiver{{Subject: q + "/exercised", Kind: "no_tool", Reason: "no coverage tool"}}

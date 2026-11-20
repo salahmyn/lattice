@@ -1353,6 +1353,19 @@ lattice check --snapshot                      # save the audit of HEAD, for a ba
 
 **Editing a confirmed promise.** The edit voids the confirmation. To keep the change mergeable, put the re-confirmation in the same pull request: run `lattice prepare brd approve <id> --version <N>` (or `prepare promise confirm`) on the pull request's branch, then `git merge --ff-only` the decision branch it prints, so its decision file rides with the edit. That makes the promise's `confirmed` gap read *pending*. A pending confirmation does not block the merge, tier 3 included, because the merge needs the human approval that confirms it; `lattice confirm` records it once the pull request merges. Without the decision file the edit reads `BROKEN` (`CONFIRMATION_VOIDED`).
 
+**An enforcer changed and its statement did not.** When the change edits the
+lines of an `@enforces` symbol and leaves the promise's statement and tier as they
+were, the promise's row carries an info note, `STATEMENT_UNCHANGED`: "the enforcer
+of fees:INV-1 changed and its statement did not: re-read the statement and confirm
+it still holds", with a `next:`. The written promise may no longer describe the
+code; a reviewer reads it again. The note is information only: it never changes the
+verdict, a gap or `merge_allowed`. A promise the change adds, an edited statement or
+tier (other rules read those), and a change to verifiers only get no note. Text and
+Markdown show the notes in one list; `lattice.check/1` carries them per touched
+promise as `notes: [{code, text, next}]` (`[]` when there are none), and `lattice
+impact --json` lists them at top level as `notes: [{code, promise, statement,
+enforcers, text, next}]`.
+
 Tier defaults until the owner decides: tier 1 needs `exercised` or
 `break_tested`; tier 2 and 3 need `break_tested`; every tier needs the promise
 traced, confirmed and live. A missing signal is a gap, never a pass.
@@ -1778,6 +1791,11 @@ The report has five sections:
 | Removed enforcement | A base-side enforcer that no longer enforces its invariant: the symbol was deleted, its `@enforces` tag was dropped (the tag sits above the symbol, outside its lines, so this compares each file's (symbol, invariant) pairs on both sides), or its file was deleted or moved out of the scanned tree. A file moved elsewhere in the scanned tree is not a removal. |
 | Manifest changes | Features, BRDs and entry points added, removed, renamed and changed, with every changed field named (`invariants[INV-1].verifiable_by`, `user_scenarios[US-1].then`, `success_criteria[SC-2].maps_to_invariant`). The walk is generic over the schema, so a new field is compared without a code change. A manifest moved out of `lattice/features/` is removed; one moved within it is renamed, compared by id. |
 | Code roll-up | With a SCIP code graph (`lattice extract --with-code-graph`), the blast radius of each changed or removed enforcer, rolled up to referencing modules, test files and entry points (through each entry point's handler and `flow`). `--max-symbols N` (default 50) caps how many are expanded, enforcers of approved criteria first, and the report says when it truncated. Without a code graph the section says "code graph unavailable" and the command still succeeds. |
+
+When an enforcer's own lines change and its invariant's statement and tier do
+not, the report adds a **Notes** section with a `STATEMENT_UNCHANGED` note for that
+invariant: re-read the statement and confirm it still describes the code. Notes are
+informational and appear only when there is one; `--json` always has `notes`.
 
 The markdown form is meant to be posted as a sticky PR comment. It starts
 with `<!-- lattice-impact -->`, so a CI job can find and replace its own

@@ -378,10 +378,18 @@ func (c *computation) outOfReach() []OutOfReach {
 
 // --- rows ---
 
+// rows builds the touched promises. Impact's notes ride on their promise's
+// row as information: nothing here or after reads them for a gap, the
+// verdict or the merge rule.
+// @enforces check:INV-10
 func (c *computation) rows(gaps []Gap) []PromiseRow {
 	byPromise := map[string][]Gap{}
 	for _, g := range gaps {
 		byPromise[g.Promise] = append(byPromise[g.Promise], g)
+	}
+	notes := map[string][]Note{}
+	for _, n := range c.in.Impact.Notes {
+		notes[n.Promise] = append(notes[n.Promise], Note{Code: n.Code, Text: n.Text, Next: n.Next})
 	}
 	var names []string
 	for p := range c.touched {
@@ -403,6 +411,10 @@ func (c *computation) rows(gaps []Gap) []PromiseRow {
 			Touched: why, NewPromise: c.newPromise[p], Signals: c.signals(r), Needs: needs(r.Tier),
 		}
 		row.NextAction = c.nextAction(p, byPromise[p])
+		row.Notes = notes[p]
+		if row.NewPromise || row.Notes == nil {
+			row.Notes = []Note{} // a promise the change adds has nothing to re-read
+		}
 		out = append(out, row)
 	}
 	return out
