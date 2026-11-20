@@ -15,6 +15,7 @@
       "version": 2,
       "action": "brd.approve",
       "state": "confirmed",
+      "via": "review",
       "approver_login": "ana",
       "pr": 12,
       "merged_sha": "m1",
@@ -32,6 +33,7 @@
       "version": 2,
       "action": "promise.confirm",
       "state": "confirmed",
+      "via": "review",
       "approver_login": "ana",
       "pr": 12,
       "merged_sha": "m1",
@@ -63,6 +65,6 @@
   "stamp": {
     "commit": "deadbeef",
     "ci_run": "local",
-    "digest": "sha256:5e279d540d55806a9349613734a069b4b5de6dfe5d571447c86aa6ce2efb8e48"
+    "digest": "sha256:f720dd1b6720cdc413d18f2c30025ae6a4439c4cd9bd353741990d2d0f003af0"
   }
 }

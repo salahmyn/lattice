@@ -1,0 +1,16 @@
+id: ep.cli.sign
+version: 1
+status: production
+kind: cli
+purpose: A human signs a decision with an SSH security key, so confirm can count it
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: lattice sign
+handler:
+  symbol: internal.cli.newSignCommand
+  file: internal/cli/sign.go
+flow:
+  - feature: cli
+  - feature: confirm

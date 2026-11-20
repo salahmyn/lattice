@@ -69,6 +69,18 @@ the base commit, in a temporary worktree, and report `fails_on_base` or
 This is not what `break` does. `break` proves a test notices a crude break of
 the enforcer, not that it fails on the specific old behaviour.
 
+### U5. A moved enforcer is a gap, not a fall
+
+Removing an enforcer read BROKEN even when the same change moved the guard
+into another symbol, so honest refactors either kept dead wrappers or needed
+a human-confirmed retirement. A removal now reads `ENFORCER_MOVED` when the
+change adds an enforcer of the same tier 1 or 2 promise that did not enforce
+it at base. The move opens a `break_tested` gap (`MOVE_NOT_BREAK_TESTED`)
+that is new whatever the base read, and clears only when a break of each
+added enforcer is killed at head. Kills on kept enforcers, waivers and older
+break runs never clear it. A removal with only kept enforcers left, and any
+removal on a tier-3 promise, stays `ENFORCER_REMOVED` (check:INV-1, INV-14).
+
 ### B. Acceptance cases under an invariant
 
 Long invariants pull in many tests. When one of their tests fails, the report
@@ -132,7 +144,22 @@ name must be settled first.
 
 ### D. Delegated confirmation
 
-By default, `confirmed` counts only a platform approval by a non-author human.
+By default, `confirmed` counts only a platform approval by a non-author human,
+or a hardware-key signature over the decision.
+
+**Update: the signature route.** A project with one GitHub account cannot get a
+non-author approval without a second account. `lattice sign` closes that gap: the
+human signs the decision with an `sk-` SSH key, and `confirm` counts it only when
+the key is in `lattice/allowed_signers` at the base commit (never the PR head) and
+among the login's GitHub signing keys. Software keys are refused, so there is no
+weaker label; the state is `human`, always shown with its method (`via: signature`,
+login, fingerprint). Earlier local `brd ack` records stay as they are: re-confirm
+them with `prepare` and `sign`. Delegation, below, stays the fallback for projects
+without a hardware key, and its state stays `delegated`. Planned next: changes to
+`allowed_signers` signed by an already-allowed key, and an opt-in to accept the
+signature route only. The user guide's "Confirm by signature" has the threat
+model.
+
 A project owner may delegate confirmation to an agent. That weakens a
 guarantee: `confirmed` is otherwise the only signal that a non-agent read the
 intent.

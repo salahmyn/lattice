@@ -55,7 +55,7 @@ func (a *Adapter) parse(ctx context.Context, file string, source []byte) (ir.Mod
 		src:      source,
 		mod:      &mod,
 		pkgPath:  packagePath(file, pkgName),
-		testFile: isTestFile(file),
+		testFile: isTestFile(file) || isTestSupport(root, source, pkgName),
 		subtests: map[string]int{},
 		recv:     map[int]string{},
 	}
@@ -747,4 +747,42 @@ func hasVerify(anns []ir.Annotation) bool {
 // file under a test directory such as testdata/.
 func isTestFile(file string) bool {
 	return strings.HasSuffix(strings.ToLower(file), "_test.go") || astutil.IsTestPath(file)
+}
+
+// isTestSupport reports whether a Go file belongs to a test-support package
+// by the standard library's convention (httptest, iotest, fstest): its
+// package name ends in "test" and it imports "testing". Both are required,
+// so a production package such as "latest" never qualifies, and neither
+// does production code that only calls testing.Testing.
+// @enforces adapters.go:INV-6
+func isTestSupport(root *sitter.Node, src []byte, pkgName string) bool {
+	if len(pkgName) <= len("test") || !strings.HasSuffix(pkgName, "test") {
+		return false
+	}
+	for i := 0; i < int(root.NamedChildCount()); i++ {
+		decl := root.NamedChild(uint(i))
+		if decl.Kind() != "import_declaration" {
+			continue
+		}
+		found := false
+		var walk func(n *sitter.Node)
+		walk = func(n *sitter.Node) {
+			for j := 0; j < int(n.NamedChildCount()); j++ {
+				c := n.NamedChild(uint(j))
+				switch c.Kind() {
+				case "import_spec_list":
+					walk(c)
+				case "import_spec":
+					if path := c.ChildByFieldName("path"); path != nil && path.Utf8Text(src) == `"testing"` {
+						found = true
+					}
+				}
+			}
+		}
+		walk(decl)
+		if found {
+			return true
+		}
+	}
+	return false
 }

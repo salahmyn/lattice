@@ -13,6 +13,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/brd"
 	"github.com/salahmyn/lattice/pkg/lattice/check"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm"
+	"github.com/salahmyn/lattice/pkg/lattice/confirm/signature"
 	"github.com/salahmyn/lattice/pkg/lattice/contract"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
@@ -73,9 +74,7 @@ func (w *v2world) brdStanding(b schema.BRD) (state string, chips []contract.Chip
 
 	if rec := w.confirmedRecord(b.ID, b.Version); rec != nil {
 		conf.ConfirmedVersion, conf.ConfirmedBy = rec.Version, rec.ApproverLogin
-		if rec.PR != 0 {
-			conf.Via = "PR #" + strconv.Itoa(rec.PR)
-		}
+		conf.Via, conf.Method, conf.Fingerprint = via(*rec), rec.Route(), rec.Fingerprint
 	}
 	if o := w.overturn(b); o != "" {
 		chips = append(chips, contract.Chip{Code: "COUNCIL_OVERTURNED", Params: map[string]interface{}{"by": o}, Text: "the council's approval of this version was overturned by " + o})
@@ -473,10 +472,8 @@ func (w *v2world) history(id string) contract.History {
 		if r.ID != id {
 			continue
 		}
-		e := contract.HistoryEntry{Version: r.Version, Action: r.Action, State: r.State, By: r.ApproverLogin}
-		if r.PR != 0 {
-			e.Via = "PR #" + strconv.Itoa(r.PR)
-		}
+		e := contract.HistoryEntry{Version: r.Version, Action: r.Action, State: r.State, By: r.ApproverLogin,
+			Via: via(r), Method: r.Route(), Fingerprint: r.Fingerprint}
 		h.Entries = append(h.Entries, e)
 	}
 	return h
@@ -567,7 +564,8 @@ func (s *Server) v2Feature(wr http.ResponseWriter, r *http.Request) {
 		if b := brd.Find(w.kg.BRDs, m.ImplementsBRD); b != nil {
 			state, _, conf := w.brdStanding(*b)
 			page.BRD = &contract.BRDRef{ID: b.ID, Version: b.Version, State: state,
-				ConfirmedVersion: conf.ConfirmedVersion, ConfirmedBy: conf.ConfirmedBy, Via: conf.Via}
+				ConfirmedVersion: conf.ConfirmedVersion, ConfirmedBy: conf.ConfirmedBy, Via: conf.Via,
+				Method: conf.Method, Fingerprint: conf.Fingerprint}
 		}
 	}
 	crit := map[string][]string{}
@@ -584,4 +582,16 @@ func (s *Server) v2Feature(wr http.ResponseWriter, r *http.Request) {
 	page.NoPromise = len(rows) == 0
 	page.EntryPoints = w.entryPointsOf([]string{id})
 	writeV2(wr, http.StatusOK, page, contract.LintOptions{})
+}
+
+// via is where a confirmation was made, for display: "PR #7" for a review,
+// "signature SHA256:..." for a signature.
+func via(r audit.ConfirmRecord) string {
+	switch {
+	case r.Route() == audit.ViaSignature:
+		return "signature " + signature.Short(r.Fingerprint)
+	case r.PR != 0:
+		return "PR #" + strconv.Itoa(r.PR)
+	}
+	return ""
 }
