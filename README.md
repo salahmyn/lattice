@@ -111,8 +111,9 @@ says so with `@verifies wallet.fees:INV-1#a`; it still counts as a verifier of
 `failing`, `uncovered`; only `covered` is positive) from the ingested results
 and the break runs, and shows it as `1a` in `lattice audit`, `lattice feature
 show` and `lattice rtm`. Cases are part of what a human confirms: editing one
-voids the confirmation. `INVARIANT_BROAD` (info) names invariants that read
-as several claims and have no cases.
+voids the confirmation. `INVARIANT_BROAD` (info) names invariants with no
+cases that make several claims: 30 words or more in two sentences, or in three
+sentences or semicolon clauses.
 
 ## Assurance: done right, not just done
 
@@ -148,8 +149,8 @@ weakens enforcement silently.
   change, grouped by runner, so a pre-push run stays short. It also finds the
   tests behind lines no promise guards (coverage, call graph, or a neighbouring
   test file), then, as labelled hints, a test file that changed in the same
-  commits or names the symbol or its route. It lists anything it can't place
-  as `uncovered`.
+  small commits or names the symbol or its route. It lists only real tests,
+  never a test file's helpers, and anything it can't place as `uncovered`.
 - `lattice prepare` and `lattice confirm` make confirmation a human act that
   the platform vouches for. An agent can prepare a decision branch. Only a
   human's approval counts: an approving review by someone other than the

@@ -56,6 +56,9 @@ const (
 	DefaultCoChangeDays     = 365
 	DefaultCoChangeMaxFiles = 50
 	DefaultCoChangeMin      = 2
+	// DefaultCoChangeMinScore is the default MinScore: two shared commits
+	// of eight files each, or one of four.
+	DefaultCoChangeMinScore = 0.25
 )
 
 // CoChange is the `break.co_change:` block: the window of commits, ending at
@@ -75,6 +78,13 @@ type CoChange struct {
 	// with the touched file (default 2). A change within MaxFiles that
 	// edits the test file is enough on its own.
 	MinCommits int `yaml:"min_commits,omitempty"`
+	// MinScore is the least co-change score a test file needs (default
+	// 0.25). Each shared commit adds 1/(the files it changes), so a test
+	// file that only ever changed with the touched file in large commits
+	// scores low: two shared commits of four files score 0.5, two of forty
+	// 0.05. A change within MaxFiles that edits the test file is enough on
+	// its own.
+	MinScore float64 `yaml:"min_score,omitempty"`
 }
 
 // Window returns the co-change bounds with defaults filled in.
@@ -93,6 +103,15 @@ func (c CoChange) Window() (commits, days, maxFiles, minCommits int) {
 		minCommits = DefaultCoChangeMin
 	}
 	return commits, days, maxFiles, minCommits
+}
+
+// Score returns the least co-change score a test file needs, with the
+// default filled in.
+func (c CoChange) Score() float64 {
+	if c.MinScore <= 0 {
+		return DefaultCoChangeMinScore
+	}
+	return c.MinScore
 }
 
 // Runner is one test framework: the verifier files it runs and the command

@@ -83,6 +83,7 @@ func junitName(r config.Runner) string { return "junit-" + r.Name + ".xml" }
 // grouped by the first break.runners entry whose glob matches, exactly as
 // `lattice break` groups them; the rest are unmatched, with the reason.
 // @enforces impact:INV-6
+// @enforces impact:INV-9
 func testPlan(in Input, pm pathMap, rep Report, drafts []AffectedCriterion, hs *hintSource) TestPlan {
 	kg := in.Graph
 	touched := map[string]bool{}
@@ -133,7 +134,8 @@ func testPlan(in Input, pm pathMap, rep Report, drafts []AffectedCriterion, hs *
 		}
 	}
 
-	why, hinted, uncovered := unguardedTests(in, pm, rep, hs)
+	cases := testCases(kg.Tests)
+	why, hinted, uncovered := unguardedTests(in, pm, rep, hs, cases)
 	promisesOf := map[string][]string{}
 	whyOf := map[string][]string{}
 	var sels []results.Selector
@@ -144,8 +146,8 @@ func testPlan(in Input, pm pathMap, rep Report, drafts []AffectedCriterion, hs *
 				ps = append(ps, p)
 			}
 		}
-		if len(ps) == 0 && len(why[s.Test]) == 0 {
-			continue
+		if !cases[s.Test] || len(ps) == 0 && len(why[s.Test]) == 0 {
+			continue // a helper of a test file is never listed as a test
 		}
 		sortRefs(ps)
 		promisesOf[s.Test] = ps

@@ -323,3 +323,67 @@ func TestTestPlanCoChangeLargeChange(t *testing.T) {
 		}
 	}
 }
+
+// A spec that changed with the touched file only in large commits scores
+// low (each shared commit adds 1/(its files)) and is not hinted, though it
+// shares min_commits commits; one that shared small commits, or that the
+// change itself edits, is.
+// @verifies impact:INV-8
+func TestTestPlanCoChangeWeighsCommitSize(t *testing.T) {
+	const wide = "e2e/wallet.spec.ts"
+	setup := func(t *testing.T) (*repo, string) {
+		r, _ := runnersRepo(t, runnersConfig)
+		r.git("checkout", "-q", "main")
+		r.write(checkoutSpecFile, checkoutSpec("paid"))
+		r.write(wide, homeSpec)
+		r.commit("add the journeys")
+		r.write("apps/web/src/total.ts", totalTS)
+		r.commit("add total")
+		for round, step := range []string{"paid in EUR", "paid in full"} {
+			// A sweeping commit: total.ts, the wide spec and ten other files.
+			r.write("apps/web/src/total.ts", totalTS+strings.Repeat("\n", round+1))
+			r.write(wide, homeSpec+strings.Repeat("\n", round+1))
+			for i := 0; i < 10; i++ {
+				r.write("apps/web/src/orders/o"+string(rune('a'+i))+".ts", "export const n = "+string(rune('0'+round))+";\n")
+			}
+			r.commit("sweep " + step)
+			// A small commit: total.ts and the checkout spec alone.
+			r.write("apps/web/src/total.ts", totalTS+strings.Repeat("\n", round+3))
+			r.write(checkoutSpecFile, checkoutSpec(step))
+			r.commit("show " + step)
+		}
+		base := r.git("rev-parse", "HEAD")
+		r.git("checkout", "-q", "-B", "change")
+		r.write("apps/web/src/total.ts", strings.Replace(totalTS, "amount + 1", "amount + 2", 1))
+		return r, base
+	}
+
+	r, base := setup(t)
+	plan := planWith(t, r, base, nil, false)
+	pays := specFQN(t, r)
+	why := hintedOnly(t, plan, pays, totalSym, ViaCoChange)
+	if !strings.Contains(why[0], checkoutSpecFile+" changed with apps/web/src/total.ts in 2 commits") {
+		t.Errorf("why = %q", why)
+	}
+
+	// The change itself edits the wide spec: that is enough on its own.
+	r, base = setup(t)
+	r.write(wide, homeSpec+"\n// edited with total\n")
+	plan = planWith(t, r, base, nil, false)
+	home := testFQN(t, r, wide, "opens the home page")
+	if got := testsOf(plan); !reflect.DeepEqual(got, sortedPair(pays, home)) {
+		t.Fatalf("tests = %v, want the checkout and the edited wide spec", got)
+	}
+	for _, u := range plan.Unmatched {
+		if u.File == wide && !strings.Contains(u.Why[home][0], "in this change") {
+			t.Errorf("why[%s] = %q", home, u.Why[home])
+		}
+	}
+
+	// min_score is configurable: a low one lets the sweeping commits count.
+	r, base = setup(t)
+	r.write("lattice/config.yaml", runnersConfig+"  co_change:\n    min_score: 0.1\n")
+	if got := testsOf(planWith(t, r, base, nil, false)); !reflect.DeepEqual(got, sortedPair(pays, home)) {
+		t.Errorf("min_score 0.1: tests = %v", got)
+	}
+}

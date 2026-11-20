@@ -126,9 +126,11 @@ func TestCaseEnforcer(t *testing.T) {
 	}
 }
 
-// INVARIANT_BROAD is info and fires on a long statement, or on one that
-// joins three clauses with a verb in more than forty words, only when the
-// invariant has no cases; one claim with a long list stays quiet.
+// INVARIANT_BROAD is info and fires on a statement of thirty words or more
+// that makes several claims, in two sentences or in three sentences or
+// semicolon clauses that each have a verb, only when the invariant has no
+// cases. Length alone does not fire: one long claim, one claim with a long
+// list, and a short rule with its exception stay quiet.
 // @verifies validation:INV-15
 func TestInvariantBroad(t *testing.T) {
 	omnibus := "A withdrawal fee is charged once per withdrawal and never exceeds five percent of the amount; a refund " +
@@ -138,22 +140,32 @@ func TestInvariantBroad(t *testing.T) {
 	list := "A fee is recorded with the amount, the currency, the rate, the rounding mode, the account, the merchant, " +
 		"the channel, the time, the operator, the region, the reference, the batch and the settlement date of the withdrawal."
 	short := "A fee is never negative; it is never charged twice."
+	twoSentences := "An order is charged its fee once, when the payment settles, in the currency of the order. " +
+		"A refunded order returns the full fee to the wallet it came from, on the same day as the refund."
+	threeClaims := "A wallet balance is never negative; a debit larger than the balance is refused with the shortfall " +
+		"named in the error; a refused debit records no ledger entry and leaves the balance as it was."
+	shortTwo := "An order is charged once. A refund returns the fee."
 	for name, tc := range map[string]struct {
 		statement string
 		cases     []schema.InvariantCase
 		fires     bool
 	}{
-		"several clauses": {omnibus, nil, true},
-		"long":            {long, nil, true},
-		"with cases":      {omnibus, goodCases[:1], false},
-		"one long list":   {list, nil, false},
-		"two short":       {short, nil, false},
+		"several clauses":     {omnibus, nil, true},
+		"two sentences":       {twoSentences, nil, true},
+		"three semicolons":    {threeClaims, nil, true},
+		"long single claim":   {long, nil, false},
+		"with cases":          {omnibus, goodCases[:1], false},
+		"one long list":       {list, nil, false},
+		"two short":           {short, nil, false},
+		"two short sentences": {shortTwo, nil, false},
 	} {
 		kg := feesGraph(tc.cases)
 		kg.Features[0].Invariants[0].Statement = tc.statement
 		f := findings(Validate(kg, config.Default(), Options{ReviewMode: true}), schema.CodeInvariantBroad)
 		if tc.fires != (len(f) == 1) {
-			t.Errorf("%s: INVARIANT_BROAD = %+v, want fires=%v (%d claims, %d words)", name, f, tc.fires, claims(tc.statement), len(strings.Fields(tc.statement)))
+			sentences, n := claims(tc.statement)
+			t.Errorf("%s: INVARIANT_BROAD = %+v, want fires=%v (%d sentences, %d claims, %d words)", name, f, tc.fires,
+				sentences, n, len(strings.Fields(tc.statement)))
 			continue
 		}
 		if tc.fires && (f[0].Severity != schema.SeverityInfo || f[0].NextAction == nil ||
