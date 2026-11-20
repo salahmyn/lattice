@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
@@ -24,6 +25,10 @@ type PromiseFacts struct {
 	Tier      int      `json:"tier"`
 	Enforcers []string `json:"enforcers"`
 	Verifiers []string `json:"verifiers"`
+	// Cases are the promise's acceptance cases, one "id|kind|statement|
+	// enforcer|retired" each: part of what was confirmed, so adding, editing
+	// or retiring one is a structural change.
+	Cases []string `json:"cases,omitempty"`
 }
 
 // PacketInput is everything a review packet hashes.
@@ -98,6 +103,9 @@ func FactsFor(rows []audit.Row, refs []string) []PromiseFacts {
 			f.Verifiers = append(f.Verifiers, r.Signals.Verified.Items...)
 			sort.Strings(f.Enforcers)
 			sort.Strings(f.Verifiers)
+			for _, c := range r.Cases {
+				f.Cases = append(f.Cases, strings.Join([]string{c.ID, c.Kind, c.Statement, c.Enforcer, strconv.FormatBool(c.Retired)}, "|"))
+			}
 		}
 		out = append(out, f)
 	}
@@ -115,7 +123,7 @@ func FactsFor(rows []audit.Row, refs []string) []PromiseFacts {
 // later human check, not a change to the intent. A source's kind, ref, title
 // and url stay in, so editing a source makes the decision stale as a
 // text-only change (it is not in the structural diff).
-// @enforces confirm:INV-3, confirm:INV-8
+// @enforces confirm:INV-3, confirm:INV-8, confirm:INV-9
 func PacketHash(in PacketInput) string {
 	b := in.BRD
 	b.ImplementsVia = Scope(b.ImplementsVia, in.Declared)
@@ -146,6 +154,10 @@ func packetHash(b schema.BRD, in PacketInput) string {
 	for _, p := range in.Promises {
 		fmt.Fprintf(h, "promise\t%s\t%s\t%d\t%s\t%s\n", p.Promise, p.Statement, p.Tier,
 			strings.Join(p.Enforcers, ","), strings.Join(p.Verifiers, ","))
+		// A promise with no cases hashes as it did before cases existed.
+		for _, c := range p.Cases {
+			fmt.Fprintf(h, "case\t%s\t%s\n", p.Promise, c)
+		}
 	}
 	for _, d := range in.Diff {
 		fmt.Fprintf(h, "diff\t%s\n", d)

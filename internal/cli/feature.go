@@ -4,10 +4,12 @@ package cli
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
@@ -56,7 +58,7 @@ func newFeatureShowCommand(io *IO) *cobra.Command {
 		Short: "Show one feature with hydrated edges",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			kg, _, err := graphFor(io, cmd, false)
+			kg, ws, err := graphFor(io, cmd, false)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
@@ -71,8 +73,12 @@ func newFeatureShowCommand(io *IO) *cobra.Command {
 				for _, c := range m.Capabilities {
 					io.printf("  capability  %s — %s\n", c.ID, c.Summary)
 				}
+				cases := caseCoverage(ws.LatticeDir, kg, m.ID)
 				for _, inv := range m.Invariants {
 					io.printf("  invariant   %s — %s\n", inv.ID, inv.Statement)
+					for _, c := range cases[m.ID+":"+inv.ID] {
+						io.printf("    case      %s\n", c.Line(true))
+					}
 				}
 				for _, s := range kg.Surfaces {
 					if s.Feature == m.ID {
@@ -96,6 +102,33 @@ func newFeatureShowCommand(io *IO) *cobra.Command {
 			return io.fail("FEATURE_NOT_FOUND", "feature not found: "+args[0], na)
 		},
 	}
+}
+
+// caseCoverage returns the audit's case rows by promise for the features
+// named (every feature when none is), or nil when none of them declares a
+// case, so a workspace without cases pays nothing for the audit.
+func caseCoverage(latticeDir string, kg schema.KnowledgeGraph, features ...string) map[string][]audit.CaseRow {
+	want := map[string]bool{}
+	for _, f := range features {
+		want[f] = true
+	}
+	has := false
+	for _, f := range kg.Features {
+		for _, inv := range f.Invariants {
+			has = has || (len(inv.Cases) > 0 && (len(want) == 0 || want[f.ID]))
+		}
+	}
+	if !has {
+		return nil
+	}
+	dirty, _ := gitDirty(filepath.Dir(latticeDir))
+	out := map[string][]audit.CaseRow{}
+	for _, r := range audit.Compute(audit.Collect(latticeDir, kg, dirty)).Rows {
+		if len(r.Cases) > 0 {
+			out[r.Promise] = r.Cases
+		}
+	}
+	return out
 }
 
 // surfaceLabelCLI renders a surface as "METHOD /path" or "type name".
