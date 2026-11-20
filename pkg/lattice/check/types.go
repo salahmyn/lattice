@@ -237,6 +237,12 @@ type UntracedLine struct {
 	New bool `json:"new,omitempty"`
 	// Reason says why it counts as untraced, for example a file tag only.
 	Reason string `json:"reason"`
+	// HandlerReach is the symbol's handler reach in the head graph: reached
+	// when the call graph reaches it from a declared entry point's handler,
+	// unreached, or unknown. It is omitted when the graph has none (a removed
+	// symbol, a type alias, no call graph). Only reached reads "an entry point
+	// reaches it".
+	HandlerReach string `json:"handler_reach,omitempty"`
 }
 
 // OutOfReach is a touched promise a human marked out of reach.

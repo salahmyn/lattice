@@ -1,0 +1,17 @@
+id: ep.cli.prepare
+version: 1
+status: production
+kind: cli
+purpose: Prepare a decision branch for a human to approve on the platform
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: lattice prepare
+handler:
+  symbol: internal.cli.newPrepareCommand
+  file: internal/cli/prepare.go
+flow:
+  - feature: cli
+  - feature: confirm
+  - feature: audit
