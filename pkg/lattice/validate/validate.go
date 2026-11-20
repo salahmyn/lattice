@@ -150,6 +150,8 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 
 	v = append(v, kg.Violations...) // parse errors carried from extraction
 	v = append(v, c.checkManifests()...)
+	v = append(v, c.checkCaseSchema()...)
+	v = append(v, c.checkBroadInvariants()...)
 	v = append(v, c.checkBRDs()...)
 	v = append(v, c.checkBRDSources()...)
 	v = append(v, c.checkCouncil()...)
@@ -163,6 +165,7 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 
 	if !opts.ReviewMode {
 		v = append(v, c.checkAnnotations()...)
+		v = append(v, c.checkCaseRefs()...)
 		v = append(v, c.checkAttribution()...)
 		// The lite profile (v0.8.1) keeps the immediate-payoff subset —
 		// links, grounding, @feature annotations, leases, governance —

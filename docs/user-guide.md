@@ -1398,6 +1398,68 @@ killed: wallet.Cap, wallet.Check`. The text and Markdown output and the
 `/audit` page print one line per enforcer for fakes, partial runs, and rows
 whose enforcers' breaks disagree.
 
+### Acceptance cases
+
+A long invariant pulls in many tests, and when one fails the audit names a paragraph,
+not a claim. An invariant may list its claims as `cases`, one claim each:
+
+```yaml
+invariants:
+  - id: INV-1
+    statement: A fee never exceeds five percent of the amount.
+    cases:
+      - id: a
+        kind: happy
+        statement: A 100.00 withdrawal pays at most 5.00.
+      - id: b
+        kind: edge
+        statement: A 0.01 withdrawal pays no fee.
+      - id: c
+        kind: error
+        statement: A negative amount is rejected first.
+        enforcer: wallet.fees.validateAmount
+```
+
+- **Ids** are lowercase letters (`a` … `z`, then `aa`, `ab`, …), and they are never reused:
+  a case that no longer applies gets `retired: true` and keeps its id. A case is displayed
+  as `1a` (case `a` of `INV-1`).
+- **`kind`** is `happy`, `edge`, `error` or `security`.
+- **`enforcer`** (optional) names the symbol that enforces this case when it is narrower
+  than the invariant's enforcers. It must be a symbol tagged `@enforces` for the invariant.
+- **A test verifies one case** with `@verifies wallet.fees:INV-1#a` (or `INV-1#a` inside
+  the feature), in every language. It still counts as a verifier of `INV-1` for every
+  other signal, so adding cases changes nothing that worked before.
+
+The audit computes each case's coverage; it is never typed:
+
+| Coverage | Means |
+|---|---|
+| `covered` | a test tagged with the case passed on the ingested results, and breaking the enforcer (the case's own, else the invariant's) made that test fail, by `failed_tests` in `breaks.json` |
+| `partial` | a tagged test passed, but no break run of the enforcer exists, or the break left it green, or failed only other tests |
+| `failing` | a tagged test's ingested result is red |
+| `uncovered` | no test is tagged with the case, or no tagged test has a result |
+
+Only `covered` is positive. The cases are on the audit row (`cases`, in
+`lattice.audit/1`), under each invariant in `lattice feature show` and under each
+criterion in `lattice rtm`. They never change the row's class.
+
+`lattice validate` checks them: a bad or repeated id is `CASE_ID_FORMAT` or
+`CASE_ID_DUPLICATE`, an unknown kind or an empty statement `CASE_SCHEMA`, a `@verifies` ref
+to a case the invariant does not declare `ORPHAN_ANNOTATION_CASE` (all errors); a ref to a
+retired case is `CASE_RETIRED_VERIFIED` (warning); a case `enforcer` that is not a symbol
+enforcing the invariant is `CASE_ENFORCER_UNKNOWN` (error). `INVARIANT_BROAD` (info) names
+an invariant with no cases whose statement reads as several claims: more than 50 words, or
+three clauses that each have a verb in more than 40. Its next action is to add cases;
+split the invariant only when its claims are unrelated.
+
+Cases are part of what a human confirms. They are hashed into the review packet with the
+promise, so a case added, edited or retired after confirmation makes the decision stale,
+and the promise reads unconfirmed until it is confirmed again. A promise with no cases
+hashes as it did before. An agent may draft cases (`lattice agent draft-proposal`); the
+schema has no field that records a confirmation or a coverage, so nothing an agent writes
+can mark a case confirmed or covered. Each case's own confirmation state is not computed
+yet: today the promise is confirmed or not as a whole.
+
 ### Second readers
 
 `lattice/audit-notes.yaml` lists `{promise, reader, verdict, note}` entries,
@@ -1794,8 +1856,12 @@ Notes:
 
 The API computes nothing that counts. Every value comes from the audit, the check, `confirm`
 and `prepare`, and a field the kernel has no source for reads
-`{"state": "unknown", "code": "NOT_COMPUTED"}`, never a guess (the story, a feature's sources, cases, the
-text-only diff, the blind spot outside a change, where a feature runs, open proposals). A view
+`{"state": "unknown", "code": "NOT_COMPUTED"}`, never a guess (the story, a feature's sources, the
+cases of an invariant that declares none, the text-only diff, the blind spot outside a
+change, where a feature runs, open proposals). A promise whose invariant has cases carries
+them in `case_rows`, each with the audit's `coverage`, and sums them up in `cases`: `pass`
+(`CASES_COVERED`) only when every case that is not retired is covered, `fail`
+(`CASES_FAILING`) when one is failing, `unknown` (`CASES_NOT_COVERED`) otherwise. A view
 of one promise, feature or BRD is never `ASSURED` or `BROKEN`: those need a base, so ask
 `/api/v2/check`. Unknown, `UNPROVEN` and partial are never a `pass`; every payload is checked
 against that rule before it is sent, and a payload that breaks it is a 500, not a response.

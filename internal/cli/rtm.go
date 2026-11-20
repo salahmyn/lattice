@@ -113,6 +113,7 @@ The same rows back the BRD_CRITERION_* validation rules and the
 			}
 
 			renderRTMSummary(io, attestation, coverage, journey, matrix)
+			cases := caseCoverage(ws.LatticeDir, kg)
 			io.printf("\n")
 			io.printf("%-32s %-6s %-2s %-12s %-25s %-8s %-8s\n",
 				"BRD", "SC", "T", "status", "invariant", "enforcer", "verifier")
@@ -137,6 +138,11 @@ The same rows back the BRD_CRITERION_* validation rules and the
 					io.printf("    ⚑ %s\n", fl)
 				}
 				renderRowCoverage(io, r)
+				for _, ref := range strings.Split(r.MapsTo, ",") {
+					for _, c := range cases[strings.TrimSpace(ref)] {
+						io.printf("    case %s\n", c.Line(true))
+					}
+				}
 			}
 			// Scenario rows (v0.8 α) beneath the criteria — what the user does.
 			if len(matrix.Scenarios) > 0 {

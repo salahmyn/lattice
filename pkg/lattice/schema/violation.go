@@ -198,6 +198,15 @@ const (
 	CodeRevisionSchema       = "REVISION_SCHEMA"        // CR file parse / required-field error
 	CodeCriterionFlagged     = "CRITERION_FLAGGED"      // open meaning/demotion flag — reported alongside green, never hidden
 
+	// Acceptance cases under an invariant (rnd/0010 §B).
+	CodeCaseSchema           = "CASE_SCHEMA"            // a case's kind is unknown or its statement is empty (error)
+	CodeCaseIDFormat         = "CASE_ID_FORMAT"         // a case id is not lowercase letters (error)
+	CodeCaseIDDuplicate      = "CASE_ID_DUPLICATE"      // two cases of one invariant share an id (error)
+	CodeOrphanAnnotationCase = "ORPHAN_ANNOTATION_CASE" // @verifies f:INV-N#c names a case the invariant does not declare (error)
+	CodeCaseRetiredVerified  = "CASE_RETIRED_VERIFIED"  // @verifies names a retired case (warning)
+	CodeCaseEnforcerUnknown  = "CASE_ENFORCER_UNKNOWN"  // a case's enforcer is not a symbol that enforces its invariant (error)
+	CodeInvariantBroad       = "INVARIANT_BROAD"        // an invariant with no cases reads as several claims (info)
+
 	// Workspace hygiene: derived files git should not track (warning).
 	CodeGraphTracked = "GRAPH_TRACKED" // lattice/lattice.json is tracked, so every extract dirties the tree
 	CodeCacheTracked = "CACHE_TRACKED" // files under lattice/.cache/ are tracked

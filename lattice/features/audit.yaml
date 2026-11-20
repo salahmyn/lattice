@@ -25,3 +25,18 @@ invariants:
     statement: Each row lists every enforcer of the promise with what breaking it did (killed, survived, unknown or not_run), read from its break runs; the list never changes the class, and the reason of a row decided by breaks names how many enforcers survived and which.
   - id: INV-7
     statement: The --promise, --feature and --class filters only narrow the rows shown, never the computation or a row's class; an unknown promise id is a usage error.
+  - id: INV-8
+    statement: Each acceptance case of an invariant gets a coverage the audit computes from ingested results and break runs, never a typed one, and unknown evidence never reads covered.
+    cases:
+      - id: a
+        kind: happy
+        statement: A case is covered when a verifier tagged with it passed and breaking its enforcer, the case's own or else the invariant's, made that verifier fail.
+      - id: b
+        kind: edge
+        statement: A case is partial when a tagged verifier passed but no break run of its enforcer shows the verifier fail.
+      - id: c
+        kind: error
+        statement: A case is failing when a tagged verifier's ingested result is red.
+      - id: d
+        kind: edge
+        statement: A case is uncovered when no verifier is tagged with it, or no tagged verifier has a result.

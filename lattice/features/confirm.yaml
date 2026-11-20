@@ -26,3 +26,5 @@ invariants:
     statement: A decision file is never overwritten. Its name carries the first 8 digits of its packet hash, so preparing the same packet again reports the existing branch, a changed packet gets a new branch and file, and a same-named branch or file holding something else is refused; readers accept both the old and the new names.
   - id: INV-8
     statement: The packet hashes a BRD's scope, implements_via together with the features that name the BRD in implements_brd, so completing a one-sided link keeps the hash while a feature entering or leaving the scope changes it; a decision pinned before scope hashing still matches a BRD left as it was.
+  - id: INV-16
+    statement: A promise's acceptance cases are part of its packet, so adding, editing or retiring one after confirmation makes the decision stale, while a promise with no cases hashes as it did before cases existed.

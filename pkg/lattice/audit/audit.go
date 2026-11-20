@@ -158,6 +158,9 @@ type Row struct {
 	Enforcers []EnforcerOutcome `json:"enforcers"`
 	// Notes are second readers' notes. They are shown and never change Class.
 	Notes []Note `json:"notes,omitempty"`
+	// Cases are the invariant's acceptance cases, each with the coverage
+	// the audit computed for it. They never change Class.
+	Cases []CaseRow `json:"cases,omitempty"`
 }
 
 // Summary counts the rows.
@@ -297,11 +300,14 @@ func Compute(src Sources) Report {
 		notesBy[n.Promise] = append(notesBy[n.Promise], n)
 	}
 
+	tagged := caseVerifiers(kg)
+
 	rep.Rows = make([]Row, 0, len(refs))
 	for _, ref := range refs {
 		inv := statements[ref]
 		r := buildRow(ref, featureOf[ref], inv, rtmRows[ref], src, symbols, testFile, breaks, brdMap[ref])
 		r.Notes = notesBy[ref]
+		r.Cases = caseRows(ref, inv, tagged[ref], src.Results, rtmRows[ref].Enforcers, breaks[ref])
 		rep.Rows = append(rep.Rows, r)
 	}
 	sortRows(rep.Rows)

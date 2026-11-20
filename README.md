@@ -98,6 +98,19 @@ is legal only against an approved retirement item (`lattice sweep` enforces
 it). `lattice backprop` maps merged code changes back onto the requirements,
 so the requirement never silently follows the code.
 
+### Acceptance cases
+
+A long invariant pulls in many tests, and when one fails the report names a
+paragraph, not a claim. An invariant may list its claims as `cases` (ids `a`,
+`b`, …, kind `happy | edge | error | security`), and a test that checks one
+says so with `@verifies wallet.fees:INV-1#a`; it still counts as a verifier of
+`INV-1`. The audit computes each case's coverage (`covered`, `partial`,
+`failing`, `uncovered`; only `covered` is positive) from the ingested results
+and the break runs, and shows it as `1a` in `lattice audit`, `lattice feature
+show` and `lattice rtm`. Cases are part of what a human confirms: editing one
+voids the confirmation. `INVARIANT_BROAD` (info) names invariants that read
+as several claims and have no cases.
+
 ## Assurance: done right, not just done
 
 A test that exists is not a test that works. For each change, Lattice asks
@@ -184,7 +197,7 @@ A complete, validating three-language example lives in
 | `lattice coverage` | Adoption report: discovery / docs / verification / BRD |
 | `lattice brd new\|list\|show\|link\|approve` | Manage Business Requirements Documents; `brd link --reconcile` completes one-sided links without voiding approval |
 | `lattice brd from-code <feature-id>` | LLM-regenerate a BRD from a feature (brownfield) |
-| `lattice feature show <id>` | Show one feature + reverse links |
+| `lattice feature show <id>` | Show one feature + reverse links, with each invariant's cases and their coverage |
 | `lattice feature spec <id>` | Emit the ≤500-word `.ai-spec.md` loading contract |
 | `lattice ep list\|show\|accept\|reject` | Manage entry points |
 | `lattice initiative list\|show\|kanban\|critical-path` | Inspect work in flight |
@@ -203,7 +216,7 @@ A complete, validating three-language example lives in
 | `lattice check --base <rev>` | One verdict for a change (ASSURED / UNPROVEN / BROKEN) and the merge rule |
 | `lattice impact --since <rev> [--tests]` | What a change touches; `--tests` lists the verifier tests to run, by runner |
 | `lattice break [--promise f:INV-n] [--fails-on-base <rev>]` | Break each enforcer and see whether its verifiers notice; `--fails-on-base` runs a change's new or edited tests on the old code |
-| `lattice audit [--promise f:INV-n]` | Classify every promise: fake, break-tested, exercised, a gap |
+| `lattice audit [--promise f:INV-n]` | Classify every promise: fake, break-tested, exercised, a gap; each case covered, partial, failing or uncovered |
 | `lattice prepare brd\|promise\|waiver …` | Prepare a decision branch for a human to approve; never pushes |
 | `lattice confirm` | Read which decisions a human confirmed on the platform |
 | `lattice agent <cap>` | LLM-backed capabilities (deterministic fallback) |
