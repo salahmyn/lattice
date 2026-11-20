@@ -141,7 +141,7 @@ func TestAllSignalsAssured(t *testing.T) {
 }
 
 // An enforcer removed reads BROKEN, never merges, and the row says what to do.
-// @verifies check:INV-1
+// @verifies check:INV-1#a
 func TestEnforcerRemovedIsBroken(t *testing.T) {
 	p := "bookshop:INV-1"
 	base := auditOf("base", good(p, 2))
@@ -161,7 +161,7 @@ func TestEnforcerRemovedIsBroken(t *testing.T) {
 }
 
 // A verifier gutted so a break killed at base survives at head reads BROKEN.
-// @verifies check:INV-1
+// @verifies check:INV-1#d
 func TestGuttedVerifierIsBroken(t *testing.T) {
 	p := "bookshop:INV-1"
 	base := auditOf("base", good(p, 2))
@@ -215,7 +215,7 @@ func TestMissingEvidenceIsNotBroken(t *testing.T) {
 
 // A confirmed promise whose statement, tier or mapping was edited reads BROKEN
 // until a human re-confirms it, and the row says so.
-// @verifies check:INV-1
+// @verifies check:INV-1#f
 func TestEditingConfirmedPromiseVoidsConfirmation(t *testing.T) {
 	p := "bookshop:INV-1"
 	base := auditOf("base", good(p, 3))

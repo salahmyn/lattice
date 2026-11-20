@@ -8,6 +8,11 @@ The six conceptual annotations are: `feature`, `capability`,
 `enforces_invariant`, `verifies`, `verifies_capability`, `depends_on_feature`.
 Plus `role`, `suppresses_invariant`, and the `module_*` forms.
 
+A `verifies` ref may name one acceptance case of the invariant:
+`checkout.refund:INV-1#a` (or `INV-1#a` inside the feature), in every
+language. The test then counts as a verifier of `INV-1` for every signal, and
+the audit also credits it to case `a` (user guide, section 4j).
+
 ## Python
 
 Decorators imported from the no-op `lattice` package (published to PyPI only

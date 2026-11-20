@@ -49,10 +49,15 @@ type resolved struct {
 	dependsOn    []string
 	roles        []string
 	verifies     []string
+	cases        []string // verifier refs that name a case ("f:INV-1#a")
 	suppressed   []schema.SuppressedInvariant
 }
 
-// resolveSymbol returns the effective annotation set for one symbol.
+// resolveSymbol returns the effective annotation set for one symbol. A
+// verifier ref that names a case ("f:INV-1#a") counts as a ref to its
+// invariant ("f:INV-1") and is also kept as written, so every signal that
+// reads verifiers is unchanged by the suffix.
+// @enforces graph:INV-5
 func (r *resolver) resolveSymbol(sym *ir.Symbol, mod *ir.Module) resolved {
 	var res resolved
 	enf := newStrSet()
@@ -60,6 +65,7 @@ func (r *resolver) resolveSymbol(sym *ir.Symbol, mod *ir.Module) resolved {
 	cap := newStrSet()
 	rol := newStrSet()
 	ver := newStrSet()
+	cases := newStrSet()
 	supp := map[string]string{}
 
 	// 1. Module-level annotations (lowest precedence for feature; union for sets).
@@ -103,7 +109,13 @@ func (r *resolver) resolveSymbol(sym *ir.Symbol, mod *ir.Module) resolved {
 			case "role":
 				rol.addAll(annStrings(a))
 			case "verifies", "verifies_capability":
-				ver.addAll(annStrings(a))
+				for _, ref := range annStrings(a) {
+					base, _, isCase := schema.SplitCaseRef(ref)
+					ver.add(base)
+					if isCase {
+						cases.add(ref)
+					}
+				}
 			case "suppresses_invariant":
 				inv := firstString(a)
 				reason, _ := a.Kwargs["reason"].(string)
@@ -143,6 +155,7 @@ func (r *resolver) resolveSymbol(sym *ir.Symbol, mod *ir.Module) resolved {
 	res.dependsOn = dep.sorted()
 	res.roles = rol.sorted()
 	res.verifies = ver.sorted()
+	res.cases = cases.sorted()
 	return res
 }
 

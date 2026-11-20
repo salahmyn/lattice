@@ -56,7 +56,7 @@ func Build(in Input, opts Options) schema.KnowledgeGraph {
 				Exported: sym.Exported,
 				Feature:  r.feature, Capabilities: r.capabilities,
 				EnforcesInvariants: r.enforces, DependsOnFeatures: r.dependsOn,
-				Roles: r.roles, Verifies: r.verifies, SuppressedInvariants: r.suppressed,
+				Roles: r.roles, Verifies: r.verifies, VerifiesCases: r.cases, SuppressedInvariants: r.suppressed,
 			}
 			gm.SymbolFQNs = append(gm.SymbolFQNs, sym.FQN)
 			if sym.IsTest {
