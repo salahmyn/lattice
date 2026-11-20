@@ -10,7 +10,7 @@ business intent. Module: `github.com/salahmyn/lattice`. Source lives under
 Verify the toolchain before any build/lint chain — drift here has
 repeatedly blocked work mid-task.
 
-- **Go**: `go version` should be `>= 1.24` (matches `go.mod`). A C toolchain
+- **Go**: `go version` should be `>= 1.26` (matches `go.mod`; the `toolchain` line pins the exact release). A C toolchain
   is required for the tree-sitter bindings.
 - **Node.js** (only for `lattice-mcp/` and npx-based MCP servers): must be
   `>= 18`. Node 17 silently breaks npx-based MCP servers and lint validation.
