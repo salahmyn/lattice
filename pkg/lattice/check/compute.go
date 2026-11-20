@@ -106,6 +106,9 @@ func (c *computation) run() Report {
 	if in.Impact.Tests != nil {
 		rep.Tests = *in.Impact.Tests
 	}
+	if rep.Tests.Hinted == nil {
+		rep.Tests.Hinted = []impact.HintedSymbol{}
+	}
 	if rep.Tests.Uncovered == nil {
 		rep.Tests.Uncovered = []impact.UncoveredSymbol{}
 	}

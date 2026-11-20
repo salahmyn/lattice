@@ -58,12 +58,16 @@ type GraphSymbol struct {
 
 	// Resolved edges (effective annotation set, after module/role/inheritance
 	// propagation).
-	Feature              string                `json:"feature,omitempty"`
-	Capabilities         []string              `json:"capabilities,omitempty"`
-	EnforcesInvariants   []string              `json:"enforces_invariants,omitempty"`
-	DependsOnFeatures    []string              `json:"depends_on_features,omitempty"`
-	Roles                []string              `json:"roles,omitempty"`
-	Verifies             []string              `json:"verifies,omitempty"`
+	Feature            string   `json:"feature,omitempty"`
+	Capabilities       []string `json:"capabilities,omitempty"`
+	EnforcesInvariants []string `json:"enforces_invariants,omitempty"`
+	DependsOnFeatures  []string `json:"depends_on_features,omitempty"`
+	Roles              []string `json:"roles,omitempty"`
+	Verifies           []string `json:"verifies,omitempty"`
+	// VerifiesCases are the verifier refs that name an acceptance case, as
+	// written ("f:INV-1#a"). Each one's invariant ref is also in Verifies,
+	// so a case-tagged test counts as a verifier of the invariant.
+	VerifiesCases        []string              `json:"verifies_cases,omitempty"`
 	SuppressedInvariants []SuppressedInvariant `json:"suppressed_invariants,omitempty"`
 	// Reach is the symbol's static reach class (docs/rnd/0009): entry (a
 	// root reaches it), test_only (only tests do), unreached, or unknown

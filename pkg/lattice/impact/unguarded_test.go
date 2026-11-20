@@ -46,6 +46,30 @@ func unguardedRepo(t *testing.T, test string) (*repo, string) {
 
 const totalSym = "apps.web.src.total.total"
 
+// homeSpec is an end-to-end spec that drives the built app: it imports
+// nothing from the source tree and names none of its symbols.
+const homeSpec = `import { test, expect } from '@playwright/test';
+
+test('opens the home page', async ({ page }) => {
+  await page.goto('/home');
+  await expect(page.getByRole('heading')).toBeVisible();
+});
+`
+
+// apartRepo is unguardedRepo with the test file committed on its own,
+// before total.ts, so the two never changed in the same commit.
+func apartRepo(t *testing.T, test, body string) (*repo, string) {
+	r, _ := runnersRepo(t, runnersConfig)
+	r.git("checkout", "-q", "main")
+	r.write(test, body)
+	r.commit("add " + test)
+	r.write("apps/web/src/total.ts", totalTS)
+	base := r.commit("add total")
+	r.git("checkout", "-q", "-B", "change")
+	r.write("apps/web/src/total.ts", strings.Replace(totalTS, "amount + 1", "amount + 2", 1))
+	return r, base
+}
+
 // fakeCoverage says which tests' own runs executed which symbols.
 type fakeCoverage map[string][]string
 
@@ -164,12 +188,12 @@ func TestTestPlanUnguardedByNeighbour(t *testing.T) {
 	}
 }
 
-// With no evidence at all, the symbol is listed under uncovered with the
-// reason, and the text ends by asking for the full suite; it is never
+// With no evidence at all (the spec never changed with total.ts and never
+// names it), the symbol is listed under uncovered with the reason, and the text ends by asking for the full suite; it is never
 // silently dropped.
 // @verifies impact:INV-7
 func TestTestPlanUnguardedUncovered(t *testing.T) {
-	r, base := unguardedRepo(t, "e2e/journey.spec.ts")
+	r, base := apartRepo(t, "e2e/journey.spec.ts", homeSpec)
 	plan := planWith(t, r, base, nil, false)
 	if len(plan.Runners) != 0 || len(plan.Unmatched) != 0 ||
 		!reflect.DeepEqual(plan.Uncovered, []UncoveredSymbol{{Symbol: totalSym, File: "apps/web/src/total.ts", Lines: "3-5", Reason: ReasonUncovered}}) {

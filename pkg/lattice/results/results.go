@@ -457,6 +457,27 @@ func (s Set) FailedCases() []string {
 	return out
 }
 
+// FailedSet is a set in which every named test failed, for names as
+// FailedCases or `go test -v` report them ("<classname>::<name>", or a bare
+// name). Its Lookup says whether a test is among them, with the matching
+// rules of an ingested set.
+func FailedSet(names []string) Set {
+	s := Set{Results: map[string]Outcome{}, Cases: map[string]string{}}
+	for _, id := range names {
+		classname, name := "", id
+		if i := strings.Index(id, "::"); i >= 0 {
+			classname, name = id[:i], id[i+2:]
+		}
+		for _, k := range keysFor(classname, name) {
+			record(s.Results, k, Fail)
+			if _, ok := s.Cases[k]; !ok {
+				s.Cases[k] = id
+			}
+		}
+	}
+	return s
+}
+
 // worse reports whether a is a worse outcome than b (fail < skip < pass).
 func worse(a, b Outcome) bool {
 	rank := map[Outcome]int{Fail: 0, Skip: 1, Pass: 2}

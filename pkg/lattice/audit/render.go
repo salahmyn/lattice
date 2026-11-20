@@ -148,6 +148,9 @@ func WriteText(w io.Writer, r Report) {
 		for _, n := range row.Notes {
 			fmt.Fprintf(w, "%-18s second reader %s: %s %s\n", "", n.Reader, n.Verdict, n.Note)
 		}
+		for _, c := range row.Cases {
+			fmt.Fprintf(w, "%-18s case %s\n", "", c.Line(true))
+		}
 	}
 	fmt.Fprintf(w, "\nconfirmed is a fact about the approval record, not proof the intent is right.\n")
 }
@@ -180,6 +183,25 @@ func WriteMarkdown(w io.Writer, r Report) {
 		for _, row := range r.Rows {
 			fmt.Fprintf(w, "| `%s` | %s | %s | %s | %s |\n", row.Promise, row.Class, row.Kind,
 				row.Signals.Confirmed.Value, mdCell(row.Reason))
+		}
+	}
+
+	var withCases []Row
+	for _, row := range r.Rows {
+		if len(row.Cases) > 0 {
+			withCases = append(withCases, row)
+		}
+	}
+	if len(withCases) > 0 {
+		fmt.Fprintf(w, "\n### Cases\n\nOnly `covered` is positive.\n\n| Promise | Case | Coverage | Kind | Statement | Reason |\n|---|---|---|---|---|---|\n")
+		for _, row := range withCases {
+			for _, c := range row.Cases {
+				st := mdCell(c.Statement)
+				if c.Retired {
+					st += " (retired)"
+				}
+				fmt.Fprintf(w, "| `%s` | %s | %s | %s | %s | %s |\n", row.Promise, c.Label, c.Coverage, c.Kind, st, mdCell(c.Reason))
+			}
 		}
 	}
 

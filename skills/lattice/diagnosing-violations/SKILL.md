@@ -77,6 +77,23 @@ per-test run executed an enforcer; only per-test coverage promotes to it.
   `git rm -r --cached lattice/.cache`) and ignore them; `lattice init` adds
   the lines to `.gitignore`.
 
+## Acceptance-case codes
+
+- `CASE_ID_FORMAT` / `CASE_ID_DUPLICATE` / `CASE_SCHEMA` (error) — a case id
+  that is not lowercase letters or repeats another, an unknown `kind` (want
+  `happy`, `edge`, `error`, `security`) or an empty statement. Give the case the
+  next unused letter; ids are never reused.
+- `ORPHAN_ANNOTATION_CASE` (error) — `@verifies f:INV-N#c` names a case the
+  invariant does not declare. Declare it or correct the tag.
+- `CASE_RETIRED_VERIFIED` (warning) — a test still names a retired case. Tag the
+  case it checks now, or drop the `#c` suffix.
+- `CASE_ENFORCER_UNKNOWN` (error) — a case's `enforcer` is not a symbol tagged
+  `@enforces` for its invariant. Name the right FQN or drop the field.
+- `INVARIANT_BROAD` (info) — an invariant with no cases reads as several claims.
+  Add cases, one claim each, and tag the tests that check exactly one; split the
+  invariant only if its claims are unrelated. Never type a case's coverage or
+  confirmation: the audit computes coverage, and a human confirms.
+
 ## next_action kinds
 
 `add_annotation`, `add_invariant`, `add_capability`, `add_structural_check`,

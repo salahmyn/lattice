@@ -48,10 +48,16 @@ the tests that exercise a touched line no promise guards, grouped by the
 configured break.runners: one line per runner with its ready-to-run command,
 then each test file no runner matches. A test of an unguarded line is found by
 per-test coverage (coverage), else the static call graph (call_graph), else a
-test file beside it with the same base name (heuristic); each test's "why"
-says which. An unguarded symbol none of them finds a test for is listed as
-uncovered: run the full suite before merge. With --json it is
-{"runners": [...], "unmatched": [...], "uncovered": [...]}. It only lists; it
+test file beside it with the same base name (heuristic), else two hints: a test
+file that changed in the same commits as its file, the change included, within
+break.co_change (co_change; by default 2 shared commits among the last 200
+within 365 days, skipping a commit of more than 50 files), else a test file
+that names the symbol (a compound name of 4+ characters, not a common one) or
+a route its file declares (mentions). Each test's "why" says which, with the shared commits or the
+mentioning line for a hint; a symbol only a hint places is listed as hinted.
+An unguarded symbol none of them finds a test for is listed as uncovered: run
+the full suite before merge. With --json it is {"runners": [...],
+"unmatched": [...], "hinted": [...], "uncovered": [...]}. It only lists; it
 never runs a test. A test no break.runners entry matches is listed as
 unmatched with the reason, never dropped.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {

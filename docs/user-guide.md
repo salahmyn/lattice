@@ -1398,6 +1398,68 @@ killed: wallet.Cap, wallet.Check`. The text and Markdown output and the
 `/audit` page print one line per enforcer for fakes, partial runs, and rows
 whose enforcers' breaks disagree.
 
+### Acceptance cases
+
+A long invariant pulls in many tests, and when one fails the audit names a paragraph,
+not a claim. An invariant may list its claims as `cases`, one claim each:
+
+```yaml
+invariants:
+  - id: INV-1
+    statement: A fee never exceeds five percent of the amount.
+    cases:
+      - id: a
+        kind: happy
+        statement: A 100.00 withdrawal pays at most 5.00.
+      - id: b
+        kind: edge
+        statement: A 0.01 withdrawal pays no fee.
+      - id: c
+        kind: error
+        statement: A negative amount is rejected first.
+        enforcer: wallet.fees.validateAmount
+```
+
+- **Ids** are lowercase letters (`a` … `z`, then `aa`, `ab`, …), and they are never reused:
+  a case that no longer applies gets `retired: true` and keeps its id. A case is displayed
+  as `1a` (case `a` of `INV-1`).
+- **`kind`** is `happy`, `edge`, `error` or `security`.
+- **`enforcer`** (optional) names the symbol that enforces this case when it is narrower
+  than the invariant's enforcers. It must be a symbol tagged `@enforces` for the invariant.
+- **A test verifies one case** with `@verifies wallet.fees:INV-1#a` (or `INV-1#a` inside
+  the feature), in every language. It still counts as a verifier of `INV-1` for every
+  other signal, so adding cases changes nothing that worked before.
+
+The audit computes each case's coverage; it is never typed:
+
+| Coverage | Means |
+|---|---|
+| `covered` | a test tagged with the case passed on the ingested results, and breaking the enforcer (the case's own, else the invariant's) made that test fail, by `failed_tests` in `breaks.json` |
+| `partial` | a tagged test passed, but no break run of the enforcer exists, or the break left it green, or failed only other tests |
+| `failing` | a tagged test's ingested result is red |
+| `uncovered` | no test is tagged with the case, or no tagged test has a result |
+
+Only `covered` is positive. The cases are on the audit row (`cases`, in
+`lattice.audit/1`), under each invariant in `lattice feature show` and under each
+criterion in `lattice rtm`. They never change the row's class.
+
+`lattice validate` checks them: a bad or repeated id is `CASE_ID_FORMAT` or
+`CASE_ID_DUPLICATE`, an unknown kind or an empty statement `CASE_SCHEMA`, a `@verifies` ref
+to a case the invariant does not declare `ORPHAN_ANNOTATION_CASE` (all errors); a ref to a
+retired case is `CASE_RETIRED_VERIFIED` (warning); a case `enforcer` that is not a symbol
+enforcing the invariant is `CASE_ENFORCER_UNKNOWN` (error). `INVARIANT_BROAD` (info) names
+an invariant with no cases whose statement reads as several claims: more than 50 words, or
+three clauses that each have a verb in more than 40. Its next action is to add cases;
+split the invariant only when its claims are unrelated.
+
+Cases are part of what a human confirms. They are hashed into the review packet with the
+promise, so a case added, edited or retired after confirmation makes the decision stale,
+and the promise reads unconfirmed until it is confirmed again. A promise with no cases
+hashes as it did before. An agent may draft cases (`lattice agent draft-proposal`); the
+schema has no field that records a confirmation or a coverage, so nothing an agent writes
+can mark a case confirmed or covered. Each case's own confirmation state is not computed
+yet: today the promise is confirmed or not as a whole.
+
 ### Second readers
 
 `lattice/audit-notes.yaml` lists `{promise, reader, verdict, note}` entries,
@@ -1813,8 +1875,12 @@ Notes:
 
 The API computes nothing that counts. Every value comes from the audit, the check, `confirm`
 and `prepare`, and a field the kernel has no source for reads
-`{"state": "unknown", "code": "NOT_COMPUTED"}`, never a guess (the story, a feature's sources, cases, the
-text-only diff, the blind spot outside a change, where a feature runs, open proposals). A view
+`{"state": "unknown", "code": "NOT_COMPUTED"}`, never a guess (the story, a feature's sources, the
+cases of an invariant that declares none, the text-only diff, the blind spot outside a
+change, where a feature runs, open proposals). A promise whose invariant has cases carries
+them in `case_rows`, each with the audit's `coverage`, and sums them up in `cases`: `pass`
+(`CASES_COVERED`) only when every case that is not retired is covered, `fail`
+(`CASES_FAILING`) when one is failing, `unknown` (`CASES_NOT_COVERED`) otherwise. A view
 of one promise, feature or BRD is never `ASSURED` or `BROKEN`: those need a base, so ask
 `/api/v2/check`. Unknown, `UNPROVEN` and partial are never a `pass`; every payload is checked
 against that rule before it is sent, and a payload that breaks it is a 500, not a response.
@@ -2050,25 +2116,49 @@ that exercise them, on the strongest evidence it has for each symbol:
 | Per-test coverage (`lattice results ingest --per-test`) | `coverage` | the test's own run executed the symbol: a fact |
 | The static call graph `lattice extract` builds | `call_graph` | the test's calls reach the symbol: an upper bound, the call may not run |
 | A test file beside the symbol's file with the same base name (`fees.test.ts`, `fees.spec.tsx`, `fees_test.go`, `test_fees.py`, or one in `__tests__/`) | `heuristic` | a guess |
+| A test file that changed in the same commits as the symbol's file: in the change itself, or in two or more commits of the `break.co_change` window | `co_change` | a hint: the why names the shared commits |
+| A test file whose text names the symbol as a whole word (case-sensitive; a compound name such as `TotalBanner` or `total_fee` of four characters or more, not a common one like `onClick`), or a literal route an entry point declares for its file | `mentions` | a hint: the why names the line |
 
-A weaker source is used only when the stronger ones find no test. A symbol none of
-them finds a test for is listed under `uncovered` ("no test is known to exercise
-this; run the full suite"): it is never dropped silently.
+A weaker source is used only when the stronger ones find no test. The two hints
+catch an end-to-end spec that drives the built app and imports nothing from the
+source tree. A symbol whose tests only a hint found is listed under `hinted`, so
+the weak link stays visible. A symbol none of them finds a test for is listed
+under `uncovered` ("no test is known to exercise this; run the full suite"): it
+is never dropped silently.
+
+The co-change history is one `git log --name-only` over a bounded window, and
+each test file is read at most once per run. The window is set in
+`lattice/config.yaml`:
+
+```yaml
+break:
+  co_change:
+    commits: 200    # the most commits read, from HEAD back (default 200)
+    days: 365       # how far back (default 365)
+    max_files: 50   # skip a commit that changes more files (default 50); a change
+                    # within it counts as one unit, a larger one commit by commit
+    min_commits: 2  # commits a test file must share (default 2); a change
+                    # within max_files that edits it is enough
+```
 
 ```sh
 lattice impact --since origin/main --tests          # a shell script, one line per runner
-lattice impact --since origin/main --tests --json   # {runners, unmatched, uncovered}
+lattice impact --since origin/main --tests --json   # {runners, unmatched, hinted, uncovered}
 ```
 
 The text form is one line per runner, with its ready-to-run command (in a
 subshell that enters the runner's `dir`) and, in a trailing comment, the
 promises and the unguarded symbols its tests exercise; then one comment line per
-test file no runner matches; then, when some touched line has no known test, an
+test file no runner matches; then a `hinted` block for the symbols whose tests
+only a hint found; then, when some touched line has no known test, an
 `uncovered` block:
 
 ```sh
 (cd apps/web && pnpm vitest run src/checkout.test.ts src/fees.test.ts -t '(caps the fee|rejects a negative amount|shows the total)$')  # vitest: fees:INV-1, unguarded apps.web.src.total.total via call_graph
 # unmatched e2e/fees.spec.ts (fees:INV-1): no break.runners entry matches
+# unmatched e2e/checkout.spec.ts (unguarded apps.web.src.summary.OrderSummary via co_change (hint: e2e/checkout.spec.ts changed with apps/web/src/summary.ts in this change and 2 commits (1a2b3c4, 5d6e7f8))): no break.runners entry matches
+# hinted: touched lines no promise guards whose tests only a hint (co_change, mentions) found
+#   apps/web/src/summary.ts:4-20  apps.web.src.summary.OrderSummary via co_change
 # uncovered: touched lines no promise guards and no known test exercises
 #   apps/web/src/banner.ts:3-9  apps.web.src.banner.render
 # run the full suite before merge
@@ -2080,10 +2170,12 @@ and `{filter}` filled the same way, and `{junit}` filled with
 `junit-<runner>.xml` in the runner's `dir`. `--json` gives each runner's `name`,
 `dir`, `command` (as configured), `run` and `argv` (filled), `files`, `filter`,
 `junit`, `tests`, `promises` and `why`, each `unmatched` file with its `tests`,
-`promises`, `reason` and `why`, and each `uncovered` symbol with its `symbol`,
+`promises`, `reason` and `why`, each `hinted` symbol with its `symbol`, `file`,
+`lines`, `via` and `tests`, and each `uncovered` symbol with its `symbol`,
 `file`, `lines` and `reason`. `why` maps each test to why it is in the set:
 `promise <id>` for a verifier of a touched promise, `unguarded <symbol> via
-coverage|call_graph|heuristic` for a test of an unguarded line. A test no
+coverage|call_graph|heuristic` for a test of an unguarded line, and `unguarded
+<symbol> via co_change|mentions (hint: …)` when only a hint links them. A test no
 `break.runners` entry matches, Go
 verifiers and `break.commands` templates included, is listed under `unmatched`
 with the reason, never dropped; with no runner configured every verifier is
@@ -2092,8 +2184,8 @@ there ("no break.runners entry matches (none is configured)"). `lattice check
 
 In CI, run the listed commands on the pull request for fast feedback, and keep
 the full suite on the merge commit, since an unmatched test is not run, and a
-`call_graph` or `heuristic` selection can miss a test that only reaches the line
-at run time; when the listing has an `uncovered` block, run the full suite
+`call_graph`, `heuristic`, `co_change` or `mentions` selection can miss a test
+that only reaches the line at run time; when the listing has an `uncovered` block, run the full suite
 before merge:
 
 ```yaml

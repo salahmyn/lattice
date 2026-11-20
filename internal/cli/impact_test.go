@@ -194,7 +194,7 @@ func TestImpactRejectsUnknownFormat(t *testing.T) {
 	}
 }
 
-// --tests prints only the test listing: {runners, unmatched, uncovered}
+// --tests prints only the test listing: {runners, unmatched, hinted, uncovered}
 // with --json, never empty silently in text, and refuses markdown. The
 // change touches pay.Extra, which no promise guards and no test exercises:
 // it is listed as uncovered.
@@ -206,7 +206,7 @@ func TestImpactTestsFlag(t *testing.T) {
 	if err := json.Unmarshal([]byte(runImpact(t, dir, true, "--since", "main", "--tests")), &plan); err != nil {
 		t.Fatal(err)
 	}
-	if len(plan) != 3 || plan["runners"] == nil || plan["unmatched"] == nil || plan["uncovered"] == nil {
+	if len(plan) != 4 || plan["runners"] == nil || plan["unmatched"] == nil || plan["hinted"] == nil || plan["uncovered"] == nil {
 		t.Fatalf("plan = %v", plan)
 	}
 	if u := plan["uncovered"].([]interface{}); len(u) != 1 || u[0].(map[string]interface{})["symbol"] != "pay.Extra" {

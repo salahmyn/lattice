@@ -21,6 +21,10 @@ import (
 type TestPlan struct {
 	Runners   []TestRunner    `json:"runners"`
 	Unmatched []UnmatchedTest `json:"unmatched"`
+	// Hinted are the touched symbols no promise guards whose tests only a
+	// hint (co_change or mentions) found. Their tests are selected; the
+	// link is weaker than coverage or the call graph.
+	Hinted []HintedSymbol `json:"hinted"`
 	// Uncovered are the touched symbols no promise guards and no evidence
 	// finds a test for: run the full suite before merge.
 	Uncovered []UncoveredSymbol `json:"uncovered"`
@@ -46,7 +50,9 @@ type TestRunner struct {
 	// Why says, per test, why it is in the set: "promise <id>" for a
 	// verifier of a touched promise, "unguarded <symbol> via <evidence>"
 	// (coverage, call_graph or heuristic) for a test that exercises a
-	// touched symbol no promise guards.
+	// touched symbol no promise guards, and "unguarded <symbol> via
+	// co_change|mentions (hint: <the shared commits or mentioning line>)"
+	// for a test only a hint links to it.
 	Why map[string][]string `json:"why"`
 }
 
@@ -77,7 +83,7 @@ func junitName(r config.Runner) string { return "junit-" + r.Name + ".xml" }
 // grouped by the first break.runners entry whose glob matches, exactly as
 // `lattice break` groups them; the rest are unmatched, with the reason.
 // @enforces impact:INV-6
-func testPlan(in Input, pm pathMap, rep Report, drafts []AffectedCriterion) TestPlan {
+func testPlan(in Input, pm pathMap, rep Report, drafts []AffectedCriterion, hs *hintSource) TestPlan {
 	kg := in.Graph
 	touched := map[string]bool{}
 	add := func(refs ...string) {
@@ -127,7 +133,7 @@ func testPlan(in Input, pm pathMap, rep Report, drafts []AffectedCriterion) Test
 		}
 	}
 
-	why, uncovered := unguardedTests(in, pm, rep)
+	why, hinted, uncovered := unguardedTests(in, pm, rep, hs)
 	promisesOf := map[string][]string{}
 	whyOf := map[string][]string{}
 	var sels []results.Selector
@@ -150,7 +156,7 @@ func testPlan(in Input, pm pathMap, rep Report, drafts []AffectedCriterion) Test
 		sels = append(sels, s)
 	}
 
-	plan := TestPlan{Runners: []TestRunner{}, Unmatched: []UnmatchedTest{}, Uncovered: uncovered}
+	plan := TestPlan{Runners: []TestRunner{}, Unmatched: []UnmatchedTest{}, Hinted: hinted, Uncovered: uncovered}
 	cfg := *in.Break
 	groups, none := breaktest.ByRunner(cfg, filepath.Dir(in.Workspace.LatticeDir), sels, junitName)
 	for _, g := range groups {
@@ -205,10 +211,10 @@ func appendNew(list []string, items ...string) []string {
 // WriteTests prints the plan as a shell script: one line per runner, its
 // ready-to-run command (in a subshell that enters the runner's dir) with the
 // runner, its promises and the unguarded symbols it exercises in a trailing
-// comment, then one comment line per unmatched test file, then the
-// uncovered symbols, if any.
+// comment, then one comment line per unmatched test file, then the symbols
+// whose tests only a hint found, then the uncovered symbols, if any.
 func WriteTests(w io.Writer, p TestPlan) {
-	if len(p.Runners) == 0 && len(p.Unmatched) == 0 && len(p.Uncovered) == 0 {
+	if len(p.Runners) == 0 && len(p.Unmatched) == 0 && len(p.Hinted) == 0 && len(p.Uncovered) == 0 {
 		fmt.Fprintln(w, "# no touched promise has a verifier test")
 		return
 	}
@@ -221,6 +227,16 @@ func WriteTests(w io.Writer, p TestPlan) {
 	}
 	for _, u := range p.Unmatched {
 		fmt.Fprintf(w, "# unmatched %s (%s): %s\n", u.File, reasons(u.Promises, u.Why), u.Reason)
+	}
+	if len(p.Hinted) > 0 {
+		fmt.Fprintln(w, "# hinted: touched lines no promise guards whose tests only a hint (co_change, mentions) found")
+		for _, h := range p.Hinted {
+			loc := h.File
+			if h.Lines != "" {
+				loc += ":" + h.Lines
+			}
+			fmt.Fprintf(w, "#   %s  %s via %s\n", loc, h.Symbol, h.Via)
+		}
 	}
 	if len(p.Uncovered) > 0 {
 		fmt.Fprintln(w, "# uncovered: touched lines no promise guards and no known test exercises")

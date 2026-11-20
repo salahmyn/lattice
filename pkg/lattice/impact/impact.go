@@ -226,7 +226,8 @@ func Compute(ctx context.Context, in Input) (Report, error) {
 	rep.CodeRollup = rollup(in, pm, cc, approved, drafts)
 	rep.Notes = statementNotes(in.Graph.Features, baseFeatures, in.Graph.BRDs, md, cc)
 	if in.Break != nil {
-		plan := testPlan(in, pm, rep, drafts)
+		hs := newHintSource(g, base, in.Break.CoChange, pm, in.Graph, changes)
+		plan := testPlan(in, pm, rep, drafts, hs)
 		rep.Tests = &plan
 	}
 

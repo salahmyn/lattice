@@ -124,6 +124,63 @@ type Invariant struct {
 	ID           string         `yaml:"id"` // format "INV-N"
 	Statement    string         `yaml:"statement"`
 	VerifiableBy []VerifiableBy `yaml:"verifiable_by,omitempty"` // default ["test"]
+	// Cases are the acceptance cases of the invariant: one claim each, so a
+	// failing test names a claim, not a paragraph (docs/rnd/0010 §B). A test
+	// verifies one with `@verifies <feature>:INV-N#<case>`. Their coverage
+	// is computed by the audit, never written here.
+	Cases []InvariantCase `yaml:"cases,omitempty" json:"cases,omitempty"`
+}
+
+// CaseKind classifies an acceptance case.
+type CaseKind string
+
+const (
+	CaseHappy    CaseKind = "happy"
+	CaseEdge     CaseKind = "edge"
+	CaseError    CaseKind = "error"
+	CaseSecurity CaseKind = "security"
+)
+
+// ValidCaseKinds lists every legal case kind.
+var ValidCaseKinds = []CaseKind{CaseHappy, CaseEdge, CaseError, CaseSecurity}
+
+// InvariantCase is one acceptance case of an invariant. Its id is lowercase
+// letters (a … z, then aa, ab, …) and is never reused: a case that no longer
+// applies is retired and keeps its id. It carries no confirmation or coverage
+// state; both are computed, never typed.
+type InvariantCase struct {
+	ID        string   `yaml:"id" json:"id"`
+	Kind      CaseKind `yaml:"kind" json:"kind"`
+	Statement string   `yaml:"statement" json:"statement"`
+	// Enforcer names the symbol (FQN) that enforces this case, when it is
+	// narrower than the invariant's enforcers. It must enforce the invariant.
+	Enforcer string `yaml:"enforcer,omitempty" json:"enforcer,omitempty"`
+	// Retired marks a case that no longer applies. It keeps its id.
+	Retired bool `yaml:"retired,omitempty" json:"retired,omitempty"`
+}
+
+// CaseLabel is how a case is displayed: the invariant's number followed by
+// the case id ("INV-1", "a" → "1a"). An invariant id without a trailing
+// number keeps its full id ("X", "a" → "X#a").
+func CaseLabel(invariantID, caseID string) string {
+	if i := strings.LastIndex(invariantID, "-"); i >= 0 && i+1 < len(invariantID) {
+		num := invariantID[i+1:]
+		if strings.Trim(num, "0123456789") == "" {
+			return num + caseID
+		}
+	}
+	return invariantID + "#" + caseID
+}
+
+// SplitCaseRef splits a verifier ref that names a case ("f:INV-1#a") into
+// the invariant ref ("f:INV-1") and the case id ("a"). ok is false for a ref
+// with no "#", which is returned unchanged.
+func SplitCaseRef(ref string) (base, caseID string, ok bool) {
+	i := strings.LastIndex(ref, "#")
+	if i < 0 {
+		return ref, "", false
+	}
+	return ref[:i], ref[i+1:], true
 }
 
 // EffectiveVerifiableBy returns the verification methods, applying the
