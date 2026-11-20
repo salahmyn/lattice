@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	sitter "github.com/smacker/go-tree-sitter"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 )
@@ -41,7 +41,7 @@ func (p *tsParser) collectRefs(root *sitter.Node) {
 	m.RefsKnown, m.Namespace = true, p.modulePath
 	names := map[string]bool{} // import bindings and top-level declarations
 	for i := 0; i < int(root.NamedChildCount()); i++ {
-		p.topLevel(root.NamedChild(i), names)
+		p.topLevel(root.NamedChild(uint(i)), names)
 	}
 	for i := range m.Symbols {
 		s := &m.Symbols[i]
@@ -59,7 +59,7 @@ func (p *tsParser) collectRefs(root *sitter.Node) {
 	var top, served []ir.Ref
 	w.emit = func(n *sitter.Node, r ir.Ref) {
 		r.Line = line(n)
-		off := n.StartByte()
+		off := uint32(n.StartByte())
 		if idx := p.owners.At(off); idx >= 0 {
 			m.Symbols[idx].Refs = append(m.Symbols[idx].Refs, r)
 			return
@@ -85,7 +85,7 @@ func (p *tsParser) collectRefs(root *sitter.Node) {
 // names.
 func (p *tsParser) topLevel(n *sitter.Node, names map[string]bool) {
 	m := p.mod
-	switch n.Type() {
+	switch n.Kind() {
 	case "import_statement":
 		from := p.stringText(n.ChildByFieldName("source"))
 		if from == "" {
@@ -97,20 +97,20 @@ func (p *tsParser) topLevel(n *sitter.Node, names map[string]bool) {
 			return
 		}
 		for i := 0; i < int(clause.NamedChildCount()); i++ {
-			c := clause.NamedChild(i)
-			switch c.Type() {
+			c := clause.NamedChild(uint(i))
+			switch c.Kind() {
 			case "identifier":
-				names[c.Content(p.src)] = true
-				m.Imports = append(m.Imports, ir.Import{Name: c.Content(p.src), From: from, Member: "default", Line: line(n)})
+				names[c.Utf8Text(p.src)] = true
+				m.Imports = append(m.Imports, ir.Import{Name: c.Utf8Text(p.src), From: from, Member: "default", Line: line(n)})
 			case "namespace_import":
 				if id := firstNamed(c, "identifier"); id != nil {
-					names[id.Content(p.src)] = true
-					m.Imports = append(m.Imports, ir.Import{Name: id.Content(p.src), From: from, Line: line(n)})
+					names[id.Utf8Text(p.src)] = true
+					m.Imports = append(m.Imports, ir.Import{Name: id.Utf8Text(p.src), From: from, Line: line(n)})
 				}
 			case "named_imports":
 				for j := 0; j < int(c.NamedChildCount()); j++ {
-					spec := c.NamedChild(j)
-					if spec.Type() != "import_specifier" {
+					spec := c.NamedChild(uint(j))
+					if spec.Kind() != "import_specifier" {
 						continue
 					}
 					member := p.fieldText(spec, "name")
@@ -136,8 +136,8 @@ func (p *tsParser) topLevel(n *sitter.Node, names map[string]bool) {
 			}
 		case clause != nil:
 			for j := 0; j < int(clause.NamedChildCount()); j++ {
-				spec := clause.NamedChild(j)
-				if spec.Type() != "export_specifier" {
+				spec := clause.NamedChild(uint(j))
+				if spec.Kind() != "export_specifier" {
 					continue
 				}
 				member := p.fieldText(spec, "name")
@@ -157,8 +157,8 @@ func (p *tsParser) topLevel(n *sitter.Node, names map[string]bool) {
 			}
 		default:
 			if isDefaultExport(n) {
-				if v := n.ChildByFieldName("value"); v != nil && v.Type() == "identifier" {
-					m.DefaultExport = v.Content(p.src)
+				if v := n.ChildByFieldName("value"); v != nil && v.Kind() == "identifier" {
+					m.DefaultExport = v.Utf8Text(p.src)
 				} else if d := n.ChildByFieldName("declaration"); d != nil {
 					m.DefaultExport = p.fieldText(d, "name")
 				}
@@ -176,39 +176,39 @@ func (p *tsParser) topLevel(n *sitter.Node, names map[string]bool) {
 // requireImports records const x = require('./x') and const { a } =
 // require('./x') at the top level.
 func (p *tsParser) requireImports(n *sitter.Node, names map[string]bool) {
-	if n.Type() != "lexical_declaration" && n.Type() != "variable_declaration" {
+	if n.Kind() != "lexical_declaration" && n.Kind() != "variable_declaration" {
 		return
 	}
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		d := n.NamedChild(i)
+		d := n.NamedChild(uint(i))
 		val := d.ChildByFieldName("value")
-		if d.Type() != "variable_declarator" || val == nil || val.Type() != "call_expression" {
+		if d.Kind() != "variable_declarator" || val == nil || val.Kind() != "call_expression" {
 			continue
 		}
 		fn := val.ChildByFieldName("function")
-		if fn == nil || fn.Type() != "identifier" || fn.Content(p.src) != "require" {
+		if fn == nil || fn.Kind() != "identifier" || fn.Utf8Text(p.src) != "require" {
 			continue
 		}
 		from := p.firstStringArg(val.ChildByFieldName("arguments"))
 		if from == "" {
 			continue
 		}
-		p.boundRequires[val.StartByte()] = true
+		p.boundRequires[uint32(val.StartByte())] = true
 		name := d.ChildByFieldName("name")
 		switch {
 		case name == nil:
-		case name.Type() == "identifier":
-			p.mod.Imports = append(p.mod.Imports, ir.Import{Name: name.Content(p.src), From: from, Line: line(d)})
-		case name.Type() == "object_pattern":
+		case name.Kind() == "identifier":
+			p.mod.Imports = append(p.mod.Imports, ir.Import{Name: name.Utf8Text(p.src), From: from, Line: line(d)})
+		case name.Kind() == "object_pattern":
 			for j := 0; j < int(name.NamedChildCount()); j++ {
-				c := name.NamedChild(j)
-				switch c.Type() {
+				c := name.NamedChild(uint(j))
+				switch c.Kind() {
 				case "shorthand_property_identifier_pattern":
-					p.mod.Imports = append(p.mod.Imports, ir.Import{Name: c.Content(p.src), From: from, Member: c.Content(p.src), Line: line(d)})
+					p.mod.Imports = append(p.mod.Imports, ir.Import{Name: c.Utf8Text(p.src), From: from, Member: c.Utf8Text(p.src), Line: line(d)})
 				case "pair_pattern":
 					k, v := c.ChildByFieldName("key"), c.ChildByFieldName("value")
-					if k != nil && v != nil && v.Type() == "identifier" {
-						p.mod.Imports = append(p.mod.Imports, ir.Import{Name: v.Content(p.src), From: from, Member: k.Content(p.src), Line: line(d)})
+					if k != nil && v != nil && v.Kind() == "identifier" {
+						p.mod.Imports = append(p.mod.Imports, ir.Import{Name: v.Utf8Text(p.src), From: from, Member: k.Utf8Text(p.src), Line: line(d)})
 					}
 				}
 			}
@@ -218,14 +218,14 @@ func (p *tsParser) requireImports(n *sitter.Node, names map[string]bool) {
 
 // declaredNames records the names a top-level declaration binds.
 func (p *tsParser) declaredNames(n *sitter.Node, names map[string]bool) {
-	switch n.Type() {
+	switch n.Kind() {
 	case "function_declaration", "generator_function_declaration", "class_declaration", "abstract_class_declaration":
 		if name := p.fieldText(n, "name"); name != "" {
 			names[name] = true
 		}
 	case "lexical_declaration", "variable_declaration":
 		for i := 0; i < int(n.NamedChildCount()); i++ {
-			if d := n.NamedChild(i); d.Type() == "variable_declarator" {
+			if d := n.NamedChild(uint(i)); d.Kind() == "variable_declarator" {
 				collectPatternNames(d.ChildByFieldName("name"), p.src, names)
 			}
 		}
@@ -237,16 +237,16 @@ func collectPatternNames(n *sitter.Node, src []byte, names map[string]bool) {
 	if n == nil {
 		return
 	}
-	switch n.Type() {
+	switch n.Kind() {
 	case "identifier", "shorthand_property_identifier_pattern":
-		names[n.Content(src)] = true
+		names[n.Utf8Text(src)] = true
 		return
 	case "pair_pattern":
 		collectPatternNames(n.ChildByFieldName("value"), src, names)
 		return
 	}
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		collectPatternNames(n.NamedChild(i), src, names)
+		collectPatternNames(n.NamedChild(uint(i)), src, names)
 	}
 }
 
@@ -259,14 +259,14 @@ type tsRefWalker struct {
 	serveLine int
 }
 
-func (w *tsRefWalker) text(n *sitter.Node) string { return n.Content(w.p.src) }
+func (w *tsRefWalker) text(n *sitter.Node) string { return n.Utf8Text(w.p.src) }
 
 // receiver classifies the object of a member call: "this", an identifier
 // or a dotted chain of identifiers as written, or "~" for an expression
 // (a call result, an index). plain is false for an expression, whose own
 // references are still walked.
 func (w *tsRefWalker) receiver(obj *sitter.Node) (string, bool) {
-	switch obj.Type() {
+	switch obj.Kind() {
 	case "this":
 		return "this", true
 	case "identifier":
@@ -281,11 +281,11 @@ func (w *tsRefWalker) receiver(obj *sitter.Node) (string, bool) {
 
 // schemaOf returns s for a receiver built by .schema('s'), else "".
 func (w *tsRefWalker) schemaOf(obj *sitter.Node) string {
-	if obj == nil || obj.Type() != "call_expression" {
+	if obj == nil || obj.Kind() != "call_expression" {
 		return ""
 	}
 	fn := obj.ChildByFieldName("function")
-	if fn == nil || fn.Type() != "member_expression" {
+	if fn == nil || fn.Kind() != "member_expression" {
 		return ""
 	}
 	if prop := fn.ChildByFieldName("property"); prop != nil && w.text(prop) == "schema" {
@@ -301,7 +301,7 @@ func (w *tsRefWalker) literalFirstArg(args *sitter.Node) (string, bool, bool) {
 		return "", false, false
 	}
 	first := args.NamedChild(0)
-	if first.Type() != "string" {
+	if first.Kind() != "string" {
 		return "", false, true
 	}
 	return w.p.firstStringArg(args), true, true
@@ -309,7 +309,7 @@ func (w *tsRefWalker) literalFirstArg(args *sitter.Node) (string, bool, bool) {
 
 func (w *tsRefWalker) visitChildren(n *sitter.Node) {
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		w.visit(n.NamedChild(i))
+		w.visit(n.NamedChild(uint(i)))
 	}
 }
 
@@ -317,7 +317,7 @@ func (w *tsRefWalker) visit(n *sitter.Node) {
 	if n == nil {
 		return
 	}
-	switch n.Type() {
+	switch n.Kind() {
 	case "comment", "string", "number", "regex", "property_identifier", "import_statement",
 		"type_annotation", "type_arguments", "type_parameters", "type_alias_declaration",
 		"interface_declaration", "ambient_declaration", "hash_bang_line", "statement_identifier",
@@ -325,7 +325,7 @@ func (w *tsRefWalker) visit(n *sitter.Node) {
 		return
 	case "template_string":
 		for i := 0; i < int(n.NamedChildCount()); i++ {
-			if c := n.NamedChild(i); c.Type() == "template_substitution" {
+			if c := n.NamedChild(uint(i)); c.Kind() == "template_substitution" {
 				w.visitChildren(c)
 			}
 		}
@@ -335,15 +335,15 @@ func (w *tsRefWalker) visit(n *sitter.Node) {
 			return // a re-export, recorded as an import
 		}
 		for i := 0; i < int(n.NamedChildCount()); i++ {
-			if c := n.NamedChild(i); c.Type() != "export_clause" {
+			if c := n.NamedChild(uint(i)); c.Kind() != "export_clause" {
 				w.visit(c)
 			}
 		}
 		return
 	case "expression_statement":
-		if call := innerCall(n); call != nil && w.isServe(call) && w.p.owners.At(call.StartByte()) < 0 {
+		if call := innerCall(n); call != nil && w.isServe(call) && w.p.owners.At(uint32(call.StartByte())) < 0 {
 			if args := call.ChildByFieldName("arguments"); args != nil {
-				w.serve = append(w.serve, [2]uint32{args.StartByte(), args.EndByte()})
+				w.serve = append(w.serve, [2]uint32{uint32(args.StartByte()), uint32(args.EndByte())})
 				if w.serveLine == 0 {
 					w.serveLine = line(call)
 				}
@@ -356,7 +356,7 @@ func (w *tsRefWalker) visit(n *sitter.Node) {
 		return
 	case "new_expression":
 		if c := n.ChildByFieldName("constructor"); c != nil {
-			switch c.Type() {
+			switch c.Kind() {
 			case "identifier":
 				w.emit(c, ir.Ref{Name: w.text(c), Kind: ir.RefNew})
 			case "member_expression":
@@ -376,7 +376,7 @@ func (w *tsRefWalker) visit(n *sitter.Node) {
 		return
 	case "jsx_opening_element", "jsx_self_closing_element":
 		if name := n.ChildByFieldName("name"); name != nil {
-			switch name.Type() {
+			switch name.Kind() {
 			case "identifier":
 				if t := w.text(name); t != "" && unicode.IsUpper(rune(t[0])) {
 					w.emit(name, ir.Ref{Name: t, Kind: ir.RefJSX})
@@ -389,8 +389,8 @@ func (w *tsRefWalker) visit(n *sitter.Node) {
 			}
 		}
 		for i := 0; i < int(n.ChildCount()); i++ {
-			if n.FieldNameForChild(i) == "attribute" {
-				w.visit(n.Child(i))
+			if n.FieldNameForChild(uint32(i)) == "attribute" {
+				w.visit(n.Child(uint(i)))
 			}
 		}
 		return
@@ -404,12 +404,12 @@ func (w *tsRefWalker) visit(n *sitter.Node) {
 	case "member_expression":
 		// A value through a namespace import (ns.handler passed along).
 		obj, prop := n.ChildByFieldName("object"), n.ChildByFieldName("property")
-		if obj != nil && prop != nil && obj.Type() == "identifier" && w.names[w.text(obj)] {
+		if obj != nil && prop != nil && obj.Kind() == "identifier" && w.names[w.text(obj)] {
 			w.emit(prop, ir.Ref{Name: w.text(prop), Qualifier: w.text(obj), Kind: ir.RefValue})
 			return
 		}
 		w.visit(obj)
-		if prop != nil && prop.Type() != "property_identifier" && prop.Type() != "private_property_identifier" {
+		if prop != nil && prop.Kind() != "property_identifier" && prop.Kind() != "private_property_identifier" {
 			w.visit(prop)
 		}
 		return
@@ -419,7 +419,7 @@ func (w *tsRefWalker) visit(n *sitter.Node) {
 	case "function_declaration", "generator_function_declaration", "class_declaration",
 		"abstract_class_declaration", "method_definition":
 		for i := 0; i < int(n.ChildCount()); i++ {
-			if c := n.Child(i); c.IsNamed() && n.FieldNameForChild(i) != "name" {
+			if c := n.Child(uint(i)); c.IsNamed() && n.FieldNameForChild(uint32(i)) != "name" {
 				w.visit(c)
 			}
 		}
@@ -427,13 +427,13 @@ func (w *tsRefWalker) visit(n *sitter.Node) {
 	case "formal_parameters":
 		// Parameters bind names; a default value is code.
 		for i := 0; i < int(n.NamedChildCount()); i++ {
-			prm := n.NamedChild(i)
+			prm := n.NamedChild(uint(i))
 			w.visit(prm.ChildByFieldName("value"))
 		}
 		return
 	case "pair":
 		w.visit(n.ChildByFieldName("value"))
-		if k := n.ChildByFieldName("key"); k != nil && k.Type() == "computed_property_name" {
+		if k := n.ChildByFieldName("key"); k != nil && k.Kind() == "computed_property_name" {
 			w.visit(k)
 		}
 		return
@@ -451,7 +451,7 @@ func (w *tsRefWalker) dynamicImport(call, args *sitter.Node) {
 		return
 	}
 	if !isLit {
-		if args.NamedChild(0).Type() == "template_string" && args.NamedChild(0).NamedChildCount() == 0 {
+		if args.NamedChild(0).Kind() == "template_string" && args.NamedChild(0).NamedChildCount() == 0 {
 			lit = strings.Trim(w.text(args.NamedChild(0)), "`") // import(`./x`)
 		} else {
 			w.emit(call, ir.Ref{Kind: ir.RefImport})
@@ -477,14 +477,14 @@ func (w *tsRefWalker) call(n *sitter.Node) {
 	args := n.ChildByFieldName("arguments")
 	switch {
 	case fn == nil:
-	case fn.Type() == "import":
+	case fn.Kind() == "import":
 		w.dynamicImport(n, args)
 		w.visit(args)
 		return
-	case fn.Type() == "identifier":
+	case fn.Kind() == "identifier":
 		t := w.text(fn)
 		if t == "require" {
-			if !w.p.boundRequires[n.StartByte()] {
+			if !w.p.boundRequires[uint32(n.StartByte())] {
 				w.dynamicImport(n, args)
 			}
 			return
@@ -495,7 +495,7 @@ func (w *tsRefWalker) call(n *sitter.Node) {
 		if lit, isLit, hasArg := w.literalFirstArg(args); t == "rpc" && hasArg && isLit {
 			w.emit(fn, ir.Ref{Name: lit, Kind: ir.RefRPC})
 		}
-	case fn.Type() == "member_expression":
+	case fn.Kind() == "member_expression":
 		obj, prop := fn.ChildByFieldName("object"), fn.ChildByFieldName("property")
 		if obj == nil || prop == nil {
 			break
@@ -509,12 +509,12 @@ func (w *tsRefWalker) call(n *sitter.Node) {
 			}
 			w.emit(prop, ir.Ref{Name: lit, Qualifier: w.schemaOf(obj), Kind: ir.RefRPC})
 			w.visit(obj)
-		case name == "from" && isLit && !(obj.Type() == "identifier" && notTables[w.text(obj)]):
+		case name == "from" && isLit && !(obj.Kind() == "identifier" && notTables[w.text(obj)]):
 			w.emit(prop, ir.Ref{Name: lit, Qualifier: w.schemaOf(obj), Kind: ir.RefTable})
 			w.visit(obj)
 		default:
 			q, plain := w.receiver(obj)
-			if obj.Type() == "super" {
+			if obj.Kind() == "super" {
 				q = "this"
 			}
 			w.emit(prop, ir.Ref{Name: name, Qualifier: q, Kind: ir.RefCall})
@@ -532,13 +532,13 @@ func (w *tsRefWalker) call(n *sitter.Node) {
 
 // stringText returns the unquoted text of a string node.
 func (p *tsParser) stringText(n *sitter.Node) string {
-	if n == nil || n.Type() != "string" {
+	if n == nil || n.Kind() != "string" {
 		return ""
 	}
 	var b strings.Builder
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		if c := n.NamedChild(i); c.Type() == "string_fragment" {
-			b.WriteString(c.Content(p.src))
+		if c := n.NamedChild(uint(i)); c.Kind() == "string_fragment" {
+			b.WriteString(c.Utf8Text(p.src))
 		}
 	}
 	return b.String()
@@ -546,7 +546,7 @@ func (p *tsParser) stringText(n *sitter.Node) string {
 
 func firstNamed(n *sitter.Node, typ string) *sitter.Node {
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		if c := n.NamedChild(i); c.Type() == typ {
+		if c := n.NamedChild(uint(i)); c.Kind() == typ {
 			return c
 		}
 	}
@@ -556,8 +556,8 @@ func firstNamed(n *sitter.Node, typ string) *sitter.Node {
 func lastIdent(n *sitter.Node, src []byte) string {
 	out := ""
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		if c := n.NamedChild(i); c.Type() == "identifier" {
-			out = c.Content(src)
+		if c := n.NamedChild(uint(i)); c.Kind() == "identifier" {
+			out = c.Utf8Text(src)
 		}
 	}
 	return out
@@ -566,7 +566,7 @@ func lastIdent(n *sitter.Node, src []byte) string {
 // isDefaultExport reports export default ...
 func isDefaultExport(n *sitter.Node) bool {
 	for i := 0; i < int(n.ChildCount()); i++ {
-		if c := n.Child(i); !c.IsNamed() && c.Type() == "default" {
+		if c := n.Child(uint(i)); !c.IsNamed() && c.Kind() == "default" {
 			return true
 		}
 	}

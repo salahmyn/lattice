@@ -9,9 +9,8 @@ import (
 	"regexp"
 	"strings"
 
-	sitter "github.com/smacker/go-tree-sitter"
-	tstsx "github.com/smacker/go-tree-sitter/typescript/tsx"
-	tsts "github.com/smacker/go-tree-sitter/typescript/typescript"
+	sitter "github.com/tree-sitter/go-tree-sitter"
+	tsgrammar "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
 
 	"github.com/salahmyn/lattice/pkg/lattice/adapters/astutil"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
@@ -56,9 +55,7 @@ var testCallNames = map[string]bool{
 func (a *Adapter) parse(ctx context.Context, path string, source []byte) (ir.Module, error) {
 	mod := ir.Module{File: path, Language: a.Name()}
 
-	parser := sitter.NewParser()
-	parser.SetLanguage(grammarFor(path))
-	tree, err := parser.ParseCtx(ctx, nil, source)
+	tree, err := astutil.Parse(ctx, grammarFor(path), source)
 	if err != nil {
 		return mod, err
 	}
@@ -93,14 +90,14 @@ var typeOnlyNodes = map[string]bool{
 // @enforces adapters.typescript:INV-5
 func hasTopLevelCode(root *sitter.Node) bool {
 	for i := 0; i < int(root.NamedChildCount()); i++ {
-		n := root.NamedChild(i)
+		n := root.NamedChild(uint(i))
 		switch {
-		case typeOnlyNodes[n.Type()]:
-		case n.Type() == "expression_statement" && n.NamedChildCount() == 1 && n.NamedChild(0).Type() == "string":
+		case typeOnlyNodes[n.Kind()]:
+		case n.Kind() == "expression_statement" && n.NamedChildCount() == 1 && n.NamedChild(0).Kind() == "string":
 			// a directive
-		case n.Type() == "export_statement":
+		case n.Kind() == "export_statement":
 			if d := n.ChildByFieldName("declaration"); d != nil {
-				if !typeOnlyNodes[d.Type()] {
+				if !typeOnlyNodes[d.Kind()] {
 					return true
 				}
 			} else if n.ChildByFieldName("value") != nil {
@@ -113,6 +110,12 @@ func hasTopLevelCode(root *sitter.Node) bool {
 	return false
 }
 
+// The grammars are static C data and need no Close.
+var (
+	tsLanguage  = sitter.NewLanguage(tsgrammar.LanguageTypescript())
+	tsxLanguage = sitter.NewLanguage(tsgrammar.LanguageTSX())
+)
+
 // grammarFor picks the tree-sitter grammar for a path. Only .ts/.mts/.cts use
 // the plain TypeScript grammar, where <T>expr is a type assertion; every other
 // extension may contain JSX, which that grammar cannot parse (a React
@@ -121,9 +124,9 @@ func hasTopLevelCode(root *sitter.Node) bool {
 func grammarFor(path string) *sitter.Language {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".ts", ".mts", ".cts":
-		return tsts.GetLanguage()
+		return tsLanguage
 	}
-	return tstsx.GetLanguage()
+	return tsxLanguage
 }
 
 type tsParser struct {
@@ -142,7 +145,7 @@ type tsParser struct {
 
 // track records the span of the symbol just appended.
 func (p *tsParser) track(n *sitter.Node) {
-	p.owners.Add(n.StartByte(), n.EndByte(), len(p.mod.Symbols)-1)
+	p.owners.Add(uint32(n.StartByte()), uint32(n.EndByte()), len(p.mod.Symbols)-1)
 }
 
 // walkStatements processes a statement list (the file root or a block),
@@ -150,8 +153,8 @@ func (p *tsParser) track(n *sitter.Node) {
 func (p *tsParser) walkStatements(parent *sitter.Node) {
 	var pending []ir.Annotation
 	for i := 0; i < int(parent.NamedChildCount()); i++ {
-		n := parent.NamedChild(i)
-		switch n.Type() {
+		n := parent.NamedChild(uint(i))
+		switch n.Kind() {
 		case "comment":
 			if anns := p.parseJSDoc(n); anns != nil {
 				pending = append(pending, anns...)
@@ -195,7 +198,7 @@ func (p *tsParser) orphan(anns []ir.Annotation, at *sitter.Node) {
 	}
 	ln, what := 0, "the end of the block"
 	if at != nil {
-		ln, what = line(at), "a "+strings.ReplaceAll(at.Type(), "_", " ")
+		ln, what = line(at), "a "+strings.ReplaceAll(at.Kind(), "_", " ")
 	}
 	kinds := make([]string, 0, len(anns))
 	for _, a := range anns {
@@ -215,7 +218,7 @@ func (p *tsParser) orphan(anns []ir.Annotation, at *sitter.Node) {
 // exported reports whether the declaration is part of the module's public API.
 // It reports whether the declaration produced a symbol for the annotations.
 func (p *tsParser) handleDecl(n *sitter.Node, anns []ir.Annotation, exported bool) bool {
-	switch n.Type() {
+	switch n.Kind() {
 	case "function_declaration":
 		name := p.fieldText(n, "name")
 		ok := p.addSymbol(name, ir.KindFunction, "", n, anns, exported)
@@ -230,8 +233,8 @@ func (p *tsParser) handleDecl(n *sitter.Node, anns []ir.Annotation, exported boo
 	case "lexical_declaration", "variable_declaration":
 		added := false
 		for i := 0; i < int(n.NamedChildCount()); i++ {
-			d := n.NamedChild(i)
-			if d.Type() != "variable_declarator" {
+			d := n.NamedChild(uint(i))
+			if d.Kind() != "variable_declarator" {
 				continue
 			}
 			val := d.ChildByFieldName("value")
@@ -239,7 +242,7 @@ func (p *tsParser) handleDecl(n *sitter.Node, anns []ir.Annotation, exported boo
 				continue
 			}
 			name := p.fieldText(d, "name")
-			switch val.Type() {
+			switch val.Kind() {
 			case "arrow_function", "function", "function_expression":
 				if p.addSymbol(name, ir.KindFunction, "", d, anns, exported) {
 					added = true
@@ -283,7 +286,7 @@ func (p *tsParser) handleTestCall(call *sitter.Node, anns []ir.Annotation) bool 
 	if fn == nil {
 		return false
 	}
-	if fn.Type() == "call_expression" {
+	if fn.Kind() == "call_expression" {
 		return p.handleEachCall(call, fn, anns)
 	}
 	callee := calleeName(fn, p.src)
@@ -298,7 +301,7 @@ func (p *tsParser) handleTestCall(call *sitter.Node, anns []ir.Annotation) bool 
 	// A modifier call (test.skip, it.only, test.fail, ...) declares a test only
 	// when its first argument is the title; forms such as test.skip(cond,
 	// "reason") toggle the surrounding test and are not tests themselves.
-	if kind == testCase && fn.Type() == "member_expression" && !denoTest(fn, p.src) &&
+	if kind == testCase && fn.Kind() == "member_expression" && !denoTest(fn, p.src) &&
 		!firstArgIsTitle(args) && len(anns) == 0 {
 		return false
 	}
@@ -405,14 +408,14 @@ func (p *tsParser) testDesc(args *sitter.Node, callee string) string {
 // as app.get("/path", handler) or router.post("/path", handler).
 func (p *tsParser) detectRoute(call *sitter.Node) {
 	fn := call.ChildByFieldName("function")
-	if fn == nil || fn.Type() != "member_expression" {
+	if fn == nil || fn.Kind() != "member_expression" {
 		return
 	}
 	prop := fn.ChildByFieldName("property")
 	if prop == nil {
 		return
 	}
-	method := strings.ToLower(prop.Content(p.src))
+	method := strings.ToLower(prop.Utf8Text(p.src))
 	if !httpRouteMethods[method] {
 		return
 	}
@@ -447,8 +450,8 @@ func (p *tsParser) addClass(n *sitter.Node, anns []ir.Annotation, exported bool)
 	}
 	var pending []ir.Annotation
 	for i := 0; i < int(body.NamedChildCount()); i++ {
-		c := body.NamedChild(i)
-		switch c.Type() {
+		c := body.NamedChild(uint(i))
+		switch c.Kind() {
 		case "comment":
 			if a := p.parseJSDoc(c); a != nil {
 				pending = append(pending, a...)
@@ -480,11 +483,11 @@ func (p *tsParser) addConst(name string, decl, val *sitter.Node, anns []ir.Annot
 	}
 	fqn := p.modulePath + "." + name
 	var members []func()
-	if val.Type() == "object" {
+	if val.Kind() == "object" {
 		var pending []ir.Annotation
 		for i := 0; i < int(val.NamedChildCount()); i++ {
-			c := val.NamedChild(i)
-			switch c.Type() {
+			c := val.NamedChild(uint(i))
+			switch c.Kind() {
 			case "comment":
 				if a := p.parseJSDoc(c); a != nil {
 					pending = append(pending, a...)
@@ -497,7 +500,7 @@ func (p *tsParser) addConst(name string, decl, val *sitter.Node, anns []ir.Annot
 				}
 			case "pair":
 				if v := c.ChildByFieldName("value"); v != nil && len(pending) > 0 {
-					switch v.Type() {
+					switch v.Kind() {
 					case "arrow_function", "function", "function_expression":
 						mname, mnode, manns := p.fieldText(c, "key"), c, pending
 						members = append(members, func() { p.addSymbol(mname, ir.KindMethod, fqn, mnode, manns, exported) })
@@ -528,13 +531,13 @@ func (p *tsParser) addConst(name string, decl, val *sitter.Node, anns []ir.Annot
 // the graph; an annotation inside the body that reaches no function is
 // reported as orphaned.
 func (p *tsParser) walkBody(body *sitter.Node, enclosingFQN string) {
-	if body == nil || body.Type() != "statement_block" {
+	if body == nil || body.Kind() != "statement_block" {
 		return
 	}
 	var pending []ir.Annotation
 	for i := 0; i < int(body.NamedChildCount()); i++ {
-		n := body.NamedChild(i)
-		switch n.Type() {
+		n := body.NamedChild(uint(i))
+		switch n.Kind() {
 		case "comment":
 			if a := p.parseJSDoc(n); a != nil {
 				pending = append(pending, a...)
@@ -551,12 +554,12 @@ func (p *tsParser) walkBody(body *sitter.Node, enclosingFQN string) {
 		case "lexical_declaration", "variable_declaration":
 			if len(pending) > 0 {
 				for j := 0; j < int(n.NamedChildCount()); j++ {
-					d := n.NamedChild(j)
+					d := n.NamedChild(uint(j))
 					val := d.ChildByFieldName("value")
-					if d.Type() != "variable_declarator" || val == nil {
+					if d.Kind() != "variable_declarator" || val == nil {
 						continue
 					}
-					switch val.Type() {
+					switch val.Kind() {
 					case "arrow_function", "function", "function_expression":
 						name := p.fieldText(d, "name")
 						if p.addSymbol(name, ir.KindFunction, enclosingFQN, d, pending, false) {
@@ -620,17 +623,17 @@ func (p *tsParser) addTestSymbolSlug(desc, slug string, n *sitter.Node, anns []i
 func (p *tsParser) extends(n *sitter.Node) []string {
 	var bases []string
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		c := n.NamedChild(i)
-		if c.Type() != "class_heritage" {
+		c := n.NamedChild(uint(i))
+		if c.Kind() != "class_heritage" {
 			continue
 		}
 		for j := 0; j < int(c.NamedChildCount()); j++ {
-			ec := c.NamedChild(j)
-			if ec.Type() == "extends_clause" {
+			ec := c.NamedChild(uint(j))
+			if ec.Kind() == "extends_clause" {
 				for k := 0; k < int(ec.NamedChildCount()); k++ {
-					id := ec.NamedChild(k)
-					if t := id.Type(); t == "identifier" || t == "member_expression" {
-						bases = append(bases, p.modulePath+"."+id.Content(p.src))
+					id := ec.NamedChild(uint(k))
+					if t := id.Kind(); t == "identifier" || t == "member_expression" {
+						bases = append(bases, p.modulePath+"."+id.Utf8Text(p.src))
 					}
 				}
 			}
@@ -644,7 +647,7 @@ func (p *tsParser) extends(n *sitter.Node) []string {
 // declaration.
 // @enforces adapters.typescript:INV-2
 func (p *tsParser) parseJSDoc(n *sitter.Node) []ir.Annotation {
-	text := n.Content(p.src)
+	text := n.Utf8Text(p.src)
 	moduleOnly := false
 	if strings.HasPrefix(text, "//") {
 		// A one-line comment may carry module tags (// @module-feature x),
@@ -714,7 +717,7 @@ func (p *tsParser) applyArgs(ann *ir.Annotation, text string) {
 
 func (p *tsParser) fieldText(n *sitter.Node, field string) string {
 	if c := n.ChildByFieldName(field); c != nil {
-		return c.Content(p.src)
+		return c.Utf8Text(p.src)
 	}
 	return ""
 }
@@ -726,20 +729,20 @@ func (p *tsParser) firstStringArg(args *sitter.Node) string {
 		return ""
 	}
 	for i := 0; i < int(args.NamedChildCount()); i++ {
-		c := args.NamedChild(i)
-		if c.Type() != "string" {
+		c := args.NamedChild(uint(i))
+		if c.Kind() != "string" {
 			continue
 		}
 		// A literal is split into string_fragment and escape_sequence nodes
 		// ('the customer\'s cart' splits into several children); join them all, decoding simple escapes.
 		var b strings.Builder
 		for j := 0; j < int(c.NamedChildCount()); j++ {
-			part := c.NamedChild(j)
-			switch part.Type() {
+			part := c.NamedChild(uint(j))
+			switch part.Kind() {
 			case "string_fragment":
-				b.WriteString(part.Content(p.src))
+				b.WriteString(part.Utf8Text(p.src))
 			case "escape_sequence":
-				if esc := part.Content(p.src); len(esc) == 2 {
+				if esc := part.Utf8Text(p.src); len(esc) == 2 {
 					b.WriteString(esc[1:])
 				}
 			}
@@ -751,9 +754,9 @@ func (p *tsParser) firstStringArg(args *sitter.Node) string {
 
 // --- helpers ---
 
-func line(n *sitter.Node) int { return int(n.StartPoint().Row) + 1 }
+func line(n *sitter.Node) int { return int(n.StartPosition().Row) + 1 }
 
-func endLine(n *sitter.Node) int { return int(n.EndPoint().Row) + 1 }
+func endLine(n *sitter.Node) int { return int(n.EndPosition().Row) + 1 }
 
 // exportedDecl unwraps the declaration inside an export_statement.
 func exportedDecl(n *sitter.Node) *sitter.Node {
@@ -761,8 +764,8 @@ func exportedDecl(n *sitter.Node) *sitter.Node {
 		return d
 	}
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		c := n.NamedChild(i)
-		switch c.Type() {
+		c := n.NamedChild(uint(i))
+		switch c.Kind() {
 		case "function_declaration", "class_declaration", "abstract_class_declaration",
 			"lexical_declaration", "variable_declaration", "interface_declaration":
 			return c
@@ -775,7 +778,7 @@ func exportedDecl(n *sitter.Node) *sitter.Node {
 // or nil if the statement is not a bare call.
 func innerCall(stmt *sitter.Node) *sitter.Node {
 	for i := 0; i < int(stmt.NamedChildCount()); i++ {
-		if c := stmt.NamedChild(i); c.Type() == "call_expression" {
+		if c := stmt.NamedChild(uint(i)); c.Kind() == "call_expression" {
 			return c
 		}
 	}
@@ -788,7 +791,7 @@ func firstArgIsTitle(args *sitter.Node) bool {
 	if args == nil || args.NamedChildCount() == 0 {
 		return false
 	}
-	switch args.NamedChild(0).Type() {
+	switch args.NamedChild(0).Kind() {
 	case "string", "template_string":
 		return true
 	}
@@ -846,9 +849,9 @@ func classifyTestCall(fn *sitter.Node, src []byte) testCallKind {
 // test.describe.serial -> [test describe serial]. It returns nil for callees
 // that are not plain identifier/member chains (calls, subscripts, ...).
 func memberChain(n *sitter.Node, src []byte) []string {
-	switch n.Type() {
+	switch n.Kind() {
 	case "identifier":
-		return []string{n.Content(src)}
+		return []string{n.Utf8Text(src)}
 	case "member_expression":
 		obj, prop := n.ChildByFieldName("object"), n.ChildByFieldName("property")
 		if obj == nil || prop == nil {
@@ -858,7 +861,7 @@ func memberChain(n *sitter.Node, src []byte) []string {
 		if head == nil {
 			return nil
 		}
-		return append(head, prop.Content(src))
+		return append(head, prop.Utf8Text(src))
 	}
 	return nil
 }
@@ -866,9 +869,9 @@ func memberChain(n *sitter.Node, src []byte) []string {
 // calleeName resolves the callee of a call expression to a bare name,
 // unwrapping member access so describe.only / it.skip still resolve.
 func calleeName(fn *sitter.Node, src []byte) string {
-	switch fn.Type() {
+	switch fn.Kind() {
 	case "identifier":
-		return fn.Content(src)
+		return fn.Utf8Text(src)
 	case "member_expression":
 		obj := fn.ChildByFieldName("object")
 		if obj == nil {
@@ -887,12 +890,12 @@ func calleeName(fn *sitter.Node, src []byte) string {
 
 // denoTest reports whether a member expression is exactly `Deno.test`.
 func denoTest(n *sitter.Node, src []byte) bool {
-	if n.Type() != "member_expression" {
+	if n.Kind() != "member_expression" {
 		return false
 	}
 	obj, prop := n.ChildByFieldName("object"), n.ChildByFieldName("property")
-	return obj != nil && prop != nil && obj.Type() == "identifier" &&
-		obj.Content(src) == "Deno" && prop.Content(src) == "test"
+	return obj != nil && prop != nil && obj.Kind() == "identifier" &&
+		obj.Utf8Text(src) == "Deno" && prop.Utf8Text(src) == "test"
 }
 
 // hasInlineCallback reports whether an arguments node contains an inline
@@ -902,7 +905,7 @@ func hasInlineCallback(args *sitter.Node) bool {
 		return false
 	}
 	for i := 0; i < int(args.NamedChildCount()); i++ {
-		switch args.NamedChild(i).Type() {
+		switch args.NamedChild(uint(i)).Kind() {
 		case "arrow_function", "function", "function_expression", "generator_function":
 			return true
 		}
@@ -917,10 +920,10 @@ func callbackBody(args *sitter.Node) *sitter.Node {
 		return nil
 	}
 	for i := 0; i < int(args.NamedChildCount()); i++ {
-		c := args.NamedChild(i)
-		switch c.Type() {
+		c := args.NamedChild(uint(i))
+		switch c.Kind() {
 		case "arrow_function", "function", "function_expression", "generator_function":
-			if body := c.ChildByFieldName("body"); body != nil && body.Type() == "statement_block" {
+			if body := c.ChildByFieldName("body"); body != nil && body.Kind() == "statement_block" {
 				return body
 			}
 		}
@@ -932,9 +935,9 @@ func callbackBody(args *sitter.Node) *sitter.Node {
 // accessibility modifier.
 func hasPrivateModifier(method *sitter.Node, src []byte) bool {
 	for i := 0; i < int(method.NamedChildCount()); i++ {
-		c := method.NamedChild(i)
-		if c.Type() == "accessibility_modifier" {
-			switch c.Content(src) {
+		c := method.NamedChild(uint(i))
+		if c.Kind() == "accessibility_modifier" {
+			switch c.Utf8Text(src) {
 			case "private", "protected":
 				return true
 			}

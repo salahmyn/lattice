@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	sitter "github.com/smacker/go-tree-sitter"
-	tsphp "github.com/smacker/go-tree-sitter/php"
+	sitter "github.com/tree-sitter/go-tree-sitter"
+	tsphp "github.com/tree-sitter/tree-sitter-php/bindings/go"
 
 	"github.com/salahmyn/lattice/pkg/lattice/adapters/astutil"
 	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
@@ -31,13 +31,14 @@ var attributeKinds = map[string]string{
 	"ModuleDependsOnFeature":  "module_depends_on_feature",
 }
 
+// phpLanguage is the grammar; it is static C data and needs no Close.
+var phpLanguage = sitter.NewLanguage(tsphp.LanguagePHP())
+
 // parse turns PHP source into an IR module.
 func (a *Adapter) parse(ctx context.Context, path string, source []byte) (ir.Module, error) {
 	mod := ir.Module{File: path, Language: a.Name()}
 
-	parser := sitter.NewParser()
-	parser.SetLanguage(tsphp.GetLanguage())
-	tree, err := parser.ParseCtx(ctx, nil, source)
+	tree, err := astutil.Parse(ctx, phpLanguage, source)
 	if err != nil {
 		return mod, err
 	}
@@ -57,8 +58,8 @@ type phpParser struct {
 // walk recursively processes statements, threading the current namespace.
 func (p *phpParser) walk(node *sitter.Node, namespace string) {
 	for i := 0; i < int(node.NamedChildCount()); i++ {
-		n := node.NamedChild(i)
-		switch n.Type() {
+		n := node.NamedChild(uint(i))
+		switch n.Kind() {
 		case "namespace_definition":
 			ns := p.fieldText(n, "name")
 			if body := n.ChildByFieldName("body"); body != nil {
@@ -108,8 +109,8 @@ func (p *phpParser) addClass(n *sitter.Node, namespace string, kind ir.SymbolKin
 		return
 	}
 	for i := 0; i < int(body.NamedChildCount()); i++ {
-		c := body.NamedChild(i)
-		if c.Type() == "method_declaration" {
+		c := body.NamedChild(uint(i))
+		if c.Kind() == "method_declaration" {
 			mname := p.fieldText(c, "name")
 			if mname == "" {
 				continue
@@ -142,9 +143,9 @@ func (p *phpParser) addSymbol(name string, kind ir.SymbolKind, namespace, enclos
 // true unless it carries a private/protected visibility modifier.
 func phpMethodExported(n *sitter.Node, src []byte) bool {
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		c := n.NamedChild(i)
-		if c.Type() == "visibility_modifier" {
-			switch c.Content(src) {
+		c := n.NamedChild(uint(i))
+		if c.Kind() == "visibility_modifier" {
+			switch c.Utf8Text(src) {
 			case "private", "protected":
 				return false
 			}
@@ -157,7 +158,7 @@ func phpMethodExported(n *sitter.Node, src []byte) bool {
 func (p *phpParser) declAttributes(n *sitter.Node) []ir.Annotation {
 	var anns []ir.Annotation
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		if c := n.NamedChild(i); c.Type() == "attribute_list" {
+		if c := n.NamedChild(uint(i)); c.Kind() == "attribute_list" {
 			anns = append(anns, p.attributes(c)...)
 		}
 	}
@@ -169,21 +170,21 @@ func (p *phpParser) declAttributes(n *sitter.Node) []ir.Annotation {
 func (p *phpParser) baseClasses(n *sitter.Node, namespace string) []string {
 	var bases []string
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		c := n.NamedChild(i)
-		if c.Type() == "base_clause" {
+		c := n.NamedChild(uint(i))
+		if c.Kind() == "base_clause" {
 			for j := 0; j < int(c.NamedChildCount()); j++ {
-				bases = append(bases, qualify(namespace, c.NamedChild(j).Content(p.src)))
+				bases = append(bases, qualify(namespace, c.NamedChild(uint(j)).Utf8Text(p.src)))
 			}
 		}
 	}
 	if body := n.ChildByFieldName("body"); body != nil {
 		for i := 0; i < int(body.NamedChildCount()); i++ {
-			c := body.NamedChild(i)
-			if c.Type() == "use_declaration" {
+			c := body.NamedChild(uint(i))
+			if c.Kind() == "use_declaration" {
 				for j := 0; j < int(c.NamedChildCount()); j++ {
-					tn := c.NamedChild(j)
-					if t := tn.Type(); t == "name" || t == "qualified_name" {
-						bases = append(bases, qualify(namespace, tn.Content(p.src)))
+					tn := c.NamedChild(uint(j))
+					if t := tn.Kind(); t == "name" || t == "qualified_name" {
+						bases = append(bases, qualify(namespace, tn.Utf8Text(p.src)))
 					}
 				}
 			}
@@ -198,8 +199,8 @@ func (p *phpParser) attributes(list *sitter.Node) []ir.Annotation {
 	var collect func(n *sitter.Node)
 	collect = func(n *sitter.Node) {
 		for i := 0; i < int(n.NamedChildCount()); i++ {
-			c := n.NamedChild(i)
-			switch c.Type() {
+			c := n.NamedChild(uint(i))
+			switch c.Kind() {
 			case "attribute_group":
 				collect(c)
 			case "attribute":
@@ -222,7 +223,7 @@ func (p *phpParser) attribute(n *sitter.Node) (ir.Annotation, bool) {
 	if nameNode == nil {
 		return ir.Annotation{}, false
 	}
-	short := nameNode.Content(p.src)
+	short := nameNode.Utf8Text(p.src)
 	if idx := strings.LastIndex(short, "\\"); idx >= 0 {
 		short = short[idx+1:]
 	}
@@ -239,19 +240,19 @@ func (p *phpParser) attribute(n *sitter.Node) (ir.Annotation, bool) {
 		return ann, true
 	}
 	for i := 0; i < int(args.NamedChildCount()); i++ {
-		arg := args.NamedChild(i)
-		if arg.Type() != "argument" {
+		arg := args.NamedChild(uint(i))
+		if arg.Kind() != "argument" {
 			continue
 		}
 		name := ""
 		if nm := arg.ChildByFieldName("name"); nm != nil {
-			name = nm.Content(p.src)
+			name = nm.Utf8Text(p.src)
 		}
 		val := lastNamedChild(arg)
 		if val == nil {
 			continue
 		}
-		if !isPHPString(val.Type()) {
+		if !isPHPString(val.Kind()) {
 			p.mod.Diagnostics = append(p.mod.Diagnostics, ir.Diagnostic{
 				Line: line(arg), Code: "ANNOTATION_ARG_NOT_LITERAL",
 				Message: "attribute argument is not a string literal",
@@ -273,23 +274,23 @@ func (p *phpParser) attribute(n *sitter.Node) (ir.Annotation, bool) {
 
 func (p *phpParser) stringValue(n *sitter.Node) string {
 	if c := firstChildOfType(n, "string_content"); c != nil {
-		return c.Content(p.src)
+		return c.Utf8Text(p.src)
 	}
-	return strings.Trim(n.Content(p.src), "\"'")
+	return strings.Trim(n.Utf8Text(p.src), "\"'")
 }
 
 func (p *phpParser) fieldText(n *sitter.Node, field string) string {
 	if c := n.ChildByFieldName(field); c != nil {
-		return c.Content(p.src)
+		return c.Utf8Text(p.src)
 	}
 	return ""
 }
 
 // --- helpers ---
 
-func line(n *sitter.Node) int { return int(n.StartPoint().Row) + 1 }
+func line(n *sitter.Node) int { return int(n.StartPosition().Row) + 1 }
 
-func endLine(n *sitter.Node) int { return int(n.EndPoint().Row) + 1 }
+func endLine(n *sitter.Node) int { return int(n.EndPosition().Row) + 1 }
 
 // @enforces adapters.php:INV-1
 func qualify(namespace, name string) string {
@@ -306,7 +307,7 @@ func isPHPString(t string) bool {
 
 func firstChildOfType(n *sitter.Node, t string) *sitter.Node {
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		if c := n.NamedChild(i); c.Type() == t {
+		if c := n.NamedChild(uint(i)); c.Kind() == t {
 			return c
 		}
 	}
@@ -318,7 +319,7 @@ func lastNamedChild(n *sitter.Node) *sitter.Node {
 	if count == 0 {
 		return nil
 	}
-	return n.NamedChild(count - 1)
+	return n.NamedChild(uint(count - 1))
 }
 
 func isTestFile(path string) bool {
