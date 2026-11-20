@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/salahmyn/lattice/pkg/lattice/gitstate"
 )
 
 // git runs a git command in dir and returns its trimmed stdout.
@@ -41,6 +43,7 @@ type Repo struct {
 // OpenRepo reads the checkout around codeRoot. It does not change it.
 // latticeDirs are the workspace directories whose .ledger/ and .cache/ are
 // Lattice's own state; every lattice/.ledger/ and lattice/.cache/ is too.
+// @enforces breaktest:INV-9
 func OpenRepo(ctx context.Context, codeRoot string, latticeDirs ...string) (Repo, error) {
 	var r Repo
 	top, err := git(ctx, codeRoot, "rev-parse", "--show-toplevel")
@@ -72,9 +75,11 @@ func OpenRepo(ctx context.Context, codeRoot string, latticeDirs ...string) (Repo
 	if err != nil {
 		return r, err
 	}
-	owned := ownedPrefixes(topReal, latticeDirs)
+	owned := gitstate.Owned(topReal, latticeDirs)
+	seen := map[string]bool{}
 	for _, rel := range changed {
-		if !latticeOwned(rel, owned) {
+		if !seen[rel] && !latticeOwned(rel, owned) {
+			seen[rel] = true
 			r.DirtyFiles = append(r.DirtyFiles, rel)
 		}
 	}
@@ -83,67 +88,21 @@ func OpenRepo(ctx context.Context, codeRoot string, latticeDirs ...string) (Repo
 	return r, nil
 }
 
+// latticeOwned reports whether a changed path is Lattice's own runtime
+// state: the ledger of gates, CRs, flags and sign-offs, and the cache that
+// holds ingested results, coverage, the last check runs and breaks.json.
+// Neither is an input of a break run. Source files, manifests and
+// lattice.json are not Lattice's own state and always count. The rule is
+// the one check and impact read (gitstate.LatticeOwned).
+// @enforces breaktest:INV-9
+func latticeOwned(rel string, owned []string) bool {
+	return gitstate.LatticeOwned(rel, owned)
+}
+
 // uncommitted lists the paths, relative to top, that differ from HEAD:
 // modified, added, deleted and untracked files that are not ignored.
 func uncommitted(ctx context.Context, top string) ([]string, error) {
-	changed, err := git(ctx, top, "-c", "core.quotepath=off", "diff", "HEAD", "--no-renames", "--name-only", "-z")
-	if err != nil {
-		return nil, err
-	}
-	untracked, err := git(ctx, top, "ls-files", "-o", "--exclude-standard", "-z")
-	if err != nil {
-		return nil, err
-	}
-	var out []string
-	for _, rel := range append(strings.Split(changed, "\x00"), strings.Split(untracked, "\x00")...) {
-		if rel != "" {
-			out = append(out, rel)
-		}
-	}
-	return out, nil
-}
-
-// ownedPrefixes returns the .ledger/ and .cache/ directories of each
-// workspace inside the checkout, as slash paths relative to its top.
-func ownedPrefixes(top string, latticeDirs []string) []string {
-	var out []string
-	for _, d := range latticeDirs {
-		if d == "" {
-			continue
-		}
-		if real, err := filepath.EvalSymlinks(d); err == nil {
-			d = real
-		}
-		rel, err := filepath.Rel(top, d)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			continue // a workspace in another checkout writes nothing here
-		}
-		base := ""
-		if rel != "." {
-			base = filepath.ToSlash(rel) + "/"
-		}
-		out = append(out, base+".ledger/", base+".cache/")
-	}
-	return out
-}
-
-// latticeOwned reports whether a changed path is Lattice's own runtime
-// state: the ledger of gates, CRs, flags and sign-offs, and the cache that
-// holds ingested results, coverage, the last check runs and breaks.json. Neither is an
-// input of a break run. Source files, manifests and lattice.json are not
-// Lattice's own state and always count.
-// @enforces breaktest:INV-9
-func latticeOwned(rel string, owned []string) bool {
-	p := "/" + filepath.ToSlash(rel)
-	if strings.Contains(p, "/lattice/.ledger/") || strings.Contains(p, "/lattice/.cache/") {
-		return true
-	}
-	for _, o := range owned {
-		if strings.HasPrefix(p, "/"+o) {
-			return true
-		}
-	}
-	return false
+	return gitstate.Changed(ctx, top)
 }
 
 // Worktree is a temporary detached `git worktree` at HEAD. Dir is the code

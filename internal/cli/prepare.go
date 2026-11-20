@@ -112,7 +112,7 @@ func runPrepare(io *IO, cmd *cobra.Command, req prepare.Request) error {
 		return io.fail("EXTRACT_FAILED", err.Error(), nil)
 	}
 	cfg, _ := config.Load(ws.LatticeDir)
-	dirty, _ := gitDirty(filepath.Dir(ws.LatticeDir))
+	dirty, _ := gitDirty(filepath.Dir(ws.LatticeDir), ws.LatticeDir)
 	env := prepare.Env{
 		Git: confirm.Git{Dir: filepath.Dir(ws.LatticeDir)}, LatticeDir: ws.LatticeDir, KG: kg,
 		Report: audit.Compute(audit.Collect(ws.LatticeDir, kg, dirty)), Config: cfg,
