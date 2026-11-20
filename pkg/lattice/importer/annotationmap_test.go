@@ -44,7 +44,7 @@ func TestComputeVerification(t *testing.T) {
 	violations := []schema.Violation{
 		{Code: schema.CodeUnenforcedInvariant, FeatureID: "billing", InvariantID: "INV-1"},
 		{Code: schema.CodeUnverifiedInvariant, FeatureID: "billing", InvariantID: "INV-1"}, // same invariant
-		{Code: schema.CodeManifestSchema}, // unrelated, ignored
+		{Code: schema.CodeManifestSchema},                                                  // unrelated, ignored
 	}
 	vc := ComputeVerification(features, violations)
 	if vc.TotalInvariants != 3 {

@@ -67,10 +67,10 @@ def helper():
 
 func TestHTTPEntryPointID(t *testing.T) {
 	cases := map[string]string{
-		"POST /api/v2/refunds":     "ep.http.post.api.v2.refunds",
-		"GET /users/{id}":          "ep.http.get.users.id",
-		"GET /":                    "ep.http.get",
-		"DELETE /items/{item_id}":  "ep.http.delete.items.item_id",
+		"POST /api/v2/refunds":    "ep.http.post.api.v2.refunds",
+		"GET /users/{id}":         "ep.http.get.users.id",
+		"GET /":                   "ep.http.get",
+		"DELETE /items/{item_id}": "ep.http.delete.items.item_id",
 	}
 	for in, want := range cases {
 		parts := strings.SplitN(in, " ", 2)

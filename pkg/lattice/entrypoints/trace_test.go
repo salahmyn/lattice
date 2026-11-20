@@ -12,7 +12,7 @@ import (
 // connects them by enclosing module without needing call-graph data.
 func TestTraceModuleProximity(t *testing.T) {
 	eps := []schema.EntryPoint{{
-		ID: "ep.http.post.accounts.consent",
+		ID:      "ep.http.post.accounts.consent",
 		Trigger: schema.Trigger{Method: "POST", Path: "/api/accounts/consent"},
 		Handler: schema.Handler{
 			Symbol: `Modules\Accounts\Http\Controllers\ConsentController::store`,
@@ -33,7 +33,7 @@ func TestTraceModuleProximity(t *testing.T) {
 		},
 		// Same-class match — bug-tracker pattern: handler IS the impl.
 		{
-			ID: "accounts.controller_self",
+			ID:           "accounts.controller_self",
 			Capabilities: []schema.Capability{{ID: "store", Summary: "Persist a consent."}},
 			Implementations: []schema.Implementation{{
 				Symbol: `Modules\Accounts\Http\Controllers\ConsentController::store`,
