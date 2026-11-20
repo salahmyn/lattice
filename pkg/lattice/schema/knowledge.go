@@ -73,6 +73,14 @@ type GraphSymbol struct {
 	// interfaces and type aliases run nothing and have none. validate
 	// folds in runtime coverage on top.
 	Reach string `json:"reach,omitempty"`
+	// HandlerReach says whether the call graph reaches the symbol from the
+	// handler of a declared entry point: reached, unreached or unknown (its
+	// language has no reference data, or only an unresolved reference leads
+	// to it). Unlike Reach, other roots (func main, entry files,
+	// coverage.roots) do not count, and a handler that names no symbol of
+	// the graph reaches nothing. Set on runtime symbols and interfaces: a
+	// type is reached when reached code names or builds it.
+	HandlerReach string `json:"handler_reach,omitempty"`
 }
 
 // Reach classes (GraphSymbol.Reach).
@@ -81,6 +89,13 @@ const (
 	ReachTestOnly  = "test_only"
 	ReachUnreached = "unreached"
 	ReachUnknown   = "unknown"
+)
+
+// Handler reach (GraphSymbol.HandlerReach).
+const (
+	HandlerReached   = "reached"
+	HandlerUnreached = "unreached"
+	HandlerUnknown   = "unknown"
 )
 
 // SuppressedInvariant records an explicit, reasoned suppression.

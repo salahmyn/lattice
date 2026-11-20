@@ -72,5 +72,7 @@ func Compute(in Input) *Result {
 	ri := RootInput{EntryPoints: in.EntryPoints, EntryFiles: EntryFiles(in.CodeRoots, in.Modules), Declared: in.Declared}
 	roots := g.Roots(ri)
 	sort.SliceStable(roots, func(i, j int) bool { return roots[i].FQN < roots[j].FQN })
-	return Classify(g, roots)
+	r := Classify(g, roots)
+	r.ClassifyHandlers(g.Handlers(in.EntryPoints))
+	return r
 }

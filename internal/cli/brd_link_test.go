@@ -261,3 +261,30 @@ func TestBRDLinkReconcileAll(t *testing.T) {
 		t.Fatalf("--reconcile moved the contested feature: %q", wallet.ImplementsBRD)
 	}
 }
+
+// brd link appends the id it adds and leaves the existing order as it was,
+// so the diff a reviewer reads shows the added id and nothing else.
+// @verifies brds:INV-10
+func TestBRDLinkAppendsWithoutResorting(t *testing.T) {
+	repo := linkRepo(t)
+	p := filepath.Join(repo, "lattice", "brds", "brd.payments.yaml")
+	body, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	swapped := strings.Replace(string(body), "implements_via:\n  - checkout\n", "implements_via:\n  - wallet\n", 1)
+	if swapped == string(body) {
+		t.Fatal("setup: implements_via not found")
+	}
+	if err := os.WriteFile(p, []byte(swapped), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if c := linkJSON(t, repo, "brd.payments", "checkout"); c.Change != linkReconciled {
+		t.Fatalf("link checkout: want reconciled, got %+v", c)
+	}
+	after := readLinkState(t, repo, "brd.payments", "wallet:INV-1")
+	if got := strings.Join(after.brd.ImplementsVia, ","); got != "wallet,checkout" {
+		t.Fatalf("implements_via = %s, want wallet,checkout (appended, not re-sorted)", got)
+	}
+}

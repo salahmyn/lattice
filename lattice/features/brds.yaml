@@ -28,7 +28,7 @@ invariants:
   - id: INV-9
     statement: A machine-written draft BRD whose current version a human confirmed on the platform (confirm.json) is not BRD_UNAPPROVED_LLM, and a typed approved_by never makes it so.
   - id: INV-10
-    statement: brd link keeps a BRD's version when it completes a half the other side already declares, so the approval stands; when it adds a feature to a reviewed BRD's scope, or takes one out of it, it bumps that BRD's version.
+    statement: brd link keeps a BRD's version when it completes a half the other side already declares, so the approval stands; when it adds a feature to a reviewed BRD's scope, or takes one out of it, it bumps that BRD's version. It appends the ids it adds and never reorders the ones already listed.
   - id: INV-11
     statement: A BRD source with an unknown kind, an empty ref or a url that is not absolute http(s) is BRD_SOURCE_INVALID, and one whose checked_by and checked_at are not set together, or whose checked_at is not a date or is in the future, is BRD_SOURCE_CHECK_INVALID. The check never fetches a URL or sets a checked mark.
   - id: INV-12
