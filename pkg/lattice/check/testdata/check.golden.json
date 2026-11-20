@@ -296,7 +296,8 @@
         "lines": "5-16",
         "count": 12,
         "new": true,
-        "reason": "file or module tag only: no enforcer span, checked reference or entry point reaches it"
+        "reason": "file or module tag only: no enforcer span, checked reference or entry point reaches it",
+        "handler_reach": "unreached"
       }
     ],
     "out_of_reach": [],
