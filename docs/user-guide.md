@@ -755,7 +755,7 @@ core resolves them.
 | Adapter | References | Resolution |
 |---|---|---|
 | TypeScript / JavaScript | imports, `export … from`, `export default`, `require('./x')` bound to names; `import('./x')` and an unbound `require('./x')` as modules loaded at run time; calls, `new C()`, JSX `<C />`, named values (a callback, a default argument); `.rpc('fn')`, `.from('table')`, `.schema('s')`, and a project's own `rpc('fn', …)` wrapper | relative paths (with or without an extension, or a directory's `index`); `@/`, `~/` and `#/` aliases by a unique path suffix |
-| Go | imports; calls, composite literals, types, function values; a method's receiver; a local's declared type (`func f(kg schema.KnowledgeGraph)`, `var x T`, `x := &T{}`) | an import path is local when it is `<module>/<dir>`; the module path is inferred from the imports, not read from `go.mod` |
+| Go | imports; calls, composite literals, types, function values; a method's receiver; a local's declared type (`func f(kg schema.KnowledgeGraph)`, `var x T`, `x := &T{}`) | an import path is local when it is `<module>/<dir>`; the module path is inferred from the imports, not read from `go.mod`. An unexported method name (`x.run()`) only matches the caller's own package. A name declared again in a build-constrained file (`open_unix.go` beside `open_other.go`) is reached with the first declaration |
 | Python | `import`, `from … import` (relative too), calls, `self.m()`, named values, supabase-py `.rpc()` / `.table()` | exact module, `__init__.py` for a package, or a unique `src/`-layout suffix |
 | Postgres | a function body's calls (`f(`, `perform f(`, `select f(`; comments skipped), a trigger's `execute function f()`, a policy's `using` / `with check` calls, `cron.schedule` bodies, and the calls of a file's other top-level statements (a seed `select f(…)`, a `do` block, a check or default) | `schema.name` as written; an unqualified name in `public` |
 | PHP | none yet | its symbols are `unknown` |
@@ -1457,10 +1457,19 @@ the gap and never removes it, including one added in the same change.
 
 A touched line counts as traced only when an enforcer span covers it (the
 symbol carries `@enforces`), a checked reference names it (a direct-wire
-criterion's `enforced_by`), or an entry point of its feature reaches it. A
+criterion's `enforced_by`), or an entry point reaches it. A
 file-level `@module-feature` tag alone never counts. The rest goes in the blind
 spot, with the promises a human marked out of reach, and keeps the verdict at
 `UNPROVEN`. Lines are counted by the touched symbol's extent, an upper bound.
+
+A line reads "an entry point reaches it" only when the call graph reaches its
+symbol from the `handler` of a declared entry point; a handler that names no
+symbol of the graph reaches nothing. A line whose feature is on an entry
+point's `flow`, and that some root reaches but no handler does, is still traced
+and says so instead ("its feature is on an entry point's flow, but no entry
+point's handler reaches it"). When the graph cannot decide (an ambiguous call,
+a language with no reference data) the reason says it is unknown. Each line in
+`blind_spot` carries `handler_reach` (`reached`, `unreached` or `unknown`).
 
 Traced is not guarded. A line is **guarded** only when a promise covers it: an
 enforcer span or a checked reference, the lines `lattice impact` attributes to a
@@ -1603,8 +1612,8 @@ waiver is shown and never counted as proof.
 
 The decision file records `{action, id, version, packet_hash, rows, reason,
 prepared_by, prepared_at}`. `prepared_by` is your git identity, for display only.
-The `packet_hash` covers the BRD version's content (not its status or approval
-block), each promise's structural signals (text, tier, enforcers, verifiers) and
+The `packet_hash` covers the BRD version's content (not its status, its approval
+block or a source's checked mark), each promise's structural signals (text, tier, enforcers, verifiers) and
 the structural diff since the last confirmed version. Run-dependent signals are
 left out, so a better test run never voids a confirmation.
 
@@ -1785,7 +1794,7 @@ Notes:
 
 The API computes nothing that counts. Every value comes from the audit, the check, `confirm`
 and `prepare`, and a field the kernel has no source for reads
-`{"state": "unknown", "code": "NOT_COMPUTED"}`, never a guess (the story, sources, cases, the
+`{"state": "unknown", "code": "NOT_COMPUTED"}`, never a guess (the story, a feature's sources, cases, the
 text-only diff, the blind spot outside a change, where a feature runs, open proposals). A view
 of one promise, feature or BRD is never `ASSURED` or `BROKEN`: those need a base, so ask
 `/api/v2/check`. Unknown, `UNPROVEN` and partial are never a `pass`; every payload is checked
@@ -2322,6 +2331,49 @@ has not acknowledged yet. It reports `BRD_COUNCIL_INVALID` (error) for a
 council approval that no pinned mandate, floor check or unanimous vote
 supports, such as a hand-written `approval` block. Switching council mode
 off later does not void the approvals it already gave.
+
+### 7c. BRD sources
+
+A BRD can name the documents its intent was first written in: tickets,
+roadmap items, help pages, API docs and ADRs. `sources` is optional and comes
+after the other BRD fields.
+
+```yaml
+sources:
+  - kind: ticket               # ticket | roadmap | help_page | api_doc | adr
+    ref: WAL-12
+    title: Withdrawal fees     # optional
+    url: https://tracker.example/WAL-12   # optional
+    checked_by: ana@example.com           # optional; set by a human only
+    checked_at: "2026-11-10"              # required with checked_by
+```
+
+`checked_by` and `checked_at` say that a person compared the BRD with the
+source. Only a person sets them. `lattice brd from-code` may draft sources from
+the evidence, but it drops any checked mark the model writes. Agents follow the
+same rule.
+
+`lattice validate` checks the shape only. It never opens a URL and never sets
+or infers a checked mark.
+
+- `BRD_SOURCE_INVALID` (error): the kind is not in the list, the `ref` is
+  empty, or the `url` is not an absolute `http(s)` URL.
+- `BRD_SOURCE_CHECK_INVALID` (error): `checked_by` and `checked_at` are not
+  set together, or `checked_at` is not a `YYYY-MM-DD` date or is in the future.
+
+`GET /api/v2/brds/{id}` lists the sources under `sources.entries`. A checked
+source reads `state: checked` with `honesty: claimed`, plus who checked it and
+when: it is a person's claim, not verified. Any other source reads
+`state: unchecked`.
+
+Sources are part of the review packet. Adding or editing a source changes the
+`packet_hash`, so a confirmed decision reads stale and needs a new review. The
+change is text-only: it is not in the structural diff. A checked mark is left
+out of the hash, so marking a source checked after approval does not void the
+approval.
+
+The BRD's `story` field stays `NOT_COMPUTED` (`params.reason: HELD_BY_DECISION`).
+The name is reserved for the planned story layer and is not settled yet.
 
 ---
 

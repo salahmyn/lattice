@@ -86,6 +86,9 @@ You MUST produce JSON of the shape:
   ],
   "success_criteria": [
     {"id":"SC-1", "statement":"<measurable>", "maps_to_invariant":"<feature_id:INV-N or empty>"}
+  ],
+  "sources": [
+    {"kind":"ticket|roadmap|help_page|api_doc|adr", "ref":"<id>", "title":"<optional>", "url":"<optional absolute https URL>"}
   ]
 }
 
@@ -98,6 +101,11 @@ slot empty rather than guess a name or team.
 You MUST treat existing invariants as canonical truth: every success_criterion
 that has a "maps_to_invariant" must name an invariant that exists in the
 manifest. Format: "<feature_id>:<invariant_id>".
+
+You MAY list sources only when the evidence names them (a ticket id, an
+ADR, a roadmap item, a help page or API doc). Leave the array empty
+otherwise. Never write checked_by or checked_at on a source: only a
+human sets them, after comparing the BRD with the source.
 
 Output JSON only. No prose around it. No markdown fences.`
 
@@ -115,7 +123,8 @@ Output JSON only. No prose around it. No markdown fences.`
 //
 // These fields are NOT taken from the model — they are set here so a
 // rogue model can't promote itself to "approved" or attach to a
-// different feature.
+// different feature. Sources come from the model, without checked_by or
+// checked_at.
 // @enforces brds:INV-7
 func FromCode(ctx context.Context, feature schema.Manifest, reachedBy []schema.EntryPoint, opts FromCodeOptions) (schema.BRD, string, error) {
 	if opts.Provider == nil {
@@ -201,6 +210,7 @@ func FromCode(ctx context.Context, feature schema.Manifest, reachedBy []schema.E
 		OutOfScope:          nil,
 		ImplementsVia:       []string{feature.ID},
 		HumanReviewRequired: true,
+		Sources:             draftSources(parsed.Sources),
 		Provenance: schema.BRDProvenance{
 			Source:      schema.BRDSourceLLMFromCode,
 			GeneratedAt: time.Now().UTC().Format(time.RFC3339),
@@ -223,6 +233,35 @@ type llmFromCodeResponse struct {
 	Stakeholders    llmStakeholders   `json:"stakeholders"`
 	UserScenarios   []llmUserScenario `json:"user_scenarios"`
 	SuccessCriteria []llmBRDCriterion `json:"success_criteria"`
+	Sources         []llmBRDSource    `json:"sources"`
+}
+
+// llmBRDSource has no checked_by or checked_at on purpose: a checked mark
+// is a human's claim, so any the model writes is dropped on decode.
+type llmBRDSource struct {
+	Kind  string `json:"kind"`
+	Ref   string `json:"ref"`
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}
+
+// draftSources keeps the model's sources that have a known kind and a ref.
+// None of them carries a checked mark.
+// @enforces brds:INV-12
+func draftSources(in []llmBRDSource) []schema.BRDSource {
+	var out []schema.BRDSource
+	for _, s := range in {
+		kind, ref := schema.BRDSourceKind(strings.TrimSpace(s.Kind)), strings.TrimSpace(s.Ref)
+		known := false
+		for _, k := range schema.ValidBRDSourceKinds {
+			known = known || k == kind
+		}
+		if !known || ref == "" {
+			continue
+		}
+		out = append(out, schema.BRDSource{Kind: kind, Ref: ref, Title: strings.TrimSpace(s.Title), URL: strings.TrimSpace(s.URL)})
+	}
+	return out
 }
 
 type llmStakeholders struct {

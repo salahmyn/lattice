@@ -53,7 +53,10 @@
       "state": "unknown",
       "honesty": "fact",
       "code": "NOT_COMPUTED",
-      "text": "not computed: the story (the story layer is not in code) has no kernel source yet"
+      "params": {
+        "reason": "HELD_BY_DECISION"
+      },
+      "text": "not computed: the story (held until the story layer's name is settled) has no kernel source yet"
     },
     "business_problem": "Unpaid baskets became orders.",
     "goals": [],
@@ -223,10 +226,15 @@
     "text": "not computed: the blind spot (untraced touched lines are measured per change: lattice check) has no kernel source yet"
   },
   "sources": {
-    "state": "unknown",
+    "state": "info",
     "honesty": "fact",
-    "code": "NOT_COMPUTED",
-    "text": "not computed: sources (ADRs and tickets) has no kernel source yet"
+    "code": "SOURCES",
+    "params": {
+      "checked": 0,
+      "count": 0
+    },
+    "text": "0 source(s), 0 marked checked by a human",
+    "entries": []
   },
   "history": {
     "state": {
