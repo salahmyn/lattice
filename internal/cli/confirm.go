@@ -14,6 +14,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/brd"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm/signature"
+	"github.com/salahmyn/lattice/pkg/lattice/prepare"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
@@ -22,9 +23,9 @@ import (
 // platform's approvals on the merged decision pull requests.
 func newConfirmCommand(io *IO) *cobra.Command {
 	var platform, branch string
-	var offline, refresh bool
+	var offline, refresh, unsigned bool
 	cmd := &cobra.Command{
-		Use:   "confirm [--platform github] [--offline]",
+		Use:   "confirm [--platform github] [--offline] [--unsigned]",
 		Short: "Compute which decisions a human confirmed, from the platform's approvals",
 		Long: `For each decision file on the default branch, finds the commit that added it,
 the pull request that merged it, and that request's approving reviews from the
@@ -60,7 +61,14 @@ tracked by git reads unknown (CONFIRM_TRACKED). The stamp is provenance, not a
 signature. Under 'lattice check --ci' a local or other-commit file reads
 unknown (EVIDENCE_NOT_CI). 'lattice audit' reads the confirmed signal from
 that file only. --offline reads the cache and nothing else: missing data reads
-unknown, never confirmed. Run it in CI on the default branch.`,
+unknown, never confirmed. Run it in CI on the default branch.
+
+--unsigned lists the decisions a hardware-key signature could re-confirm: a
+BRD's current version approved or acknowledged by a local command
+('lattice brd approve', 'brd ack'), and each decision confirmed by a review
+that no signature confirms, from the cache. For each it prints the exact
+commands, ending in 'lattice sign'. It reads only: it signs, prepares and
+writes nothing (lattice.confirm-unsigned/1).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if platform != "github" {
@@ -75,6 +83,9 @@ unknown, never confirmed. Run it in CI on the default branch.`,
 			cache := confirm.LoadCache(ws.LatticeDir)
 			if offline {
 				return printConfirm(io, confirm.Offline(cache, head))
+			}
+			if unsigned {
+				return listUnsigned(io, cmd, ws.LatticeDir, g, branch, cache)
 			}
 
 			top, err := g.Top()
@@ -148,7 +159,46 @@ unknown, never confirmed. Run it in CI on the default branch.`,
 	cmd.Flags().BoolVar(&offline, "offline", false, "read the cache only; missing data reads unknown")
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "ask the platform again for every decision")
 	cmd.Flags().StringVar(&branch, "branch", "", "the default branch (default: origin's HEAD, main or master)")
+	cmd.Flags().BoolVar(&unsigned, "unsigned", false, "list the decisions a signature could re-confirm, with the commands; writes nothing")
 	return cmd
+}
+
+// listUnsigned prints the decisions a signature could re-confirm. It reads
+// the repository, the graph and the cache, and writes nothing.
+func listUnsigned(io *IO, cmd *cobra.Command, latticeDir string, g confirm.Git, branch string, cache *confirm.File) error {
+	var found []confirm.Found
+	if top, err := g.Top(); err == nil {
+		if rel, err := filepath.Rel(evalLinks(top), evalLinks(latticeDir)); err == nil {
+			if branch == "" {
+				branch = confirm.DefaultBranch(g)
+			}
+			found, _, _ = confirm.Scan(g, branch, filepath.ToSlash(rel))
+		}
+	}
+	kg, _, err := graphFor(io, cmd, false)
+	if err != nil {
+		return io.fail("EXTRACT_FAILED", err.Error(), nil)
+	}
+	dirty, _ := gitDirty(filepath.Dir(latticeDir), latticeDir)
+	env := prepare.Env{Git: g, LatticeDir: latticeDir, KG: kg, Report: audit.Compute(audit.Collect(latticeDir, kg, dirty)), Cache: cache}
+	stem := func(b schema.BRD, action string) (string, bool) {
+		extra := ""
+		if action == confirm.ActionAck {
+			votes, _ := brd.LoadVotes(latticeDir, b.ID, b.Version)
+			extra = confirm.VotesHash(votes)
+		}
+		p := env.Packet(b, extra)
+		if p.Err != nil {
+			return "", false
+		}
+		return confirm.Decision{Action: action, ID: b.ID, Version: b.Version, PacketHash: p.Hash}.Stem(), true
+	}
+	l := confirm.ListUnsigned(confirm.UnsignedInput{BRDs: kg.BRDs, Found: found, Cache: cache, Stem: stem})
+	if io.JSON {
+		return io.printJSON(l)
+	}
+	io.printf("%s", l.Text())
+	return nil
 }
 
 func printConfirm(io *IO, f confirm.File) error {

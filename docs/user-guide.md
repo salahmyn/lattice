@@ -1713,6 +1713,7 @@ left out, so a better test run never voids a confirmation.
 ```sh
 lattice confirm                 # in CI, on the default branch; needs GITHUB_TOKEN or GH_TOKEN
 lattice confirm --offline       # read the cache only
+lattice confirm --unsigned      # what a signature could re-confirm, with the commands
 ```
 
 For each decision file on the default branch, `confirm` finds the commit that
@@ -1940,6 +1941,27 @@ signature route stays closed for that history. A shallow clone cannot show
 where trust started, so `confirm` and the readers need the full history
 (`fetch-depth: 0`).
 
+**Re-confirm by signature.** `lattice confirm --unsigned` lists the decisions a
+signature could re-confirm, and the exact commands for each. It reads only: it
+signs, prepares and writes nothing (`lattice.confirm-unsigned/1`).
+
+```text
+local  brd.ack brd.refunds v3  (a local note typed as ana@example.com, not a confirmation; ...)
+    lattice prepare brd ack brd.refunds
+    git switch decision/brd.refunds-v3.ack-9e1f04ab
+    lattice sign brd.refunds-v3.ack-9e1f04ab
+review  promise.confirm brd.refunds v3  (approved by bo on PR #41; sign the decision file, ...)
+    lattice sign lattice/decisions/approvals/brd.refunds-v3.confirm-1a2b3c4d-9e1f04ab.yaml
+```
+
+- `local`: the BRD's current version was approved or acknowledged by
+  `lattice brd approve` or `brd ack` (a typed name), and no decision confirms
+  it. The stem is the one `prepare` writes now; if the BRD or a promise changes
+  first, `prepare` prints another.
+- `review`: a decision confirmed by an approving review, on a current version,
+  that no signature confirms. It reads the cache `lattice confirm` wrote, so run
+  that first.
+
 **Revocation.** Remove the key from `allowed_signers` on the default branch, or
 from your GitHub signing keys, and everything it signed reads un-confirmed: the
 tip check fails at once for every reader, and GitHub is asked again on every
@@ -1993,7 +2015,8 @@ is the designed fallback for projects that have neither: its state is
 
 `lattice brd approve`, `brd ack` and `brd overturn` still work for now. Each
 prints a deprecation line and records `local: true`, and the audit shows
-"prepared by a local session, not confirmed". Councils (`brd vote`, `brd
+"prepared by a local session, not confirmed". `lattice confirm --unsigned` lists
+the approvals and acks to re-confirm, with the commands. Councils (`brd vote`, `brd
 decide`) stay as advice: a council's approval reads "reviewed by council, awaiting
 you" until a human ack is confirmed.
 

@@ -154,7 +154,8 @@ the key is in `lattice/allowed_signers` at the base commit (never the PR head) a
 among the login's GitHub signing keys. Software keys are refused, so there is no
 weaker label; the state is `human`, always shown with its method (`via: signature`,
 login, fingerprint). Earlier local `brd ack` records stay as they are: re-confirm
-them with `prepare` and `sign`. Delegation, below, stays the fallback for projects
+them with `prepare` and `sign` (`lattice confirm --unsigned` lists them, with the
+commands). Delegation, below, stays the fallback for projects
 without a hardware key, and its state stays `delegated`. A change that adds a key to `allowed_signers` counts only with an endorsement by a key
 trusted before it (`allowed_signers.sig` in the same commit); the first file is
 the root of trust (`ROOT_SIGNERS`), removals need nothing, and a key added

@@ -232,7 +232,7 @@ A complete, validating three-language example lives in
 | `lattice break [--promise f:INV-n] [--fails-on-base <rev>]` | Break each enforcer and see whether its verifiers notice; `--fails-on-base` runs a change's new or edited tests on the old code |
 | `lattice audit [--promise f:INV-n]` | Classify every promise: fake, break-tested, exercised, a gap; each case covered, partial, failing or uncovered |
 | `lattice prepare brd\|promise\|waiver …` | Prepare a decision branch for a human to approve; never pushes |
-| `lattice confirm [--offline]` | Which decisions a human confirmed: an approving review on the merged PR, or a hardware-key signature |
+| `lattice confirm [--offline] [--unsigned]` | Which decisions a human confirmed: an approving review on the merged PR, or a hardware-key signature; `--unsigned` lists what a signature could re-confirm, with the commands |
 | `lattice sign <decision>` \| `--signers` | A human signs a decision, or endorses a change to `allowed_signers`, with an SSH security key (`ed25519-sk`); refuses CI, agents and software keys |
 | `lattice agent <cap>` | LLM-backed capabilities (deterministic fallback) |
 | `lattice mutation run` | Mutation-test invariant-enforcing code |
