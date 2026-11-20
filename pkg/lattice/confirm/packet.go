@@ -123,7 +123,7 @@ func FactsFor(rows []audit.Row, refs []string) []PromiseFacts {
 // later human check, not a change to the intent. A source's kind, ref, title
 // and url stay in, so editing a source makes the decision stale as a
 // text-only change (it is not in the structural diff).
-// @enforces confirm:INV-3, confirm:INV-8, confirm:INV-9
+// @enforces confirm:INV-3, confirm:INV-8, confirm:INV-16
 func PacketHash(in PacketInput) string {
 	b := in.BRD
 	b.ImplementsVia = Scope(b.ImplementsVia, in.Declared)

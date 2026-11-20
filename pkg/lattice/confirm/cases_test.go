@@ -12,7 +12,7 @@ import (
 // case after confirmation changes the hash, so the confirmed decision reads
 // stale (PACKET_MISMATCH); a promise with no cases hashes exactly as it did
 // before cases existed, so no earlier decision is voided.
-// @verifies confirm:INV-9
+// @verifies confirm:INV-16
 func TestCasesArePartOfThePacket(t *testing.T) {
 	b := schema.BRD{ID: "brd.x", Version: 2, Status: schema.BRDApproved, Title: "t",
 		SuccessCriteria: []schema.BRDCriterion{{ID: "SC-1", Statement: "s", MapsToInvariant: schema.InvariantRefs{"f:INV-1"}}}}
