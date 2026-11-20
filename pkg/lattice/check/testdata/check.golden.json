@@ -323,7 +323,12 @@
         ],
         "promises": [
           "bookshop:INV-1"
-        ]
+        ],
+        "why": {
+          "bookshop.TestGuard": [
+            "promise bookshop:INV-1"
+          ]
+        }
       }
     ],
     "unmatched": [
@@ -335,7 +340,21 @@
         "promises": [
           "bookshop:INV-1"
         ],
-        "reason": "no break.runners entry matches"
+        "reason": "no break.runners entry matches",
+        "why": {
+          "bookshop.e2e": [
+            "promise bookshop:INV-1",
+            "unguarded bookshop.Format via call_graph"
+          ]
+        }
+      }
+    ],
+    "uncovered": [
+      {
+        "symbol": "bookshop.Slug",
+        "file": "bookshop/slug.go",
+        "lines": "3-9",
+        "reason": "no test is known to exercise this; run the full suite"
       }
     ]
   },
