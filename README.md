@@ -119,7 +119,9 @@ verdicts. Unknown is never a pass.
   enforcer that changed under an unchanged statement, and lines no promise
   guards.
 - `lattice impact --since <rev> --tests` lists the tests that matter for a
-  change, grouped by runner, so a pre-push run stays short.
+  change, grouped by runner, so a pre-push run stays short. It also finds the
+  tests behind lines no promise guards (coverage, call graph, or a neighbouring
+  test file) and lists anything it can't place as `uncovered`.
 - `lattice prepare` and `lattice confirm` make confirmation a human act that
   the platform vouches for. An agent can prepare a decision branch. Only a
   human's approval counts.
