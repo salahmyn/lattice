@@ -681,6 +681,7 @@ const goLanguage = "go"
 // unexported method only by embedding a type declared there. Dropping a
 // candidate of another package removes no edge the program can take, so
 // reach stays an upper bound. Other languages keep every candidate.
+// @enforces reachability:INV-9
 func visible(lang string, owner, cand *node, name string) bool {
 	if r, _ := utf8.DecodeRuneInString(name); lang != goLanguage || name == "" || unicode.IsUpper(r) {
 		return true
