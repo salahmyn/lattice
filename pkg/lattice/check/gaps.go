@@ -4,6 +4,7 @@ package check
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,6 +38,17 @@ func needs(tier int) []string {
 		req = append(req, SigExercised)
 	}
 	return append(req, SigNothingFell)
+}
+
+// needsOf is the signals a touched promise is measured against: its tier's,
+// plus break_tested while its enforcement moved within the change.
+func (c *computation) needsOf(p string, tier int) []string {
+	req := needs(tier)
+	if c.moves[p] == nil || slices.Contains(req, SigBreakTested) {
+		return req
+	}
+	// break_tested goes before nothing_fell, the last signal.
+	return append(append(req[:len(req)-1:len(req)-1], SigBreakTested), req[len(req)-1])
 }
 
 // --- signals of one audit row ---
@@ -251,10 +263,23 @@ func (c *computation) gaps(touchedAny bool) []Gap {
 		}
 		wasTouched := c.touched[p] != nil
 		var mine []Gap
-		for _, name := range needs(r.Tier) {
+		for _, name := range c.needsOf(p, r.Tier) {
 			a := sig.get(name)
 			if name == SigExercised && sig.BreakTested.State == Pass {
 				continue
+			}
+			if name == SigBreakTested {
+				// A move's gap is new at every tier and whatever the base
+				// read; a waiver and INV-10 never clear it (check:INV-14).
+				if mv, open := c.moveGap(p); open {
+					mine = append(mine, Gap{Promise: p, Signal: name, State: mv.State, Honesty: mv.Honesty, Code: mv.Code, Text: mv.Text,
+						Delta: DeltaNew, NewPromise: c.newPromise[p], Waived: c.waivedPair(p, name), Blocks: true,
+						NextAction: moveNext(c.moves[p].added)})
+					continue
+				}
+				if r.Tier < 2 {
+					continue // tier 1 asks for it only while a move is open
+				}
 			}
 			if a.State == Pass {
 				if _, was := baseGaps[name]; was {
@@ -432,13 +457,17 @@ func (c *computation) rows(gaps []Gap) []PromiseRow {
 		sort.Strings(why)
 		row := PromiseRow{
 			Promise: p, Feature: r.Feature, Statement: r.Statement, Tier: r.Tier, Class: r.Class,
-			Touched: why, NewPromise: c.newPromise[p], Signals: c.signals(r), Needs: needs(r.Tier),
+			Touched: why, NewPromise: c.newPromise[p], Signals: c.signals(r), Needs: c.needsOf(p, r.Tier),
+		}
+		if mv, open := c.moveGap(p); open {
+			row.Signals.BreakTested = mv // a kill of a kept enforcer does not show the move
 		}
 		row.NextAction = c.nextAction(p, byPromise[p])
 		row.Notes = notes[p]
 		if row.NewPromise || row.Notes == nil {
 			row.Notes = []Note{} // a promise the change adds has nothing to re-read
 		}
+		row.Notes = append(row.Notes, c.moveNotes(p)...)
 		// A verifier that passes on the base code is worth a look on any
 		// touched promise, a new one included.
 		row.Notes = append(row.Notes, c.baseNotes[p]...)
@@ -454,6 +483,9 @@ func (c *computation) nextAction(p string, gaps []Gap) string {
 		if ws[0].Next != "" {
 			return ws[0].Next
 		}
+	}
+	if _, open := c.moveGap(p); open {
+		return moveNext(c.moves[p].added) // the move's gap blocks, and needs no human step
 	}
 	for _, g := range gaps {
 		if g.State != Pass && g.NextAction != "" {

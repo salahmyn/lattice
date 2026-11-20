@@ -36,6 +36,10 @@ type codeResult struct {
 	// added is enforcement that appeared on a symbol whose own lines did
 	// not change (a tag added above it).
 	added []EnforcerChange
+	// gained is every enforcement pair at head that no symbol of the changed
+	// files held at base, new symbols in new files included (see
+	// gainedEnforcement).
+	gained []EnforcerChange
 }
 
 // filePair is one changed code file, parsed on each side it exists on.
@@ -105,6 +109,10 @@ func codeChanges(ctx context.Context, in codeInput) codeResult {
 	headBy := symbolsByFile(graph.Build(graph.Input{Manifests: in.head.Features, Modules: headMods}, stamp))
 
 	var res codeResult
+	// baseHeld marks fqn\x00ref of every base pair, and name\x00ref of every
+	// base pair gone from its file.
+	baseHeld := map[string]bool{}
+	var headSide []headPair
 	for _, p := range pairs {
 		var oldSyms, newSyms []schema.GraphSymbol
 		if p.oldOK {
@@ -151,6 +159,22 @@ func codeChanges(ctx context.Context, in codeInput) codeResult {
 		// shows here even when step 1 saw no change.
 		basePairs := enforcementPairs(oldSyms, oldKeys)
 		headPairs := enforcementPairs(newSyms, newKeys)
+		for k, s := range basePairs {
+			ref := k[strings.LastIndex(k, "\x00")+1:]
+			baseHeld[s.FQN+"\x00"+ref] = true
+			if _, kept := headPairs[k]; !kept {
+				baseHeld[s.Name+"\x00"+ref] = true // gone from its file: it may reappear by name
+			}
+		}
+		for _, k := range sortedKeys(headPairs) {
+			if _, ok := basePairs[k]; ok {
+				continue
+			}
+			if s := headPairs[k]; !s.IsTest {
+				headSide = append(headSide, headPair{name: s.Name, ec: EnforcerChange{Symbol: s.FQN, File: p.c.NewPath,
+					Invariant: k[strings.LastIndex(k, "\x00")+1:], Change: ChangeEnforcementAdded}})
+			}
+		}
 		for _, k := range sortedKeys(basePairs) {
 			if _, ok := headPairs[k]; ok {
 				continue
@@ -180,6 +204,7 @@ func codeChanges(ctx context.Context, in codeInput) codeResult {
 			})
 		}
 	}
+	res.gained = gainedEnforcement(headSide, baseHeld)
 	sort.SliceStable(res.symbols, func(i, j int) bool {
 		if res.symbols[i].File != res.symbols[j].File {
 			return res.symbols[i].File < res.symbols[j].File
@@ -187,6 +212,43 @@ func codeChanges(ctx context.Context, in codeInput) codeResult {
 		return firstLine(res.symbols[i]) < firstLine(res.symbols[j])
 	})
 	return res
+}
+
+// headPair is a working-tree enforcement pair with no counterpart in its own
+// file at base, and its symbol's own name.
+type headPair struct {
+	name string
+	ec   EnforcerChange
+}
+
+// gainedEnforcement keeps the working-tree enforcement pairs that no symbol
+// of the changed files held at base. A pair is matched by FQN, and by name
+// against the base pairs gone from their file, so a symbol that moved to
+// another file with its name and its tag (a move, not a new enforcer) is not
+// listed. Every other new pair is: a tag added above a symbol, a changed
+// symbol that gained one, and a new or renamed symbol, new files included.
+// Listing those last ones is what lets a check see where the enforcement of
+// a removed symbol went.
+// @enforces check:INV-14
+func gainedEnforcement(head []headPair, baseHeld map[string]bool) []EnforcerChange {
+	var out []EnforcerChange
+	seen := map[string]bool{}
+	for _, hp := range head {
+		ec := hp.ec
+		k := ec.Symbol + "\x00" + ec.Invariant
+		if baseHeld[k] || baseHeld[hp.name+"\x00"+ec.Invariant] || seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, ec)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Invariant != out[j].Invariant {
+			return out[i].Invariant < out[j].Invariant
+		}
+		return out[i].Symbol < out[j].Symbol
+	})
+	return out
 }
 
 // removalReason says why a base-side enforcement pair has no working-tree

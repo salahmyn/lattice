@@ -69,6 +69,18 @@ the base commit, in a temporary worktree, and report `fails_on_base` or
 This is not what `break` does. `break` proves a test notices a crude break of
 the enforcer, not that it fails on the specific old behaviour.
 
+### U5. A moved enforcer is a gap, not a fall
+
+Removing an enforcer read BROKEN even when the same change moved the guard
+into another symbol, so honest refactors either kept dead wrappers or needed
+a human-confirmed retirement. A removal now reads `ENFORCER_MOVED` when the
+change adds an enforcer of the same tier 1 or 2 promise that did not enforce
+it at base. The move opens a `break_tested` gap (`MOVE_NOT_BREAK_TESTED`)
+that is new whatever the base read, and clears only when a break of each
+added enforcer is killed at head. Kills on kept enforcers, waivers and older
+break runs never clear it. A removal with only kept enforcers left, and any
+removal on a tier-3 promise, stays `ENFORCER_REMOVED` (check:INV-1, INV-14).
+
 ### B. Acceptance cases under an invariant
 
 Long invariants pull in many tests. When one of their tests fails, the report
