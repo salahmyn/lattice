@@ -236,6 +236,10 @@ type Confirmation struct {
 	ConfirmedVersion int       `json:"confirmed_version,omitempty"`
 	ConfirmedBy      string    `json:"confirmed_by,omitempty"`
 	Via              string    `json:"via,omitempty"`
+	// Method is the route of the confirmation, "review" or "signature";
+	// Fingerprint is the key of a signature.
+	Method      string `json:"method,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 // BRDRef is the BRD a feature belongs to.
@@ -246,6 +250,8 @@ type BRDRef struct {
 	ConfirmedVersion int    `json:"confirmed_version,omitempty"`
 	ConfirmedBy      string `json:"confirmed_by,omitempty"`
 	Via              string `json:"via,omitempty"`
+	Method           string `json:"method,omitempty"`
+	Fingerprint      string `json:"fingerprint,omitempty"`
 }
 
 // Signals are the signals of one promise. nothing_fell is measured against a
@@ -494,6 +500,10 @@ type HistoryEntry struct {
 	State   string `json:"state"`
 	By      string `json:"by,omitempty"`
 	Via     string `json:"via,omitempty"`
+	// Method is the route, "review" or "signature"; Fingerprint is the key
+	// of a signature.
+	Method      string `json:"method,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 // History is the decisions on a BRD, as the platform recorded them. State

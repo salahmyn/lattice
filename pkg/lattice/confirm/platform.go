@@ -60,6 +60,11 @@ type Outcome struct {
 	Approver string
 	PR       int
 	Merged   string
+	// Via, Fingerprint and Base say how the verdict was reached: the route,
+	// and for a signature the key and the commit allowed_signers was read at.
+	Via         string
+	Fingerprint string
+	Base        string
 }
 
 // IsBot reports whether a login or account type names a bot.

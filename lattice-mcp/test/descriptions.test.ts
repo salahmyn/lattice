@@ -31,3 +31,14 @@ test("tool names are unique and namespaced", () => {
     seen.add(def.name);
   }
 });
+
+// `lattice sign` is the human's own act with a hardware key: no tool may run
+// it, whatever its input.
+test("no tool runs lattice sign", () => {
+  const input = new Proxy({}, { get: () => "x" }) as Record<string, unknown>;
+  for (const def of tools) {
+    const { args } = def.toArgs(input);
+    assert.notEqual(args[0], "sign", `${def.name}: must not run lattice sign`);
+    assert.ok(!/(^|_)sign(_|$)/.test(def.name), `${def.name}: no signing tool`);
+  }
+});

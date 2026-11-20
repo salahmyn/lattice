@@ -144,7 +144,22 @@ name must be settled first.
 
 ### D. Delegated confirmation
 
-By default, `confirmed` counts only a platform approval by a non-author human.
+By default, `confirmed` counts only a platform approval by a non-author human,
+or a hardware-key signature over the decision.
+
+**Update: the signature route.** A project with one GitHub account cannot get a
+non-author approval without a second account. `lattice sign` closes that gap: the
+human signs the decision with an `sk-` SSH key, and `confirm` counts it only when
+the key is in `lattice/allowed_signers` at the base commit (never the PR head) and
+among the login's GitHub signing keys. Software keys are refused, so there is no
+weaker label; the state is `human`, always shown with its method (`via: signature`,
+login, fingerprint). Earlier local `brd ack` records stay as they are: re-confirm
+them with `prepare` and `sign`. Delegation, below, stays the fallback for projects
+without a hardware key, and its state stays `delegated`. Planned next: changes to
+`allowed_signers` signed by an already-allowed key, and an opt-in to accept the
+signature route only. The user guide's "Confirm by signature" has the threat
+model.
+
 A project owner may delegate confirmation to an agent. That weakens a
 guarantee: `confirmed` is otherwise the only signal that a non-agent read the
 intent.
