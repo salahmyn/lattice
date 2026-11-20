@@ -9,6 +9,13 @@
 // activity, so narrowing a BRD to silence a rule leaves a visible non-entry
 // or a →regressed entry rather than a green checkmark.
 //
+// It records decisions and state changes only: transitions, gates, CRs,
+// flags and sign-offs. A routine check run (validate, results ingest,
+// runs-clean, backprop, sweep) is not a decision, so it goes to the
+// untracked last-runs cache (RecordRun) and running a check never dirties
+// the tracked ledger. Older ledgers may still hold check-run lines; they
+// are read as before and never rewritten.
+//
 // It is derived state: `lattice ledger rebuild` regenerates a snapshot by
 // replaying the current graph, so the ledger can never silently disagree
 // with the code.
@@ -27,12 +34,12 @@ import (
 // file is the ledger location relative to the lattice/ directory.
 const file = ".ledger/ledger.jsonl"
 
-// Event kinds (v0.8.1). The ledger is the SINGLE event stream — every
-// kind of lifecycle event lands here rather than in parallel logs; any
-// per-feature or per-gate view is derived from it.
+// Event kinds (v0.8.1). The ledger is the single stream of decisions and
+// state changes — every such event lands here rather than in parallel
+// logs; any per-feature or per-gate view is derived from it.
 const (
 	EventTransition = "transition" // a unit moved on the truth-level ladder
-	EventCheckRun   = "check-run"  // a check suite executed (validate, runs-clean, demonstrate)
+	EventCheckRun   = "check-run"  // a check suite executed; kept in the last-runs cache, not appended (still read from older ledgers)
 	EventGate       = "gate"       // a human gate decision (approve, clear)
 	EventCR         = "cr"         // a change-request lifecycle event
 	EventFlag       = "flag"       // a meaning flag raised or cleared

@@ -12,3 +12,5 @@ invariants:
     statement: Entries are appended and read back in order; a missing ledger reads as empty.
   - id: INV-2
     statement: A check run whose actor and outcome match the latest entry for its unit appends nothing.
+  - id: INV-3
+    statement: A routine check run is kept as the latest run of its check in the untracked last-runs cache and is never appended to the ledger.

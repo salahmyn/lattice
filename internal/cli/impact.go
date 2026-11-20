@@ -36,8 +36,8 @@ uncommitted changes) and reports, without writing anything:
   5. code roll-up      the SCIP blast radius of each changed enforcer, rolled
                        up to modules, test files and entry points (optional)
 
-Unlike backprop it records nothing in the ledger and raises no flag, so it
-is safe to run on every pull request. --format markdown is the PR-comment
+Unlike backprop it records nothing (not even a last-runs entry) and raises
+no flag, so it is safe to run on every pull request. --format markdown is the PR-comment
 form; it starts with ` + impact.MarkdownMarker + ` so a job can update its
 own comment.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {

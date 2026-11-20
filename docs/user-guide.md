@@ -274,10 +274,19 @@ into CI with the templates in `ci-templates/`.
 > **Parallel branches.** `lattice.json` is rebuilt by `lattice extract` from
 > the source and manifests on every run, so teams (or agent fleets) working on
 > many branches at once can gitignore it and treat it as build output. The
-> ledger (`lattice/.ledger/ledger.jsonl`) is append-only evidence: `init` adds
-> `merge=union` for it to `.gitattributes`, so a merge keeps both sides'
-> lines, and a check run that repeats the previous outcome is not appended
-> again. Existing workspaces can add the same line to `.gitattributes`.
+> ledger (`lattice/.ledger/ledger.jsonl`) is append-only evidence of
+> **decisions and state changes**: gates (BRD approvals, council votes and
+> decisions), CR events, meaning flags, sign-offs and truth-level
+> transitions. `init` adds `merge=union` for it to `.gitattributes`, so a
+> merge keeps both sides' lines. Existing workspaces can add the same line to
+> `.gitattributes`.
+>
+> Routine check runs (`validate`, `results ingest`, `runs-clean`, `backprop`,
+> `sweep`) are not decisions, so they are **not** appended to the ledger:
+> each run overwrites its entry in `lattice/.cache/last-runs.json`, which is
+> gitignored, and `lattice ledger runs` shows the latest one per check. Running
+> a check never dirties a tracked file. Ledgers written by older versions may
+> still hold `check-run` lines; they are read as before and never rewritten.
 
 > **Multi-repo / review mode.** In standalone mode the `lattice/` directory is
 > its own repository — add it to code repos as a submodule, or keep it free-
@@ -1743,11 +1752,11 @@ against the graph and lists the grounded (approved-BRD) criteria whose
 enforcers moved. With `--flag` it raises a meaning flag on each one until a
 human clears it.
 
-`backprop` is a gate, so **every run records a check run in the ledger**
-(`lattice/.ledger/ledger.jsonl`), as `validate` does: one entry for "no doc
-impact", or one per affected criterion. A run whose actor and outcome repeat
-the latest entry for the same unit adds nothing. This is intended, and it
-means running `backprop` in CI on every pull request changes a tracked file.
+Like `validate`, every run records its outcome ("no doc impact", or the
+affected criteria) as the latest `backprop` run in the untracked
+`lattice/.cache/last-runs.json` (`lattice ledger runs` shows it). The tracked
+ledger changes only with `--flag`: each flag raised is a state change and is
+ledgered as a `flag` event.
 
 For a report that writes nothing, such as a pull-request comment, use
 `lattice impact` (below).

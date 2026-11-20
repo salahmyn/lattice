@@ -386,7 +386,8 @@ func ingestFixture(t *testing.T, ws, gitignore string) (string, string) {
 // A fresh `results ingest` in a clean checkout leaves `break` able to run
 // without --allow-dirty, wherever the workspace sits and whether or not the
 // project's .gitignore (written before `lattice init`) ignores the cache:
-// the ledger and the cache that ingest writes are Lattice's own state.
+// the cache that ingest writes is Lattice's own state, and ingest leaves the
+// tracked ledger alone.
 // @verifies breaktest:INV-9
 func TestBreakAfterIngestIsClean(t *testing.T) {
 	junit := filepath.Join(t.TempDir(), "junit.xml")
@@ -404,8 +405,10 @@ func TestBreakAfterIngestIsClean(t *testing.T) {
 			if out, err := run(t, ws, newResultsCommand, "ingest", junit); err != nil {
 				t.Fatalf("ingest: %v\n%s", err, out)
 			}
-			if st := runGit(t, dir, "status", "--porcelain"); !strings.Contains(st, layout.ws+"/.ledger/") {
-				t.Fatalf("ingest should have appended the tracked ledger:\n%s", st)
+			// Ingest records its run in the cache, never in the tracked
+			// ledger (a dirty ledger is covered by TestBreakIgnoresLedger).
+			if st := runGit(t, dir, "status", "--porcelain"); strings.Contains(st, layout.ws+"/.ledger/") {
+				t.Fatalf("ingest must not touch the tracked ledger:\n%s", st)
 			}
 			rep, out, err := runBreak(t, ws, "--promise", "guard:INV-1")
 			if err != nil {
