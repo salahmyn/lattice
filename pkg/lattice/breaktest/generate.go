@@ -13,7 +13,12 @@ import (
 	"fmt"
 	"sort"
 
-	sitter "github.com/smacker/go-tree-sitter"
+	sitter "github.com/tree-sitter/go-tree-sitter"
+	gogrammar "github.com/tree-sitter/tree-sitter-go/bindings/go"
+	tspython "github.com/tree-sitter/tree-sitter-python/bindings/go"
+	tsgrammar "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
+
+	"github.com/salahmyn/lattice/pkg/lattice/adapters/astutil"
 )
 
 // Symbol names the function a break is generated for. Line is the 1-based
@@ -72,11 +77,17 @@ func Generate(language, file string, src []byte, sym Symbol) (Break, error) {
 	return Break{}, noBreak("no generated break for %s; add a script", language)
 }
 
-// parse runs a tree-sitter grammar over src.
+// The grammars are static C data and need no Close.
+var (
+	goLanguage     = sitter.NewLanguage(gogrammar.Language())
+	pythonLanguage = sitter.NewLanguage(tspython.Language())
+	tsLanguage     = sitter.NewLanguage(tsgrammar.LanguageTypescript())
+	tsxLanguage    = sitter.NewLanguage(tsgrammar.LanguageTSX())
+)
+
+// parse runs a tree-sitter grammar over src. The caller closes the tree.
 func parse(lang *sitter.Language, src []byte) (*sitter.Tree, error) {
-	p := sitter.NewParser()
-	p.SetLanguage(lang)
-	tree, err := p.ParseCtx(context.Background(), nil, src)
+	tree, err := astutil.Parse(context.Background(), lang, src)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +107,7 @@ func walk(n *sitter.Node, visit func(*sitter.Node) bool) {
 		return
 	}
 	for i := 0; i < int(n.ChildCount()); i++ {
-		walk(n.Child(i), visit)
+		walk(n.Child(uint(i)), visit)
 	}
 }
 
@@ -110,5 +121,5 @@ func text(n *sitter.Node, src []byte) string {
 // within reports whether the 1-based line falls in the header of a function,
 // from the first row of its declaration to the row its body opens on.
 func within(line, hdrRow int, body *sitter.Node) bool {
-	return hdrRow <= line-1 && line-1 <= int(body.StartPoint().Row)
+	return hdrRow <= line-1 && line-1 <= int(body.StartPosition().Row)
 }

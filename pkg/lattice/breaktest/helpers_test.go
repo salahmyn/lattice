@@ -1,11 +1,9 @@
 package breaktest
 
 import (
-	sitter "github.com/smacker/go-tree-sitter"
-	gogrammar "github.com/smacker/go-tree-sitter/golang"
-	tsts "github.com/smacker/go-tree-sitter/typescript/typescript"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
-func goGrammar() *sitter.Language { return gogrammar.GetLanguage() }
+func goGrammar() *sitter.Language { return goLanguage }
 
-func tsGrammar() *sitter.Language { return tsts.GetLanguage() }
+func tsGrammar() *sitter.Language { return tsLanguage }
