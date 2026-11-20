@@ -13,6 +13,25 @@ implements_brd: brd.verification
 invariants:
   - id: INV-1
     statement: Anything that fell reads BROKEN and never merges. That is a promise level dropped against base, an enforcer or verifier removed, a break killed at base that survives at head, a red suite, or an edit to the statement, tier or mapping of a confirmed promise.
+    cases:
+      - id: a
+        kind: error
+        statement: An enforcer removed reads BROKEN and never merges.
+      - id: b
+        kind: error
+        statement: A verifier removed reads BROKEN and never merges.
+      - id: c
+        kind: error
+        statement: A promise level dropped against base reads BROKEN and never merges.
+      - id: d
+        kind: error
+        statement: A break killed at base that survives at head reads BROKEN and never merges.
+      - id: e
+        kind: error
+        statement: A red suite reads BROKEN and never merges.
+      - id: f
+        kind: edge
+        statement: An edit to the statement, tier or mapping of a confirmed promise reads BROKEN until a human confirms it again.
   - id: INV-2
     statement: Unknown is never a pass. A missing signal is a gap that keeps the verdict at UNPROVEN, each tier needs its default signals (tier 1 exercised or break_tested, tier 2 and 3 break_tested), and UNPROVEN is never drawn as a pass.
   - id: INV-3
