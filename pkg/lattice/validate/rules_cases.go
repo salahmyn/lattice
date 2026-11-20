@@ -161,22 +161,29 @@ func (c *corpus) checkCaseRefs() []schema.Violation {
 }
 
 // Broad-invariant heuristic (INVARIANT_BROAD). It is deliberately simple
-// and deterministic: a statement reads as several claims when it makes them
-// in separate sentences or semicolon clauses, each with a verb, and is long
-// enough for that to matter. Length alone never fires: one claim with a long
-// list, or with conditions joined by "and", is one claim, and so is a rule
-// with its exception ("X; Y"). The thresholds were tuned on Lattice's own
-// features and on a real project's: they name about one invariant in six
-// there, and one in fourteen here, where statements are shorter.
+// and deterministic, and names two kinds of omnibus statement:
+//   - a long statement that makes its claims in separate sentences or
+//     semicolon clauses, each with a verb;
+//   - a very long statement, however it is punctuated: one sentence that
+//     strings many conditions together with commas reads as one claim to the
+//     sentence rule, yet it is the hardest kind for a failing test to point
+//     into.
+//
+// A short rule with its exception ("X; Y") stays quiet. The thresholds were
+// tuned on Lattice's own features and on a real project's, where they name
+// every statement over 400 characters and about one invariant in four or
+// five; Lattice's own statements are shorter and fire far less.
 const (
 	// broadSentences sentences that each have a verb make a statement broad.
 	broadSentences = 2
 	// broadClaims sentences or semicolon clauses that each have a verb make
 	// a statement broad.
 	broadClaims = 3
-	// broadMinWords is the length floor: a shorter statement is never broad,
-	// however it is punctuated.
-	broadMinWords = 30
+	// broadMinWords is the floor of the sentence and claim rule: a shorter
+	// statement never fires by its punctuation.
+	broadMinWords = 60
+	// broadLongWords makes a statement broad by its length alone.
+	broadLongWords = 70
 )
 
 // sentenceSplit cuts a statement into sentences; claimSplit cuts a sentence
@@ -230,8 +237,8 @@ func claims(statement string) (sentences, claims int) {
 }
 
 // broad reports whether an invariant statement reads as several claims, and
-// why: at least broadMinWords words, and broadSentences sentences or
-// broadClaims claims (see claims).
+// why: broadLongWords words or more, or at least broadMinWords words with
+// broadSentences sentences or broadClaims claims (see claims).
 func broad(statement string) (bool, string) {
 	words := len(strings.Fields(statement))
 	if words < broadMinWords {
@@ -243,6 +250,8 @@ func broad(statement string) (bool, string) {
 		return true, fmt.Sprintf("%d sentences in %d words", sentences, words)
 	case n >= broadClaims:
 		return true, fmt.Sprintf("%d claims in %d words", n, words)
+	case words >= broadLongWords:
+		return true, fmt.Sprintf("%d words in one statement", words)
 	}
 	return false, ""
 }

@@ -126,38 +126,42 @@ func TestCaseEnforcer(t *testing.T) {
 	}
 }
 
-// INVARIANT_BROAD is info and fires on a statement of thirty words or more
-// that makes several claims, in two sentences or in three sentences or
-// semicolon clauses that each have a verb, only when the invariant has no
-// cases. Length alone does not fire: one long claim, one claim with a long
-// list, and a short rule with its exception stay quiet.
+// INVARIANT_BROAD names an invariant with no cases whose statement is long
+// and makes several claims, in two sentences or in three sentences or
+// semicolon clauses that each have a verb, or is very long however it is
+// punctuated. A shorter multi-sentence statement, a long single claim under
+// the length bound, and a short rule with its exception stay quiet.
 // @verifies validation:INV-15
 func TestInvariantBroad(t *testing.T) {
-	omnibus := "A withdrawal fee is charged once per withdrawal and never exceeds five percent of the amount; a refund " +
-		"returns the fee in full and is recorded against the original withdrawal; a reversed refund charges the fee again " +
-		"and the ledger shows both entries."
-	long := "A fee is computed from the amount " + strings.Repeat("and the currency ", 23) + "of the withdrawal."
-	list := "A fee is recorded with the amount, the currency, the rate, the rounding mode, the account, the merchant, " +
-		"the channel, the time, the operator, the region, the reference, the batch and the settlement date of the withdrawal."
-	short := "A fee is never negative; it is never charged twice."
-	twoSentences := "An order is charged its fee once, when the payment settles, in the currency of the order. " +
+	omnibus := "A withdrawal fee is charged once per withdrawal and never exceeds five percent of the amount, rounded " +
+		"down to the cent; a refund returns the fee in full and is recorded against the original withdrawal on the " +
+		"same day; a reversed refund charges the fee again, and the ledger shows both entries with the same reference and the same date."
+	twoSentences := "An order is charged its fee once, when the payment settles, in the currency of the order and at " +
+		"the rate that applied when the order was placed. A refunded order returns the full fee to the wallet it came " +
+		"from, on the same day as the refund, and the statement for that month lists both the charge and the return."
+	threeClaims := "A wallet balance is never negative at the end of a transaction, whatever the order of the debits " +
+		"in it; a debit larger than the balance is refused with the shortfall named in the error and the account " +
+		"flagged for review; a refused debit records no ledger entry and leaves the balance exactly as it was before the debit was tried."
+	veryLong := "A fee is computed from the amount " + strings.Repeat("and the currency ", 22) + "of the withdrawal."
+	longClaim := "A fee is computed from the amount " + strings.Repeat("and the currency ", 18) + "of the withdrawal."
+	mediumTwo := "An order is charged its fee once, when the payment settles, in the currency of the order. " +
 		"A refunded order returns the full fee to the wallet it came from, on the same day as the refund."
-	threeClaims := "A wallet balance is never negative; a debit larger than the balance is refused with the shortfall " +
-		"named in the error; a refused debit records no ledger entry and leaves the balance as it was."
+	short := "A fee is never negative; it is never charged twice."
 	shortTwo := "An order is charged once. A refund returns the fee."
 	for name, tc := range map[string]struct {
 		statement string
 		cases     []schema.InvariantCase
 		fires     bool
 	}{
-		"several clauses":     {omnibus, nil, true},
-		"two sentences":       {twoSentences, nil, true},
-		"three semicolons":    {threeClaims, nil, true},
-		"long single claim":   {long, nil, false},
-		"with cases":          {omnibus, goodCases[:1], false},
-		"one long list":       {list, nil, false},
-		"two short":           {short, nil, false},
-		"two short sentences": {shortTwo, nil, false},
+		"several clauses":      {omnibus, nil, true},
+		"two sentences":        {twoSentences, nil, true},
+		"three semicolons":     {threeClaims, nil, true},
+		"very long, one claim": {veryLong, nil, true},
+		"long single claim":    {longClaim, nil, false},
+		"with cases":           {omnibus, goodCases[:1], false},
+		"two medium sentences": {mediumTwo, nil, false},
+		"two short":            {short, nil, false},
+		"two short sentences":  {shortTwo, nil, false},
 	} {
 		kg := feesGraph(tc.cases)
 		kg.Features[0].Invariants[0].Statement = tc.statement
