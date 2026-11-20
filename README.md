@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img alt="go" src="https://img.shields.io/badge/go-1.24+-7FB6D0?style=flat-square&labelColor=0F1218">
+  <img alt="go" src="https://img.shields.io/badge/go-1.26+-7FB6D0?style=flat-square&labelColor=0F1218">
   <img alt="status" src="https://img.shields.io/badge/status-alpha-E5B66C?style=flat-square&labelColor=0F1218">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-C7BEEC?style=flat-square&labelColor=0F1218">
   <img alt="mcp" src="https://img.shields.io/badge/mcp-server-8C7DD6?style=flat-square&labelColor=0F1218">
@@ -40,7 +40,8 @@ Download a binary for Linux or macOS (on Windows, use the Linux one under WSL) f
 [latest release](https://github.com/salahmyn/lattice/releases/latest) and check it against `checksums.txt`.
 A merge to `master` publishes a release when `CHANGELOG.md` names a new version.
 
-Or build from source (Go 1.25+, a C toolchain for the tree-sitter bindings):
+Or build from source (Go 1.26+, a C toolchain for the tree-sitter bindings).
+A source build reports its commit from the VCS information Go embeds:
 
 ```sh
 go build -o dist/lattice ./cmd/lattice
@@ -94,6 +95,36 @@ demotes touched criteria so stale green never rides, and deleting a verifier
 is legal only against an approved retirement item (`lattice sweep` enforces
 it). `lattice backprop` maps merged code changes back onto the requirements,
 so the requirement never silently follows the code.
+
+## Assurance: done right, not just done
+
+A test that exists is not a test that works. For each change, Lattice asks
+whether the promises it touches are still kept, and answers with one of three
+verdicts. Unknown is never a pass.
+
+```
+  ASSURED   every touched promise is traced, confirmed, live and break-tested
+  UNPROVEN  something is not shown yet (a gap); never drawn as a pass
+  BROKEN    something fell: a break the base caught now survives, an enforcer
+            or verifier was removed, the suite is red, a confirmed promise
+            was edited
+```
+
+- `lattice break` breaks each promise's enforcer in a temporary worktree and
+  runs only its verifiers. A test that still passes is a **fake**.
+- `lattice break --fails-on-base <rev>` runs a change's new or edited tests on
+  the old code. A fix's test should fail there.
+- `lattice audit` classifies every promise (fake, break-tested, exercised,
+  demonstrated only, a gap) and names the enforcer a finding is about.
+- `lattice check --base <rev>` gives the change one verdict and a merge rule:
+  no new gap, no new untraced lines, tier 3 must be ASSURED. It also notes an
+  enforcer that changed under an unchanged statement, and lines no promise
+  guards.
+- `lattice impact --since <rev> --tests` lists the tests that matter for a
+  change, grouped by runner, so a pre-push run stays short.
+- `lattice prepare` and `lattice confirm` make confirmation a human act that
+  the platform vouches for. An agent can prepare a decision branch. Only a
+  human's approval counts.
 
 ## Quick start
 
@@ -163,7 +194,12 @@ A complete, validating three-language example lives in
 | `lattice view <name>` | Render developer / product / business / c4 views |
 | `lattice journey <brd>` \| `lattice actor list` | Journey and actor views |
 | `lattice rtm` | Requirements traceability matrix with attestation header |
-| `lattice break --fails-on-base <rev>` | Run a change's new or edited tests on the old code: a fix's test should fail there |
+| `lattice check --base <rev>` | One verdict for a change (ASSURED / UNPROVEN / BROKEN) and the merge rule |
+| `lattice impact --since <rev> [--tests]` | What a change touches; `--tests` lists the verifier tests to run, by runner |
+| `lattice break [--promise f:INV-n] [--fails-on-base <rev>]` | Break each enforcer and see whether its verifiers notice; `--fails-on-base` runs a change's new or edited tests on the old code |
+| `lattice audit [--promise f:INV-n]` | Classify every promise: fake, break-tested, exercised, a gap |
+| `lattice prepare brd\|promise\|waiver …` | Prepare a decision branch for a human to approve; never pushes |
+| `lattice confirm` | Read which decisions a human confirmed on the platform |
 | `lattice agent <cap>` | LLM-backed capabilities (deterministic fallback) |
 | `lattice mutation run` | Mutation-test invariant-enforcing code |
 | `lattice structural-checks run` | Run structural invariant checks |
