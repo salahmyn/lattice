@@ -1,0 +1,18 @@
+id: ep.cli.check
+version: 1
+status: production
+kind: cli
+purpose: 'One verdict for a change: BROKEN, UNPROVEN or ASSURED'
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: lattice check
+handler:
+  symbol: internal.cli.newCheckCommand
+  file: internal/cli/check.go
+flow:
+  - feature: cli
+  - feature: check
+  - feature: impact
+  - feature: audit
