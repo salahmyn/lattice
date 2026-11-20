@@ -98,6 +98,16 @@ is legal only against an approved retirement item (`lattice sweep` enforces
 it). `lattice backprop` maps merged code changes back onto the requirements,
 so the requirement never silently follows the code.
 
+### Acceptance cases
+
+A long invariant pulls in many tests, and when one fails the report names a
+paragraph, not a claim. An invariant may list its claims as `cases` (ids `a`,
+`b`, …, kind `happy | edge | error | security`), and a test that checks one
+says so with `@verifies wallet.fees:INV-1#a`; it still counts as a verifier of
+`INV-1`. `lattice validate` checks the cases and the refs, and
+`INVARIANT_BROAD` (info) names invariants that read as several claims and
+have no cases.
+
 ## Assurance: done right, not just done
 
 A test that exists is not a test that works. For each change, Lattice asks

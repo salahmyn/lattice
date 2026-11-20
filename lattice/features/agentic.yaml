@@ -11,3 +11,5 @@ implements_brd: brd.agent_coordination
 invariants:
   - id: INV-1
     statement: The default or mixed audience adds no tone instruction to a prompt.
+  - id: INV-2
+    statement: A manifest a model drafts is returned in canonical form, so it may hold invariants with cases but no key the schema does not have, such as a typed confirmation or coverage.
