@@ -2,18 +2,22 @@ package check
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/salahmyn/lattice/pkg/lattice/adapters/golang"
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm"
 	"github.com/salahmyn/lattice/pkg/lattice/coverage"
 	"github.com/salahmyn/lattice/pkg/lattice/impact"
+	"github.com/salahmyn/lattice/pkg/lattice/reach"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
+	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 )
 
 // --- builders: the bookshop's promises, as audit rows ---
@@ -473,10 +477,11 @@ func TestReachedButUnguardedLinesAreUnproven(t *testing.T) {
 	head := auditOf("head", good(p, 1))
 	kg := schema.KnowledgeGraph{
 		Symbols: []schema.GraphSymbol{
-			{FQN: "orders.Handle", File: "orders/handler.go", Feature: "orders", Reach: schema.ReachEntry},
-			{FQN: "orders.Guard", File: "orders/guard.go", Feature: "orders", Reach: schema.ReachEntry},
+			{FQN: "orders.Handle", File: "orders/handler.go", Feature: "orders", Reach: schema.ReachEntry, HandlerReach: schema.HandlerReached},
+			{FQN: "orders.Guard", File: "orders/guard.go", Feature: "orders", Reach: schema.ReachEntry, HandlerReach: schema.HandlerReached},
 		},
-		EntryPoints: []schema.EntryPoint{{ID: "POST /orders", Flow: []schema.FlowStep{{Feature: "orders"}}}},
+		EntryPoints: []schema.EntryPoint{{ID: "POST /orders", Handler: schema.Handler{Symbol: "orders.Handle"},
+			Flow: []schema.FlowStep{{Feature: "orders"}}}},
 	}
 	handler := impact.ChangedSymbol{Symbol: "orders.Handle", Kind: "function", File: "orders/handler.go", Lines: "3-22",
 		Change: impact.ChangeModified, Feature: "orders"}
@@ -548,6 +553,140 @@ func TestReachedButUnguardedLinesAreUnproven(t *testing.T) {
 	rep = Compute(in)
 	if rep.Verdict.State != Assured || rep.Verdict.Code != CodeAllSignals || rep.BlindSpot.GuardedLines != 20 {
 		t.Errorf("checked reference: %+v %+v", rep.Verdict, rep.BlindSpot)
+	}
+}
+
+// "An entry point reaches it" is decided per symbol, by the call graph from
+// a declared entry point's handler, not by the symbol's feature being on a
+// flow. A symbol whose feature is on a flow but that no handler reaches gets
+// the weaker reason; one a handler reaches reads entry-reached whatever the
+// flows say; an undecided handler reach is never read as reached. The labels
+// never make a line guarded, and the verdict and merge rule are unchanged.
+// @verifies check:INV-12
+func TestEntryReachIsPerSymbol(t *testing.T) {
+	p := "orders:INV-1"
+	base := auditOf("base", good(p, 1))
+	head := auditOf("head", good(p, 1))
+	touch := func(sym, file string) impact.ChangedSymbol {
+		return impact.ChangedSymbol{Symbol: sym, Kind: "function", File: file, Lines: "1-10", Change: impact.ChangeModified, Feature: "orders"}
+	}
+	in := scenario(&base, head, impact.Report{ChangedSymbols: []impact.ChangedSymbol{
+		touch("orders.Rebuild", "orders/rebuild.go"), touch("fees.Quote", "fees/quote.go"), touch("orders.Batch", "orders/batch.go")}})
+	in.Impact.ChangedSymbols[1].Feature = "fees"
+	in.KG = schema.KnowledgeGraph{
+		Symbols: []schema.GraphSymbol{
+			// (a) its feature is on a flow, a root (func main) reaches it, no handler does.
+			{FQN: "orders.Rebuild", File: "orders/rebuild.go", Feature: "orders", Reach: schema.ReachEntry, HandlerReach: schema.HandlerUnreached},
+			// (b) a handler reaches it; its feature is on no flow.
+			{FQN: "fees.Quote", File: "fees/quote.go", Feature: "fees", Reach: schema.ReachEntry, HandlerReach: schema.HandlerReached},
+			// The graph cannot say whether a handler reaches it.
+			{FQN: "orders.Batch", File: "orders/batch.go", Feature: "orders", Reach: schema.ReachEntry, HandlerReach: schema.HandlerUnknown},
+		},
+		EntryPoints: []schema.EntryPoint{{ID: "POST /orders", Handler: schema.Handler{Symbol: "orders.Handle"},
+			Flow: []schema.FlowStep{{Feature: "orders"}}}},
+	}
+	rep := Compute(in)
+	bs := rep.BlindSpot
+	by := map[string]UntracedLine{}
+	for _, u := range append(append([]UntracedLine{}, bs.Untraced...), bs.Unguarded...) {
+		by[u.Symbol] = u
+	}
+	const strong = "an entry point reaches it"
+	if u := by["orders.Rebuild"]; strings.Contains(u.Reason, strong) || !strings.Contains(u.Reason, "no entry point's handler reaches it") ||
+		u.HandlerReach != schema.HandlerUnreached {
+		t.Errorf("(a) flow feature, no handler reaches it: %+v", u)
+	}
+	if u := by["fees.Quote"]; !strings.Contains(u.Reason, strong) || u.HandlerReach != schema.HandlerReached {
+		t.Errorf("(b) handler reaches it, feature on no flow: %+v", u)
+	}
+	if u := by["orders.Batch"]; strings.Contains(u.Reason, strong) || !strings.Contains(u.Reason, "unknown") || u.HandlerReach != schema.HandlerUnknown {
+		t.Errorf("undecided handler reach must read unknown: %+v", u)
+	}
+	// Each one is traced: none is untraced, none is guarded, and the
+	// verdict and the merge rule are those of INV-9.
+	if len(bs.Untraced) != 0 || len(bs.Unguarded) != 3 || bs.GuardedLines != 0 || bs.UnguardedLines != 30 {
+		t.Errorf("blind spot = %+v", bs)
+	}
+	if rep.Verdict.State != Unproven || rep.Verdict.Code != CodeUnguardedLines || !rep.MergeAllowed {
+		t.Errorf("verdict %+v merge %v %+v", rep.Verdict, rep.MergeAllowed, rep.Merge)
+	}
+
+	// Off every flow and reached by no handler, or undecided: tag only, and
+	// the undecided one says so instead of claiming nothing reaches it.
+	in.KG.EntryPoints[0].Flow = []schema.FlowStep{{Feature: "wallet"}}
+	rep = Compute(in)
+	by = map[string]UntracedLine{}
+	for _, u := range rep.BlindSpot.Untraced {
+		by[u.Symbol] = u
+	}
+	if u := by["orders.Rebuild"]; !strings.Contains(u.Reason, "tag only") || strings.Contains(u.Reason, "unknown") {
+		t.Errorf("off the flows, no handler: %+v", u)
+	}
+	if u := by["orders.Batch"]; !strings.Contains(u.Reason, "tag only") || !strings.Contains(u.Reason, "unknown whether an entry point's handler reaches it") {
+		t.Errorf("off the flows, undecided: %+v", u)
+	}
+	if _, ok := by["fees.Quote"]; ok || rep.Verdict.State != Unproven {
+		t.Errorf("a handler-reached symbol is traced: untraced %+v verdict %+v", rep.BlindSpot.Untraced, rep.Verdict)
+	}
+}
+
+// (c) A handler that names no symbol of the graph reaches nothing: end to
+// end from the call graph, a symbol only func main reaches, whose feature is
+// on the flow of an entry point with such a handler, is not entry-reached;
+// the handler that resolves still reaches what it calls.
+// @verifies check:INV-12
+func TestUnresolvedHandlerReachesNothing(t *testing.T) {
+	m, err := golang.New().Parse(context.Background(), "cmd/shop/main.go", []byte(
+		"package main\n\nfunc main() { serve(); rebuild() }\n\nfunc serve() { quote() }\n\nfunc quote() {}\n\nfunc rebuild() {}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	eps := []schema.EntryPoint{
+		{ID: "ep.cli.rebuild", Handler: schema.Handler{Symbol: "cmd.shop.rebuildAll"}, Flow: []schema.FlowStep{{Feature: "orders"}}},
+	}
+	kg := schema.KnowledgeGraph{EntryPoints: eps, Symbols: []schema.GraphSymbol{
+		{FQN: "cmd.shop.rebuild", Kind: "function", File: "cmd/shop/main.go", Feature: "orders"},
+		{FQN: "cmd.shop.quote", Kind: "function", File: "cmd/shop/main.go", Feature: "fees"},
+	}}
+	reach.Annotate(&kg, reach.Compute(reach.Input{Modules: []ir.Module{m}, EntryPoints: eps}))
+	if kg.Symbols[0].Reach != schema.ReachEntry {
+		t.Fatalf("func main reaches rebuild: reach %q", kg.Symbols[0].Reach)
+	}
+	p := "orders:INV-1"
+	base, head := auditOf("base", good(p, 1)), auditOf("head", good(p, 1))
+	changed := []impact.ChangedSymbol{
+		{Symbol: "cmd.shop.rebuild", Kind: "function", File: "cmd/shop/main.go", Lines: "9-9", Change: impact.ChangeModified, Feature: "orders"},
+		{Symbol: "cmd.shop.quote", Kind: "function", File: "cmd/shop/main.go", Lines: "7-7", Change: impact.ChangeModified, Feature: "fees"},
+	}
+	in := scenario(&base, head, impact.Report{ChangedSymbols: changed})
+	in.KG = kg
+	reason := func(rep Report, sym string) string {
+		for _, u := range append(append([]UntracedLine{}, rep.BlindSpot.Untraced...), rep.BlindSpot.Unguarded...) {
+			if u.Symbol == sym {
+				return u.Reason
+			}
+		}
+		return ""
+	}
+	rep := Compute(in)
+	if r := reason(rep, "cmd.shop.rebuild"); strings.Contains(r, "an entry point reaches it") {
+		t.Errorf("an unresolved handler reached rebuild: %q", r)
+	}
+	if r := reason(rep, "cmd.shop.quote"); strings.Contains(r, "an entry point reaches it") {
+		t.Errorf("no handler resolves, yet quote reads entry-reached: %q", r)
+	}
+
+	// Once a handler resolves, what it calls is entry-reached; the rest is not.
+	eps = append(eps, schema.EntryPoint{ID: "ep.cli.serve", Handler: schema.Handler{Symbol: "cmd.shop.serve"}})
+	kg.EntryPoints = eps
+	reach.Annotate(&kg, reach.Compute(reach.Input{Modules: []ir.Module{m}, EntryPoints: eps}))
+	in.KG = kg
+	rep = Compute(in)
+	if r := reason(rep, "cmd.shop.quote"); !strings.Contains(r, "an entry point reaches it") {
+		t.Errorf("serve's handler reaches quote: %q", r)
+	}
+	if r := reason(rep, "cmd.shop.rebuild"); strings.Contains(r, "an entry point reaches it") {
+		t.Errorf("no handler reaches rebuild: %q", r)
 	}
 }
 
@@ -942,6 +1081,8 @@ func TestCheckContractGolden(t *testing.T) {
 		Tests: &sampleTests,
 	}
 	in := scenario(&base, head, im)
+	in.KG = schema.KnowledgeGraph{Symbols: []schema.GraphSymbol{{FQN: "bookshop.Format", File: "bookshop/format.go",
+		Feature: "bookshop", Reach: schema.ReachEntry, HandlerReach: schema.HandlerUnreached}}}
 	in.Waivers = []Waiver{{Subject: q + "/exercised", Kind: "no_tool", Reason: "no coverage tool"}}
 	in.FailsOnBase = &BaseProof{Schema: failsOnBaseSchema, BaseRev: "main", Base: "base", Head: "head", CIRun: "local",
 		Verifiers: []BaseProofTest{{Verifier: "bookshop.TestGuard", Promises: []string{q}, Outcome: "passes_on_base"}}}

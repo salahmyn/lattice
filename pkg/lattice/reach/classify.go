@@ -21,6 +21,10 @@ type Result struct {
 	Class map[string]string
 	// Classes counts symbols per class.
 	Classes map[string]int
+	// Handler maps each runtime (non-test) symbol and interface to its
+	// handler reach: does the handler of a declared entry point reach it
+	// (see ClassifyHandlers)? Nil until ClassifyHandlers runs.
+	Handler map[string]string
 }
 
 // HasRoots reports whether any root exists.
@@ -72,6 +76,65 @@ func Classify(g *Graph, roots []Root) *Result {
 		r.Classes[c]++
 	}
 	return r
+}
+
+// Handlers lists the handler symbols of the entry points that resolve to a
+// runtime symbol of the graph, sorted. A handler that names no symbol of the
+// graph (a typo, a renamed function, a language with no symbol data) is left
+// out: it reaches nothing.
+func (g *Graph) Handlers(eps []schema.EntryPoint) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, ep := range eps {
+		f := ep.Handler.Symbol
+		n := g.nodes[f]
+		if f == "" || seen[f] || n == nil || !n.symbol || n.isTest {
+			continue
+		}
+		seen[f] = true
+		out = append(out, f)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ClassifyHandlers records, for every runtime symbol and interface,
+// whether the call graph reaches it from one of handlers (see Handlers), by
+// the walk Classify uses:
+//
+//   - reached: a handler reaches it through resolved edges, or through an
+//     ambiguous method call whose type reached code uses;
+//   - unknown: its language has no reference data, or a handler reaches it
+//     only through an ambiguous reference the graph does not resolve;
+//   - unreached: no handler reaches it, not even through an ambiguous
+//     reference; with no handler at all, nothing is reached.
+//
+// Other roots (func main, entry files, coverage.roots) do not count: this
+// is the reach of the declared entry points alone. Interfaces get a handler
+// reach too, by the rule types already follow in the walk: a type is reached
+// when reached code names or builds it.
+// @enforces check:INV-12
+func (r *Result) ClassifyHandlers(handlers []string) {
+	r.Handler = map[string]string{}
+	if r.Graph == nil {
+		return
+	}
+	g := r.Graph
+	must, may := g.walk(handlers)
+	for f, n := range g.nodes {
+		if !n.symbol || n.isTest || !(runtimeKinds[n.kind] || n.kind == "interface") {
+			continue
+		}
+		c := schema.HandlerUnreached
+		switch {
+		case must[f]:
+			c = schema.HandlerReached
+		case len(handlers) == 0:
+		case !n.refsKnown, may[f]:
+			c = schema.HandlerUnknown
+		}
+		r.Handler[f] = c
+	}
 }
 
 // walk returns the nodes reachable from start, and those reachable once
@@ -136,13 +199,17 @@ func (g *Graph) walk(start []string) (must, may map[string]bool) {
 }
 
 // Annotate writes each runtime symbol's class onto the graph
-// (GraphSymbol.Reach). With no result it writes nothing.
+// (GraphSymbol.Reach), and its handler reach (GraphSymbol.HandlerReach)
+// when ClassifyHandlers ran. With no result it writes nothing.
 func Annotate(kg *schema.KnowledgeGraph, r *Result) {
 	if r == nil {
 		return
 	}
 	for i := range kg.Symbols {
 		kg.Symbols[i].Reach = r.Class[kg.Symbols[i].FQN]
+		if r.Handler != nil {
+			kg.Symbols[i].HandlerReach = r.Handler[kg.Symbols[i].FQN]
+		}
 	}
 }
 

@@ -1457,10 +1457,19 @@ the gap and never removes it, including one added in the same change.
 
 A touched line counts as traced only when an enforcer span covers it (the
 symbol carries `@enforces`), a checked reference names it (a direct-wire
-criterion's `enforced_by`), or an entry point of its feature reaches it. A
+criterion's `enforced_by`), or an entry point reaches it. A
 file-level `@module-feature` tag alone never counts. The rest goes in the blind
 spot, with the promises a human marked out of reach, and keeps the verdict at
 `UNPROVEN`. Lines are counted by the touched symbol's extent, an upper bound.
+
+A line reads "an entry point reaches it" only when the call graph reaches its
+symbol from the `handler` of a declared entry point; a handler that names no
+symbol of the graph reaches nothing. A line whose feature is on an entry
+point's `flow`, and that some root reaches but no handler does, is still traced
+and says so instead ("its feature is on an entry point's flow, but no entry
+point's handler reaches it"). When the graph cannot decide (an ambiguous call,
+a language with no reference data) the reason says it is unknown. Each line in
+`blind_spot` carries `handler_reach` (`reached`, `unreached` or `unknown`).
 
 Traced is not guarded. A line is **guarded** only when a promise covers it: an
 enforcer span or a checked reference, the lines `lattice impact` attributes to a

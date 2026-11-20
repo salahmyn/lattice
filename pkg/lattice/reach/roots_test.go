@@ -10,6 +10,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/reach"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
+	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 )
 
 func rootSet(roots []reach.Root) map[string]string {
@@ -132,5 +133,82 @@ func TestEntryFilesExportsAndTsconfig(t *testing.T) {
 	}
 	if len(want) > 0 {
 		t.Errorf("missing entry files %v (got %+v)", want, files)
+	}
+}
+
+// Handler reach counts only the handlers of declared entry points that
+// resolve to a symbol of the graph: what they call is reached, what only
+// func main calls is not, and a handler naming no symbol reaches nothing.
+// Annotate writes it beside the reach class.
+// @verifies check:INV-12
+func TestHandlerReach(t *testing.T) {
+	mods := parse(t, golang.New(), map[string]string{
+		"cmd/shop/main.go": "package main\n\nfunc main() { serve(); rebuild() }\n\nfunc serve() { quote() }\n\nfunc quote() {}\n\nfunc rebuild() {}\n",
+	})
+	ghost := schema.EntryPoint{ID: "ep.cli.ghost", Handler: schema.Handler{Symbol: "cmd.shop.missing"}}
+	blank := schema.EntryPoint{ID: "ep.cli.blank"}
+	serve := schema.EntryPoint{ID: "ep.cli.serve", Handler: schema.Handler{Symbol: "cmd.shop.serve"}}
+
+	r := reach.Compute(reach.Input{Modules: mods, EntryPoints: []schema.EntryPoint{ghost, blank}})
+	if hs := r.Graph.Handlers([]schema.EntryPoint{ghost, blank}); len(hs) != 0 {
+		t.Errorf("unresolved handlers = %v, want none", hs)
+	}
+	for _, f := range []string{"cmd.shop.main", "cmd.shop.serve", "cmd.shop.quote", "cmd.shop.rebuild"} {
+		if r.Class[f] != schema.ReachEntry || r.Handler[f] != schema.HandlerUnreached {
+			t.Errorf("%s: class %q handler %q, want entry and unreached", f, r.Class[f], r.Handler[f])
+		}
+	}
+
+	r = reach.Compute(reach.Input{Modules: mods, EntryPoints: []schema.EntryPoint{ghost, serve}})
+	for f, want := range map[string]string{
+		"cmd.shop.serve": schema.HandlerReached, "cmd.shop.quote": schema.HandlerReached,
+		"cmd.shop.main": schema.HandlerUnreached, "cmd.shop.rebuild": schema.HandlerUnreached,
+	} {
+		if r.Handler[f] != want {
+			t.Errorf("%s: handler reach %q, want %q", f, r.Handler[f], want)
+		}
+	}
+	kg := schema.KnowledgeGraph{Symbols: []schema.GraphSymbol{{FQN: "cmd.shop.quote"}, {FQN: "cmd.shop.rebuild"}}}
+	reach.Annotate(&kg, r)
+	if kg.Symbols[0].HandlerReach != schema.HandlerReached || kg.Symbols[1].HandlerReach != schema.HandlerUnreached {
+		t.Errorf("annotated = %+v", kg.Symbols)
+	}
+
+	// A type is reached when reached code names or builds it: a struct and
+	// an interface the handler's code uses, and not one nothing uses.
+	typed := parse(t, golang.New(), map[string]string{
+		"cmd/shop/main.go": "package main\n\ntype Pricer interface{ Price() int }\n\ntype Unused interface{ X() }\n\ntype Quote struct{}\n\n" +
+			"func main() {}\n\nfunc serve() { var p Pricer; _ = p; _ = Quote{} }\n",
+	})
+	r = reach.Compute(reach.Input{Modules: typed, EntryPoints: []schema.EntryPoint{serve}})
+	for f, want := range map[string]string{
+		"cmd.shop.Pricer": schema.HandlerReached, "cmd.shop.Quote": schema.HandlerReached, "cmd.shop.Unused": schema.HandlerUnreached,
+	} {
+		if r.Handler[f] != want {
+			t.Errorf("%s: handler reach %q, want %q", f, r.Handler[f], want)
+		}
+	}
+
+	// What the graph cannot decide reads unknown, never reached: a method
+	// only an ambiguous call names whose type nothing uses, and a language
+	// with no reference data. With no handler at all, nothing is reached.
+	amb := parse(t, typescript.New(), map[string]string{
+		"src/main.ts": "import { P } from './impl';\nexport function main(x: any) {\n  const p = new P();\n  x.run(p);\n}\n",
+		"src/impl.ts": "export class P { run() {} }\nexport class Q { run() {} }\n",
+	})
+	amb = append(amb, ir.Module{File: "lib/x.php", Language: "php", Symbols: []ir.Symbol{
+		{Name: "x", FQN: "App\\x", Kind: ir.KindFunction, File: "lib/x.php", Line: 1}}})
+	r = reach.Classify(reach.Build(amb, reach.Options{}), nil)
+	r.ClassifyHandlers([]string{"src.main.main"})
+	for f, want := range map[string]string{
+		"src.impl.P.run": schema.HandlerReached, "src.impl.Q.run": schema.HandlerUnknown, "App\\x": schema.HandlerUnknown,
+	} {
+		if r.Handler[f] != want {
+			t.Errorf("%s: handler reach %q, want %q", f, r.Handler[f], want)
+		}
+	}
+	r.ClassifyHandlers(nil)
+	if r.Handler["src.impl.Q.run"] != schema.HandlerUnreached || r.Handler["App\\x"] != schema.HandlerUnreached {
+		t.Errorf("no handler: %v", r.Handler)
 	}
 }

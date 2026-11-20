@@ -20,7 +20,9 @@ type lineScan struct {
 	// the merge rule.
 	newUntraced int
 	// unguarded are the touched symbols no promise guards that are not
-	// untraced: an entry point reaches them, or the change removes them.
+	// untraced: an entry point reaches them (an entry point's handler in the
+	// call graph, or, weaker, a flow through their feature), or the change
+	// removes them.
 	unguarded []UntracedLine
 	// guarded counts the lines a promise guards: an enforcer span or a
 	// checked reference covers them.
@@ -46,9 +48,18 @@ func (s lineScan) unguardedLines() int {
 //
 // A touched symbol counts as traced only when an enforcer span covers it
 // (the symbol carries @enforces), a checked reference names it (a direct-wire
-// BRD criterion's enforced_by), or an entry point of its feature reaches it.
-// A file-level @module-feature tag gives the symbol a feature and nothing
-// else: it never makes a line traced.
+// BRD criterion's enforced_by), or an entry point reaches it. A file-level
+// @module-feature tag gives the symbol a feature and nothing else: it never
+// makes a line traced.
+//
+// An entry point reaches a symbol in one of two ways, told apart in the
+// reason. The strong one is per symbol: the call graph reaches it from the
+// handler of a declared entry point (GraphSymbol.HandlerReach), whatever
+// flows say. The weaker one is per feature, the older reading kept so that
+// no line becomes untraced by this distinction: a root reaches the symbol
+// and its feature is on an entry point's flow, but no handler is known to
+// reach it. Only the strong one reads "an entry point reaches it"; a handler
+// reach the graph cannot decide reads unknown, never reached.
 //
 // Traced is not guarded. Only an enforcer span or a checked reference, the
 // lines impact attributes to a promise, guards a line. A symbol an entry
@@ -63,6 +74,7 @@ func (s lineScan) unguardedLines() int {
 // untraced lines fail the merge rule.
 // @enforces check:INV-5
 // @enforces check:INV-9
+// @enforces check:INV-12
 func (c *computation) untraced() lineScan {
 	kg := c.in.KG
 	symbols := map[string][]schema.GraphSymbol{}
@@ -118,19 +130,33 @@ func (c *computation) untraced() lineScan {
 			continue
 		}
 		sym, hasSym := pick(symbols[cs.Symbol], cs.File)
+		hr := handlerReach(sym, hasSym)
+		onFlow := hasSym && sym.Feature != "" && reached[sym.Feature] && sym.Reach == schema.ReachEntry
+		traced := func(why string) {
+			scan.unguarded = append(scan.unguarded, UntracedLine{File: cs.File, Symbol: cs.Symbol, Lines: cs.Lines, Count: n,
+				HandlerReach: hr, Reason: why + ", but no promise guards it: no enforcer span or checked reference covers it"})
+		}
 		var why string
 		switch {
-		case hasSym && sym.Reach == schema.ReachEntry && reached[sym.Feature] && sym.Feature != "":
-			scan.unguarded = append(scan.unguarded, UntracedLine{File: cs.File, Symbol: cs.Symbol, Lines: cs.Lines, Count: n,
-				Reason: "an entry point reaches it, but no promise guards it: no enforcer span or checked reference covers it"})
+		case hr == schema.HandlerReached:
+			traced("an entry point reaches it")
 			continue
+		case onFlow && hr == schema.HandlerUnreached:
+			traced("its feature is on an entry point's flow, but no entry point's handler reaches it in the call graph")
+			continue
+		case onFlow:
+			traced("its feature is on an entry point's flow, but it is unknown whether an entry point's handler reaches it")
+			continue
+		case (cs.Feature != "" || (hasSym && sym.Feature != "")) && hr == schema.HandlerUnknown:
+			why = "file or module tag only: no enforcer span or checked reference covers it, and it is unknown whether an entry point's handler reaches it"
 		case cs.Feature != "" || (hasSym && sym.Feature != ""):
 			why = "file or module tag only: no enforcer span, checked reference or entry point reaches it"
 		default:
 			why = "no feature or promise covers it"
 		}
 		isNew := cs.Change == impact.ChangeAdded || lostEnforcement[cs.Symbol] || (cs.OldSymbol != "" && lostEnforcement[cs.OldSymbol])
-		scan.untraced = append(scan.untraced, UntracedLine{File: cs.File, Symbol: cs.Symbol, Lines: cs.Lines, Count: n, New: isNew, Reason: why})
+		scan.untraced = append(scan.untraced, UntracedLine{File: cs.File, Symbol: cs.Symbol, Lines: cs.Lines, Count: n, New: isNew,
+			HandlerReach: hr, Reason: why})
 		if isNew {
 			scan.newUntraced += n
 		}
@@ -144,6 +170,22 @@ func (c *computation) untraced() lineScan {
 		})
 	}
 	return scan
+}
+
+// handlerReach is the symbol's handler reach as the graph records it. A
+// graph that classified the symbol's reach but not its handler reach (one
+// written before handler reach existed) reads unknown, never reached; a
+// symbol with no reach at all (a type alias, or no call graph) reads "".
+func handlerReach(sym schema.GraphSymbol, ok bool) string {
+	switch {
+	case !ok:
+		return ""
+	case sym.HandlerReach != "":
+		return sym.HandlerReach
+	case sym.Reach != "":
+		return schema.HandlerUnknown
+	}
+	return ""
 }
 
 // pick chooses the head symbol of an FQN, preferring the one in the file.
