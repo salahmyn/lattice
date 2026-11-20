@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/salahmyn/lattice/pkg/lattice/impact"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/store"
 	"github.com/salahmyn/lattice/pkg/lattice/ui"
@@ -65,6 +66,9 @@ reverse proxy in front and run Lattice with --host 127.0.0.1.`,
 				// /api/v2 only reads: no LLM labelling, no writes to lattice/
 				ReadOnlyGraphBuilder: func(ctx context.Context) (schema.KnowledgeGraph, error) {
 					return buildGraphWith(ctx, ws, buildOptions{readOnly: true})
+				},
+				CheckGraphBuilder: func(ctx context.Context) (schema.KnowledgeGraph, impact.CallGraph, error) {
+					return graphCalls(ctx, ws)
 				},
 				Actor: io.actor(),
 			})

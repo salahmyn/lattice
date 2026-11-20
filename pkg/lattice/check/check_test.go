@@ -892,9 +892,11 @@ func TestPassesOnBaseIsANoteOnly(t *testing.T) {
 var sampleTests = impact.TestPlan{
 	Runners: []impact.TestRunner{{Name: "vitest", Dir: "apps/web", Command: "pnpm vitest run {files} -t {filter}",
 		Run: "pnpm vitest run src/guard.test.ts -t '(guards the order)$'", Argv: []string{"pnpm", "vitest", "run", "src/guard.test.ts", "-t", "(guards the order)$"},
-		Files: []string{"src/guard.test.ts"}, Filter: "(guards the order)$", Tests: []string{"bookshop.TestGuard"}, Promises: []string{"bookshop:INV-1"}}},
+		Files: []string{"src/guard.test.ts"}, Filter: "(guards the order)$", Tests: []string{"bookshop.TestGuard"}, Promises: []string{"bookshop:INV-1"},
+		Why: map[string][]string{"bookshop.TestGuard": {"promise bookshop:INV-1"}}}},
 	Unmatched: []impact.UnmatchedTest{{File: "e2e/guard.spec.ts", Tests: []string{"bookshop.e2e"}, Promises: []string{"bookshop:INV-1"},
-		Reason: impact.ReasonNoRunnerMatches}},
+		Reason: impact.ReasonNoRunnerMatches, Why: map[string][]string{"bookshop.e2e": {"promise bookshop:INV-1", "unguarded bookshop.Format via call_graph"}}}},
+	Uncovered: []impact.UncoveredSymbol{{Symbol: "bookshop.Slug", File: "bookshop/slug.go", Lines: "3-9", Reason: impact.ReasonUncovered}},
 }
 
 // The check carries impact's test listing as it is, and an empty one when

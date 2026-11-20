@@ -101,6 +101,9 @@ func (c *computation) run() Report {
 	if in.Impact.Tests != nil {
 		rep.Tests = *in.Impact.Tests
 	}
+	if rep.Tests.Uncovered == nil {
+		rep.Tests.Uncovered = []impact.UncoveredSymbol{}
+	}
 	rep.Evidence.BaseAudit = BaseAudit{Present: in.Base != nil, Text: in.BaseNote}
 	rep.Evidence.FailsOnBase = proofEv
 	if in.Base != nil {

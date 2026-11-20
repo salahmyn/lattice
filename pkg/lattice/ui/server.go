@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/salahmyn/lattice/pkg/lattice/impact"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/store"
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
@@ -56,6 +57,10 @@ type Options struct {
 	// anything (no LLM labelling of entry points, no indexer run). Nil falls
 	// back to GraphBuilder.
 	ReadOnlyGraphBuilder func(ctx context.Context) (schema.KnowledgeGraph, error)
+	// CheckGraphBuilder builds the read-only graph and its static call graph
+	// for /api/v2/check, as `lattice check` builds them. Nil falls back to
+	// ReadOnlyGraphBuilder, with no call graph.
+	CheckGraphBuilder func(ctx context.Context) (schema.KnowledgeGraph, impact.CallGraph, error)
 	// Actor is the identity `lattice serve` runs as (--actor, LATTICE_ACTOR).
 	// POST /api/v2/prepare refuses an agent actor, as the CLI does.
 	Actor string

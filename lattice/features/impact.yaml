@@ -22,3 +22,5 @@ invariants:
     statement: When an enforcer's own lines change and its invariant's statement and tier do not, the report carries a STATEMENT_UNCHANGED note for that invariant; a promise the change adds, an edited statement or tier, or a change to verifiers only gets no note.
   - id: INV-6
     statement: The test listing (lattice impact --tests, and tests in lattice check --json) names every verifier of each touched promise, a changed verifier file included, grouped by the first break.runners entry whose glob matches as lattice break groups them; a verifier no entry matches is listed as unmatched with a reason, never dropped, and nothing is run.
+  - id: INV-7
+    statement: For each touched production symbol no promise guards (no enforcer span or checked reference covers it), the test listing also selects the tests that exercise it on the strongest evidence available, labelled in each test's why as per-test coverage (coverage), else the static call graph (call_graph), else a test file beside it with the same base name (heuristic); a symbol none of them finds a test for is listed under uncovered with a reason, never dropped.

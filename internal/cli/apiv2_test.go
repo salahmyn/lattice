@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/salahmyn/lattice/pkg/lattice/check"
+	"github.com/salahmyn/lattice/pkg/lattice/impact"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/ui"
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
@@ -40,7 +41,10 @@ func TestAPIV2CheckIsTheCLIReport(t *testing.T) {
 	build := func(ctx context.Context) (schema.KnowledgeGraph, error) {
 		return buildGraphWith(ctx, ws, buildOptions{readOnly: true})
 	}
-	srv := ui.New(ws, ui.Options{GraphBuilder: build, ReadOnlyGraphBuilder: build})
+	srv := ui.New(ws, ui.Options{GraphBuilder: build, ReadOnlyGraphBuilder: build,
+		CheckGraphBuilder: func(ctx context.Context) (schema.KnowledgeGraph, impact.CallGraph, error) {
+			return graphCalls(ctx, ws)
+		}})
 
 	for _, c := range []struct {
 		args []string

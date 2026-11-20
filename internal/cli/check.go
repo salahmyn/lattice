@@ -96,7 +96,7 @@ disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
 			if err != nil {
 				return usageError(io, "NOT_A_REPO", err.Error())
 			}
-			kg, err := readOnlyGraph(cmd, ws)
+			kg, calls, err := readOnlyGraphCalls(cmd, ws)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
@@ -128,7 +128,7 @@ disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
 				return nil
 			}
 
-			rep, err := check.Run(cmd.Context(), ws, kg, check.RunOptions{Base: base, CI: ci, SaveSnapshot: true})
+			rep, err := check.Run(cmd.Context(), ws, kg, check.RunOptions{Base: base, CI: ci, SaveSnapshot: true, Calls: calls})
 			if err != nil {
 				var re *check.RunError
 				if errors.As(err, &re) {

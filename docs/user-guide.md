@@ -2012,18 +2012,38 @@ verifiers, any change to a file that holds a verifier included. Every verifier o
 a touched promise is listed, not only the changed ones. The command only lists:
 it never runs a test.
 
+A change can also touch production lines no promise guards: no `@enforces` span
+or checked reference covers them (`lattice check` reports them as untraced or
+unguarded). No verifier names those lines, so the listing also selects the tests
+that exercise them, on the strongest evidence it has for each symbol:
+
+| Evidence | Label | What it means |
+| --- | --- | --- |
+| Per-test coverage (`lattice results ingest --per-test`) | `coverage` | the test's own run executed the symbol: a fact |
+| The static call graph `lattice extract` builds | `call_graph` | the test's calls reach the symbol: an upper bound, the call may not run |
+| A test file beside the symbol's file with the same base name (`fees.test.ts`, `fees.spec.tsx`, `fees_test.go`, `test_fees.py`, or one in `__tests__/`) | `heuristic` | a guess |
+
+A weaker source is used only when the stronger ones find no test. A symbol none of
+them finds a test for is listed under `uncovered` ("no test is known to exercise
+this; run the full suite"): it is never dropped silently.
+
 ```sh
 lattice impact --since origin/main --tests          # a shell script, one line per runner
-lattice impact --since origin/main --tests --json   # {runners, unmatched}
+lattice impact --since origin/main --tests --json   # {runners, unmatched, uncovered}
 ```
 
 The text form is one line per runner, with its ready-to-run command (in a
-subshell that enters the runner's `dir`) and the promises in a trailing
-comment, then one comment line per verifier file no runner matches:
+subshell that enters the runner's `dir`) and, in a trailing comment, the
+promises and the unguarded symbols its tests exercise; then one comment line per
+test file no runner matches; then, when some touched line has no known test, an
+`uncovered` block:
 
 ```sh
-(cd apps/web && pnpm vitest run src/fees.test.ts -t '(caps the fee|rejects a negative amount)$')  # vitest: fees:INV-1
+(cd apps/web && pnpm vitest run src/checkout.test.ts src/fees.test.ts -t '(caps the fee|rejects a negative amount|shows the total)$')  # vitest: fees:INV-1, unguarded apps.web.src.total.total via call_graph
 # unmatched e2e/fees.spec.ts (fees:INV-1): no break.runners entry matches
+# uncovered: touched lines no promise guards and no known test exercises
+#   apps/web/src/banner.ts:3-9  apps.web.src.banner.render
+# run the full suite before merge
 ```
 
 The verifiers are grouped exactly as `lattice break` groups them: by the first
@@ -2031,16 +2051,22 @@ runner whose `match` glob covers the file, with `{files}` (relative to `dir`)
 and `{filter}` filled the same way, and `{junit}` filled with
 `junit-<runner>.xml` in the runner's `dir`. `--json` gives each runner's `name`,
 `dir`, `command` (as configured), `run` and `argv` (filled), `files`, `filter`,
-`junit`, `tests` and `promises`, and each `unmatched` file with its `tests`,
-`promises` and `reason`. A verifier no `break.runners` entry matches, Go
+`junit`, `tests`, `promises` and `why`, each `unmatched` file with its `tests`,
+`promises`, `reason` and `why`, and each `uncovered` symbol with its `symbol`,
+`file`, `lines` and `reason`. `why` maps each test to why it is in the set:
+`promise <id>` for a verifier of a touched promise, `unguarded <symbol> via
+coverage|call_graph|heuristic` for a test of an unguarded line. A test no
+`break.runners` entry matches, Go
 verifiers and `break.commands` templates included, is listed under `unmatched`
 with the reason, never dropped; with no runner configured every verifier is
 there ("no break.runners entry matches (none is configured)"). `lattice check
 --json` carries the same listing as `tests`.
 
 In CI, run the listed commands on the pull request for fast feedback, and keep
-the full suite on the merge commit, since an unmatched verifier, or a test no
-promise names, is not in the list:
+the full suite on the merge commit, since an unmatched test is not run, and a
+`call_graph` or `heuristic` selection can miss a test that only reaches the line
+at run time; when the listing has an `uncovered` block, run the full suite
+before merge:
 
 ```yaml
 jobs:
