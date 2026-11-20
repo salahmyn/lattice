@@ -2,6 +2,92 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.16.0] — 2026-11-20
+
+Assurance done right on real projects: a human confirmation that works on a single-maintainer
+repository, acceptance cases under invariants, a test plan for the lines no promise guards, and
+fewer false readings from `lattice check`.
+
+### Added
+
+- **Confirm a decision by hardware-key signature.** `lattice sign <decision>` signs a decision
+  with an SSH security key (`ed25519-sk` / `ecdsa-sk`). It refuses without a terminal, under CI,
+  for an agent, and for software keys (`SOFTWARE_KEY`). `lattice confirm` counts the signature as
+  `human` only when the key is listed for the login in `lattice/allowed_signers`, both at the base
+  commit and at the tip, and is one of the login's GitHub SSH signing keys. Every reader
+  re-verifies a signature verdict from git. Records gain `via: review|signature`; text output
+  names the method (`human (signed by ana, SHA256:…)`). Merge decision PRs with a merge commit or
+  a squash, not a rebase.
+- **Acceptance cases under an invariant.** An invariant may list `cases` (`a`, `b`, …; `happy`,
+  `edge`, `error` or `security`). `@verifies f:INV-1#a` verifies one in every language, and still
+  counts for `INV-1`. The audit computes each case's coverage (`covered`, `partial`, `failing`,
+  `uncovered`; only `covered` is positive) and shows it in `lattice audit`, `feature show`, `rtm`
+  and the `/api/v2` promise. Cases are part of what a human confirms: editing one makes the
+  decision stale. `validate` adds the `CASE_*` codes, `ORPHAN_ANNOTATION_CASE` and
+  `INVARIANT_BROAD` (info) for a statement that makes several claims and has no cases.
+- **`lattice impact --tests`** lists the tests that matter for a change, by runner. For touched
+  lines no promise guards, it looks for tests in per-test coverage, then the call graph, then a
+  neighbour heuristic, then two labelled hints: `co_change` (a test file that changed in the same
+  commits, each commit weighted by its size; `break.co_change`) and `mentions` (a test that names
+  the symbol or its route). Each test has a `why`; anything it cannot place is `uncovered`.
+- **`lattice break --fails-on-base <rev>`** runs a change's new or edited tests on the old code
+  and records which of them fail there (`evidence.fails_on_base`, `PASSES_ON_BASE` note).
+- **`ENFORCER_MOVED`.** When a change removes an enforcer of a tier 1 or 2 promise and adds
+  another enforcer of it, the removal no longer reads BROKEN. It opens a `break_tested` gap
+  (`MOVE_NOT_BREAK_TESTED`) that blocks the merge until a break of each added enforcer is killed
+  at head. A removal with only kept enforcers left, and any removal on a tier-3 promise, stays
+  `ENFORCER_REMOVED`.
+- **`brd link --reconcile`** completes every one-sided link whose other half is declared, and
+  keeps the BRD's version and approval. `brd link` appends ids and never re-sorts
+  `implements_via`.
+- **BRD `sources`** (`ticket`, `roadmap`, `help_page`, `api_doc`, `adr`). Only a person sets
+  `checked_by` / `checked_at`; `brd from-code` drops them; `validate` checks the shape and never
+  fetches a URL.
+- **`STATEMENT_UNCHANGED` note:** an enforcer changed under a statement that did not.
+- **`lattice ledger runs`** shows the latest check runs from the untracked cache.
+- **TypeScript parameterized tests.** A test with a template-literal title, or one declared in a
+  loop or a `forEach` callback, is one test per call site, named by its title template. Results
+  join it by their expanded names (any failure fails it; an ambiguous name reads unknown), and
+  runner filters match every expansion.
+
+### Fixed
+
+- **"An entry point reaches it" is decided per symbol**, from declared entry-point handlers in
+  the call graph, not from the feature's flow. Untraced lines on this repository fell by about
+  a fifth, and web API handlers and contract types now read as reached.
+- **One rule for a dirty tree.** `check`, `impact` and `break` agree: a modified, deleted or
+  untracked file that git does not ignore counts; Lattice's own `.ledger/` and `.cache/` never
+  do, whatever the workspace is called. CI's check comment no longer reads `+uncommitted` on
+  every pull request.
+- **Go call graph:** a function declared again in a build-constrained file is reached with the
+  first declaration; an unexported method name only matches the caller's own package; test
+  support packages (`*test` importing `testing`) are test code.
+- **`impact --tests` lists only tests**, never a test file's helpers.
+- `lattice check` no longer counts an untouched promise's break-based gap as new when no break
+  ran at head.
+- The ledger records decisions only; check runs go to `lattice/.cache/last-runs.json`.
+- `lattice init` gitignores the derived graph and the cache; `validate` warns when either is
+  tracked (`GRAPH_TRACKED`, `CACHE_TRACKED`).
+- A source build reports its commit and time from the Go build info.
+- The missing base audit names how to create the snapshot.
+
+### Changed
+
+- **The official tree-sitter Go bindings** (`github.com/tree-sitter/go-tree-sitter`) replace the
+  community fork. Extraction is identical on every tested workspace.
+- **Go 1.26** is required to build from source.
+
+### Behaviour changes to plan for
+
+- **Untracked source files make the tree dirty** for `audit`, `prepare`, `confirm` and
+  `check --snapshot`, as they already did for `break`. Write reports outside the checkout or
+  gitignore them.
+- **`lattice.json` and `lattice/.cache/` are no longer tracked** in a new workspace; untrack them
+  in existing ones (`GRAPH_TRACKED`, `CACHE_TRACKED`).
+- **`INVARIANT_BROAD` is info only** and never changes `fail_on`.
+- **Existing `brd ack` records stay `local`.** To reach `human` by signature, re-confirm each
+  decision with `lattice sign` once a key is enrolled.
+
 ## [0.15.1] — 2026-11-10
 
 Hardening from running the v0.15.0 assurance features on a real downstream project: evidence
