@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -36,9 +37,10 @@ var ciMarkers = []string{"CI", "GITHUB_ACTIONS", "GITLAB_CI", "BUILDKITE", "CIRC
 // outside lattice (ssh-keygen), and it is kept apart from `confirm`, which
 // agents and CI run, so that it is easy to deny to them.
 func newSignCommand(io *IO) *cobra.Command {
-	var keyPath string
+	var keyPath, branch string
+	var signers bool
 	cmd := &cobra.Command{
-		Use:   "sign <decision>",
+		Use:   "sign <decision> | sign --signers",
 		Short: "Sign a decision with your hardware security key (a human at a terminal only)",
 		Long: `Signs a decision file with an OpenSSH security key (ssh-keygen -t ed25519-sk
 or ecdsa-sk) and writes <stem>.sig beside it. <decision> is the decision file,
@@ -61,8 +63,23 @@ sign refuses to run without a terminal (SIGN_NO_TTY), under CI (SIGN_CI) or
 for an agent actor (SIGN_AGENT). It is not offered through MCP or the shipped
 skills. Commit the .sig with the decision and merge it; the key must already
 be listed for your GitHub login in lattice/allowed_signers on the default
-branch, and be one of your GitHub SSH signing keys.`,
-		Args: cobra.ExactArgs(1),
+branch, and be one of your GitHub SSH signing keys.
+
+--signers endorses the change to lattice/allowed_signers in your working tree
+instead, and writes lattice/allowed_signers.sig. A change that adds a signer
+counts only with this endorsement, made by a key allowed_signers already
+trusts; removing a signer needs none. It prints the signers added and removed
+against the default branch (--branch) and the exact message, which names the
+commit that last changed allowed_signers there: if the file changes on the
+default branch before you merge, sign again. Commit the .sig in the same commit
+as the change, or merge with a merge commit or a squash. The same refusals
+apply.`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if signers {
+				return cobra.NoArgs(cmd, args)
+			}
+			return cobra.ExactArgs(1)(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if code, why := signRefusal(io); code != "" {
 				return io.fail(code, why, "run `lattice sign` yourself, at your own terminal, with your security key")
@@ -75,6 +92,9 @@ branch, and be one of your GitHub SSH signing keys.`,
 			top, err := g.Top()
 			if err != nil {
 				return io.fail("NOT_A_REPO", err.Error(), nil)
+			}
+			if signers {
+				return signSigners(io, g, top, ws.LatticeDir, keyPath, branch)
 			}
 			file, d, err := findDecision(top, ws.LatticeDir, args[0])
 			if err != nil {
@@ -107,23 +127,9 @@ branch, and be one of your GitHub SSH signing keys.`,
 			io.errorf("Repository  %s\nKey         %s (%s)\nFile        %s\n\nSigning this message in namespace %s:\n\n%s\nTouch your security key when it blinks.\n",
 				repo, fp, pub.Type(), file, signature.Namespace, indent(string(msg)))
 
-			tmp, err := os.MkdirTemp("", "lattice-sign-")
+			sig, err := keygenSign(io, key, msg)
 			if err != nil {
 				return io.fail("SIGN_FAILED", err.Error(), nil)
-			}
-			defer os.RemoveAll(tmp)
-			msgPath := filepath.Join(tmp, "message")
-			if err := os.WriteFile(msgPath, msg, 0o600); err != nil {
-				return io.fail("SIGN_FAILED", err.Error(), nil)
-			}
-			run := exec.Command(sshKeygen, "-Y", "sign", "-n", signature.Namespace, "-f", key, msgPath)
-			run.Stdin, run.Stdout, run.Stderr = os.Stdin, io.Err, io.Err
-			if err := run.Run(); err != nil {
-				return io.fail("SIGN_FAILED", "ssh-keygen -Y sign failed: "+err.Error(), nil)
-			}
-			sig, err := os.ReadFile(msgPath + signature.Ext)
-			if err != nil {
-				return io.fail("SIGN_FAILED", "ssh-keygen wrote no signature: "+err.Error(), nil)
 			}
 			v, f := signature.Verify(sig, tuple)
 			if f != nil {
@@ -146,7 +152,116 @@ branch, and be one of your GitHub SSH signing keys.`,
 		},
 	}
 	cmd.Flags().StringVar(&keyPath, "key", "", "the security-key private key file (default: the first ~/.ssh/id_ed25519_sk* or id_ecdsa_sk*)")
+	cmd.Flags().BoolVar(&signers, "signers", false, "endorse the change to lattice/allowed_signers in the working tree")
+	cmd.Flags().StringVar(&branch, "branch", "", "with --signers: the default branch the change merges into (default: origin's HEAD, main or master)")
 	return cmd
+}
+
+// signSigners endorses the working tree's change to allowed_signers against
+// the default branch: the signers it adds and removes, after the commit that
+// last changed the file there.
+func signSigners(io *IO, g confirm.Git, top, latticeDir, keyPath, branch string) error {
+	rel, err := filepath.Rel(evalLinks(top), evalLinks(latticeDir))
+	if err != nil {
+		return io.fail("NOT_A_REPO", err.Error(), nil)
+	}
+	rel = filepath.ToSlash(rel)
+	file := filepath.Join(latticeDir, signature.AllowedSignersFile)
+	next, err := os.ReadFile(file)
+	if err != nil {
+		return io.fail("SIGN_NO_SIGNERS", "no "+filepath.ToSlash(filepath.Join(rel, signature.AllowedSignersFile))+" in the working tree: "+err.Error(),
+			"write the change to allowed_signers first, then endorse it")
+	}
+	if branch == "" {
+		branch = confirm.DefaultBranch(g)
+	}
+	repo := signature.Repo{Dir: top, LatticeRel: rel, Ref: branch, Repository: signature.RepositoryOf(top)}
+	after, err := repo.LastChange(branch)
+	if err != nil {
+		return io.fail("SIGN_NO_BRANCH", err.Error(), "pass the default branch with --branch")
+	}
+	prev, _ := g.Show(branch, path.Join(rel, signature.AllowedSignersFile))
+	if signature.SignersDigest(prev) == signature.SignersDigest(next) {
+		return io.fail("SIGN_NO_CHANGE", "allowed_signers is the same as on "+branch+": there is no change to endorse", "edit lattice/allowed_signers, then endorse the change")
+	}
+	key, pub, err := signingKey(keyPath)
+	if err != nil {
+		return io.fail("SIGN_NO_KEY", err.Error(), "create one with `ssh-keygen -t ed25519-sk`, or pass --key")
+	}
+	fp := ssh.FingerprintSHA256(pub)
+	if !signature.HardwareKey(pub.Type()) {
+		return io.fail(signature.CodeSoftwareKey, key+" is a "+pub.Type()+" key: only a hardware security key (ed25519-sk, ecdsa-sk) can endorse allowed_signers",
+			"create one with `ssh-keygen -t ed25519-sk` and enrol it")
+	}
+	change := signature.SignersChange{Repository: repo.Repository, After: after, Signers: next}
+	msg, err := change.Message()
+	if err != nil {
+		return io.fail(signature.CodeIncomplete, err.Error(), "set the origin remote to the GitHub repository")
+	}
+	added, removed := signature.DiffSigners(prev, next)
+	list := func(l []string) string {
+		if len(l) == 0 {
+			return "(none)"
+		}
+		return strings.Join(l, "\n            ")
+	}
+	io.errorf("Change      lattice/allowed_signers against %s, after %s\nAdded       %s\nRemoved     %s\n", branch, after, list(added), list(removed))
+	if len(added) == 0 {
+		io.errorf("Note        this change adds no signer: it needs no endorsement\n")
+	}
+	if trusted, _ := repo.Trust(branch).Logins(pub); len(trusted) == 0 {
+		io.errorf("Warning     key %s is not trusted in allowed_signers on %s: its endorsement will not count\n", signature.Short(fp), branch)
+	}
+	io.errorf("Repository  %s\nKey         %s (%s)\n\nSigning this message in namespace %s:\n\n%s\nTouch your security key when it blinks.\n",
+		repo.Repository, fp, pub.Type(), signature.Namespace, indent(string(msg)))
+
+	sig, err := keygenSign(io, key, msg)
+	if err != nil {
+		return io.fail("SIGN_FAILED", err.Error(), nil)
+	}
+	v, f := signature.VerifyChange(sig, change)
+	if f != nil {
+		return io.fail(f.Code, "the new endorsement does not verify: "+f.Text, nil)
+	}
+	if v.Fingerprint != fp {
+		return io.fail(signature.CodeInvalid, "ssh-keygen signed with "+v.Fingerprint+", not "+fp, nil)
+	}
+	out := filepath.Join(latticeDir, signature.SignersSigFile)
+	if err := os.WriteFile(out, sig, 0o644); err != nil {
+		return io.fail("SIGN_FAILED", err.Error(), nil)
+	}
+	outRel, _ := filepath.Rel(top, out)
+	if io.JSON {
+		return io.printJSON(map[string]interface{}{"contract": "lattice.sign/1", "signature": filepath.ToSlash(outRel),
+			"fingerprint": fp, "repository": repo.Repository, "after": after, "signers_digest": signature.SignersDigest(next),
+			"added": added, "removed": removed})
+	}
+	io.printf("wrote %s (%s)\ncommit it in the same commit as the change to allowed_signers and merge\n", filepath.ToSlash(outRel), signature.Short(fp))
+	return nil
+}
+
+// keygenSign runs ssh-keygen -Y sign over msg in the decision namespace and
+// returns the armoured signature. The human touches the key while it runs.
+func keygenSign(io *IO, key string, msg []byte) ([]byte, error) {
+	tmp, err := os.MkdirTemp("", "lattice-sign-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmp)
+	msgPath := filepath.Join(tmp, "message")
+	if err := os.WriteFile(msgPath, msg, 0o600); err != nil {
+		return nil, err
+	}
+	run := exec.Command(sshKeygen, "-Y", "sign", "-n", signature.Namespace, "-f", key, msgPath)
+	run.Stdin, run.Stdout, run.Stderr = os.Stdin, io.Err, io.Err
+	if err := run.Run(); err != nil {
+		return nil, fmt.Errorf("ssh-keygen -Y sign failed: %w", err)
+	}
+	sig, err := os.ReadFile(msgPath + signature.Ext)
+	if err != nil {
+		return nil, fmt.Errorf("ssh-keygen wrote no signature: %w", err)
+	}
+	return sig, nil
 }
 
 // signRefusal says why sign must not run here, or "" when it may.

@@ -1788,7 +1788,7 @@ requests.
    *Signing Key*, or `gh ssh-key add ~/.ssh/id_ed25519_sk.pub --type signing`.
 3. Add one line to `lattice/allowed_signers` (OpenSSH allowed_signers format,
    with your GitHub login as the principal) and merge it to the default branch
-   through a reviewed or signed change, before you sign with the key:
+   before you sign a decision with the key:
 
    ```text
    ana namespaces="lattice-decision" sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5... ana
@@ -1797,6 +1797,22 @@ requests.
    Only plain lines count: exact principals and at most a `namespaces` option
    that includes `lattice-decision`. Lines with wildcard principals,
    `cert-authority`, `valid-after` or `valid-before` are skipped.
+
+   The first `allowed_signers` is the root of trust: merge it yourself.
+   Every later key must be endorsed by a key already trusted. The holder of
+   that key runs, on the branch with the change:
+
+   ```sh
+   lattice sign --signers          # prints the signers added and removed, then signs
+   git add lattice/allowed_signers lattice/allowed_signers.sig
+   git commit -m "signers: enrol bo"   # the change and its endorsement in one commit
+   ```
+
+   `--signers` compares the working tree's `allowed_signers` with the default
+   branch (`--branch` names it), writes `lattice/allowed_signers.sig`, and has
+   the same refusals as `lattice sign`. Commit the `.sig` in the same commit as
+   the change, or merge with a merge commit or a squash, so the change lands
+   with its endorsement. Removing a key needs no endorsement.
 
 **Sign a decision.**
 

@@ -313,3 +313,21 @@ func (r Repo) LastChange(rev string) (string, error) {
 	}
 	return c, nil
 }
+
+// DiffSigners lists the grants next adds to prev and removes from it, as
+// "<login> <fingerprint>": what an endorsement of the change vouches for.
+func DiffSigners(prev, next []byte) (added, removed []string) {
+	p, n := grants(prev), grants(next)
+	var a, r []grant
+	for id, g := range n {
+		if _, ok := p[id]; !ok {
+			a = append(a, g)
+		}
+	}
+	for id, g := range p {
+		if _, ok := n[id]; !ok {
+			r = append(r, g)
+		}
+	}
+	return names(a), names(r)
+}
