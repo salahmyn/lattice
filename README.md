@@ -163,6 +163,7 @@ A complete, validating three-language example lives in
 | `lattice view <name>` | Render developer / product / business / c4 views |
 | `lattice journey <brd>` \| `lattice actor list` | Journey and actor views |
 | `lattice rtm` | Requirements traceability matrix with attestation header |
+| `lattice break --fails-on-base <rev>` | Run a change's new or edited tests on the old code: a fix's test should fail there |
 | `lattice agent <cap>` | LLM-backed capabilities (deterministic fallback) |
 | `lattice mutation run` | Mutation-test invariant-enforcing code |
 | `lattice structural-checks run` | Run structural invariant checks |
