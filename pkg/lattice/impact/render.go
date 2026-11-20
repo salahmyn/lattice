@@ -77,6 +77,14 @@ func Markdown(w io.Writer, r Report) {
 		p("\n")
 	}
 
+	if len(r.Notes) > 0 {
+		p("### Notes\n\n_Informational: a note never changes a verdict._\n\n")
+		for _, n := range r.Notes {
+			p("- %s %s: %s. Next: %s.\n", code(n.Code), code(n.Promise), n.Text, strings.TrimSuffix(n.Next, "."))
+		}
+		p("\n")
+	}
+
 	p("### Manifest changes\n\n")
 	if r.ManifestDiff.Empty() {
 		p("_No feature, BRD or entry-point file changed._\n\n")
@@ -256,6 +264,13 @@ func Text(w io.Writer, r Report) {
 	}
 	for _, re := range r.RemovedEnforcement {
 		p("  %s  %s  %s:%d  %s\n", re.Symbol, re.Invariant, re.File, re.Line, ReasonText(re))
+	}
+
+	if len(r.Notes) > 0 {
+		p("\nNOTES (informational, never a verdict)\n")
+		for _, n := range r.Notes {
+			p("  %s  %s\n      next: %s\n", n.Code, n.Text, n.Next)
+		}
 	}
 
 	p("\nMANIFEST CHANGES\n")

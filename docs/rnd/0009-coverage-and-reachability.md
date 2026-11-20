@@ -399,7 +399,7 @@ validate:
 
 ## Cost
 
-M = measured in this session. E = estimated, with the basis given.
+M = measured for this note. E = estimated, with the basis given.
 
 | What | Value | |
 |---|---|---|

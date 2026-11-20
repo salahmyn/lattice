@@ -4,6 +4,7 @@ package cli
 
 import (
 	"fmt"
+	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -81,6 +82,7 @@ func newValidateCommand(io *IO) *cobra.Command {
 				Coverage:      coverageIndex(ws, kg),
 				Reach:         rr,
 				Confirm:       confirm.LoadCache(ws.LatticeDir),
+				Tracked:       trackedDerived(ws.LatticeDir),
 			})
 			violations = append(violations, ambiguousResults(kg, set)...)
 			kg.Violations = violations
@@ -112,9 +114,9 @@ func newValidateCommand(io *IO) *cobra.Command {
 				}
 			}
 
-			// Ledger the check run — script-free claims are not evidence;
-			// the ledger line is.
-			appendLedgerEvent(io, ws, ledger.EventCheckRun, "workspace",
+			// Record the run in the untracked last-runs cache: a check run
+			// is not a decision, so it never touches the tracked ledger.
+			recordCheckRun(io, ws, "validate", kg.GeneratedFromCommit,
 				fmt.Sprintf("validate: %d error(s), %d warning(s), %d info, %d allowlisted",
 					report.Errors, report.Warnings, report.Infos, len(report.Allowlisted)))
 
@@ -211,6 +213,25 @@ func describeNextAction(na *schema.NextAction) string {
 // ambiguousResults reports verifier tests whose ingested result cannot be
 // told apart from another case's: the lookup refuses them, so they count as
 // not demonstrated, and the finding says which cases compete.
+// trackedDerived lists the files git tracks under the workspace's derived
+// graph and runtime cache, as repository-top paths, in one `git ls-files`
+// call. It returns nil when git is unavailable or the workspace is not in a
+// repository, so validate stays silent there.
+func trackedDerived(latticeDir string) []string {
+	out, err := exec.Command("git", "-C", latticeDir, "ls-files", "-z", "--full-name",
+		"--", "lattice.json", ".cache").Output()
+	if err != nil {
+		return nil
+	}
+	var paths []string
+	for _, p := range strings.Split(string(out), "\x00") {
+		if p != "" {
+			paths = append(paths, p)
+		}
+	}
+	return paths
+}
+
 func ambiguousResults(kg schema.KnowledgeGraph, set results.Set) []schema.Violation {
 	var v []schema.Violation
 	for _, t := range kg.Tests {

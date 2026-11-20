@@ -120,6 +120,13 @@ type Options struct {
 	// none was built: no reachability finding fires, and FEATURE_UNREACHED
 	// keeps its flow-based rule.
 	Reach *reach.Result
+
+	// Tracked lists the files git tracks under the workspace's derived
+	// graph (lattice.json) and runtime cache (.cache/), as repository-top
+	// paths from one `git ls-files` call. Each is GRAPH_TRACKED or
+	// CACHE_TRACKED (warning). nil means git is unavailable or the
+	// workspace is not in a repository: nothing is reported.
+	Tracked []string
 }
 
 // rtmOptions are the RTM options every rule shares, so validation and
@@ -151,6 +158,7 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 	v = append(v, c.checkInitiativesAndTasks()...)
 	v = append(v, c.checkLeases()...)     // v0.8 §5 — fleet coordination
 	v = append(v, c.checkGovernance()...) // v0.8.1 — V8, tier gates, open flags
+	v = append(v, c.checkTrackedDerived()...)
 
 	if !opts.ReviewMode {
 		v = append(v, c.checkAnnotations()...)

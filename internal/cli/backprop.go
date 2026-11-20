@@ -34,18 +34,18 @@ func newBackpropCommand(io *IO) *cobra.Command {
 graph: which enforcer symbols moved, which invariants they back, which
 grounded criteria sit above. Outcomes:
 
-  no doc impact — nothing grounded is semantically affected (ledgered)
+  no doc impact — nothing grounded is semantically affected
   amendments    — affected grounded criteria are listed for the PM gate;
                   with --flag each is flagged until a human clears it
 
 The scan never edits a requirement. Narrowing a criterion is never an
 amendment — escalate it to a CR (lattice cr propose).
 
-Every run records a check run in the ledger (lattice/.ledger/ledger.jsonl),
-as validate does: one entry for "no doc impact", or one per affected
-criterion. A run whose actor and outcome repeat the latest entry for the
-same unit adds nothing. For a report that writes nothing, such as a
-pull-request comment, use lattice impact --since <ref>.`,
+Like validate, every run records its outcome as the latest "backprop" run in
+lattice/.cache/last-runs.json (untracked, overwritten each run; see lattice
+ledger runs). The tracked ledger only changes with --flag: each flag raised
+is a state change and is ledgered as a flag event. For a report that writes
+nothing at all, such as a pull-request comment, use lattice impact --since <ref>.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			kg, ws, err := graphFor(io, cmd, false)
 			if err != nil {
@@ -58,7 +58,7 @@ pull-request comment, use lattice impact --since <ref>.`,
 
 			affected := affectedCriteria(kg, changed)
 			if len(affected) == 0 {
-				appendLedgerEvent(io, ws, ledger.EventCheckRun, "workspace",
+				recordCheckRun(io, ws, "backprop", kg.GeneratedFromCommit,
 					"backprop: no doc impact ("+since+"…HEAD, "+fmt.Sprint(len(changed))+" files)")
 				if io.JSON {
 					return io.printJSON(map[string]interface{}{
@@ -69,12 +69,15 @@ pull-request comment, use lattice impact --since <ref>.`,
 				return nil
 			}
 
-			for _, unit := range affected {
-				appendLedgerEvent(io, ws, ledger.EventCheckRun, unit, "backprop: enforcement changed since "+since)
-				if raise {
-					_, _ = flags.Raise(ws.LatticeDir, unit,
-						"backprop: enforcement changed since "+since+" — confirm the requirement still holds",
-						io.actor(), "backprop", time.Now())
+			recordCheckRun(io, ws, "backprop", kg.GeneratedFromCommit,
+				fmt.Sprintf("backprop: %d criterion/criteria affected since %s: %s",
+					len(affected), since, strings.Join(affected, ", ")))
+			if raise {
+				reason := "backprop: enforcement changed since " + since + " — confirm the requirement still holds"
+				for _, unit := range affected {
+					if _, err := flags.Raise(ws.LatticeDir, unit, reason, io.actor(), "backprop", time.Now()); err == nil {
+						appendLedgerEvent(io, ws, ledger.EventFlag, unit, "raised: "+reason)
+					}
 				}
 			}
 			if io.JSON {
@@ -129,9 +132,10 @@ func newSweepCommand(io *IO) *cobra.Command {
 			var illegal []schema.Violation
 			legal := 0
 			for _, fqn := range sweep.Disappeared(baseline, current) {
-				if crID, covered := revision.RetirementCovered(revs, fqn); covered {
+				// A legal retirement needs no ledger line: the CR that
+				// retired the verifier is the ledgered decision.
+				if _, covered := revision.RetirementCovered(revs, fqn); covered {
 					legal++
-					appendLedgerEvent(io, ws, ledger.EventCheckRun, fqn, "sweep: retired legally under "+crID)
 					continue
 				}
 				illegal = append(illegal, schema.Violation{
@@ -145,7 +149,7 @@ func newSweepCommand(io *IO) *cobra.Command {
 				})
 			}
 
-			appendLedgerEvent(io, ws, ledger.EventCheckRun, "workspace",
+			recordCheckRun(io, ws, "sweep", kg.GeneratedFromCommit,
 				fmt.Sprintf("sweep: %d verifiers, %d legally retired, %d illegal", len(current), legal, len(illegal)))
 
 			if update && len(illegal) == 0 {

@@ -267,17 +267,35 @@ entries:
 
 ### Step 6 — Commit
 
-The whole `lattice/` directory (manifests, `lattice.json`, config, skills) is
-committed to git; `lattice/.cache/` is gitignored. Wire `lattice validate`
-into CI with the templates in `ci-templates/`.
+The `lattice/` directory (manifests, config, skills, the ledger) is committed
+to git. Two paths in it are not: `lattice/.cache/` (the runtime cache) and
+`lattice/lattice.json` (the graph). `lattice extract` rebuilds the graph from
+the source and manifests on every run, stamping the time and commit, so a
+tracked graph keeps the tree permanently dirty and `lattice break` refuses to
+run. `lattice init` makes `.gitignore` ignore both: it creates the file, or
+appends only the missing lines to an existing one under a short comment
+(your lines are never rewritten), and re-running it adds nothing. `lattice
+validate` warns `GRAPH_TRACKED` or `CACHE_TRACKED` when git tracks either;
+untrack with `git rm --cached lattice/lattice.json` (or `git rm -r --cached
+lattice/.cache`). Wire `lattice validate` into CI with the templates in
+`ci-templates/`; they rebuild the graph and upload it as a build artifact.
 
 > **Parallel branches.** `lattice.json` is rebuilt by `lattice extract` from
 > the source and manifests on every run, so teams (or agent fleets) working on
 > many branches at once can gitignore it and treat it as build output. The
-> ledger (`lattice/.ledger/ledger.jsonl`) is append-only evidence: `init` adds
-> `merge=union` for it to `.gitattributes`, so a merge keeps both sides'
-> lines, and a check run that repeats the previous outcome is not appended
-> again. Existing workspaces can add the same line to `.gitattributes`.
+> ledger (`lattice/.ledger/ledger.jsonl`) is append-only evidence of
+> **decisions and state changes**: gates (BRD approvals, council votes and
+> decisions), CR events, meaning flags, sign-offs and truth-level
+> transitions. `init` adds `merge=union` for it to `.gitattributes`, so a
+> merge keeps both sides' lines. Existing workspaces can add the same line to
+> `.gitattributes`.
+>
+> Routine check runs (`validate`, `results ingest`, `runs-clean`, `backprop`,
+> `sweep`) are not decisions, so they are **not** appended to the ledger:
+> each run overwrites its entry in `lattice/.cache/last-runs.json`, which is
+> gitignored, and `lattice ledger runs` shows the latest one per check. Running
+> a check never dirties a tracked file. Ledgers written by older versions may
+> still hold `check-run` lines; they are read as before and never rewritten.
 
 > **Multi-repo / review mode.** In standalone mode the `lattice/` directory is
 > its own repository — add it to code repos as a submodule, or keep it free-
@@ -1353,6 +1371,19 @@ lattice check --snapshot                      # save the audit of HEAD, for a ba
 
 **Editing a confirmed promise.** The edit voids the confirmation. To keep the change mergeable, put the re-confirmation in the same pull request: run `lattice prepare brd approve <id> --version <N>` (or `prepare promise confirm`) on the pull request's branch, then `git merge --ff-only` the decision branch it prints, so its decision file rides with the edit. That makes the promise's `confirmed` gap read *pending*. A pending confirmation does not block the merge, tier 3 included, because the merge needs the human approval that confirms it; `lattice confirm` records it once the pull request merges. Without the decision file the edit reads `BROKEN` (`CONFIRMATION_VOIDED`).
 
+**An enforcer changed and its statement did not.** When the change edits the
+lines of an `@enforces` symbol and leaves the promise's statement and tier as they
+were, the promise's row carries an info note, `STATEMENT_UNCHANGED`: "the enforcer
+of fees:INV-1 changed and its statement did not: re-read the statement and confirm
+it still holds", with a `next:`. The written promise may no longer describe the
+code; a reviewer reads it again. The note is information only: it never changes the
+verdict, a gap or `merge_allowed`. A promise the change adds, an edited statement or
+tier (other rules read those), and a change to verifiers only get no note. Text and
+Markdown show the notes in one list; `lattice.check/1` carries them per touched
+promise as `notes: [{code, text, next}]` (`[]` when there are none), and `lattice
+impact --json` lists them at top level as `notes: [{code, promise, statement,
+enforcers, text, next}]`.
+
 Tier defaults until the owner decides: tier 1 needs `exercised` or
 `break_tested`; tier 2 and 3 need `break_tested`; every tier needs the promise
 traced, confirmed and live. A missing signal is a gap, never a pass.
@@ -1387,6 +1418,11 @@ change read `ASSURED`, anchor a promise on the code (`@enforces`) and verify it.
 touched production line no promise guards, untraced ones included),
 `guarded_lines`, and `unguarded`, the per-symbol list of unguarded lines that are
 not already in `untraced` (reached only by an entry point, or removed).
+
+`lattice.check/1` also carries `tests`: the verifier tests of the touched
+promises grouped by `break.runners`, the listing of `lattice impact --tests`
+(see [Run only the tests a change touches](#run-only-the-tests-a-change-touches)).
+It is for a script and never changes the verdict.
 
 ### The base audit, and how CI gets it
 
@@ -1743,11 +1779,11 @@ against the graph and lists the grounded (approved-BRD) criteria whose
 enforcers moved. With `--flag` it raises a meaning flag on each one until a
 human clears it.
 
-`backprop` is a gate, so **every run records a check run in the ledger**
-(`lattice/.ledger/ledger.jsonl`), as `validate` does: one entry for "no doc
-impact", or one per affected criterion. A run whose actor and outcome repeat
-the latest entry for the same unit adds nothing. This is intended, and it
-means running `backprop` in CI on every pull request changes a tracked file.
+Like `validate`, every run records its outcome ("no doc impact", or the
+affected criteria) as the latest `backprop` run in the untracked
+`lattice/.cache/last-runs.json` (`lattice ledger runs` shows it). The tracked
+ledger changes only with `--flag`: each flag raised is a state change and is
+ledgered as a `flag` event.
 
 For a report that writes nothing, such as a pull-request comment, use
 `lattice impact` (below).
@@ -1778,6 +1814,11 @@ The report has five sections:
 | Removed enforcement | A base-side enforcer that no longer enforces its invariant: the symbol was deleted, its `@enforces` tag was dropped (the tag sits above the symbol, outside its lines, so this compares each file's (symbol, invariant) pairs on both sides), or its file was deleted or moved out of the scanned tree. A file moved elsewhere in the scanned tree is not a removal. |
 | Manifest changes | Features, BRDs and entry points added, removed, renamed and changed, with every changed field named (`invariants[INV-1].verifiable_by`, `user_scenarios[US-1].then`, `success_criteria[SC-2].maps_to_invariant`). The walk is generic over the schema, so a new field is compared without a code change. A manifest moved out of `lattice/features/` is removed; one moved within it is renamed, compared by id. |
 | Code roll-up | With a SCIP code graph (`lattice extract --with-code-graph`), the blast radius of each changed or removed enforcer, rolled up to referencing modules, test files and entry points (through each entry point's handler and `flow`). `--max-symbols N` (default 50) caps how many are expanded, enforcers of approved criteria first, and the report says when it truncated. Without a code graph the section says "code graph unavailable" and the command still succeeds. |
+
+When an enforcer's own lines change and its invariant's statement and tier do
+not, the report adds a **Notes** section with a `STATEMENT_UNCHANGED` note for that
+invariant: re-read the statement and confirm it still describes the code. Notes are
+informational and appear only when there is one; `--json` always has `notes`.
 
 The markdown form is meant to be posted as a sticky PR comment. It starts
 with `<!-- lattice-impact -->`, so a CI job can find and replace its own
@@ -1902,6 +1943,67 @@ code root, so `blast-radius` and the impact roll-up read it as if it had
 been indexed from the root.
 
 ---
+
+### Run only the tests a change touches
+
+`lattice impact --since <rev> --tests` lists the verifier tests of the promises
+a change touches, grouped by the `break.runners` of `lattice/config.yaml` (see
+[Runners](#4i-break-testing-does-the-verifier-notice)). A promise is touched when
+the change edits, removes or adds one of its enforcers, or edits one of its
+verifiers, any change to a file that holds a verifier included. Every verifier of
+a touched promise is listed, not only the changed ones. The command only lists:
+it never runs a test.
+
+```sh
+lattice impact --since origin/main --tests          # a shell script, one line per runner
+lattice impact --since origin/main --tests --json   # {runners, unmatched}
+```
+
+The text form is one line per runner, with its ready-to-run command (in a
+subshell that enters the runner's `dir`) and the promises in a trailing
+comment, then one comment line per verifier file no runner matches:
+
+```sh
+(cd apps/web && pnpm vitest run src/fees.test.ts -t '(caps the fee|rejects a negative amount)$')  # vitest: fees:INV-1
+# unmatched e2e/fees.spec.ts (fees:INV-1): no break.runners entry matches
+```
+
+The verifiers are grouped exactly as `lattice break` groups them: by the first
+runner whose `match` glob covers the file, with `{files}` (relative to `dir`)
+and `{filter}` filled the same way, and `{junit}` filled with
+`junit-<runner>.xml` in the runner's `dir`. `--json` gives each runner's `name`,
+`dir`, `command` (as configured), `run` and `argv` (filled), `files`, `filter`,
+`junit`, `tests` and `promises`, and each `unmatched` file with its `tests`,
+`promises` and `reason`. A verifier no `break.runners` entry matches, Go
+verifiers and `break.commands` templates included, is listed under `unmatched`
+with the reason, never dropped; with no runner configured every verifier is
+there ("no break.runners entry matches (none is configured)"). `lattice check
+--json` carries the same listing as `tests`.
+
+In CI, run the listed commands on the pull request for fast feedback, and keep
+the full suite on the merge commit, since an unmatched verifier, or a test no
+promise names, is not in the list:
+
+```yaml
+jobs:
+  touched-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Run only the tests this change touches
+        run: |
+          lattice impact --since origin/${{ github.base_ref }} --tests > touched-tests.sh
+          cat touched-tests.sh
+          sh -e touched-tests.sh
+  full-suite:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pnpm test   # the whole suite, on the merge commit
+```
 
 ## 6. Using Lattice with an AI service
 

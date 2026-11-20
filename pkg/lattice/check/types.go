@@ -13,6 +13,8 @@ package check
 
 // @module-feature check
 
+import "github.com/salahmyn/lattice/pkg/lattice/impact"
+
 // Contract is the version tag of the JSON report, frozen by a golden test.
 const Contract = "lattice.check/1"
 
@@ -71,6 +73,9 @@ const (
 	CodeLevelDropped     = "LEVEL_DROPPED"
 	CodeBreakSurvived    = "BREAK_SURVIVED"
 	CodeConfirmationVoid = "CONFIRMATION_VOIDED"
+	// CodeStatementUnchanged is an informational note: an enforcer of the
+	// promise changed and its statement and tier did not.
+	CodeStatementUnchanged = "STATEMENT_UNCHANGED"
 )
 
 // Assurance is one measurement: the shape every assurance value has in the
@@ -169,6 +174,16 @@ type PromiseRow struct {
 	// Needs lists the signals this tier requires, which a gap is measured against.
 	Needs      []string `json:"needs"`
 	NextAction string   `json:"next_action"`
+	// Notes are informational readings of the promise. They never change the
+	// verdict, a gap or merge_allowed.
+	Notes []Note `json:"notes"`
+}
+
+// Note is one informational reading of a touched promise, for the reviewer.
+type Note struct {
+	Code string `json:"code"`
+	Text string `json:"text"`
+	Next string `json:"next,omitempty"`
 }
 
 // Delta compares a gap with the base.
@@ -280,6 +295,10 @@ type Report struct {
 	Weakenings   []Weakening  `json:"weakenings"`
 	BlindSpot    BlindSpot    `json:"blind_spot"`
 	Waivers      []Waiver     `json:"waivers"`
+	// Tests lists the verifier tests of the touched promises, grouped by the
+	// configured break.runners, as `lattice impact --tests` does. It is a
+	// listing for a script: nothing is run and it never changes the verdict.
+	Tests impact.TestPlan `json:"tests"`
 	// Note is carried on every report: UNPROVEN is not a pass.
 	Note string `json:"note"`
 }
