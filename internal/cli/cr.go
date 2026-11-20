@@ -104,7 +104,7 @@ func newCRPriceCommand(io *IO) *cobra.Command {
 			}
 
 			cfg, _ := config.Load(ws.LatticeDir)
-			set := results.Load(ws.LatticeDir)
+			set := results.Load(ws.LatticeDir).WithTests(kg.Tests)
 			m := rtm.Build(kg, rtm.Options{
 				MutationThreshold: cfg.MutationTesting.Thresholds.Default,
 				ResultOf:          resultOfFrom(set),

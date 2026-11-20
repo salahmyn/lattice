@@ -646,11 +646,7 @@ func templateRaw(g group) (files []string, filter string) {
 		case "php":
 			names = append(names, regexp.QuoteMeta(leafName(t)))
 		default:
-			title := t.Name
-			if title == "" {
-				title = leafName(t)
-			}
-			names = append(names, regexp.QuoteMeta(title))
+			names = append(names, t.TitlePattern())
 		}
 	}
 	sort.Strings(files)

@@ -280,3 +280,22 @@ func TestLinkNodeModules(t *testing.T) {
 		t.Error("a directory with no node_modules was created")
 	}
 }
+
+// A parameterized verifier's {filter} matches the names the runner expands
+// its title template to, so a runner that selects tests by name still runs
+// it; a plain title next to it stays literal.
+// @verifies results:INV-5
+func TestByRunnerFiltersParameterizedTests(t *testing.T) {
+	cfg := config.Break{Runners: []config.Runner{
+		{Name: "playwright", Match: []string{"e2e/**/*.spec.ts"}, Command: []string{"npx", "playwright", "test", "{files}", "-g", "{filter}"}},
+	}}
+	header := results.Selector{Test: "e2e.shop.header.spec.test.header-fits-on-_-_", Name: "header fits on ${view.name}, ${lang.name}",
+		File: "e2e/shop/header.spec.ts", Language: "typescript", Parameterized: true}
+	groups, _ := ByRunner(cfg, "/repo", []results.Selector{header, sel("opens the cart", "e2e/shop/cart.spec.ts", "typescript")}, nil)
+	if len(groups) != 1 {
+		t.Fatalf("groups = %+v", groups)
+	}
+	if want := "(header fits on .+?, .+?|opens the cart)$"; groups[0].Filter != want {
+		t.Errorf("filter = %q, want %q", groups[0].Filter, want)
+	}
+}

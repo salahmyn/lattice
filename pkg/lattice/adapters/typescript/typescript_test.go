@@ -545,3 +545,128 @@ func TestHasTopLevelCode(t *testing.T) {
 		}
 	}
 }
+
+// TestParameterizedTests: a test whose title is not a plain string literal is
+// one test per call site, named by its title template with the placeholders
+// as written: a template literal in nested loops, test.each with an array,
+// it.each with a tagged-template table, describe.each, a forEach callback
+// and a brace-less for loop. Annotations above the call attach as they do to
+// a plain test, and a second call site with the same template gets the
+// file's duplicate suffix.
+// @verifies adapters.typescript:INV-6
+func TestParameterizedTests(t *testing.T) {
+	src := "import { test, expect } from '@playwright/test';\n" +
+		"const LANGS = [{ name: 'ar' }, { name: 'en' }];\n" +
+		"const VIEWS = [{ name: 'mobile' }, { name: 'desktop' }];\n" +
+		"\n" +
+		"test.describe('shop header', () => {\n" +
+		"  for (const lang of LANGS) {\n" +
+		"    for (const view of VIEWS) {\n" +
+		"      /** @verifies shop:INV-1 */\n" +
+		"      test(`header fits on ${view.name}, ${lang.name}`, async ({ page }) => {});\n" +
+		"    }\n" +
+		"  }\n" +
+		"});\n" +
+		"\n" +
+		"describe('fees', () => {\n" +
+		"  /** @verifies fees:INV-1#rounding */\n" +
+		"  test.each(cases)('rounds %s to %s', (a, b) => {});\n" +
+		"  /** @verifies fees:INV-2 */\n" +
+		"  it.each`\n" +
+		"    a    | b\n" +
+		"    ${1} | ${2}\n" +
+		"  `('adds $a to $b', ({ a, b }) => {});\n" +
+		"  describe.each([['cart'], ['wallet']])('suite %s', (kind) => {\n" +
+		"    test('applies the fee', () => {});\n" +
+		"  });\n" +
+		"  /** @verifies fees:INV-3 */\n" +
+		"  [1, 2].forEach((n) => it(`charges ${n} fees`, () => {}));\n" +
+		"  CASES.forEach((c) => {\n" +
+		"    /** @verifies fees:INV-4 */\n" +
+		"    it(`waives fees for ${c.name}`, () => {});\n" +
+		"  });\n" +
+		"  for (const c of CASES) test(`caps ${c.name}`, () => {});\n" +
+		"  for (let i = 0; i < 2; i++) {\n" +
+		"    test(`caps ${CASES[i].name}`, () => {});\n" +
+		"  }\n" +
+		"  test(`keeps \\`cart\\` totals`, () => {});\n" +
+		"  test('plain title', () => {});\n" +
+		"});\n"
+	mod, err := New().Parse(context.Background(), "e2e/shop/fees.spec.ts", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	type sym struct {
+		name          string
+		parameterized bool
+		verifies      string
+	}
+	got := map[string]sym{}
+	for _, s := range mod.Symbols {
+		if !s.IsTest {
+			continue
+		}
+		v := ""
+		for _, a := range s.Annotations {
+			if a.Kind == "verifies" && len(a.Args) == 1 {
+				v, _ = a.Args[0].(string)
+			}
+		}
+		got[s.FQN] = sym{s.Name, s.Parameterized, v}
+	}
+	base := "e2e.shop.fees.spec.test."
+	want := map[string]sym{
+		base + "header-fits-on-_-_": {"header fits on ${view.name}, ${lang.name}", true, "shop:INV-1"},
+		base + "rounds-_-to-_":      {"rounds %s to %s", true, "fees:INV-1#rounding"},
+		base + "adds-_-to-_":        {"adds $a to $b", true, "fees:INV-2"},
+		base + "applies-the-fee":    {"applies the fee", false, ""},
+		base + "charges-_-fees":     {"charges ${n} fees", true, "fees:INV-3"},
+		base + "waives-fees-for-_":  {"waives fees for ${c.name}", true, "fees:INV-4"},
+		base + "caps-_":             {"caps ${c.name}", true, ""},
+		base + "caps-__2":           {"caps ${CASES[i].name}", true, ""},
+		base + "keeps-cart-totals":  {"keeps `cart` totals", false, ""},
+		base + "plain-title":        {"plain title", false, ""},
+	}
+	for fqn, w := range want {
+		if g, ok := got[fqn]; !ok || g != w {
+			t.Errorf("%s: got %+v (present %v), want %+v", fqn, g, ok, w)
+		}
+	}
+	if len(got) != len(want) {
+		t.Errorf("test symbols = %v, want exactly %v", got, want)
+	}
+	if len(mod.Diagnostics) != 0 {
+		t.Errorf("unexpected diagnostics %+v", mod.Diagnostics)
+	}
+}
+
+// TestParameterizedTestOrphans: a tag inside a test file's loop body that
+// reaches no test call is orphaned, as anywhere else; a declaration in a loop
+// body is not a module symbol.
+// @verifies adapters.typescript:INV-1
+func TestParameterizedTestOrphans(t *testing.T) {
+	src := "for (const c of CASES) {\n" +
+		"  /** @verifies fees:INV-1 */\n" +
+		"  const total = c.amount;\n" +
+		"  function helper() {}\n" +
+		"}\n"
+	mod, err := New().Parse(context.Background(), "src/fees.test.ts", []byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(mod.Symbols) != 0 {
+		t.Errorf("symbols = %+v, want none", mod.Symbols)
+	}
+	if len(mod.Diagnostics) != 1 || mod.Diagnostics[0].Line != 3 {
+		t.Errorf("diagnostics = %+v, want one ANNOTATION_ORPHANED on line 3", mod.Diagnostics)
+	}
+	// Outside a test file, loop bodies and forEach callbacks are not read.
+	prod := src + "ROUTES.forEach((r) => {\n  /** @feature fees */\n  register(r);\n});\n"
+	mod, err = New().Parse(context.Background(), "src/fees.ts", []byte(prod))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(mod.Symbols) != 0 || len(mod.Diagnostics) != 0 {
+		t.Errorf("production file: symbols %+v, diagnostics %+v, want none", mod.Symbols, mod.Diagnostics)
+	}
+}

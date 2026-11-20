@@ -28,7 +28,10 @@ source code and is kept in sync mechanically**.
 This repository is the **core engine**: one static Go binary, `lattice`.
 
 Supported languages for extraction: **Python, TypeScript/JavaScript, PHP 8.0+,
-Go**, plus opt-in PostgreSQL migrations and pgTAP tests.
+Go**, plus opt-in PostgreSQL migrations and pgTAP tests. A parameterized
+TypeScript test (`test.each`, a template-literal title in a loop) is one test
+whose report results join by its expanded names, so it passes only when every
+run passed.
 
 | For engineers | For product and leadership | For AI agents |
 |---|---|---|

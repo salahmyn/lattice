@@ -57,7 +57,7 @@ func newDemonstrateCommand(io *IO) *cobra.Command {
 					"the lite profile's ceiling is wired — it cannot sign off a demonstration; adopt the full profile first", nil)
 			}
 
-			set := results.Load(ws.LatticeDir)
+			set := results.Load(ws.LatticeDir).WithTests(kg.Tests)
 			openFlags := flags.OpenByUnit(ws.LatticeDir)
 			m := rtm.Build(kg, rtm.Options{
 				MutationThreshold: cfg.MutationTesting.Thresholds.Default,

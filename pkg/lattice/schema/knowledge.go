@@ -55,6 +55,9 @@ type GraphSymbol struct {
 	EnclosingFQN string `json:"enclosing_fqn,omitempty"`
 	IsTest       bool   `json:"is_test"`
 	Exported     bool   `json:"exported"`
+	// Parameterized marks a test named by a title template (see
+	// ir.Symbol.Parameterized).
+	Parameterized bool `json:"parameterized,omitempty"`
 
 	// Resolved edges (effective annotation set, after module/role/inheritance
 	// propagation).

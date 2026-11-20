@@ -76,7 +76,7 @@ func LoadNotes(latticeDir string) (notes []Note, present bool, errs []string) {
 func Collect(latticeDir string, kg schema.KnowledgeGraph, dirty bool) Sources {
 	src := Sources{KG: kg, Dirty: dirty}
 
-	src.Results = results.Load(latticeDir)
+	src.Results = results.Load(latticeDir).WithTests(kg.Tests)
 	src.Stamps.Results = ResultsInput{Present: len(src.Results.Results) > 0, Commit: src.Results.Commit}
 
 	if set, ok := coverage.Load(latticeDir); ok {

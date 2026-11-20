@@ -69,7 +69,7 @@ func newValidateCommand(io *IO) *cobra.Command {
 			// the run so validation agrees with rtm/coverage and flags
 			// concurrent-edit collisions. v0.8.1 adds the ledger (V8
 			// author separation) and open meaning flags.
-			set := results.Load(ws.LatticeDir)
+			set := results.Load(ws.LatticeDir).WithTests(kg.Tests)
 			activeLeases, _ := lease.Active(ws.LatticeDir, time.Now())
 			entries, _ := ledger.Load(ws.LatticeDir)
 

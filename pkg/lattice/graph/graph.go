@@ -53,8 +53,8 @@ func Build(in Input, opts Options) schema.KnowledgeGraph {
 				Name: sym.Name, FQN: sym.FQN, Kind: string(sym.Kind),
 				File: sym.File, Line: sym.Line, EndLine: sym.EndLine, Language: mod.Language,
 				EnclosingFQN: sym.EnclosingFQN, IsTest: sym.IsTest,
-				Exported: sym.Exported,
-				Feature:  r.feature, Capabilities: r.capabilities,
+				Exported: sym.Exported, Parameterized: sym.Parameterized,
+				Feature: r.feature, Capabilities: r.capabilities,
 				EnforcesInvariants: r.enforces, DependsOnFeatures: r.dependsOn,
 				Roles: r.roles, Verifies: r.verifies, VerifiesCases: r.cases, SuppressedInvariants: r.suppressed,
 			}

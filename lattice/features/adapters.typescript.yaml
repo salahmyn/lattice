@@ -19,3 +19,5 @@ invariants:
     statement: A table test (it.each) is named by its title template, so its result joins every row.
   - id: INV-5
     statement: A module with top-level runtime code is runtime code even when it declares no symbol; imports, type declarations, directives and re-exports are not.
+  - id: INV-6
+    statement: A test whose title is a template literal, or that a for loop or forEach callback of a test file declares, is one test per call site, named by its title with the placeholders as written and marked parameterized.

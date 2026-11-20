@@ -22,6 +22,9 @@ type Selector struct {
 	Slug     string   `json:"slug"`
 	Package  string   `json:"package,omitempty"` // go: the package to `go test`
 	Verifies []string `json:"verifies,omitempty"`
+	// Parameterized marks a test named by a title template; its filters
+	// match every name the runner expands the template to.
+	Parameterized bool `json:"parameterized,omitempty"`
 	// Filters maps a runner to the arguments that select this test:
 	// go (-run), node (--test-name-pattern), vitest and jest (-t), deno
 	// (--filter), pytest (a node id), pytest-k (-k), phpunit (--filter),
@@ -77,12 +80,9 @@ func Selectors(kg schema.KnowledgeGraph, verifiersOnly bool) []Selector {
 			continue
 		}
 		s := Selector{Test: t.FQN, Name: t.Name, Language: t.Language, File: t.File,
-			Slug: slugs[t.FQN], Verifies: t.Verifies, Filters: map[string][]string{}}
-		title := t.Name
-		if title == "" {
-			title = leaf(t.FQN)
-		}
-		re := regexp.QuoteMeta(title)
+			Slug: slugs[t.FQN], Verifies: t.Verifies, Parameterized: t.Parameterized,
+			Filters: map[string][]string{}}
+		re := s.TitlePattern()
 		switch t.Language {
 		case "go":
 			dir := path.Dir(t.File)
@@ -113,6 +113,36 @@ func Selectors(kg schema.KnowledgeGraph, verifiersOnly bool) []Selector {
 		return out[i].Test < out[j].Test
 	})
 	return out
+}
+
+// titlePlaceholder matches the placeholders of a parameterized test's title,
+// as the TypeScript adapter keeps them: template substitutions (${expr}) and
+// the .each verbs (%s %d %i %f %j %o %O %p %#, $name).
+var titlePlaceholder = regexp.MustCompile(`%[sdifjoOp#]|\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_.]*`)
+
+// TitlePattern is the unanchored regular expression a name-filtering runner
+// (vitest and jest -t, node --test-name-pattern, Playwright -g, deno
+// --filter) takes to select this test by its title. A plain title matches as
+// written; in a parameterized test's title each placeholder matches any
+// non-empty text, so the filter selects every expanded name.
+// @enforces results:INV-5
+func (s Selector) TitlePattern() string {
+	title := s.Name
+	if title == "" {
+		title = leaf(s.Test)
+	}
+	if !s.Parameterized {
+		return regexp.QuoteMeta(title)
+	}
+	var b strings.Builder
+	last := 0
+	for _, loc := range titlePlaceholder.FindAllStringIndex(title, -1) {
+		b.WriteString(regexp.QuoteMeta(title[last:loc[0]]))
+		b.WriteString(".+?")
+		last = loc[1]
+	}
+	b.WriteString(regexp.QuoteMeta(title[last:]))
+	return b.String()
 }
 
 // goRunPattern turns a Go test FQN (<package dir dotted>.TestX[.subtest])

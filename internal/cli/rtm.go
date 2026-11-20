@@ -68,7 +68,7 @@ The same rows back the BRD_CRITERION_* validation rules and the
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
 			cfg, _ := config.Load(ws.LatticeDir)
-			set := results.Load(ws.LatticeDir)
+			set := results.Load(ws.LatticeDir).WithTests(kg.Tests)
 			openFlags := flags.OpenByUnit(ws.LatticeDir)
 			matrix := rtm.Build(kg, rtm.Options{
 				MutationThreshold: cfg.MutationTesting.Thresholds.Default,

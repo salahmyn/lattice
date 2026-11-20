@@ -178,12 +178,96 @@ func (p *tsParser) walkStatements(parent *sitter.Node) {
 				p.orphan(pending, n)
 			}
 			pending = nil
+		case "for_statement", "for_in_statement":
+			p.orphan(pending, n)
+			pending = nil
+			p.walkLoop(n)
 		default:
 			p.orphan(pending, n)
 			pending = nil
 		}
 	}
 	p.orphan(pending, nil)
+}
+
+// walkLoop reads the test calls in a for, for...of or for...in loop body of
+// a test file, the usual way to run one test per language, viewport or
+// fixture. Each call site is one test, named by its title template. Only test
+// calls (and the groups and loops nested in them) are read here: a
+// declaration or route in a loop body is not a module-level symbol. Loops in
+// other files are not read.
+// @enforces adapters.typescript:INV-6
+func (p *tsParser) walkLoop(loop *sitter.Node) {
+	if p.testFile {
+		p.walkLoopBody(loop.ChildByFieldName("body"))
+	}
+}
+
+// walkLoopBody walks a loop body or a forEach callback body: a statement
+// block, or the single statement of a brace-less loop.
+func (p *tsParser) walkLoopBody(body *sitter.Node) {
+	if body == nil {
+		return
+	}
+	stmts := []*sitter.Node{body}
+	if body.Kind() == "statement_block" {
+		stmts = stmts[:0]
+		for i := 0; i < int(body.NamedChildCount()); i++ {
+			stmts = append(stmts, body.NamedChild(uint(i)))
+		}
+	}
+	var pending []ir.Annotation
+	for _, n := range stmts {
+		switch n.Kind() {
+		case "comment":
+			if anns := p.parseJSDoc(n); anns != nil {
+				pending = append(pending, anns...)
+			}
+			continue
+		case "expression_statement":
+			if call := innerCall(n); call == nil || !p.handleTestCall(call, pending) {
+				p.orphan(pending, n)
+			}
+		case "for_statement", "for_in_statement":
+			p.orphan(pending, n)
+			p.walkLoop(n)
+		default:
+			p.orphan(pending, n)
+		}
+		pending = nil
+	}
+	p.orphan(pending, nil)
+}
+
+// handleForEach reads the test calls in a forEach callback
+// (CASES.forEach((c) => it(`rounds ${c.in}`, ...))). A concise arrow whose
+// body is the test call takes the annotations above the statement; a block
+// body is walked like a loop body. As with loops, only a test file's
+// forEach callbacks are read.
+// @enforces adapters.typescript:INV-6
+func (p *tsParser) handleForEach(call *sitter.Node, anns []ir.Annotation) bool {
+	args := call.ChildByFieldName("arguments")
+	if args == nil || !p.testFile {
+		return false
+	}
+	for i := 0; i < int(args.NamedChildCount()); i++ {
+		cb := args.NamedChild(uint(i))
+		switch cb.Kind() {
+		case "arrow_function", "function", "function_expression":
+		default:
+			continue
+		}
+		body := cb.ChildByFieldName("body")
+		if body == nil {
+			return false
+		}
+		if body.Kind() == "call_expression" {
+			return p.handleTestCall(body, anns)
+		}
+		p.walkLoopBody(body)
+		return false
+	}
+	return false
 }
 
 // orphan reports annotations that attach to no symbol. They used to be
@@ -289,6 +373,9 @@ func (p *tsParser) handleTestCall(call *sitter.Node, anns []ir.Annotation) bool 
 	if fn.Kind() == "call_expression" {
 		return p.handleEachCall(call, fn, anns)
 	}
+	if isForEach(fn, p.src) {
+		return p.handleForEach(call, anns)
+	}
 	callee := calleeName(fn, p.src)
 	if !testCallNames[callee] {
 		return false
@@ -310,7 +397,7 @@ func (p *tsParser) handleTestCall(call *sitter.Node, anns []ir.Annotation) bool 
 		// A grouping call is structure, not a test — record it only when it
 		// carries annotations. Always recurse for nested cases.
 		if len(anns) > 0 {
-			p.addTestSymbol(p.testDesc(args, callee), call, anns)
+			p.addTestTitle(p.testTitle(args, callee), call, anns)
 		}
 		if body := callbackBody(args); body != nil {
 			p.walkStatements(body)
@@ -318,7 +405,7 @@ func (p *tsParser) handleTestCall(call *sitter.Node, anns []ir.Annotation) bool 
 		return len(anns) > 0
 	}
 	if hasInlineCallback(args) || len(anns) > 0 {
-		p.addTestSymbol(p.testDesc(args, callee), call, anns)
+		p.addTestTitle(p.testTitle(args, callee), call, anns)
 		return true
 	}
 	return false
@@ -344,9 +431,10 @@ func (p *tsParser) handleEachCall(call, inner *sitter.Node, anns []ir.Annotation
 			group = true
 		}
 	}
+	title := eachTitle(p.titleArg(args))
 	if group {
 		if len(anns) > 0 {
-			p.addTestSymbolSlug(p.firstStringArg(args), templateSlug(p.firstStringArg(args)), call, anns)
+			p.addTestTitle(title, call, anns)
 		}
 		if body := callbackBody(args); body != nil {
 			p.walkStatements(body)
@@ -356,8 +444,7 @@ func (p *tsParser) handleEachCall(call, inner *sitter.Node, anns []ir.Annotation
 	if !hasInlineCallback(args) && len(anns) == 0 {
 		return false
 	}
-	title := p.firstStringArg(args)
-	p.addTestSymbolSlug(title, templateSlug(title), call, anns)
+	p.addTestTitle(title, call, anns)
 	return true
 }
 
@@ -365,24 +452,84 @@ func (p *tsParser) handleEachCall(call, inner *sitter.Node, anns []ir.Annotation
 // titles: printf verbs (%s %d %i %f %j %o %O %p %#) and $name / ${expr}.
 var eachPlaceholder = regexp.MustCompile(`%[sdifjoOp#]|\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_.]*`)
 
-// templateSlug slugs a table-test title, marking each placeholder with "_"
-// (which slugify never emits), so the result join can match every row:
+// titlePart is one piece of a test title as written: literal text, or a
+// placeholder the runner fills in per row or iteration ("${view.name}",
+// "%s", "$a"), kept as its source text.
+type titlePart struct {
+	text string
+	hole bool
+}
+
+// testTitleParts is a test title split into literal text and placeholders.
+type testTitleParts []titlePart
+
+// text is the title as written, placeholders included.
+func (t testTitleParts) text() string {
+	var b strings.Builder
+	for _, part := range t {
+		b.WriteString(part.text)
+	}
+	return b.String()
+}
+
+// parameterized reports whether the title has a placeholder.
+func (t testTitleParts) parameterized() bool {
+	for _, part := range t {
+		if part.hole {
+			return true
+		}
+	}
+	return false
+}
+
+// slug is the title's FQN slug. A placeholder becomes a "_" token (which
+// slugify never emits), so the result join can match every expansion:
 // "fails when the %s read fails" -> "fails-when-the-_-read-fails".
-// @enforces adapters.typescript:INV-4
-func templateSlug(title string) string {
-	if !eachPlaceholder.MatchString(title) {
-		return slugify(title)
+func (t testTitleParts) slug() string {
+	if !t.parameterized() {
+		return slugify(t.text())
 	}
 	var tokens []string
-	for i, part := range eachPlaceholder.Split(title, -1) {
-		if i > 0 {
+	for _, part := range t {
+		switch {
+		case part.hole:
 			tokens = append(tokens, "_")
-		}
-		if hasAlnum(part) {
-			tokens = append(tokens, slugify(part))
+		case hasAlnum(part.text):
+			tokens = append(tokens, slugify(part.text))
 		}
 	}
 	return strings.Join(tokens, "-")
+}
+
+// eachTitle marks the per-row placeholders of a .each title (printf verbs,
+// $name, ${expr}) in its literal parts.
+func eachTitle(t testTitleParts) testTitleParts {
+	var out testTitleParts
+	for _, part := range t {
+		if part.hole {
+			out = append(out, part)
+			continue
+		}
+		rest, last := part.text, 0
+		for _, loc := range eachPlaceholder.FindAllStringIndex(rest, -1) {
+			if loc[0] > last {
+				out = append(out, titlePart{text: rest[last:loc[0]]})
+			}
+			out = append(out, titlePart{text: rest[loc[0]:loc[1]], hole: true})
+			last = loc[1]
+		}
+		if last < len(rest) {
+			out = append(out, titlePart{text: rest[last:]})
+		}
+	}
+	return out
+}
+
+// templateSlug slugs a table-test title, marking each placeholder with "_",
+// so the result join can match every row.
+// @enforces adapters.typescript:INV-4
+func templateSlug(title string) string {
+	return eachTitle(testTitleParts{{text: title}}).slug()
 }
 
 // hasAlnum reports whether s holds a letter or digit slugify would keep.
@@ -395,13 +542,75 @@ func hasAlnum(s string) bool {
 	return false
 }
 
-// testDesc returns the first string argument of a test call, falling back to
-// the callee name.
-func (p *tsParser) testDesc(args *sitter.Node, callee string) string {
-	if d := p.firstStringArg(args); d != "" {
-		return d
+// testTitle returns the title of a test call: its first string or template
+// literal argument, falling back to the callee name.
+func (p *tsParser) testTitle(args *sitter.Node, callee string) testTitleParts {
+	if t := p.titleArg(args); t.text() != "" {
+		return t
 	}
-	return callee
+	return testTitleParts{{text: callee}}
+}
+
+// titleArg returns the first string or template literal argument of a call,
+// split into literal text and placeholders. A template literal's
+// substitutions are placeholders, kept as written
+// (`fits on ${view.name}`); escapes in the literal text are decoded.
+// @enforces adapters.typescript:INV-6
+func (p *tsParser) titleArg(args *sitter.Node) testTitleParts {
+	if args == nil {
+		return nil
+	}
+	for i := 0; i < int(args.NamedChildCount()); i++ {
+		c := args.NamedChild(uint(i))
+		switch c.Kind() {
+		case "string":
+			return testTitleParts{{text: p.literalText(c)}}
+		case "template_string":
+			return p.templateParts(c)
+		}
+	}
+	return nil
+}
+
+// templateParts splits a template literal into its text and substitutions.
+func (p *tsParser) templateParts(n *sitter.Node) testTitleParts {
+	var out testTitleParts
+	var lit strings.Builder
+	flush := func() {
+		if lit.Len() > 0 {
+			out = append(out, titlePart{text: lit.String()})
+			lit.Reset()
+		}
+	}
+	// The text between children is literal; walk by byte offset so text the
+	// grammar leaves unnamed is kept too.
+	start, end := n.StartByte()+1, n.EndByte()-1 // inside the backticks
+	pos := start
+	for i := 0; i < int(n.NamedChildCount()); i++ {
+		c := n.NamedChild(uint(i))
+		if c.StartByte() > pos {
+			lit.Write(p.src[pos:c.StartByte()])
+		}
+		switch c.Kind() {
+		case "template_substitution":
+			flush()
+			out = append(out, titlePart{text: c.Utf8Text(p.src), hole: true})
+		case "escape_sequence":
+			if esc := c.Utf8Text(p.src); len(esc) == 2 {
+				lit.WriteString(esc[1:])
+			} else {
+				lit.WriteString(esc)
+			}
+		default:
+			lit.WriteString(c.Utf8Text(p.src))
+		}
+		pos = c.EndByte()
+	}
+	if end > pos {
+		lit.Write(p.src[pos:end])
+	}
+	flush()
+	return out
 }
 
 // detectRoute records an HTTP surface for a framework route registration such
@@ -594,14 +803,16 @@ func (p *tsParser) addSymbol(name string, kind ir.SymbolKind, enclosingFQN strin
 	return true
 }
 
-// addTestSymbol records a synthetic symbol for a test-framework call. The test
-// description becomes the symbol name; the FQN is slugified and de-duplicated.
-func (p *tsParser) addTestSymbol(desc string, n *sitter.Node, anns []ir.Annotation) {
-	p.addTestSymbolSlug(desc, slugify(desc), n, anns)
+// addTestTitle records a synthetic symbol for a test-framework call. The
+// title as written becomes the symbol name; the FQN is its slug,
+// de-duplicated. A title with placeholders is a parameterized test.
+func (p *tsParser) addTestTitle(t testTitleParts, n *sitter.Node, anns []ir.Annotation) {
+	p.addTestSymbolSlug(t.text(), t.slug(), t.parameterized(), n, anns)
 }
 
-// addTestSymbolSlug is addTestSymbol with the FQN slug given.
-func (p *tsParser) addTestSymbolSlug(desc, slug string, n *sitter.Node, anns []ir.Annotation) {
+// addTestSymbolSlug records a test symbol with the FQN slug given. A second
+// call site with the same slug in the file gets a _2, _3, ... suffix.
+func (p *tsParser) addTestSymbolSlug(desc, slug string, parameterized bool, n *sitter.Node, anns []ir.Annotation) {
 	if slug == "" {
 		slug = "test"
 	}
@@ -614,7 +825,7 @@ func (p *tsParser) addTestSymbolSlug(desc, slug string, n *sitter.Node, anns []i
 	p.mod.Symbols = append(p.mod.Symbols, ir.Symbol{
 		Name: desc, FQN: fqn, Kind: ir.KindFunction,
 		File: p.mod.File, Line: line(n), EndLine: endLine(n), Annotations: anns,
-		IsTest: true, Exported: false,
+		IsTest: true, Exported: false, Parameterized: parameterized,
 	})
 	p.track(n)
 }
@@ -729,27 +940,31 @@ func (p *tsParser) firstStringArg(args *sitter.Node) string {
 		return ""
 	}
 	for i := 0; i < int(args.NamedChildCount()); i++ {
-		c := args.NamedChild(uint(i))
-		if c.Kind() != "string" {
-			continue
+		if c := args.NamedChild(uint(i)); c.Kind() == "string" {
+			return p.literalText(c)
 		}
-		// A literal is split into string_fragment and escape_sequence nodes
-		// ('the customer\'s cart' splits into several children); join them all, decoding simple escapes.
-		var b strings.Builder
-		for j := 0; j < int(c.NamedChildCount()); j++ {
-			part := c.NamedChild(uint(j))
-			switch part.Kind() {
-			case "string_fragment":
-				b.WriteString(part.Utf8Text(p.src))
-			case "escape_sequence":
-				if esc := part.Utf8Text(p.src); len(esc) == 2 {
-					b.WriteString(esc[1:])
-				}
-			}
-		}
-		return b.String() // "" for an empty string literal
 	}
 	return ""
+}
+
+// literalText returns the unquoted text of a string literal. A literal is
+// split into string_fragment and escape_sequence nodes ('the customer\'s
+// cart' splits into several children); join them all, decoding simple
+// escapes. It is "" for an empty string literal.
+func (p *tsParser) literalText(c *sitter.Node) string {
+	var b strings.Builder
+	for j := 0; j < int(c.NamedChildCount()); j++ {
+		part := c.NamedChild(uint(j))
+		switch part.Kind() {
+		case "string_fragment":
+			b.WriteString(part.Utf8Text(p.src))
+		case "escape_sequence":
+			if esc := part.Utf8Text(p.src); len(esc) == 2 {
+				b.WriteString(esc[1:])
+			}
+		}
+	}
+	return b.String()
 }
 
 // --- helpers ---
@@ -886,6 +1101,16 @@ func calleeName(fn *sitter.Node, src []byte) string {
 		}
 	}
 	return ""
+}
+
+// isForEach reports whether a callee is a .forEach member call
+// (CASES.forEach, [1, 2].forEach, Object.entries(x).forEach).
+func isForEach(fn *sitter.Node, src []byte) bool {
+	if fn.Kind() != "member_expression" {
+		return false
+	}
+	prop := fn.ChildByFieldName("property")
+	return prop != nil && prop.Utf8Text(src) == "forEach"
 }
 
 // denoTest reports whether a member expression is exactly `Deno.test`.
