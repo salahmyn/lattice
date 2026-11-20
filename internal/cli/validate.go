@@ -114,9 +114,9 @@ func newValidateCommand(io *IO) *cobra.Command {
 				}
 			}
 
-			// Ledger the check run — script-free claims are not evidence;
-			// the ledger line is.
-			appendLedgerEvent(io, ws, ledger.EventCheckRun, "workspace",
+			// Record the run in the untracked last-runs cache: a check run
+			// is not a decision, so it never touches the tracked ledger.
+			recordCheckRun(io, ws, "validate", kg.GeneratedFromCommit,
 				fmt.Sprintf("validate: %d error(s), %d warning(s), %d info, %d allowlisted",
 					report.Errors, report.Warnings, report.Infos, len(report.Allowlisted)))
 
