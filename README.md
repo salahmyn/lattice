@@ -128,7 +128,9 @@ verdicts. Unknown is never a pass.
   test file) and lists anything it can't place as `uncovered`.
 - `lattice prepare` and `lattice confirm` make confirmation a human act that
   the platform vouches for. An agent can prepare a decision branch. Only a
-  human's approval counts.
+  human's approval counts: an approving review by someone other than the
+  author, or `lattice sign` with a hardware security key listed in
+  `lattice/allowed_signers` and on the signer's GitHub account.
 
 ## Quick start
 
