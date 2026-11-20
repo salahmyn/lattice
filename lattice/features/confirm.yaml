@@ -42,3 +42,9 @@ invariants:
     statement: A human verdict always shows its method, signed (login, fingerprint) or approved on a pull request.
   - id: INV-16
     statement: A promise's acceptance cases are part of its packet, so adding, editing or retiring one after confirmation makes the decision stale, while a promise with no cases hashes as it did before cases existed.
+  - id: INV-17
+    statement: A change to allowed_signers that adds a signer counts only when an endorsement in the same commit, by an sk- key trusted before the change, covers it; the first allowed_signers is the root, accepted and reported as ROOT_SIGNERS; a removal needs nothing; a key added otherwise reads SIGNER_NOT_ENDORSED, unknown.
+  - id: INV-18
+    statement: A signature verdict names a human login as its signer, never a bot or agent login, whoever opened the pull request; a pull request opened by a bot or agent account is named in the verdict's text.
+  - id: INV-19
+    statement: confirm --unsigned lists the current decisions that rest on a local note or a review, with the exact commands that re-confirm each by signature, and signs, prepares and writes nothing.

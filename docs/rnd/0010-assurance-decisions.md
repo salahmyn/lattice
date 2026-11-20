@@ -154,11 +154,15 @@ the key is in `lattice/allowed_signers` at the base commit (never the PR head) a
 among the login's GitHub signing keys. Software keys are refused, so there is no
 weaker label; the state is `human`, always shown with its method (`via: signature`,
 login, fingerprint). Earlier local `brd ack` records stay as they are: re-confirm
-them with `prepare` and `sign`. Delegation, below, stays the fallback for projects
-without a hardware key, and its state stays `delegated`. Planned next: changes to
-`allowed_signers` signed by an already-allowed key, and an opt-in to accept the
-signature route only. The user guide's "Confirm by signature" has the threat
-model.
+them with `prepare` and `sign` (`lattice confirm --unsigned` lists them, with the
+commands). Delegation, below, stays the fallback for projects
+without a hardware key, and its state stays `delegated`. A change that adds a key to `allowed_signers` counts only with an endorsement by a key
+trusted before it (`allowed_signers.sig` in the same commit); the first file is
+the root of trust (`ROOT_SIGNERS`), removals need nothing, and a key added
+otherwise reads `SIGNER_NOT_ENDORSED`. That closes the rebase-merge hole of the
+base-commit rule without relying on merge style. Planned next: an opt-in to
+accept the signature route only. The user guide's "Confirm by signature" has the
+threat model.
 
 A project owner may delegate confirmation to an agent. That weakens a
 guarantee: `confirmed` is otherwise the only signal that a non-agent read the

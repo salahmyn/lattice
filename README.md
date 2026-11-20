@@ -155,7 +155,9 @@ weakens enforcement silently.
   the platform vouches for. An agent can prepare a decision branch. Only a
   human's approval counts: an approving review by someone other than the
   author, or `lattice sign` with a hardware security key listed in
-  `lattice/allowed_signers` and on the signer's GitHub account.
+  `lattice/allowed_signers` and on the signer's GitHub account. A key added
+  to `allowed_signers` counts only when a key already trusted endorses the
+  change (`lattice sign --signers`).
 
 ## Quick start
 
@@ -230,8 +232,8 @@ A complete, validating three-language example lives in
 | `lattice break [--promise f:INV-n] [--fails-on-base <rev>]` | Break each enforcer and see whether its verifiers notice; `--fails-on-base` runs a change's new or edited tests on the old code |
 | `lattice audit [--promise f:INV-n]` | Classify every promise: fake, break-tested, exercised, a gap; each case covered, partial, failing or uncovered |
 | `lattice prepare brd\|promise\|waiver …` | Prepare a decision branch for a human to approve; never pushes |
-| `lattice confirm [--offline]` | Which decisions a human confirmed: an approving review on the merged PR, or a hardware-key signature |
-| `lattice sign <decision>` | A human signs a decision with an SSH security key (`ed25519-sk`); refuses CI, agents and software keys |
+| `lattice confirm [--offline] [--unsigned]` | Which decisions a human confirmed: an approving review on the merged PR, or a hardware-key signature; `--unsigned` lists what a signature could re-confirm, with the commands |
+| `lattice sign <decision>` \| `--signers` | A human signs a decision, or endorses a change to `allowed_signers`, with an SSH security key (`ed25519-sk`); refuses CI, agents and software keys |
 | `lattice agent <cap>` | LLM-backed capabilities (deterministic fallback) |
 | `lattice mutation run` | Mutation-test invariant-enforcing code |
 | `lattice structural-checks run` | Run structural invariant checks |

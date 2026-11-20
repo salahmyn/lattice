@@ -10,6 +10,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/salahmyn/lattice/pkg/lattice/confirm/signature"
+	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
 // SigningKeyLister is a Platform that also lists a user's SSH signing keys,
@@ -53,8 +54,10 @@ func (s *signingKeys) list(ctx context.Context, l SigningKeyLister, login string
 
 // outcome turns what the repository says about a signature into a verdict,
 // adding the platform anchor. A definite rejection reads pending; a check
-// that cannot be made reads unknown, never confirmed.
-// @enforces confirm:INV-12
+// that cannot be made reads unknown, never confirmed. The signer is always a
+// human login: a key allowed_signers lists only for a bot or agent login is
+// refused, whoever opened the pull request.
+// @enforces confirm:INV-12, confirm:INV-18
 func (s *signingKeys) outcome(ctx context.Context, ev signature.Evidence, f *signature.Failure) Outcome {
 	o := Outcome{Via: ViaSignature, Fingerprint: ev.Fingerprint, Base: ev.Base}
 	if f != nil {
@@ -64,6 +67,21 @@ func (s *signingKeys) outcome(ctx context.Context, ev signature.Evidence, f *sig
 		}
 		return o
 	}
+	var humans, machines []string
+	for _, l := range ev.Logins {
+		if IsBot(l, "") || schema.IsAgentActor(l) {
+			machines = append(machines, l)
+		} else {
+			humans = append(humans, l)
+		}
+	}
+	if len(humans) == 0 {
+		o.State, o.Code = StatePending, signature.CodeNotHuman
+		o.Text = "allowed_signers lists key " + signature.Short(ev.Fingerprint) + " only for " + strings.Join(machines, ", ") +
+			", a bot or agent login: only a human login signs a decision"
+		return o
+	}
+	ev.Logins = humans
 	who := strings.Join(ev.Logins, ", ")
 	lister, ok := s.platform.(SigningKeyLister)
 	if s.platform == nil || !ok {

@@ -1,0 +1,92 @@
+{
+  "contract": "lattice.confirm/1",
+  "commit": "deadbeef",
+  "branch": "main",
+  "generated_at": "2026-01-02T03:04:05Z",
+  "assurance": {
+    "state": "pass",
+    "honesty": "fact",
+    "code": "PLATFORM_READ",
+    "text": "approvals read from the platform"
+  },
+  "records": [
+    {
+      "id": "brd.x",
+      "version": 2,
+      "action": "brd.approve",
+      "state": "confirmed",
+      "via": "signature",
+      "approver_login": "ana",
+      "fingerprint": "SHA256:Xb3k9abcdefghijklmnop",
+      "verified_at": "2026-01-02T03:04:05Z",
+      "decision_sha": "c0ffee",
+      "decision_path": "lattice/decisions/approvals/brd.x-v2-9e1f04ab.yaml",
+      "signature_base": "ba5e",
+      "pr_author": "release-agent[bot]",
+      "pr_author_bot": true,
+      "assurance": {
+        "state": "confirmed",
+        "honesty": "fact",
+        "code": "SIGNED",
+        "text": "signed by ana with hardware key SHA256:Xb3k9abcdefg"
+      }
+    }
+  ],
+  "signers": {
+    "root": "r00t",
+    "changes": [
+      {
+        "commit": "r00t",
+        "code": "ROOT_SIGNERS",
+        "added": [
+          "ana SHA256:Xb3k9abcdefghijklmnop"
+        ],
+        "text": "the first allowed_signers with a signer is the root of trust"
+      },
+      {
+        "commit": "e2d0",
+        "code": "SIGNERS_ENDORSED",
+        "added": [
+          "bo SHA256:Q7"
+        ],
+        "endorsed_by": [
+          "ana"
+        ],
+        "fingerprint": "SHA256:Xb3k9abcdefghijklmnop",
+        "text": "endorsed by ana"
+      },
+      {
+        "commit": "0b0e",
+        "code": "SIGNER_NOT_ENDORSED",
+        "added": [
+          "cy SHA256:Z1"
+        ],
+        "text": "signers added with no endorsement"
+      },
+      {
+        "commit": "de1e",
+        "code": "SIGNERS_REMOVED",
+        "removed": [
+          "cy SHA256:Z1"
+        ],
+        "text": "removed cy SHA256:Z1"
+      }
+    ],
+    "assurance": {
+      "state": "pass",
+      "honesty": "fact",
+      "code": "ROOT_SIGNERS",
+      "params": {
+        "root": "r00t"
+      },
+      "text": "trust starts at r00t"
+    }
+  },
+  "stamp": {
+    "commit": "deadbeef",
+    "ci_run": "4812",
+    "platform": "github",
+    "repository": "acme/shop",
+    "digest": "sha256:82552011124acd25d3ad0d9928530898eefa8581394908580bbd6b3a791b6ae4"
+  }
+}

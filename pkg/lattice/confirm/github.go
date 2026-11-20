@@ -102,8 +102,18 @@ func (g GitHub) PullRequestForCommit(ctx context.Context, sha string) (*PullRequ
 		return nil, nil
 	}
 	pr := prs[pick]
-	return &PullRequest{Number: pr.Number, Author: pr.User.Login, Merged: pr.MergedAt != nil,
+	return &PullRequest{Number: pr.Number, Author: pr.User.Login, AuthorType: pr.User.Type, Merged: pr.MergedAt != nil,
 		HeadSHA: pr.Head.SHA, MergeSHA: pr.MergeCommitSHA}, nil
+}
+
+// PullAuthor names who opened the pull request that merged commit sha, and
+// their account type; "" when no request is known.
+func (g GitHub) PullAuthor(ctx context.Context, sha string) (string, string, error) {
+	pr, err := g.PullRequestForCommit(ctx, sha)
+	if err != nil || pr == nil {
+		return "", "", err
+	}
+	return pr.Author, pr.AuthorType, nil
 }
 
 // Reviews lists a pull request's reviews, oldest first.

@@ -1713,6 +1713,7 @@ left out, so a better test run never voids a confirmation.
 ```sh
 lattice confirm                 # in CI, on the default branch; needs GITHUB_TOKEN or GH_TOKEN
 lattice confirm --offline       # read the cache only
+lattice confirm --unsigned      # what a signature could re-confirm, with the commands
 ```
 
 For each decision file on the default branch, `confirm` finds the commit that
@@ -1788,7 +1789,7 @@ requests.
    *Signing Key*, or `gh ssh-key add ~/.ssh/id_ed25519_sk.pub --type signing`.
 3. Add one line to `lattice/allowed_signers` (OpenSSH allowed_signers format,
    with your GitHub login as the principal) and merge it to the default branch
-   through a reviewed or signed change, before you sign with the key:
+   before you sign a decision with the key:
 
    ```text
    ana namespaces="lattice-decision" sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5... ana
@@ -1797,6 +1798,22 @@ requests.
    Only plain lines count: exact principals and at most a `namespaces` option
    that includes `lattice-decision`. Lines with wildcard principals,
    `cert-authority`, `valid-after` or `valid-before` are skipped.
+
+   The first `allowed_signers` is the root of trust: merge it yourself.
+   Every later key must be endorsed by a key already trusted. The holder of
+   that key runs, on the branch with the change:
+
+   ```sh
+   lattice sign --signers          # prints the signers added and removed, then signs
+   git add lattice/allowed_signers lattice/allowed_signers.sig
+   git commit -m "signers: enrol bo"   # the change and its endorsement in one commit
+   ```
+
+   `--signers` compares the working tree's `allowed_signers` with the default
+   branch (`--branch` names it), writes `lattice/allowed_signers.sig`, and has
+   the same refusals as `lattice sign`. Commit the `.sig` in the same commit as
+   the change, or merge with a merge commit or a squash, so the change lands
+   with its endorsement. Removing a key needs no endorsement.
 
 **Sign a decision.**
 
@@ -1851,7 +1868,10 @@ with a `.sig` beside it, all of these must hold, natively in Go (no
 | The namespace is `lattice-decision` | `pending`, `SIGNATURE_NAMESPACE` |
 | It verifies over this decision's message: a signature copied to another decision, version, action, packet, promise list or repository fails | `pending`, `SIGNATURE_INVALID` |
 | The key is listed for the login in `lattice/allowed_signers` at the base commit | `pending`, `SIGNER_NOT_ALLOWED` |
+| ... and is trusted there: in the root `allowed_signers`, or added by an endorsed change (below) | `unknown`, `SIGNER_NOT_ENDORSED` |
 | ... and still at the tip of the default branch | `pending`, `SIGNER_REVOKED` |
+| The history of `allowed_signers` can be followed to its root (not a shallow clone) | `unknown`, `SIGNERS_NO_HISTORY` |
+| The login is a human's, not a bot (`...[bot]`) or agent (`agent...`) login | `pending`, `SIGNER_NOT_HUMAN` |
 | GitHub lists the key among the login's SSH signing keys (`GET /users/{login}/ssh_signing_keys`) | `pending`, `SIGNER_NOT_ON_GITHUB` |
 | GitHub can be read (a token is set and the API answers) | `unknown`, `GITHUB_ANCHOR_UNKNOWN` |
 | The base commit exists (not a root commit or a shallow clone's edge) | `unknown`, `SIGNATURE_NO_BASE` |
@@ -1863,14 +1883,84 @@ packet reads `stale` as on the review route. Review-route records carry
 counts. Text output always names the method:
 `human (signed by ana, SHA256:Xb3k9...)` or `human (approved by bo on PR #41)`.
 
+The signer is the login `allowed_signers` and GitHub's signing keys name, never
+the pull request's author, so a decision an agent prepared and a human signed
+reads `human` with the human's login. To show that a machine prepared it, a
+signature record carries `pr_author` (who opened the pull request that added the
+decision) and `pr_author_bot`, and the text adds a note under the record:
+
+```text
+confirmed  brd.approve brd.refunds v3 human (signed by ana, SHA256:Xb3k9...)  [SIGNED]
+    note: the pull request was opened by release-agent[bot], a bot or agent account: it prepared the decision, and ana signed it
+```
+
 **The base commit.** `allowed_signers` is read with git plumbing at one commit:
 the first parent of the commit on the default branch's first-parent history that
 added (or last changed) the `.sig`. For a pull request merged with a merge commit
 or squashed, that is the default branch just before the merge, so a key added to
 `allowed_signers` in the same pull request does not count, and the pull request's
 head is never read. With rebase merging every rebased commit lands on its own, so
-the base is the commit just before the one that adds the `.sig`; merge decision
-pull requests with a merge commit or a squash.
+the base is the commit just before the one that adds the `.sig`, and a key added
+earlier in the same pull request is in it. That key still does not count unless
+its addition was endorsed (below), so every merge style is safe.
+
+**Endorsed changes to `allowed_signers`.** A key counts only when it is trusted,
+and trust is followed along the default branch's first-parent history of
+`lattice/allowed_signers`, from git objects, by `confirm` and every reader:
+
+- The first version that lists a signer is the **root of trust**, accepted as
+  is. `confirm` reports it as `ROOT_SIGNERS` with its commit
+  (`signers  trust starts at 1a2b3c4d ...  [ROOT_SIGNERS]`), so you can see when
+  trust started. Check that commit: whoever merged it chose the first keys.
+- Every later commit that adds a signer (a new line, or a login or the
+  `lattice-decision` namespace added to a line) must carry
+  `lattice/allowed_signers.sig` in the same commit: an endorsement made with an
+  `sk-` key, with user presence, by a key trusted *before* the change. Keys added
+  without one do not count, from that commit on, and decisions they sign read
+  `unknown`, `SIGNER_NOT_ENDORSED`. The report lists such a change as
+  `SIGNER_NOT_ENDORSED`; endorsed ones read `SIGNERS_ENDORSED`.
+- A change that only removes signers needs no endorsement (`SIGNERS_REMOVED`):
+  revocation stays one commit.
+- Endorsements chain: a key endorsed by ana can endorse the next key, and a key
+  can endorse its own replacement while it is removed in the same change.
+
+The endorsement signs this message, computed and never stored:
+
+```text
+lattice-signers/v1
+repository acme/shop
+after 5e6f7a8b...          # the last commit that changed allowed_signers on the default branch
+signers sha256:...         # the new file, with CRLF read as LF
+```
+
+`after` ties it to the history, so an old endorsement cannot re-add a key that
+was removed since. If anything else changes `allowed_signers` on the default
+branch first, sign again. Enrol a second key early (a backup security key):
+once every trusted key is removed, no change can be endorsed again, and the
+signature route stays closed for that history. A shallow clone cannot show
+where trust started, so `confirm` and the readers need the full history
+(`fetch-depth: 0`).
+
+**Re-confirm by signature.** `lattice confirm --unsigned` lists the decisions a
+signature could re-confirm, and the exact commands for each. It reads only: it
+signs, prepares and writes nothing (`lattice.confirm-unsigned/1`).
+
+```text
+local  brd.ack brd.refunds v3  (a local note typed as ana@example.com, not a confirmation; ...)
+    lattice prepare brd ack brd.refunds
+    git switch decision/brd.refunds-v3.ack-9e1f04ab
+    lattice sign brd.refunds-v3.ack-9e1f04ab
+review  promise.confirm brd.refunds v3  (approved by bo on PR #41; sign the decision file, ...)
+    lattice sign lattice/decisions/approvals/brd.refunds-v3.confirm-1a2b3c4d-9e1f04ab.yaml
+```
+
+- `local`: the BRD's current version was approved or acknowledged by
+  `lattice brd approve` or `brd ack` (a typed name), and no decision confirms
+  it. The stem is the one `prepare` writes now; if the BRD or a promise changes
+  first, `prepare` prints another.
+- `review`: a decision confirmed by an approving review, on a current version,
+  that no signature confirms. It reads the cache `lattice confirm` wrote, so run
+  that first.
 
 **Revocation.** Remove the key from `allowed_signers` on the default branch, or
 from your GitHub signing keys, and everything it signed reads un-confirmed: the
@@ -1895,19 +1985,27 @@ human's own GitHub token.
   another. None of these produces `human`: a key enrolled in the same pull
   request is read before the change; a copied signature fails the message; a
   hand-written verdict is re-verified away; a key made in software is refused by
-  type.
+  type. A key added to `allowed_signers` counts only with an endorsement by a key
+  already trusted, and an agent cannot make one: so adding a key in the same pull
+  request, under any merge style, adds nothing.
 - An agent *cannot* touch the hardware key, so it cannot make your key sign.
-- The residual risk: the `sk-` key type is not attested. Lattice can refuse key
-  types that are certainly software, but it cannot prove a key with an `sk-`
-  type lives in hardware; such a key can be generated in software. An agent whose
-  token may manage SSH signing keys could add a key it
-  generated to your GitHub account, merge it into `allowed_signers` in one pull
-  request, and sign with it in a later one. Withhold that permission from any
-  token an agent holds (the classic `admin:ssh_signing_key` and
-  `write:ssh_signing_key` scopes, or the fine-grained "SSH signing keys" account
-  permission), review every change to `allowed_signers`, and check the
+- The residual risk is the root of trust. The `sk-` key type is not attested:
+  Lattice refuses key types that are certainly software, but it cannot prove a
+  key with an `sk-` type lives in hardware; such a key can be generated in
+  software. Before the first `allowed_signers` is merged, an agent whose token
+  may manage SSH signing keys could add a key it generated to your GitHub
+  account and merge it as the root. After the root, that no longer works: the
+  key also needs an endorsement from a key already trusted. So create the root
+  yourself, check the `ROOT_SIGNERS` commit `confirm` reports, withhold the SSH
+  signing key permission from any token an agent holds (the classic
+  `admin:ssh_signing_key` and `write:ssh_signing_key` scopes, or the
+  fine-grained "SSH signing keys" account permission), and check the
   fingerprint every verdict shows against your own key
   (`ssh-keygen -lf ~/.ssh/id_ed25519_sk.pub`).
+- Trust is read from the default branch's history, so protect that branch
+  against force pushes: a rewritten history can start trust at a new root.
+  The `ROOT_SIGNERS` commit `confirm` reports would then change, which is what
+  to watch for.
 - The terminal and CI refusals of `lattice sign` are friction, not a boundary:
   the boundary is the touch on the hardware key.
 
@@ -1921,7 +2019,8 @@ is the designed fallback for projects that have neither: its state is
 
 `lattice brd approve`, `brd ack` and `brd overturn` still work for now. Each
 prints a deprecation line and records `local: true`, and the audit shows
-"prepared by a local session, not confirmed". Councils (`brd vote`, `brd
+"prepared by a local session, not confirmed". `lattice confirm --unsigned` lists
+the approvals and acks to re-confirm, with the commands. Councils (`brd vote`, `brd
 decide`) stay as advice: a council's approval reads "reviewed by council, awaiting
 you" until a human ack is confirmed.
 

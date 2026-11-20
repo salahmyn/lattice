@@ -14,6 +14,7 @@ import (
 
 	"github.com/salahmyn/lattice/pkg/lattice/confirm/signature"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm/stamp"
+	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
 // Schema is the contract of lattice/.cache/confirm.json.
@@ -58,8 +59,13 @@ type Record struct {
 	DecisionPath string `json:"decision_path,omitempty"`
 	// SignatureBase is the commit allowed_signers was read at: the first
 	// parent of the default-branch commit that introduced the signature.
-	SignatureBase string    `json:"signature_base,omitempty"`
-	Assurance     Assurance `json:"assurance"`
+	SignatureBase string `json:"signature_base,omitempty"`
+	// PRAuthor is who opened the pull request that merged a signed decision,
+	// and PRAuthorBot is true when that is a bot or agent account. Display
+	// only: the signer is ApproverLogin, a human login.
+	PRAuthor    string    `json:"pr_author,omitempty"`
+	PRAuthorBot bool      `json:"pr_author_bot,omitempty"`
+	Assurance   Assurance `json:"assurance"`
 }
 
 // Routes a verdict comes by.
@@ -98,9 +104,54 @@ type File struct {
 	Assurance   Assurance `json:"assurance"`
 	Records     []Record  `json:"records"`
 	Warnings    []string  `json:"warnings,omitempty"`
+	// Signers is how allowed_signers on the branch came to trust whom: the
+	// root of trust and every change since. It is a report, for a human to
+	// read; readers re-verify signatures from git, not from it.
+	Signers *Signers `json:"signers,omitempty"`
 	// Stamp says what produced the file. A file without one, or whose digest
 	// no longer matches its records, is read as unknown, never confirmed.
 	Stamp *Stamp `json:"stamp,omitempty"`
+}
+
+// Signers is the trust report of allowed_signers: ROOT_SIGNERS names the
+// commit trust started at.
+type Signers struct {
+	Root      string             `json:"root,omitempty"`
+	Changes   []signature.Change `json:"changes"`
+	Assurance Assurance          `json:"assurance"`
+}
+
+// signersReport follows allowed_signers on the signature route's branch. It
+// is nil when the branch never had the file.
+func signersReport(r *signature.Repo) *Signers {
+	if r == nil {
+		return nil
+	}
+	t := r.Trust(r.Ref)
+	if t.Failure == nil && len(t.Changes) == 0 {
+		return nil
+	}
+	out := &Signers{Root: t.Root, Changes: t.Changes}
+	if out.Changes == nil {
+		out.Changes = []signature.Change{}
+	}
+	switch {
+	case t.Failure != nil:
+		out.Assurance = Assurance{State: StateUnknown, Honesty: "fact", Code: t.Failure.Code, Text: t.Failure.Text}
+	case t.Root == "":
+		out.Assurance = Assurance{State: StateUnknown, Honesty: "fact", Code: signature.CodeEdited, Text: "allowed_signers grants no signer yet"}
+	default:
+		root := t.Changes[0]
+		for _, c := range t.Changes {
+			if c.Code == signature.CodeRootSigners {
+				root = c
+			}
+		}
+		out.Assurance = Assurance{State: "pass", Honesty: "fact", Code: signature.CodeRootSigners,
+			Params: map[string]interface{}{"root": t.Root},
+			Text:   "trust starts at " + short(t.Root) + ": its allowed_signers is the root, accepted as is (" + strings.Join(root.Added, ", ") + ")"}
+	}
+	return out
 }
 
 // SetAside reports the code a reader gave this file when it refused its
@@ -220,6 +271,9 @@ func Compute(ctx context.Context, in Input) File {
 				o = *signed
 			}
 		}
+		if o.Via == ViaSignature {
+			rec.PRAuthor, rec.PRAuthorBot = pullAuthor(ctx, in.Platform, fd.AddedSHA)
+		}
 		if o.State == StateConfirmed && in.Packet != nil {
 			if hash, current := in.Packet(d); current && hash != d.PacketHash {
 				verb := "approved by "
@@ -242,6 +296,7 @@ func Compute(ctx context.Context, in Input) File {
 		rec.Assurance = Assurance{State: o.State, Honesty: "fact", Code: o.Code, Params: o.Params, Text: o.Text}
 		f.Records = append(f.Records, rec)
 	}
+	f.Signers = signersReport(in.Signed)
 	sort.SliceStable(f.Records, func(i, j int) bool {
 		a, b := f.Records[i], f.Records[j]
 		if a.ID != b.ID {
@@ -253,6 +308,23 @@ func Compute(ctx context.Context, in Input) File {
 		return a.Action < b.Action
 	})
 	return Seal(f, Stamp{Commit: in.Commit, CIRun: ciRun, Platform: in.PlatformName, Repository: in.Repository})
+}
+
+// pullAuthor names who opened the pull request that merged a signed
+// decision, and whether that is a bot or agent account. The signature's
+// verdict does not depend on it: it is shown so a reviewer sees that a
+// machine prepared what a human signed.
+// @enforces confirm:INV-18
+func pullAuthor(ctx context.Context, p Platform, sha string) (string, bool) {
+	pa, ok := p.(PullAuthors)
+	if p == nil || !ok || sha == "" {
+		return "", false
+	}
+	login, kind, err := pa.PullAuthor(ctx, sha)
+	if err != nil || login == "" {
+		return "", false
+	}
+	return login, IsBot(login, kind) || schema.IsAgentActor(login)
 }
 
 // reusable reports whether a previous confirm.json's verdicts may stand in
@@ -411,9 +483,27 @@ func (f File) Text() string {
 			}
 		}
 		b.WriteString(r.State + "  " + r.Action + " " + r.ID + " v" + itoa(r.Version) + who + "  [" + r.Assurance.Code + "]\n")
+		if r.PRAuthor != "" {
+			note := "    note: the pull request was opened by " + r.PRAuthor
+			if r.PRAuthorBot {
+				note += ", a bot or agent account: it prepared the decision"
+				if r.ApproverLogin != "" {
+					note += ", and " + r.ApproverLogin + " signed it"
+				}
+			}
+			b.WriteString(note + "\n")
+		}
 	}
 	if len(f.Records) == 0 {
 		b.WriteString("no decisions (" + f.Assurance.Code + ")\n")
+	}
+	if s := f.Signers; s != nil {
+		b.WriteString("signers  " + s.Assurance.Text + "  [" + s.Assurance.Code + "]\n")
+		for _, c := range s.Changes {
+			if c.Code != signature.CodeRootSigners {
+				b.WriteString("signers  " + short(c.Commit) + " " + c.Text + "  [" + c.Code + "]\n")
+			}
+		}
 	}
 	return b.String()
 }

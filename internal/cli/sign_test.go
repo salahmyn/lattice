@@ -242,3 +242,118 @@ func TestSignIsNotExposedToAgents(t *testing.T) {
 		return nil
 	})
 }
+
+// sign --signers refuses as sign does: without a terminal, under CI, for an
+// agent and with a software key, before it runs anything.
+// @verifies confirm:INV-14
+func TestSignSignersRefuses(t *testing.T) {
+	f := newSignFixture(t)
+	ana := sigtest.NewKey(t, sigtest.SKEd25519)
+	f.write("lattice/allowed_signers", ana.AllowedLine("ana"))
+	f.commit("enrol ana")
+	f.write("lattice/allowed_signers", ana.AllowedLine("ana")+sigtest.NewKey(t, sigtest.SKEd25519).AllowedLine("bo"))
+	old := sshKeygen
+	sshKeygen = filepath.Join(t.TempDir(), "must-not-run")
+	t.Cleanup(func() { sshKeygen = old })
+	sk := keyFiles(t, ana)
+
+	setTerminal(t, false)
+	if out, err := run(t, f.dir, newSignCommand, "--signers", "--key", sk); err == nil || failCode(t, out) != "SIGN_NO_TTY" {
+		t.Errorf("no terminal: %v %s", err, out)
+	}
+	setTerminal(t, true)
+	for _, env := range []string{"GITHUB_RUN_ID", "CI", "BUILDKITE"} {
+		t.Setenv(env, "1")
+		if out, err := run(t, f.dir, newSignCommand, "--signers", "--key", sk); err == nil || failCode(t, out) != "SIGN_CI" {
+			t.Errorf("%s set: %v %s", env, err, out)
+		}
+		t.Setenv(env, "")
+	}
+	if out, err := runAs(t, f.dir, "agent:impl-1", "--signers", "--key", sk); err == nil || failCode(t, out) != "SIGN_AGENT" {
+		t.Errorf("an agent actor: %v %s", err, out)
+	}
+	soft := keyFiles(t, sigtest.NewKey(t, sigtest.Software))
+	if out, err := run(t, f.dir, newSignCommand, "--signers", "--key", soft); err == nil || failCode(t, out) != signature.CodeSoftwareKey {
+		t.Errorf("a software key: %v %s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(f.dir, "lattice", signature.SignersSigFile)); err == nil {
+		t.Error("a refused run must write no endorsement")
+	}
+	f.write("lattice/allowed_signers", ana.AllowedLine("ana"))
+	if out, err := run(t, f.dir, newSignCommand, "--signers", "--key", sk); err == nil || failCode(t, out) != "SIGN_NO_CHANGE" {
+		t.Errorf("nothing changed: %v %s", err, out)
+	}
+	if _, err := run(t, f.dir, newSignCommand, "--signers", f.file); err == nil {
+		t.Error("--signers takes no decision")
+	}
+}
+
+// runAs runs sign as an actor, the way --actor sets it.
+func runAs(t *testing.T, dir, actor string, args ...string) (string, error) {
+	t.Helper()
+	var out strings.Builder
+	io := &IO{Repo: dir, JSON: true, Out: &out, Err: &out, Actor: actor}
+	cmd := newSignCommand(io)
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	cmd.SetArgs(args)
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	err := cmd.Execute()
+	return out.String(), err
+}
+
+// sign --signers shows the signers the change adds and removes and the exact
+// message, runs ssh-keygen in the decision namespace, verifies the result and
+// writes lattice/allowed_signers.sig; committed with the change, it endorses
+// it, so the key added is trusted.
+// @verifies confirm:INV-17
+func TestSignSignersWritesEndorsement(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the ssh-keygen stand-in is a shell script")
+	}
+	f := newSignFixture(t)
+	setTerminal(t, true)
+	ana, bo := sigtest.NewKey(t, sigtest.SKEd25519), sigtest.NewKey(t, sigtest.SKECDSA)
+	f.write("lattice/allowed_signers", ana.AllowedLine("ana"))
+	f.commit("enrol ana")
+	root := f.git("rev-parse", "HEAD")
+	body := ana.AllowedLine("ana") + bo.AllowedLine("bo")
+	f.write("lattice/allowed_signers", body)
+
+	made := filepath.Join(t.TempDir(), "made.sig")
+	change := signature.SignersChange{Repository: sigtest.Repository, After: root, Signers: []byte(body)}
+	if err := os.WriteFile(made, ana.SignChange(t, change, sigtest.Options{}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(t.TempDir(), "ssh-keygen")
+	script := "#!/bin/sh\necho \"$@\" > \"$0.args\"\nfor a; do last=$a; done\ncp \"" + made + "\" \"$last.sig\"\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := sshKeygen
+	sshKeygen = bin
+	t.Cleanup(func() { sshKeygen = old })
+
+	key := keyFiles(t, ana)
+	out, err := run(t, f.dir, newSignCommand, "--signers", "--key", key)
+	if err != nil {
+		t.Fatalf("sign --signers: %v\n%s", err, out)
+	}
+	for _, want := range []string{"bo " + bo.Fingerprint(), "after " + root, signature.SignersMessageVersion, signature.SignersDigest([]byte(body))} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the summary must show %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "Warning") {
+		t.Errorf("ana's key is trusted on main:\n%s", out)
+	}
+	args, _ := os.ReadFile(bin + ".args")
+	if !strings.HasPrefix(string(args), "-Y sign -n lattice-decision -f "+key+" ") {
+		t.Errorf("ssh-keygen ran with %s", args)
+	}
+	f.commit("enrol bo, endorsed by ana")
+	tr := signature.Repo{Dir: f.dir, LatticeRel: "lattice", Ref: "main", Repository: sigtest.Repository}.Trust("main")
+	if got, _ := tr.Logins(bo.Pub); len(got) != 1 || got[0] != "bo" {
+		t.Fatalf("the endorsed key must be trusted: %+v", tr.Changes)
+	}
+}
