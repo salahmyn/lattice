@@ -91,6 +91,16 @@ func WriteText(w io.Writer, r Report) {
 		}
 	}
 
+	if notes := allNotes(r.Promises); len(notes) > 0 {
+		fmt.Fprintln(w, "\nNOTES (informational: they never change the verdict or the merge)")
+		for _, n := range notes {
+			fmt.Fprintf(w, "  %-20s %s\n", n.Code, n.Text)
+			if n.Next != "" {
+				fmt.Fprintf(w, "  %-20s next: %s\n", "", n.Next)
+			}
+		}
+	}
+
 	fmt.Fprintf(w, "\nBLIND SPOT  %s\n", r.BlindSpot.Text)
 	for _, u := range r.BlindSpot.Untraced {
 		n := ""
@@ -231,6 +241,21 @@ func WriteMarkdown(w io.Writer, r Report) {
 		fmt.Fprintln(w)
 	}
 
+	if notes := allNotes(r.Promises); len(notes) > 0 {
+		fmt.Fprintln(w, "### Notes")
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "_Informational: they never change the verdict or the merge rule._")
+		fmt.Fprintln(w)
+		for _, n := range notes {
+			fmt.Fprintf(w, "- `%s` %s.", n.Code, n.Text)
+			if n.Next != "" {
+				fmt.Fprintf(w, " Next: %s.", strings.TrimSuffix(n.Next, "."))
+			}
+			fmt.Fprintln(w)
+		}
+		fmt.Fprintln(w)
+	}
+
 	if len(r.Promises) > 0 {
 		fmt.Fprintln(w, "<details><summary>Touched promises (signals)</summary>")
 		fmt.Fprintln(w)
@@ -278,6 +303,15 @@ func WriteMarkdown(w io.Writer, r Report) {
 // UNPROVEN as refused.
 const unguardedNote = "Unguarded lines are reported, not blocking: they keep the verdict at UNPROVEN, and they do not change merge_allowed " +
 	"(only a new (promise, signal) gap, a rise in new untraced lines, or a tier-3 promise does)."
+
+// allNotes lists the notes of every touched promise, in promise order.
+func allNotes(rows []PromiseRow) []Note {
+	var out []Note
+	for _, p := range rows {
+		out = append(out, p.Notes...)
+	}
+	return out
+}
 
 func cell(s string) string {
 	return strings.ReplaceAll(s, "|", "\\|")

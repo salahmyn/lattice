@@ -154,7 +154,7 @@ func TestImpactJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, k := range []string{"since", "base", "head", "uncommitted", "changed_files", "changed_symbols",
-		"affected_criteria", "drafts_included", "draft_criteria", "removed_enforcement", "manifest_diff", "code_rollup"} {
+		"affected_criteria", "drafts_included", "draft_criteria", "removed_enforcement", "notes", "manifest_diff", "code_rollup"} {
 		if _, ok := rep[k]; !ok {
 			t.Errorf("JSON lacks %q", k)
 		}
