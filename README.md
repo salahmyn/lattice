@@ -108,8 +108,9 @@ says so with `@verifies wallet.fees:INV-1#a`; it still counts as a verifier of
 `failing`, `uncovered`; only `covered` is positive) from the ingested results
 and the break runs, and shows it as `1a` in `lattice audit`, `lattice feature
 show` and `lattice rtm`. Cases are part of what a human confirms: editing one
-voids the confirmation. `INVARIANT_BROAD` (info) names invariants that read
-as several claims and have no cases.
+voids the confirmation. `INVARIANT_BROAD` (info) names invariants with no
+cases that make several claims: 30 words or more in two sentences, or in three
+sentences or semicolon clauses.
 
 ## Assurance: done right, not just done
 

@@ -1448,9 +1448,11 @@ criterion in `lattice rtm`. They never change the row's class.
 to a case the invariant does not declare `ORPHAN_ANNOTATION_CASE` (all errors); a ref to a
 retired case is `CASE_RETIRED_VERIFIED` (warning); a case `enforcer` that is not a symbol
 enforcing the invariant is `CASE_ENFORCER_UNKNOWN` (error). `INVARIANT_BROAD` (info) names
-an invariant with no cases whose statement reads as several claims: more than 50 words, or
-three clauses that each have a verb in more than 40. Its next action is to add cases;
-split the invariant only when its claims are unrelated.
+an invariant with no cases whose statement makes several claims: 30 words or more, in two
+sentences that each have a verb, or in three sentences or semicolon clauses that each have
+one. Length alone does not fire: one long claim, or one claim with a long list, stays quiet,
+and so does a rule with its exception (`X; Y`). Its next action is to add cases; split the
+invariant only when its claims are unrelated.
 
 Cases are part of what a human confirms. They are hashed into the review packet with the
 promise, so a case added, edited or retired after confirmation makes the decision stale,

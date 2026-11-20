@@ -161,25 +161,30 @@ func (c *corpus) checkCaseRefs() []schema.Violation {
 }
 
 // Broad-invariant heuristic (INVARIANT_BROAD). It is deliberately simple
-// and deterministic: a statement reads as several claims when it is very
-// long, or when it is long and joins several clauses that each have a verb.
-// The thresholds were tuned on Lattice's own features: they name the
-// omnibus invariants and stay quiet on a short statement that restates one
-// rule, and on one claim with a long list.
+// and deterministic: a statement reads as several claims when it makes them
+// in separate sentences or semicolon clauses, each with a verb, and is long
+// enough for that to matter. Length alone never fires: one claim with a long
+// list, or with conditions joined by "and", is one claim, and so is a rule
+// with its exception ("X; Y"). The thresholds were tuned on Lattice's own
+// features and on a real project's: they name about one invariant in six
+// there, and one in fourteen here, where statements are shorter.
 const (
-	// broadWords is the length past which a statement reads as several claims.
-	broadWords = 50
-	// broadClaims clauses in more than broadClauseWords words make a
-	// statement broad.
-	broadClaims      = 3
-	broadClauseWords = 40
+	// broadSentences sentences that each have a verb make a statement broad.
+	broadSentences = 2
+	// broadClaims sentences or semicolon clauses that each have a verb make
+	// a statement broad.
+	broadClaims = 3
+	// broadMinWords is the length floor: a shorter statement is never broad,
+	// however it is punctuated.
+	broadMinWords = 30
 )
 
-// clauseSplit cuts a statement into sentences and semicolon clauses.
-var clauseSplit = regexp.MustCompile(`[.;]\s+`)
-
-// joinSplit cuts a clause where a conjunction may start another clause.
-var joinSplit = regexp.MustCompile(`,\s+(?:and|but|so|while)\s+|\s+and\s+`)
+// sentenceSplit cuts a statement into sentences; claimSplit cuts a sentence
+// into semicolon clauses.
+var (
+	sentenceSplit = regexp.MustCompile(`[.!?]\s+`)
+	claimSplit    = regexp.MustCompile(`;\s+`)
+)
 
 // claimVerbs mark a clause as a claim of its own: auxiliaries, modals and
 // the predicates invariant statements use most.
@@ -202,41 +207,42 @@ func hasClaimVerb(s string) bool {
 	return false
 }
 
-// claims counts the claims a statement reads as: each sentence or
-// semicolon clause with a verb, plus each conjunction inside one that joins
-// two clauses which both have a verb. A list ("killed, survived and
-// unknown") is one claim.
-func claims(statement string) int {
+// claims counts what a statement says: its sentences that have a verb, and
+// its claims, each sentence or semicolon clause that has a verb. A list or
+// a conjunction inside a clause does not add a claim. Common abbreviations
+// (e.g., i.e.) do not end a sentence.
+func claims(statement string) (sentences, claims int) {
 	s := schema.InlineText(statement)
 	for _, abbr := range []string{"e.g. ", "i.e. ", "etc. ", "vs. "} {
 		s = strings.ReplaceAll(s, abbr, strings.TrimSuffix(abbr, ". ")+" ")
 	}
-	n := 0
-	for _, clause := range clauseSplit.Split(s, -1) {
-		if !hasClaimVerb(clause) {
-			continue
+	for _, sentence := range sentenceSplit.Split(s, -1) {
+		if hasClaimVerb(sentence) {
+			sentences++
 		}
-		n++
-		parts := joinSplit.Split(clause, -1)
-		for _, p := range parts[1:] {
-			if hasClaimVerb(p) && hasClaimVerb(parts[0]) {
-				n++
+		for _, clause := range claimSplit.Split(sentence, -1) {
+			if hasClaimVerb(clause) {
+				claims++
 			}
 		}
 	}
-	return n
+	return sentences, claims
 }
 
 // broad reports whether an invariant statement reads as several claims, and
-// why.
+// why: at least broadMinWords words, and broadSentences sentences or
+// broadClaims claims (see claims).
 func broad(statement string) (bool, string) {
 	words := len(strings.Fields(statement))
-	n := claims(statement)
+	if words < broadMinWords {
+		return false, ""
+	}
+	sentences, n := claims(statement)
 	switch {
-	case words > broadWords:
-		return true, fmt.Sprintf("%d words", words)
-	case n >= broadClaims && words > broadClauseWords:
-		return true, fmt.Sprintf("%d clauses in %d words", n, words)
+	case sentences >= broadSentences:
+		return true, fmt.Sprintf("%d sentences in %d words", sentences, words)
+	case n >= broadClaims:
+		return true, fmt.Sprintf("%d claims in %d words", n, words)
 	}
 	return false, ""
 }
