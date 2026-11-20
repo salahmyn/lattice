@@ -264,6 +264,16 @@ entries:
 - Keep both halves of a BRD link: a BRD's `implements_via` and the
   feature's `implements_brd`. When they disagree, `validate` warns
   `BRD_LINK_ONE_SIDED`, and `lattice brd link <brd> <feature>` writes both.
+  A BRD's scope is every feature on either half, so completing a half the
+  other side already declares is bookkeeping: `brd link` reports
+  "reconciled an existing link: approval kept", the version stays, and the
+  approval, council decision and confirmation stand (the review packet
+  hashes the scope, not the list as written). Adding a feature neither half
+  named is a scope change: a version someone reviewed is bumped, which voids
+  its approval (`BRD_DRIFT`) and sends it back for review; a draft nobody
+  reviewed keeps its version. `lattice brd link --reconcile` completes every
+  one-sided link whose other half is declared and uncontested, prints what it
+  changed, and leaves a feature that names another BRD for you to decide.
 
 ### Step 6 — Commit
 
@@ -1256,6 +1266,54 @@ still keeps the rest of the commit's runs.
 The result is `lattice/.cache/results/breaks.json` (`lattice.breaks/1`,
 derived and gitignored). A promise with several enforcers has one run each.
 Nothing blocks on it yet: it is evidence for `lattice audit`.
+
+### Prove a new test fails on the old code
+
+For a fix, the proof that matters is that the new test fails on the code
+before the fix. `lattice break` does not show that: it breaks the enforcer
+crudely (an early return), not the way the old code was wrong.
+`--fails-on-base` does it without stashing and rebuilding by hand:
+
+```sh
+lattice break --fails-on-base origin/main
+```
+
+It takes the verifiers the change from `merge-base(origin/main, HEAD)` to the
+working tree adds or edits (as `lattice impact` finds them), runs each one at
+head, then runs it again on the base commit's production code with the head's
+test files copied on top. Both runs happen in temporary worktrees, with the same
+`break.runners`, `break.commands`, `break.setup` and Go's built-in `go test -run`
+as a break. A non-Go failure on base counts only when the test itself failed:
+output that says an import did not resolve (`Cannot find module`,
+`does not provide an export named`, `ERR_MODULE_NOT_FOUND`,
+`Failed to resolve import`, `Module not found`, `has no exported member`,
+`TS2305`/`TS2307`/`TS2724`, `ImportError`, `ModuleNotFoundError`,
+`cannot import name`, pytest's `ERROR collecting`) reads `unknown`. An assertion
+or a `TypeError` in the test body is a real failure. Each verifier gets one
+outcome:
+
+| Outcome | Meaning |
+|---|---|
+| `fails_on_base` | it passes at head and fails on the old code: it detects the old behaviour |
+| `passes_on_base` | it passes on the old code too: it does not tell the old behaviour from the new |
+| `unknown` | it fails at head, does not compile on base (it calls an API the change adds), does not load on base (a module or export it imports does not resolve there), has no runner, timed out or did not run; the reason says which. Unknown is never a pass |
+
+The files copied onto the base are the verifier files, the changed test files in
+their directories and the changed files under their `testdata/`; `overlay` in the
+result lists them. Production code is never copied. Test helpers in other
+directories (a shared test-utility package, a parent `conftest.py`, a test setup
+file) and changed dependencies are not copied, so a test that needs them reads
+`unknown` or runs against the base versions.
+
+The result is `lattice/.cache/results/fails-on-base.json`
+(`lattice.fails_on_base/1`), stamped with `base`, `head`, `ci_run` and `dirty`
+like `breaks.json`. `--json` prints it. `--promise`, `--feature`, `--timeout` and
+`--allow-dirty` work as for a break: a dirty tree is refused unless allowed, and
+`dirty: true` is recorded. `lattice check --base` reads the file when its base
+and head match the change, and adds a `PASSES_ON_BASE` note to each touched
+promise of a verifier that passes on base. The note is information only: it
+never changes the verdict, a gap or `merge_allowed`.
+
 ## 4j. The audit: is each promise kept, or does it only look done?
 
 `lattice audit` gives every invariant one class. It computes nothing new about
@@ -1546,8 +1604,8 @@ waiver is shown and never counted as proof.
 
 The decision file records `{action, id, version, packet_hash, rows, reason,
 prepared_by, prepared_at}`. `prepared_by` is your git identity, for display only.
-The `packet_hash` covers the BRD version's content (not its status or approval
-block), each promise's structural signals (text, tier, enforcers, verifiers) and
+The `packet_hash` covers the BRD version's content (not its status, its approval
+block or a source's checked mark), each promise's structural signals (text, tier, enforcers, verifiers) and
 the structural diff since the last confirmed version. Run-dependent signals are
 left out, so a better test run never voids a confirmation.
 
@@ -1878,7 +1936,7 @@ Notes:
 
 The API computes nothing that counts. Every value comes from the audit, the check, `confirm`
 and `prepare`, and a field the kernel has no source for reads
-`{"state": "unknown", "code": "NOT_COMPUTED"}`, never a guess (the story, sources, cases, the
+`{"state": "unknown", "code": "NOT_COMPUTED"}`, never a guess (the story, a feature's sources, cases, the
 text-only diff, the blind spot outside a change, where a feature runs, open proposals). A view
 of one promise, feature or BRD is never `ASSURED` or `BROKEN`: those need a base, so ask
 `/api/v2/check`. Unknown, `UNPROVEN` and partial are never a `pass`; every payload is checked
@@ -2105,18 +2163,38 @@ verifiers, any change to a file that holds a verifier included. Every verifier o
 a touched promise is listed, not only the changed ones. The command only lists:
 it never runs a test.
 
+A change can also touch production lines no promise guards: no `@enforces` span
+or checked reference covers them (`lattice check` reports them as untraced or
+unguarded). No verifier names those lines, so the listing also selects the tests
+that exercise them, on the strongest evidence it has for each symbol:
+
+| Evidence | Label | What it means |
+| --- | --- | --- |
+| Per-test coverage (`lattice results ingest --per-test`) | `coverage` | the test's own run executed the symbol: a fact |
+| The static call graph `lattice extract` builds | `call_graph` | the test's calls reach the symbol: an upper bound, the call may not run |
+| A test file beside the symbol's file with the same base name (`fees.test.ts`, `fees.spec.tsx`, `fees_test.go`, `test_fees.py`, or one in `__tests__/`) | `heuristic` | a guess |
+
+A weaker source is used only when the stronger ones find no test. A symbol none of
+them finds a test for is listed under `uncovered` ("no test is known to exercise
+this; run the full suite"): it is never dropped silently.
+
 ```sh
 lattice impact --since origin/main --tests          # a shell script, one line per runner
-lattice impact --since origin/main --tests --json   # {runners, unmatched}
+lattice impact --since origin/main --tests --json   # {runners, unmatched, uncovered}
 ```
 
 The text form is one line per runner, with its ready-to-run command (in a
-subshell that enters the runner's `dir`) and the promises in a trailing
-comment, then one comment line per verifier file no runner matches:
+subshell that enters the runner's `dir`) and, in a trailing comment, the
+promises and the unguarded symbols its tests exercise; then one comment line per
+test file no runner matches; then, when some touched line has no known test, an
+`uncovered` block:
 
 ```sh
-(cd apps/web && pnpm vitest run src/fees.test.ts -t '(caps the fee|rejects a negative amount)$')  # vitest: fees:INV-1
+(cd apps/web && pnpm vitest run src/checkout.test.ts src/fees.test.ts -t '(caps the fee|rejects a negative amount|shows the total)$')  # vitest: fees:INV-1, unguarded apps.web.src.total.total via call_graph
 # unmatched e2e/fees.spec.ts (fees:INV-1): no break.runners entry matches
+# uncovered: touched lines no promise guards and no known test exercises
+#   apps/web/src/banner.ts:3-9  apps.web.src.banner.render
+# run the full suite before merge
 ```
 
 The verifiers are grouped exactly as `lattice break` groups them: by the first
@@ -2124,16 +2202,22 @@ runner whose `match` glob covers the file, with `{files}` (relative to `dir`)
 and `{filter}` filled the same way, and `{junit}` filled with
 `junit-<runner>.xml` in the runner's `dir`. `--json` gives each runner's `name`,
 `dir`, `command` (as configured), `run` and `argv` (filled), `files`, `filter`,
-`junit`, `tests` and `promises`, and each `unmatched` file with its `tests`,
-`promises` and `reason`. A verifier no `break.runners` entry matches, Go
+`junit`, `tests`, `promises` and `why`, each `unmatched` file with its `tests`,
+`promises`, `reason` and `why`, and each `uncovered` symbol with its `symbol`,
+`file`, `lines` and `reason`. `why` maps each test to why it is in the set:
+`promise <id>` for a verifier of a touched promise, `unguarded <symbol> via
+coverage|call_graph|heuristic` for a test of an unguarded line. A test no
+`break.runners` entry matches, Go
 verifiers and `break.commands` templates included, is listed under `unmatched`
 with the reason, never dropped; with no runner configured every verifier is
 there ("no break.runners entry matches (none is configured)"). `lattice check
 --json` carries the same listing as `tests`.
 
 In CI, run the listed commands on the pull request for fast feedback, and keep
-the full suite on the merge commit, since an unmatched verifier, or a test no
-promise names, is not in the list:
+the full suite on the merge commit, since an unmatched test is not run, and a
+`call_graph` or `heuristic` selection can miss a test that only reaches the line
+at run time; when the listing has an `uncovered` block, run the full suite
+before merge:
 
 ```yaml
 jobs:
@@ -2363,6 +2447,49 @@ has not acknowledged yet. It reports `BRD_COUNCIL_INVALID` (error) for a
 council approval that no pinned mandate, floor check or unanimous vote
 supports, such as a hand-written `approval` block. Switching council mode
 off later does not void the approvals it already gave.
+
+### 7c. BRD sources
+
+A BRD can name the documents its intent was first written in: tickets,
+roadmap items, help pages, API docs and ADRs. `sources` is optional and comes
+after the other BRD fields.
+
+```yaml
+sources:
+  - kind: ticket               # ticket | roadmap | help_page | api_doc | adr
+    ref: WAL-12
+    title: Withdrawal fees     # optional
+    url: https://tracker.example/WAL-12   # optional
+    checked_by: ana@example.com           # optional; set by a human only
+    checked_at: "2026-11-10"              # required with checked_by
+```
+
+`checked_by` and `checked_at` say that a person compared the BRD with the
+source. Only a person sets them. `lattice brd from-code` may draft sources from
+the evidence, but it drops any checked mark the model writes. Agents follow the
+same rule.
+
+`lattice validate` checks the shape only. It never opens a URL and never sets
+or infers a checked mark.
+
+- `BRD_SOURCE_INVALID` (error): the kind is not in the list, the `ref` is
+  empty, or the `url` is not an absolute `http(s)` URL.
+- `BRD_SOURCE_CHECK_INVALID` (error): `checked_by` and `checked_at` are not
+  set together, or `checked_at` is not a `YYYY-MM-DD` date or is in the future.
+
+`GET /api/v2/brds/{id}` lists the sources under `sources.entries`. A checked
+source reads `state: checked` with `honesty: claimed`, plus who checked it and
+when: it is a person's claim, not verified. Any other source reads
+`state: unchecked`.
+
+Sources are part of the review packet. Adding or editing a source changes the
+`packet_hash`, so a confirmed decision reads stale and needs a new review. The
+change is text-only: it is not in the structural diff. A checked mark is left
+out of the hash, so marking a source checked after approval does not void the
+approval.
+
+The BRD's `story` field stays `NOT_COMPUTED` (`params.reason: HELD_BY_DECISION`).
+The name is reserved for the planned story layer and is not settled yet.
 
 ---
 

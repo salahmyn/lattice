@@ -90,7 +90,7 @@ type Evidence struct {
 // Evaluate checks the signature beside a decision file, as of r.Ref. present
 // is false when there is no signature file. On a failure the evidence still
 // carries the fingerprint when the signature parsed.
-// @enforces confirm:INV-10
+// @enforces confirm:INV-11
 func (r Repo) Evaluate(decisionPath string, d Decision) (ev Evidence, f *Failure, present bool) {
 	ev.Path = SigPath(decisionPath)
 	data, err := r.show(r.Ref, ev.Path)
@@ -213,7 +213,7 @@ type Claim struct {
 // from git objects; only the code host's word that the key is the login's
 // signing key is taken from the claim. It returns one entry per claim, nil
 // when the claim holds.
-// @enforces confirm:INV-12
+// @enforces confirm:INV-13
 func Recheck(latticeDir, ref string, claims []Claim) []*Failure {
 	out := make([]*Failure, len(claims))
 	if len(claims) == 0 {

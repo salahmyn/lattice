@@ -54,7 +54,7 @@ func (s *signingKeys) list(ctx context.Context, l SigningKeyLister, login string
 // outcome turns what the repository says about a signature into a verdict,
 // adding the platform anchor. A definite rejection reads pending; a check
 // that cannot be made reads unknown, never confirmed.
-// @enforces confirm:INV-11
+// @enforces confirm:INV-12
 func (s *signingKeys) outcome(ctx context.Context, ev signature.Evidence, f *signature.Failure) Outcome {
 	o := Outcome{Via: ViaSignature, Fingerprint: ev.Fingerprint, Base: ev.Base}
 	if f != nil {

@@ -50,7 +50,10 @@
       "state": "unknown",
       "honesty": "fact",
       "code": "NOT_COMPUTED",
-      "text": "not computed: the story (the story layer is not in code) has no kernel source yet"
+      "params": {
+        "reason": "HELD_BY_DECISION"
+      },
+      "text": "not computed: the story (held until the story layer's name is settled) has no kernel source yet"
     },
     "business_problem": "A reader is charged for a book they sent back.",
     "goals": [
@@ -338,10 +341,40 @@
     "text": "not computed: the blind spot (untraced touched lines are measured per change: lattice check) has no kernel source yet"
   },
   "sources": {
-    "state": "unknown",
+    "state": "info",
     "honesty": "fact",
-    "code": "NOT_COMPUTED",
-    "text": "not computed: sources (ADRs and tickets) has no kernel source yet"
+    "code": "SOURCES",
+    "params": {
+      "checked": 1,
+      "count": 2
+    },
+    "text": "2 source(s), 1 marked checked by a human",
+    "entries": [
+      {
+        "kind": "ticket",
+        "ref": "RF-12",
+        "title": "Refund cap",
+        "url": "https://tracker.example/RF-12",
+        "state": "checked",
+        "honesty": "claimed",
+        "code": "SOURCE_CHECK_CLAIMED",
+        "params": {
+          "at": "2026-10-27",
+          "by": "ana@example.com"
+        },
+        "text": "ana@example.com says they checked the BRD against RF-12 on 2026-10-27 (not verified)",
+        "checked_by": "ana@example.com",
+        "checked_at": "2026-10-27"
+      },
+      {
+        "kind": "adr",
+        "ref": "ADR-3",
+        "state": "unchecked",
+        "honesty": "fact",
+        "code": "SOURCE_UNCHECKED",
+        "text": "no one has recorded checking the BRD against ADR-3"
+      }
+    ]
   },
   "history": {
     "state": {

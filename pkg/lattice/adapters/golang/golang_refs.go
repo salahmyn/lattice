@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	sitter "github.com/smacker/go-tree-sitter"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 )
@@ -35,7 +35,7 @@ func (p *goParser) collectRefs(root *sitter.Node, pkgName string) {
 	m.RefsKnown, m.Namespace, m.Package = true, p.pkgPath, pkgName
 	imports := map[string]bool{}
 	for i := 0; i < int(root.NamedChildCount()); i++ {
-		if c := root.NamedChild(i); c.Type() == "import_declaration" {
+		if c := root.NamedChild(uint(i)); c.Kind() == "import_declaration" {
 			p.collectImports(c, imports)
 		}
 	}
@@ -50,15 +50,15 @@ func (p *goParser) collectRefs(root *sitter.Node, pkgName string) {
 	var top []ir.Ref
 	w.emit = func(n *sitter.Node, r ir.Ref) {
 		r.Line = line(n)
-		if idx := p.owners.At(n.StartByte()); idx >= 0 {
+		if idx := p.owners.At(uint32(n.StartByte())); idx >= 0 {
 			m.Symbols[idx].Refs = append(m.Symbols[idx].Refs, r)
 			return
 		}
 		top = append(top, r)
 	}
 	for i := 0; i < int(root.NamedChildCount()); i++ {
-		c := root.NamedChild(i)
-		switch c.Type() {
+		c := root.NamedChild(uint(i))
+		switch c.Kind() {
 		case "package_clause", "import_declaration", "comment":
 			continue
 		}
@@ -80,8 +80,8 @@ func (p *goParser) collectImports(decl *sitter.Node, names map[string]bool) {
 	var walk func(n *sitter.Node)
 	walk = func(n *sitter.Node) {
 		for i := 0; i < int(n.NamedChildCount()); i++ {
-			c := n.NamedChild(i)
-			switch c.Type() {
+			c := n.NamedChild(uint(i))
+			switch c.Kind() {
 			case "import_spec":
 				specs = append(specs, c)
 			case "import_spec_list":
@@ -95,13 +95,13 @@ func (p *goParser) collectImports(decl *sitter.Node, names map[string]bool) {
 		if pathNode == nil {
 			continue
 		}
-		from, err := strconv.Unquote(pathNode.Content(p.src))
+		from, err := strconv.Unquote(pathNode.Utf8Text(p.src))
 		if err != nil {
 			continue
 		}
 		name := defaultBinding(from)
 		if n := s.ChildByFieldName("name"); n != nil {
-			name = n.Content(p.src)
+			name = n.Utf8Text(p.src)
 			if name == "_" {
 				name = ""
 			}
@@ -152,20 +152,20 @@ type goRefWalker struct {
 
 // enter starts a top-level declaration.
 func (w *goRefWalker) enter(decl *sitter.Node) {
-	w.inFunc = decl.Type() == "function_declaration" || decl.Type() == "method_declaration"
+	w.inFunc = decl.Kind() == "function_declaration" || decl.Kind() == "method_declaration"
 	w.recv = ""
 	w.locals, w.types, w.untyped = map[string]bool{}, map[string]string{}, map[string]bool{}
-	if decl.Type() == "method_declaration" {
+	if decl.Kind() == "method_declaration" {
 		w.recv = receiverName(decl.ChildByFieldName("receiver"), w.p.src)
 	}
 }
 
-func (w *goRefWalker) text(n *sitter.Node) string { return n.Content(w.p.src) }
+func (w *goRefWalker) text(n *sitter.Node) string { return n.Utf8Text(w.p.src) }
 
 // declare records a local and, when its declaration states one, its type.
 // A name declared again with another type (or none) loses its type.
 func (w *goRefWalker) declare(id *sitter.Node, typ string) {
-	if !w.inFunc || id == nil || id.Type() != "identifier" {
+	if !w.inFunc || id == nil || id.Kind() != "identifier" {
 		return
 	}
 	name := w.text(id)
@@ -183,12 +183,12 @@ func (w *goRefWalker) declareList(list *sitter.Node, typeOf func(i int) string) 
 	if list == nil {
 		return
 	}
-	if list.Type() == "identifier" {
+	if list.Kind() == "identifier" {
 		w.declare(list, typeOf(0))
 		return
 	}
 	for i := 0; i < int(list.NamedChildCount()); i++ {
-		w.declare(list.NamedChild(i), typeOf(i))
+		w.declare(list.NamedChild(uint(i)), typeOf(i))
 	}
 }
 
@@ -200,11 +200,11 @@ func noType(int) string { return "" }
 // outside the workspace, so time.Now().Add(d) never resolves to a
 // workspace method that happens to be named Add.
 func (w *goRefWalker) resultOf(e *sitter.Node) string {
-	if e == nil || e.Type() != "call_expression" {
+	if e == nil || e.Kind() != "call_expression" {
 		return ""
 	}
 	fn := e.ChildByFieldName("function")
-	if fn == nil || fn.Type() != "selector_expression" {
+	if fn == nil || fn.Kind() != "selector_expression" {
 		return ""
 	}
 	operand, field := fn.ChildByFieldName("operand"), fn.ChildByFieldName("field")
@@ -221,7 +221,7 @@ func (w *goRefWalker) resultOf(e *sitter.Node) string {
 		if pkg, _, dotted := strings.Cut(strings.TrimPrefix(q, "type:"), "."); dotted {
 			return "result:" + pkg + "." + w.text(field)
 		}
-	case q != "~" && q != "this" && operand.Type() == "identifier":
+	case q != "~" && q != "this" && operand.Kind() == "identifier":
 		return "result:" + q + "." + w.text(field)
 	}
 	return ""
@@ -232,7 +232,7 @@ func (w *goRefWalker) resultOf(e *sitter.Node) string {
 // "type:T" (or "type:pkg.T"), anything else is a value of unknown type
 // ("~"). plain is false when the operand is not a plain name.
 func (w *goRefWalker) qualifier(operand *sitter.Node) (q string, plain bool) {
-	if operand.Type() != "identifier" {
+	if operand.Kind() != "identifier" {
 		if r := w.resultOf(operand); r != "" {
 			return r, false
 		}
@@ -256,7 +256,7 @@ func (w *goRefWalker) qualifier(operand *sitter.Node) (q string, plain bool) {
 // visitExcept visits n's named children, except those in the given field.
 func (w *goRefWalker) visitExcept(n *sitter.Node, field string) {
 	for i := 0; i < int(n.ChildCount()); i++ {
-		if c := n.Child(i); c.IsNamed() && n.FieldNameForChild(i) != field {
+		if c := n.Child(uint(i)); c.IsNamed() && n.FieldNameForChild(uint32(i)) != field {
 			w.visit(c)
 		}
 	}
@@ -266,7 +266,7 @@ func (w *goRefWalker) visit(n *sitter.Node) {
 	if n == nil {
 		return
 	}
-	switch n.Type() {
+	switch n.Kind() {
 	case "comment", "interpreted_string_literal", "raw_string_literal", "rune_literal",
 		"int_literal", "float_literal", "imaginary_literal", "field_identifier",
 		"package_identifier", "label_name", "nil", "true", "false", "iota", "dot", "blank_identifier":
@@ -275,11 +275,11 @@ func (w *goRefWalker) visit(n *sitter.Node) {
 		fn := n.ChildByFieldName("function")
 		switch {
 		case fn == nil:
-		case fn.Type() == "identifier":
+		case fn.Kind() == "identifier":
 			if name := w.text(fn); !goBuiltins[name] && !w.locals[name] {
 				w.emit(fn, ir.Ref{Name: name, Kind: ir.RefCall})
 			}
-		case fn.Type() == "selector_expression":
+		case fn.Kind() == "selector_expression":
 			operand, field := fn.ChildByFieldName("operand"), fn.ChildByFieldName("field")
 			if operand != nil && field != nil {
 				q, plain := w.qualifier(operand)
@@ -329,8 +329,8 @@ func (w *goRefWalker) visit(n *sitter.Node) {
 		// A struct field key (Name: x) names no code; a map key may, but
 		// only a constant, which is no symbol.
 		for i := 0; i < int(n.NamedChildCount()); i++ {
-			c := n.NamedChild(i)
-			if i == 0 && n.NamedChildCount() > 1 && c.NamedChildCount() == 1 && c.NamedChild(0).Type() == "identifier" {
+			c := n.NamedChild(uint(i))
+			if i == 0 && n.NamedChildCount() > 1 && c.NamedChildCount() == 1 && c.NamedChild(0).Kind() == "identifier" {
 				continue
 			}
 			w.visit(c)
@@ -343,19 +343,19 @@ func (w *goRefWalker) visit(n *sitter.Node) {
 		t := n.ChildByFieldName("type")
 		w.visit(t)
 		typ := ""
-		if n.Type() == "parameter_declaration" {
+		if n.Kind() == "parameter_declaration" {
 			typ = namedType(t, w.p.src)
 		}
 		for i := 0; i < int(n.ChildCount()); i++ {
-			if n.FieldNameForChild(i) == "name" {
-				w.declare(n.Child(i), typ)
+			if n.FieldNameForChild(uint32(i)) == "name" {
+				w.declare(n.Child(uint(i)), typ)
 			}
 		}
 		return
 	case "type_parameter_declaration":
 		for i := 0; i < int(n.ChildCount()); i++ {
-			if n.FieldNameForChild(i) == "name" {
-				w.declare(n.Child(i), "")
+			if n.FieldNameForChild(uint32(i)) == "name" {
+				w.declare(n.Child(uint(i)), "")
 			}
 		}
 		w.visit(n.ChildByFieldName("type"))
@@ -367,14 +367,14 @@ func (w *goRefWalker) visit(n *sitter.Node) {
 		typ := namedType(t, w.p.src)
 		var names []*sitter.Node
 		for i := 0; i < int(n.ChildCount()); i++ {
-			if n.FieldNameForChild(i) == "name" {
-				names = append(names, n.Child(i))
+			if n.FieldNameForChild(uint32(i)) == "name" {
+				names = append(names, n.Child(uint(i)))
 			}
 		}
 		for i, id := range names {
 			nt := typ
-			if nt == "" && n.Type() == "var_spec" && val != nil && int(val.NamedChildCount()) == len(names) {
-				nt = literalType(val.NamedChild(i), w.p.src)
+			if nt == "" && n.Kind() == "var_spec" && val != nil && int(val.NamedChildCount()) == len(names) {
+				nt = literalType(val.NamedChild(uint(i)), w.p.src)
 			}
 			w.declare(id, nt)
 		}
@@ -387,10 +387,10 @@ func (w *goRefWalker) visit(n *sitter.Node) {
 				return ""
 			}
 			if left.NamedChildCount() == right.NamedChildCount() {
-				if t := literalType(right.NamedChild(i), w.p.src); t != "" {
+				if t := literalType(right.NamedChild(uint(i)), w.p.src); t != "" {
 					return t
 				}
-				return w.resultOf(right.NamedChild(i))
+				return w.resultOf(right.NamedChild(uint(i)))
 			}
 			if i == 0 && right.NamedChildCount() == 1 {
 				return w.resultOf(right.NamedChild(0)) // x, err := pkg.F()
@@ -408,7 +408,7 @@ func (w *goRefWalker) visit(n *sitter.Node) {
 		return
 	}
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		w.visit(n.NamedChild(i))
+		w.visit(n.NamedChild(uint(i)))
 	}
 }
 
@@ -419,7 +419,7 @@ func (w *goRefWalker) typeRef(t *sitter.Node, kind string) {
 	if t == nil {
 		return
 	}
-	switch t.Type() {
+	switch t.Kind() {
 	case "type_identifier":
 		if name := w.text(t); !goBuiltins[name] && !w.locals[name] {
 			w.emit(t, ir.Ref{Name: name, Kind: kind})
@@ -447,9 +447,9 @@ func (w *goRefWalker) typeRef(t *sitter.Node, kind string) {
 // literal).
 func namedType(t *sitter.Node, src []byte) string {
 	for t != nil {
-		switch t.Type() {
+		switch t.Kind() {
 		case "type_identifier":
-			if name := t.Content(src); !goBuiltins[name] {
+			if name := t.Utf8Text(src); !goBuiltins[name] {
 				return name
 			}
 			return ""
@@ -458,7 +458,7 @@ func namedType(t *sitter.Node, src []byte) string {
 			if pkg == nil || name == nil {
 				return ""
 			}
-			return pkg.Content(src) + "." + name.Content(src)
+			return pkg.Utf8Text(src) + "." + name.Utf8Text(src)
 		case "pointer_type", "parenthesized_type":
 			if t.NamedChildCount() == 0 {
 				return ""
@@ -476,12 +476,12 @@ func namedType(t *sitter.Node, src []byte) string {
 // literalType returns the type of an initializer that states it: T{...},
 // &T{...}, pkg.T{...}; "" for anything else.
 func literalType(e *sitter.Node, src []byte) string {
-	if e != nil && e.Type() == "unary_expression" {
-		if op := e.ChildByFieldName("operand"); op != nil && op.Type() == "composite_literal" {
+	if e != nil && e.Kind() == "unary_expression" {
+		if op := e.ChildByFieldName("operand"); op != nil && op.Kind() == "composite_literal" {
 			e = op
 		}
 	}
-	if e == nil || e.Type() != "composite_literal" {
+	if e == nil || e.Kind() != "composite_literal" {
 		return ""
 	}
 	return namedType(e.ChildByFieldName("type"), src)
@@ -493,12 +493,12 @@ func receiverName(recv *sitter.Node, src []byte) string {
 		return ""
 	}
 	for i := 0; i < int(recv.NamedChildCount()); i++ {
-		param := recv.NamedChild(i)
-		if param.Type() != "parameter_declaration" {
+		param := recv.NamedChild(uint(i))
+		if param.Kind() != "parameter_declaration" {
 			continue
 		}
 		if n := param.ChildByFieldName("name"); n != nil {
-			return n.Content(src)
+			return n.Utf8Text(src)
 		}
 	}
 	return ""

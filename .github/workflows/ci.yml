@@ -18,6 +18,10 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go vet ./...
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l pkg internal cmd)"
+          [ -z "$unformatted" ] || { echo "gofmt needed:"; echo "$unformatted"; exit 1; }
       # The PostgreSQL store contract runs only when LATTICE_TEST_PG_DSN is set.
       - run: go test ./...
       # Lattice describes its own codebase (lattice/, see docs/rnd/0008):
@@ -25,3 +29,28 @@ jobs:
       - run: go build -o dist/lattice ./cmd/lattice
       - run: dist/lattice extract && dist/lattice validate
       - run: dist/lattice fmt --check
+
+  # The MCP server wraps the CLI: its lint, build and tests run against a
+  # freshly built binary, so a CLI or dependency change that breaks a tool shows here.
+  mcp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go build -o dist/lattice ./cmd/lattice
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - working-directory: lattice-mcp
+        run: pnpm install --frozen-lockfile
+      - working-directory: lattice-mcp
+        run: pnpm lint && pnpm build
+      - working-directory: lattice-mcp
+        env:
+          LATTICE_BINARY: ${{ github.workspace }}/dist/lattice
+        run: pnpm test

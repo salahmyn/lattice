@@ -150,7 +150,7 @@ branch, and be one of your GitHub SSH signing keys.`,
 }
 
 // signRefusal says why sign must not run here, or "" when it may.
-// @enforces confirm:INV-13
+// @enforces confirm:INV-14
 func signRefusal(io *IO) (code, why string) {
 	if id := results.CIRunID(); id != results.LocalRun {
 		return "SIGN_CI", "this is a CI run (" + id + "): a decision is signed by a human at their own terminal, never in CI"

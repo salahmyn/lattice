@@ -89,8 +89,10 @@ func Multi(
 			t.Errorf("%s: want %q in\n%s", c.name, c.want, got)
 		}
 		// Everything else stays, so the file still parses.
-		if _, err := parse(goGrammar(), []byte(got)); err != nil {
+		if tree, err := parse(goGrammar(), []byte(got)); err != nil {
 			t.Errorf("%s: broken file does not parse: %v", c.name, err)
+		} else {
+			tree.Close()
 		}
 	}
 	// A function that is not there, or a bodyless declaration, has no break.
@@ -220,8 +222,10 @@ const fnExpr = function (a: number) {
 			t.Errorf("%s: want %q in\n%s", c.name, c.want, got)
 		}
 		// The expression is still there, and the file still parses.
-		if _, err := parse(tsGrammar(), []byte(got)); err != nil {
+		if tree, err := parse(tsGrammar(), []byte(got)); err != nil {
 			t.Errorf("%s: broken file does not parse: %v\n%s", c.name, err, got)
+		} else {
+			tree.Close()
 		}
 	}
 	// JavaScript gets no type assertion.

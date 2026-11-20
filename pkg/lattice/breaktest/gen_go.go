@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	sitter "github.com/smacker/go-tree-sitter"
-	gogrammar "github.com/smacker/go-tree-sitter/golang"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 // generateGo inserts `if true { var r0 T0; ...; return r0, ... }` after the
@@ -15,7 +14,7 @@ import (
 // no results or named results. The result types come from the tree-sitter
 // node, so generics and qualified types keep working.
 func generateGo(src []byte, sym Symbol) (Break, error) {
-	tree, err := parse(gogrammar.GetLanguage(), src)
+	tree, err := parse(goLanguage, src)
 	if err != nil {
 		return Break{}, noBreak("%v", err)
 	}
@@ -24,13 +23,13 @@ func generateGo(src []byte, sym Symbol) (Break, error) {
 	var found *sitter.Node
 	root := tree.RootNode()
 	for i := 0; i < int(root.NamedChildCount()); i++ {
-		n := root.NamedChild(i)
-		if n.Type() != "function_declaration" && n.Type() != "method_declaration" {
+		n := root.NamedChild(uint(i))
+		if n.Kind() != "function_declaration" && n.Kind() != "method_declaration" {
 			continue
 		}
 		body := n.ChildByFieldName("body")
 		if body == nil || text(n.ChildByFieldName("name"), src) != sym.Name ||
-			!within(sym.Line, int(n.StartPoint().Row), body) {
+			!within(sym.Line, int(n.StartPosition().Row), body) {
 			continue
 		}
 		found = n
@@ -49,12 +48,12 @@ func goEarlyReturn(fn *sitter.Node, src []byte) string {
 		return "if true { return }"
 	}
 	var types []string
-	if res.Type() != "parameter_list" {
+	if res.Kind() != "parameter_list" {
 		types = []string{text(res, src)}
 	} else {
 		for i := 0; i < int(res.NamedChildCount()); i++ {
-			p := res.NamedChild(i)
-			if p.Type() != "parameter_declaration" {
+			p := res.NamedChild(uint(i))
+			if p.Kind() != "parameter_declaration" {
 				continue
 			}
 			if p.ChildByFieldName("name") != nil {

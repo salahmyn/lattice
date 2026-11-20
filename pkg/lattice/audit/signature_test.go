@@ -38,8 +38,8 @@ func writeSealed(t *testing.T, latticeDir string, recs []ConfirmRecord) {
 // on every read. With the signature in the tree it reads human, with its
 // method; a well-stamped file claiming a signature the tree does not hold
 // reads unknown, never human.
-// @verifies confirm:INV-12
-// @verifies confirm:INV-14
+// @verifies confirm:INV-13
+// @verifies confirm:INV-15
 func TestSignatureVerdictIsReverified(t *testing.T) {
 	r := sigtest.NewRepo(t)
 	k := sigtest.NewKey(t, sigtest.SKEd25519)

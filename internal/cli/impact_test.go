@@ -194,19 +194,26 @@ func TestImpactRejectsUnknownFormat(t *testing.T) {
 	}
 }
 
-// --tests prints only the test listing: {runners, unmatched} with --json,
-// never empty silently in text, and refuses markdown.
+// --tests prints only the test listing: {runners, unmatched, uncovered}
+// with --json, never empty silently in text, and refuses markdown. The
+// change touches pay.Extra, which no promise guards and no test exercises:
+// it is listed as uncovered.
 // @verifies impact:INV-6
+// @verifies impact:INV-7
 func TestImpactTestsFlag(t *testing.T) {
 	dir := impactRepo(t)
 	var plan map[string]interface{}
 	if err := json.Unmarshal([]byte(runImpact(t, dir, true, "--since", "main", "--tests")), &plan); err != nil {
 		t.Fatal(err)
 	}
-	if len(plan) != 2 || plan["runners"] == nil || plan["unmatched"] == nil {
+	if len(plan) != 3 || plan["runners"] == nil || plan["unmatched"] == nil || plan["uncovered"] == nil {
 		t.Fatalf("plan = %v", plan)
 	}
-	if out := runImpact(t, dir, false, "--since", "main", "--tests"); !strings.Contains(out, "# no touched promise has a verifier test") {
+	if u := plan["uncovered"].([]interface{}); len(u) != 1 || u[0].(map[string]interface{})["symbol"] != "pay.Extra" {
+		t.Errorf("uncovered = %v", u)
+	}
+	if out := runImpact(t, dir, false, "--since", "main", "--tests"); !strings.Contains(out, "#   pay/extra.go:6-8  pay.Extra\n") ||
+		!strings.HasSuffix(out, "# run the full suite before merge\n") {
 		t.Errorf("text = %q", out)
 	}
 	var out, errOut bytes.Buffer

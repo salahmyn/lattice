@@ -71,7 +71,7 @@ const (
 // Method says how a human verdict was reached, as every display of it must:
 // "human (signed by <login>, <fingerprint>)" or "human (approved by <login>
 // on PR #<n>)". It is "" for a record that names no one.
-// @enforces confirm:INV-14
+// @enforces confirm:INV-15
 func (r Record) Method() string {
 	switch {
 	case r.ApproverLogin == "":
@@ -339,7 +339,7 @@ func LoadCache(latticeDir string) *File {
 // (the signature is gone or does not verify, a key was removed from
 // allowed_signers, or the record was written by hand) reads unknown. Only
 // the platform's word that the key is the signer's is taken from the file.
-// @enforces confirm:INV-12
+// @enforces confirm:INV-13
 func Recheck(latticeDir string, f File) File {
 	var idx []int
 	var claims []signature.Claim

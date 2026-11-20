@@ -65,7 +65,7 @@ func (r ConfirmRecord) Route() string {
 // Method says how the decision was made, as every display of a human
 // verdict must: "signed by <login>, <fingerprint>" or "approved by <login>
 // on PR #<n>".
-// @enforces confirm:INV-14
+// @enforces confirm:INV-15
 func (r ConfirmRecord) Method() string {
 	switch {
 	case r.ApproverLogin == "":
@@ -159,7 +159,7 @@ func LoadConfirm(latticeDir string) *ConfirmData {
 // commit and the tip. The file vouches only for the platform's word that the
 // key is the signer's. A claim that does not hold reads unknown, so a
 // hand-written or stale signature record never reads human.
-// @enforces confirm:INV-12
+// @enforces confirm:INV-13
 func (cd *ConfirmData) recheck(latticeDir string) *ConfirmData {
 	var idx []int
 	var claims []signature.Claim

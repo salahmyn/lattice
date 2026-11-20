@@ -109,9 +109,9 @@ func (f *sigFixture) record(file File, id string) Record {
 // allowed_signers at the base commit and among the signer's GitHub signing
 // keys, confirms: human, via signature, with the login and fingerprint.
 // Readers re-verify it and keep it.
-// @verifies confirm:INV-8
-// @verifies confirm:INV-11
-// @verifies confirm:INV-14
+// @verifies confirm:INV-9
+// @verifies confirm:INV-12
+// @verifies confirm:INV-15
 func TestSignatureConfirms(t *testing.T) {
 	for _, kind := range []string{sigtest.SKEd25519, sigtest.SKECDSA} {
 		f := newSigFixture(t, kind, nil)
@@ -141,7 +141,7 @@ func TestSignatureConfirms(t *testing.T) {
 // Acceptance 3: a key in allowed_signers but not among the signer's GitHub
 // signing keys is refused; a platform that cannot be read, or none, reads
 // unknown, never confirmed.
-// @verifies confirm:INV-11
+// @verifies confirm:INV-12
 func TestSignatureGitHubAnchor(t *testing.T) {
 	f := newSigFixture(t, sigtest.SKEd25519, nil)
 	other := sigtest.NewKey(t, sigtest.SKEd25519)
@@ -167,7 +167,7 @@ func TestSignatureGitHubAnchor(t *testing.T) {
 
 // Acceptance 4: a software key is refused with SOFTWARE_KEY, and so is a
 // security-key signature without user presence.
-// @verifies confirm:INV-8
+// @verifies confirm:INV-9
 func TestSignatureSoftwareKey(t *testing.T) {
 	f := newSigFixture(t, sigtest.Software, nil)
 	r := f.record(f.compute(hostListing("ana", f.key), nil), "brd.fees")
@@ -185,7 +185,7 @@ func TestSignatureSoftwareKey(t *testing.T) {
 // Acceptance 5: a changed packet reads stale; editing the decision's packet
 // hash to follow the change breaks the signature.
 // @verifies confirm:INV-3
-// @verifies confirm:INV-9
+// @verifies confirm:INV-10
 func TestSignatureStalePacket(t *testing.T) {
 	f := newSigFixture(t, sigtest.SKEd25519, nil)
 	host := hostListing("ana", f.key)
@@ -205,7 +205,7 @@ func TestSignatureStalePacket(t *testing.T) {
 
 // Acceptance 6 and 7: a signature replayed onto another decision, version,
 // action or repository fails, and so does one in another namespace.
-// @verifies confirm:INV-9
+// @verifies confirm:INV-10
 func TestSignatureReplay(t *testing.T) {
 	f := newSigFixture(t, sigtest.SKEd25519, nil)
 	sig := f.key.SignTuple(t, SignatureTuple(f.d, sigtest.Repository), sigtest.Options{})
@@ -250,9 +250,9 @@ func TestSignatureReplay(t *testing.T) {
 
 // Acceptance 10: removing the key from either anchor un-confirms what it
 // signed, on the next confirm run and for every reader of an earlier file.
-// @verifies confirm:INV-10
 // @verifies confirm:INV-11
 // @verifies confirm:INV-12
+// @verifies confirm:INV-13
 func TestSignatureRevocation(t *testing.T) {
 	f := newSigFixture(t, sigtest.SKEd25519, nil)
 	lattice := filepath.Join(f.r.Dir, "lattice")

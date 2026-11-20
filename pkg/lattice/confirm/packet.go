@@ -34,6 +34,36 @@ type PacketInput struct {
 	Diff []string
 	// Extra pins something outside the BRD, such as the council votes.
 	Extra string
+	// Declared lists the features whose implements_brd names the BRD
+	// (DeclaredBy). With implements_via it makes up the BRD's scope.
+	Declared []string
+}
+
+// DeclaredBy lists the features whose implements_brd names the BRD id.
+func DeclaredBy(features []schema.Manifest, id string) []string {
+	var out []string
+	for _, f := range features {
+		if f.ImplementsBRD == id {
+			out = append(out, f.ID)
+		}
+	}
+	return out
+}
+
+// Scope is a BRD's scope: the features on either half of a link, its
+// implements_via and the features that declare implements_brd for it, sorted
+// and once each. Completing a one-sided link leaves it as it was.
+func Scope(via, declared []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, id := range append(append([]string{}, via...), declared...) {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // PromisesOf lists the promises a BRD's criteria map to, sorted.
@@ -78,11 +108,38 @@ func FactsFor(rows []audit.Row, refs []string) []PromiseFacts {
 // promises' structural signals and the structural diff since the last
 // confirmed version. The BRD's status and approval block are left out: they
 // are what a decision changes or displays, and hashing them would make every
-// decision stale the moment it landed.
-// @enforces confirm:INV-3
+// decision stale the moment it landed. implements_via is hashed as the BRD's
+// Scope: completing a link the feature already declares is bookkeeping and
+// keeps the hash, while a feature entering or leaving the scope changes it.
+// A source's checked_by and checked_at are left out as well: they record a
+// later human check, not a change to the intent. A source's kind, ref, title
+// and url stay in, so editing a source makes the decision stale as a
+// text-only change (it is not in the structural diff).
+// @enforces confirm:INV-3, confirm:INV-8
 func PacketHash(in PacketInput) string {
 	b := in.BRD
+	b.ImplementsVia = Scope(b.ImplementsVia, in.Declared)
+	return packetHash(b, in)
+}
+
+// legacyPacketHash is PacketHash as versions before scope hashing computed
+// it, over implements_via as written. A decision pinned then still matches a
+// BRD left as it was.
+func legacyPacketHash(in PacketInput) string { return packetHash(in.BRD, in) }
+
+// PacketHashFor is the packet hash to compare with a decision's pinned one:
+// the pin itself when the packet still matches it, as PacketHash computes it
+// or as versions before scope hashing did, and PacketHash otherwise.
+func PacketHashFor(in PacketInput, pinned string) string {
+	if h := PacketHash(in); h != pinned && legacyPacketHash(in) != pinned {
+		return h
+	}
+	return pinned
+}
+
+func packetHash(b schema.BRD, in PacketInput) string {
 	b.Status, b.Approval, b.SourcePath, b.HumanReviewRequired = "", nil, "", false
+	b.Sources = schema.WithoutChecks(b.Sources)
 	body, _ := schema.MarshalCanonical(b)
 	h := sha256.New()
 	fmt.Fprintf(h, "brd\n%s\n", body)

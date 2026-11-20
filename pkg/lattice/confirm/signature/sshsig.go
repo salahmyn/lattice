@@ -107,7 +107,7 @@ type Tuple struct {
 
 // Message is the signed message. It is computed by the signer and the
 // verifier alike and never stored. A tuple missing any field has no message.
-// @enforces confirm:INV-9
+// @enforces confirm:INV-10
 func (t Tuple) Message() ([]byte, error) {
 	fields := []struct{ name, value string }{
 		{"repository", strings.ToLower(strings.TrimSpace(t.Repository))},
@@ -217,7 +217,7 @@ func SignedData(namespace string, reserved []byte, hashAlg string, message []byt
 
 // HardwareKey reports whether a key type is a security-key type this route
 // accepts.
-// @enforces confirm:INV-8
+// @enforces confirm:INV-9
 func HardwareKey(keyType string) bool {
 	return keyType == ssh.KeyAlgoSKED25519 || keyType == ssh.KeyAlgoSKECDSA256
 }
@@ -232,7 +232,7 @@ type Verified struct {
 // the key type, the namespace, the user-presence flag and the signature
 // itself. It says nothing about whether the key is trusted; Repo.Evaluate
 // does that.
-// @enforces confirm:INV-8, confirm:INV-9
+// @enforces confirm:INV-9, confirm:INV-10
 func Verify(armoured []byte, t Tuple) (Verified, *Failure) {
 	msg, err := t.Message()
 	if err != nil {

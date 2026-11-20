@@ -16,7 +16,9 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm"
 	"github.com/salahmyn/lattice/pkg/lattice/contract"
+	"github.com/salahmyn/lattice/pkg/lattice/impact"
 	"github.com/salahmyn/lattice/pkg/lattice/prepare"
+	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
 // --- GET /api/v2/check ---
@@ -32,13 +34,20 @@ func (s *Server) v2Check(wr http.ResponseWriter, r *http.Request) {
 		writeV2Error(wr, http.StatusBadRequest, "BASE_REQUIRED", "?base=<rev> is required", nil)
 		return
 	}
-	kg, err := s.readGraph(r.Context())
+	var kg schema.KnowledgeGraph
+	var calls impact.CallGraph
+	var err error
+	if s.opts.CheckGraphBuilder != nil {
+		kg, calls, err = s.opts.CheckGraphBuilder(r.Context())
+	} else {
+		kg, err = s.readGraph(r.Context())
+	}
 	if err != nil {
 		writeV2Error(wr, http.StatusInternalServerError, "GRAPH_FAILED", err.Error(), nil)
 		return
 	}
 	ci := r.URL.Query().Get("ci") == "1" || r.URL.Query().Get("ci") == "true"
-	rep, err := check.Run(r.Context(), s.ws, kg, check.RunOptions{Base: base, CI: ci})
+	rep, err := check.Run(r.Context(), s.ws, kg, check.RunOptions{Base: base, CI: ci, Calls: calls})
 	if err != nil {
 		var re *check.RunError
 		code, status := "CHECK_FAILED", http.StatusInternalServerError

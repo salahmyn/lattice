@@ -38,7 +38,7 @@ func repoAt(r *sigtest.Repo, ref string) signature.Repo {
 
 // A key enrolled on the default branch before the pull request counts; the
 // commit allowed_signers is read at is the merge's first parent.
-// @verifies confirm:INV-10
+// @verifies confirm:INV-11
 func TestEvaluateEnrolledKey(t *testing.T) {
 	r := sigtest.NewRepo(t)
 	k := sigtest.NewKey(t, sigtest.SKEd25519)
@@ -66,7 +66,7 @@ func TestEvaluateEnrolledKey(t *testing.T) {
 // A key added to allowed_signers in the same pull request as the signature
 // does not count, whether the request is merged with a merge commit or
 // squashed: allowed_signers is read before the change, never at its head.
-// @verifies confirm:INV-10
+// @verifies confirm:INV-11
 func TestEvaluateSamePRKeyRejected(t *testing.T) {
 	r := sigtest.NewRepo(t)
 	k := sigtest.NewKey(t, sigtest.SKEd25519)
@@ -100,7 +100,7 @@ func TestEvaluateSamePRKeyRejected(t *testing.T) {
 
 // Removing the key from allowed_signers un-confirms what it signed, and a
 // signature with no base commit reads unknown.
-// @verifies confirm:INV-10
+// @verifies confirm:INV-11
 func TestEvaluateRevokedAndNoBase(t *testing.T) {
 	r := sigtest.NewRepo(t)
 	k := sigtest.NewKey(t, sigtest.SKEd25519)
@@ -128,7 +128,7 @@ func TestEvaluateRevokedAndNoBase(t *testing.T) {
 // Recheck re-verifies a confirm.json claim from the repository and refuses a
 // claim with no signature behind it, one for another key or promises, and
 // one pointing outside the decision directory.
-// @verifies confirm:INV-12
+// @verifies confirm:INV-13
 func TestRecheck(t *testing.T) {
 	r := sigtest.NewRepo(t)
 	k := sigtest.NewKey(t, sigtest.SKEd25519)

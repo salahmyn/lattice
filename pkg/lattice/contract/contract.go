@@ -32,6 +32,10 @@ const (
 	StatePartial = "partial"
 	StateAbsent  = "absent"
 	StateStale   = "stale"
+	// States of a BRD source: a human says they compared the BRD with it, or
+	// nobody has said so.
+	StateChecked   = "checked"
+	StateUnchecked = "unchecked"
 )
 
 // Honesty labels.
@@ -39,10 +43,16 @@ const (
 	Fact       = "fact"
 	UpperBound = "upper_bound"
 	Proxy      = "proxy"
+	// Claimed is a human's statement that the kernel records but cannot verify.
+	Claimed = "claimed"
 )
 
 // CodeNotComputed marks a field the kernel has no source for.
 const CodeNotComputed = "NOT_COMPUTED"
+
+// ReasonHeldByDecision is the params.reason of a NOT_COMPUTED field that is
+// held on purpose until its design is settled, not merely missing.
+const ReasonHeldByDecision = "HELD_BY_DECISION"
 
 // Assurance is one measurement, the shape every assurance value has: the
 // state, how far to trust it, a stable code and params a client can
@@ -434,10 +444,35 @@ type BRDPage struct {
 	EntryPoints  []EntryPoint      `json:"entry_points"`
 	Waivers      []Waiver          `json:"waivers"`
 	BlindSpot    Assurance         `json:"blind_spot"`
-	Sources      Assurance         `json:"sources"`
+	Sources      Sources           `json:"sources"`
 	History      History           `json:"history"`
 	// Packet is set only when the page was asked for one version (?version=).
 	Packet *Packet `json:"packet,omitempty"`
+}
+
+// Source is one document a BRD's intent comes from, as the BRD lists it.
+// State is checked, with honesty claimed (a human says they compared the BRD
+// with the source; the kernel cannot verify it and never fetches the URL),
+// or unchecked, with honesty fact.
+type Source struct {
+	Kind      string                 `json:"kind"`
+	Ref       string                 `json:"ref"`
+	Title     string                 `json:"title,omitempty"`
+	URL       string                 `json:"url,omitempty"`
+	State     string                 `json:"state"`
+	Honesty   string                 `json:"honesty"`
+	Code      string                 `json:"code"`
+	Params    map[string]interface{} `json:"params,omitempty"`
+	Text      string                 `json:"text"`
+	CheckedBy string                 `json:"checked_by,omitempty"`
+	CheckedAt string                 `json:"checked_at,omitempty"`
+}
+
+// Sources are a BRD's sources: an info summary in the assurance shape, and
+// the entries.
+type Sources struct {
+	Assurance
+	Entries []Source `json:"entries"`
 }
 
 // HistoryEntry is one decision confirm.json holds for a BRD.

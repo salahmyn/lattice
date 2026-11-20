@@ -112,10 +112,11 @@ unknown, never confirmed. Run it in CI on the default branch.`,
 					votes, _ := brd.LoadVotes(ws.LatticeDir, d.ID, d.Version)
 					extra = confirm.VotesHash(votes)
 				}
-				return confirm.PacketHash(confirm.PacketInput{
+				return confirm.PacketHashFor(confirm.PacketInput{
 					BRD: *b, Promises: confirm.FactsFor(rows, confirm.PromisesOf(*b)),
 					Diff: confirm.StructuralDiff(prev, *b), Extra: extra,
-				}), true
+					Declared: confirm.DeclaredBy(kg.Features, b.ID),
+				}, d.PacketHash), true
 			}
 
 			plat := githubFor(g)

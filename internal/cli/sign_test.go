@@ -76,7 +76,7 @@ func failCode(t *testing.T, out string) string {
 
 // Acceptance 8: sign refuses without a terminal, under CI and for an agent,
 // before it looks at a key or runs anything; and it refuses a software key.
-// @verifies confirm:INV-13
+// @verifies confirm:INV-14
 func TestSignRefuses(t *testing.T) {
 	f := newSignFixture(t)
 	old := sshKeygen
@@ -165,7 +165,7 @@ func TestSignWritesSignature(t *testing.T) {
 // run. A confirm.json with an intact stamp that claims a signature verdict
 // the tree does not back is ignored; the same claim with the signature in
 // the tree confirms.
-// @verifies confirm:INV-12
+// @verifies confirm:INV-13
 func TestCheckIgnoresHandWrittenSignatureVerdict(t *testing.T) {
 	f := newSignFixture(t)
 	k := sigtest.NewKey(t, sigtest.SKEd25519)
@@ -219,7 +219,7 @@ func TestCheckIgnoresHandWrittenSignatureVerdict(t *testing.T) {
 
 // sign is not offered to agents: no MCP tool runs it, and no shipped skill
 // tells an agent to.
-// @verifies confirm:INV-13
+// @verifies confirm:INV-14
 func TestSignIsNotExposedToAgents(t *testing.T) {
 	src, err := os.ReadFile(filepath.Join("..", "..", "lattice-mcp", "src", "tools", "index.ts"))
 	if err != nil {

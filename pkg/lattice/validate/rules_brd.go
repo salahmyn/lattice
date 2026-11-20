@@ -373,7 +373,14 @@ func (c *corpus) checkOneSidedLinks() []schema.Violation {
 		feats[c.kg.Features[i].ID] = &c.kg.Features[i]
 	}
 	var v []schema.Violation
-	link := func(brdID, featureID, msg string, loc *schema.Location) {
+	// A half the other side already declares is completed by a reconcile,
+	// which keeps the BRD's version and approval. A feature that names
+	// another BRD is contested: linking it moves it out of that BRD's scope.
+	const (
+		reconcileDetail = "completes the half the other side already declares: a reconcile that keeps the BRD's version and approval (`lattice brd link --reconcile` fixes every such link)"
+		contestDetail   = "the feature names another BRD: linking it here takes it out of that BRD's scope, a scope change there; or remove the stray entry from implements_via"
+	)
+	link := func(brdID, featureID, msg, detail string, loc *schema.Location) {
 		v = append(v, schema.Violation{
 			Code: schema.CodeBRDLinkOneSided, Severity: schema.SeverityWarning,
 			FeatureID: featureID, Subject: brdID + "|" + featureID,
@@ -381,7 +388,7 @@ func (c *corpus) checkOneSidedLinks() []schema.Violation {
 			NextAction: &schema.NextAction{
 				Kind:    "run_command",
 				Command: []string{"lattice", "brd", "link", brdID, featureID},
-				Detail:  "writes both halves of the link; or remove the stray half by hand",
+				Detail:  detail,
 			},
 		})
 	}
@@ -392,10 +399,10 @@ func (c *corpus) checkOneSidedLinks() []schema.Violation {
 			case f == nil, f.ImplementsBRD == b.ID:
 			case f.ImplementsBRD == "":
 				link(b.ID, fid, fmt.Sprintf("BRD %q lists feature %q in implements_via, but the feature has no implements_brd", b.ID, fid),
-					&schema.Location{File: f.SourcePath})
+					reconcileDetail, &schema.Location{File: f.SourcePath})
 			default:
 				link(b.ID, fid, fmt.Sprintf("BRD %q lists feature %q in implements_via, but the feature's implements_brd is %q", b.ID, fid, f.ImplementsBRD),
-					&schema.Location{File: b.SourcePath})
+					contestDetail, &schema.Location{File: b.SourcePath})
 			}
 		}
 	}
@@ -404,7 +411,7 @@ func (c *corpus) checkOneSidedLinks() []schema.Violation {
 			f := &c.kg.Features[i]
 			if f.ImplementsBRD == b.ID && !containsID(b.ImplementsVia, f.ID) {
 				link(b.ID, f.ID, fmt.Sprintf("feature %q has implements_brd %q, but the BRD's implements_via leaves it out", f.ID, b.ID),
-					&schema.Location{File: b.SourcePath})
+					reconcileDetail, &schema.Location{File: b.SourcePath})
 			}
 		}
 	}

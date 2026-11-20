@@ -11,8 +11,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	sitter "github.com/smacker/go-tree-sitter"
-	gogrammar "github.com/smacker/go-tree-sitter/golang"
+	sitter "github.com/tree-sitter/go-tree-sitter"
+	gogrammar "github.com/tree-sitter/tree-sitter-go/bindings/go"
 
 	"github.com/salahmyn/lattice/pkg/lattice/adapters/astutil"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
@@ -36,13 +36,14 @@ var tagKinds = map[string]string{
 	"module-depends-on-feature": "module_depends_on_feature",
 }
 
+// goLanguage is the grammar; it is static C data and needs no Close.
+var goLanguage = sitter.NewLanguage(gogrammar.Language())
+
 // parse turns Go source into an IR module.
 func (a *Adapter) parse(ctx context.Context, file string, source []byte) (ir.Module, error) {
 	mod := ir.Module{File: file, Language: a.Name()}
 
-	parser := sitter.NewParser()
-	parser.SetLanguage(gogrammar.GetLanguage())
-	tree, err := parser.ParseCtx(ctx, nil, source)
+	tree, err := astutil.Parse(ctx, goLanguage, source)
 	if err != nil {
 		return mod, err
 	}
@@ -98,13 +99,13 @@ func packagePath(file, pkgName string) string {
 // suffix of an external test package.
 func packageName(root *sitter.Node, src []byte) string {
 	for i := 0; i < int(root.NamedChildCount()); i++ {
-		c := root.NamedChild(i)
-		if c.Type() != "package_clause" {
+		c := root.NamedChild(uint(i))
+		if c.Kind() != "package_clause" {
 			continue
 		}
 		for j := 0; j < int(c.NamedChildCount()); j++ {
-			if id := c.NamedChild(j); id.Type() == "package_identifier" {
-				return strings.TrimSuffix(id.Content(src), "_test")
+			if id := c.NamedChild(uint(j)); id.Kind() == "package_identifier" {
+				return strings.TrimSuffix(id.Utf8Text(src), "_test")
 			}
 		}
 	}
@@ -135,10 +136,9 @@ func (p *goParser) walkList(parent *sitter.Node, handle func(n *sitter.Node, ann
 	}
 	var pending []ir.Annotation
 	groupEnd, prevEnd := -2, -2 // rows of the last comment and the last code child
-	for i := 0; i < int(parent.NamedChildCount()); i++ {
-		n := parent.NamedChild(i)
-		start := int(n.StartPoint().Row)
-		if n.Type() == "comment" {
+	for _, n := range listItems(parent) {
+		start := int(n.StartPosition().Row)
+		if n.Kind() == "comment" {
 			anns := p.parseComment(n)
 			if start == prevEnd {
 				p.orphan(anns, n, orphanTrailing)
@@ -149,7 +149,7 @@ func (p *goParser) walkList(parent *sitter.Node, handle func(n *sitter.Node, ann
 				pending = nil
 			}
 			pending = append(pending, anns...)
-			groupEnd = int(n.EndPoint().Row)
+			groupEnd = int(n.EndPosition().Row)
 			continue
 		}
 		var anns []ir.Annotation
@@ -164,9 +164,26 @@ func (p *goParser) walkList(parent *sitter.Node, handle func(n *sitter.Node, ann
 		if !handle(n, anns) {
 			p.orphan(anns, n, orphanNoSymbol)
 		}
-		prevEnd = int(n.EndPoint().Row)
+		prevEnd = int(n.EndPosition().Row)
 	}
 	p.orphan(pending, nil, orphanNoSymbol)
+}
+
+// listItems returns the named children of a list node. A block keeps its
+// statements in a statement_list child (with comments on either side of
+// it); listItems splices that list in so a block reads as one flat run of
+// statements and comments, in source order.
+func listItems(parent *sitter.Node) []*sitter.Node {
+	var out []*sitter.Node
+	for i := 0; i < int(parent.NamedChildCount()); i++ {
+		n := parent.NamedChild(uint(i))
+		if n.Kind() == "statement_list" {
+			out = append(out, listItems(n)...)
+			continue
+		}
+		out = append(out, n)
+	}
+	return out
 }
 
 // orphan reports annotations that attach to no symbol, as the TypeScript
@@ -186,7 +203,7 @@ func (p *goParser) orphan(anns []ir.Annotation, at *sitter.Node, why int) {
 	what := "the end of the block"
 	ln := anns[0].Line
 	if at != nil {
-		what = "a " + strings.ReplaceAll(at.Type(), "_", " ")
+		what = "a " + strings.ReplaceAll(at.Kind(), "_", " ")
 	}
 	var msg string
 	switch why {
@@ -208,7 +225,7 @@ func (p *goParser) orphan(anns []ir.Annotation, at *sitter.Node, why int) {
 
 // handleTop records a top-level declaration.
 func (p *goParser) handleTop(n *sitter.Node, anns []ir.Annotation) bool {
-	switch n.Type() {
+	switch n.Kind() {
 	case "function_declaration":
 		return p.addFunc(n, anns)
 	case "method_declaration":
@@ -266,7 +283,7 @@ func (p *goParser) addMethod(n *sitter.Node, anns []ir.Annotation) bool {
 func (p *goParser) addTypes(n *sitter.Node, anns []ir.Annotation) bool {
 	added := false
 	p.walkList(n, func(c *sitter.Node, inner []ir.Annotation) bool {
-		if c.Type() != "type_spec" && c.Type() != "type_alias" {
+		if c.Kind() != "type_spec" && c.Kind() != "type_alias" {
 			p.scanOrphans(c)
 			return len(inner) == 0
 		}
@@ -275,7 +292,7 @@ func (p *goParser) addTypes(n *sitter.Node, anns []ir.Annotation) bool {
 			return len(inner) == 0
 		}
 		kind := ir.KindClass
-		if t := c.ChildByFieldName("type"); t != nil && t.Type() == "interface_type" {
+		if t := c.ChildByFieldName("type"); t != nil && t.Kind() == "interface_type" {
 			kind = ir.KindInterface
 		}
 		p.scanOrphans(c.ChildByFieldName("type"))
@@ -294,7 +311,7 @@ func (p *goParser) addValues(n *sitter.Node, anns []ir.Annotation) bool {
 	var visit func(list *sitter.Node, outer []ir.Annotation)
 	visit = func(list *sitter.Node, outer []ir.Annotation) {
 		p.walkList(list, func(c *sitter.Node, inner []ir.Annotation) bool {
-			switch c.Type() {
+			switch c.Kind() {
 			case "var_spec_list":
 				visit(c, joinAnns(outer, inner))
 				return true
@@ -304,7 +321,7 @@ func (p *goParser) addValues(n *sitter.Node, anns []ir.Annotation) bool {
 				return len(inner) == 0
 			}
 			val := c.ChildByFieldName("value")
-			if c.Type() == "var_spec" && val != nil {
+			if c.Kind() == "var_spec" && val != nil {
 				p.mod.HasCode = true
 			}
 			p.scanOrphans(val)
@@ -314,15 +331,15 @@ func (p *goParser) addValues(n *sitter.Node, anns []ir.Annotation) bool {
 			}
 			took := false
 			for i := 0; i < int(c.ChildCount()); i++ {
-				if c.FieldNameForChild(i) != "name" {
+				if c.FieldNameForChild(uint32(i)) != "name" {
 					continue
 				}
-				name := c.Child(i).Content(p.src)
+				name := c.Child(uint(i)).Utf8Text(p.src)
 				if name == "_" {
 					continue
 				}
 				kind := ir.KindConst
-				if val != nil && val.NamedChildCount() == 1 && val.NamedChild(0).Type() == "func_literal" {
+				if val != nil && val.NamedChildCount() == 1 && val.NamedChild(0).Kind() == "func_literal" {
 					kind = ir.KindFunction
 				}
 				p.addSymbol(name, p.pkgPath+"."+name, kind, "", c, append([]ir.Annotation(nil), all...), isExported(name))
@@ -359,7 +376,7 @@ func (p *goParser) walkTestBody(block *sitter.Node, idx int, named bool) {
 		return
 	}
 	p.walkList(block, func(n *sitter.Node, anns []ir.Annotation) bool {
-		switch n.Type() {
+		switch n.Kind() {
 		case "expression_statement":
 			if call := subtestCall(n, p.src); call != nil {
 				return p.addSubtest(call, anns, idx, named)
@@ -377,7 +394,7 @@ func (p *goParser) walkTestBody(block *sitter.Node, idx int, named bool) {
 				p.scanOrphans(cur.ChildByFieldName("condition"))
 				p.walkTestBody(cur.ChildByFieldName("consequence"), idx, named)
 				alt := cur.ChildByFieldName("alternative")
-				if alt != nil && alt.Type() == "if_statement" {
+				if alt != nil && alt.Kind() == "if_statement" {
 					cur = alt
 					continue
 				}
@@ -398,8 +415,8 @@ func (p *goParser) addSubtest(call *sitter.Node, anns []ir.Annotation, idx int, 
 	title, literal := stringLiteral(args.NamedChild(0), p.src)
 	var body *sitter.Node
 	for i := 1; i < int(args.NamedChildCount()); i++ {
-		a := args.NamedChild(i)
-		if a.Type() == "func_literal" && body == nil {
+		a := args.NamedChild(uint(i))
+		if a.Kind() == "func_literal" && body == nil {
 			body = a.ChildByFieldName("body")
 			continue
 		}
@@ -475,12 +492,12 @@ func (p *goParser) scanOrphans(n *sitter.Node) {
 	if n == nil {
 		return
 	}
-	if n.Type() == "comment" {
+	if n.Kind() == "comment" {
 		p.orphan(p.parseComment(n), n, orphanInBody)
 		return
 	}
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		p.scanOrphans(n.NamedChild(i))
+		p.scanOrphans(n.NamedChild(uint(i)))
 	}
 }
 
@@ -492,7 +509,7 @@ func (p *goParser) addSymbol(name, fqn string, kind ir.SymbolKind, enclosing str
 		Annotations: anns, IsTest: p.testFile || hasVerify(anns), Exported: exported,
 	})
 	idx := len(p.mod.Symbols) - 1
-	p.owners.Add(n.StartByte(), n.EndByte(), idx)
+	p.owners.Add(uint32(n.StartByte()), uint32(n.EndByte()), idx)
 	return idx
 }
 
@@ -501,7 +518,7 @@ func (p *goParser) addSymbol(name, fqn string, kind ir.SymbolKind, enclosing str
 // comment documents. A tag starts a comment line (`// @feature x`); several
 // may share one (`// @feature x @enforces x:INV-1`).
 func (p *goParser) parseComment(n *sitter.Node) []ir.Annotation {
-	text := n.Content(p.src)
+	text := n.Utf8Text(p.src)
 	block := strings.HasPrefix(text, "/*")
 	startLine := line(n)
 	var symbolAnns []ir.Annotation
@@ -604,16 +621,16 @@ func (p *goParser) fieldText(n *sitter.Node, field string) string {
 		return ""
 	}
 	if c := n.ChildByFieldName(field); c != nil {
-		return c.Content(p.src)
+		return c.Utf8Text(p.src)
 	}
 	return ""
 }
 
 // --- helpers ---
 
-func line(n *sitter.Node) int { return int(n.StartPoint().Row) + 1 }
+func line(n *sitter.Node) int { return int(n.StartPosition().Row) + 1 }
 
-func endLine(n *sitter.Node) int { return int(n.EndPoint().Row) + 1 }
+func endLine(n *sitter.Node) int { return int(n.EndPosition().Row) + 1 }
 
 // receiverType returns the type name of a method receiver, unwrapping
 // pointers, type parameters and parentheses: (s *Set[T]) -> Set.
@@ -622,15 +639,15 @@ func receiverType(recv *sitter.Node, src []byte) string {
 		return ""
 	}
 	for i := 0; i < int(recv.NamedChildCount()); i++ {
-		param := recv.NamedChild(i)
-		if param.Type() != "parameter_declaration" {
+		param := recv.NamedChild(uint(i))
+		if param.Kind() != "parameter_declaration" {
 			continue
 		}
 		t := param.ChildByFieldName("type")
 		for t != nil {
-			switch t.Type() {
+			switch t.Kind() {
 			case "type_identifier":
-				return t.Content(src)
+				return t.Utf8Text(src)
 			case "generic_type":
 				t = t.ChildByFieldName("type")
 			case "pointer_type", "parenthesized_type":
@@ -653,14 +670,14 @@ func subtestCall(stmt *sitter.Node, src []byte) *sitter.Node {
 		return nil
 	}
 	call := stmt.NamedChild(0)
-	if call.Type() != "call_expression" {
+	if call.Kind() != "call_expression" {
 		return nil
 	}
 	fn := call.ChildByFieldName("function")
-	if fn == nil || fn.Type() != "selector_expression" {
+	if fn == nil || fn.Kind() != "selector_expression" {
 		return nil
 	}
-	if f := fn.ChildByFieldName("field"); f == nil || f.Type() != "field_identifier" || f.Content(src) != "Run" {
+	if f := fn.ChildByFieldName("field"); f == nil || f.Kind() != "field_identifier" || f.Utf8Text(src) != "Run" {
 		return nil
 	}
 	args := call.ChildByFieldName("arguments")
@@ -675,9 +692,9 @@ func stringLiteral(n *sitter.Node, src []byte) (string, bool) {
 	if n == nil {
 		return "", false
 	}
-	switch n.Type() {
+	switch n.Kind() {
 	case "interpreted_string_literal", "raw_string_literal":
-		s, err := strconv.Unquote(n.Content(src))
+		s, err := strconv.Unquote(n.Utf8Text(src))
 		return s, err == nil
 	}
 	return "", false

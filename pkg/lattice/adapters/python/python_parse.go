@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	sitter "github.com/smacker/go-tree-sitter"
-	tspython "github.com/smacker/go-tree-sitter/python"
+	sitter "github.com/tree-sitter/go-tree-sitter"
+	tspython "github.com/tree-sitter/tree-sitter-python/bindings/go"
 
 	"github.com/salahmyn/lattice/pkg/lattice/adapters/astutil"
 	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
@@ -25,13 +25,14 @@ var knownAnnotations = map[string]bool{
 	"module_depends_on_feature": true,
 }
 
+// pythonLanguage is the grammar; it is static C data and needs no Close.
+var pythonLanguage = sitter.NewLanguage(tspython.Language())
+
 // parse turns Python source into an IR module using tree-sitter.
 func (a *Adapter) parse(ctx context.Context, path string, source []byte) (ir.Module, error) {
 	mod := ir.Module{File: path, Language: a.Name()}
 
-	parser := sitter.NewParser()
-	parser.SetLanguage(tspython.GetLanguage())
-	tree, err := parser.ParseCtx(ctx, nil, source)
+	tree, err := astutil.Parse(ctx, pythonLanguage, source)
 	if err != nil {
 		return mod, err
 	}
@@ -60,8 +61,8 @@ type pyParser struct {
 // walkModule walks the top level: module-annotation calls, functions, classes.
 func (p *pyParser) walkModule(root *sitter.Node) {
 	for i := 0; i < int(root.NamedChildCount()); i++ {
-		n := root.NamedChild(i)
-		switch n.Type() {
+		n := root.NamedChild(uint(i))
+		switch n.Kind() {
 		case "expression_statement":
 			if call := firstChildOfType(n, "call"); call != nil {
 				if ann, ok := p.callAnnotation(call); ok && strings.HasPrefix(ann.Kind, "module_") {
@@ -82,8 +83,8 @@ func (p *pyParser) walkModule(root *sitter.Node) {
 func (p *pyParser) handleDecorated(n *sitter.Node, enclosingFQN, _ string) {
 	var anns []ir.Annotation
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		c := n.NamedChild(i)
-		if c.Type() == "decorator" {
+		c := n.NamedChild(uint(i))
+		if c.Kind() == "decorator" {
 			if ann, ok := p.decoratorAnnotation(c); ok {
 				anns = append(anns, ann)
 			}
@@ -93,7 +94,7 @@ func (p *pyParser) handleDecorated(n *sitter.Node, enclosingFQN, _ string) {
 	if def == nil {
 		return
 	}
-	switch def.Type() {
+	switch def.Kind() {
 	case "function_definition":
 		p.addFunction(def, anns, enclosingFQN, "")
 	case "class_definition":
@@ -115,15 +116,15 @@ func (p *pyParser) addClass(n *sitter.Node, anns []ir.Annotation) {
 		Exported: isPublicName(name),
 	}
 	p.mod.Symbols = append(p.mod.Symbols, sym)
-	p.owners.Add(n.StartByte(), n.EndByte(), len(p.mod.Symbols)-1)
+	p.owners.Add(uint32(n.StartByte()), uint32(n.EndByte()), len(p.mod.Symbols)-1)
 
 	body := n.ChildByFieldName("body")
 	if body == nil {
 		return
 	}
 	for i := 0; i < int(body.NamedChildCount()); i++ {
-		c := body.NamedChild(i)
-		switch c.Type() {
+		c := body.NamedChild(uint(i))
+		switch c.Kind() {
 		case "decorated_definition":
 			p.handleDecorated(c, fqn, name)
 		case "function_definition":
@@ -150,7 +151,7 @@ func (p *pyParser) addFunction(n *sitter.Node, anns []ir.Annotation, enclosingFQ
 		File: p.mod.File, Line: line(n), EndLine: endLine(n), EnclosingFQN: enclosingFQN,
 		Annotations: anns, IsTest: isTest, Exported: isPublicName(name),
 	})
-	p.owners.Add(n.StartByte(), n.EndByte(), len(p.mod.Symbols)-1)
+	p.owners.Add(uint32(n.StartByte()), uint32(n.EndByte()), len(p.mod.Symbols)-1)
 }
 
 // isPublicName reports whether a Python name is part of the public surface.
@@ -168,10 +169,10 @@ func (p *pyParser) baseClasses(n *sitter.Node) []string {
 	}
 	var bases []string
 	for i := 0; i < int(sup.NamedChildCount()); i++ {
-		c := sup.NamedChild(i)
-		if t := c.Type(); t == "identifier" || t == "attribute" {
+		c := sup.NamedChild(uint(i))
+		if t := c.Kind(); t == "identifier" || t == "attribute" {
 			// Resolve same-module bases to a FQN; leave others bare.
-			name := c.Content(p.src)
+			name := c.Utf8Text(p.src)
 			bases = append(bases, p.modulePath+"."+name)
 		}
 	}
@@ -181,12 +182,12 @@ func (p *pyParser) baseClasses(n *sitter.Node) []string {
 // decoratorAnnotation extracts an annotation from a decorator node.
 func (p *pyParser) decoratorAnnotation(dec *sitter.Node) (ir.Annotation, bool) {
 	for i := 0; i < int(dec.NamedChildCount()); i++ {
-		c := dec.NamedChild(i)
-		switch c.Type() {
+		c := dec.NamedChild(uint(i))
+		switch c.Kind() {
 		case "call":
 			return p.callAnnotation(c)
 		case "identifier":
-			name := c.Content(p.src)
+			name := c.Utf8Text(p.src)
 			if knownAnnotations[name] {
 				return ir.Annotation{Kind: name, Line: line(dec)}, true
 			}
@@ -199,10 +200,10 @@ func (p *pyParser) decoratorAnnotation(dec *sitter.Node) (ir.Annotation, bool) {
 // @enforces adapters.python:INV-1
 func (p *pyParser) callAnnotation(call *sitter.Node) (ir.Annotation, bool) {
 	fn := call.ChildByFieldName("function")
-	if fn == nil || fn.Type() != "identifier" {
+	if fn == nil || fn.Kind() != "identifier" {
 		return ir.Annotation{}, false
 	}
-	name := fn.Content(p.src)
+	name := fn.Utf8Text(p.src)
 	if !knownAnnotations[name] {
 		return ir.Annotation{}, false
 	}
@@ -212,8 +213,8 @@ func (p *pyParser) callAnnotation(call *sitter.Node) (ir.Annotation, bool) {
 		return ann, true
 	}
 	for i := 0; i < int(args.NamedChildCount()); i++ {
-		arg := args.NamedChild(i)
-		switch arg.Type() {
+		arg := args.NamedChild(uint(i))
+		switch arg.Kind() {
 		case "string":
 			ann.Args = append(ann.Args, p.stringValue(arg))
 		case "list":
@@ -227,11 +228,11 @@ func (p *pyParser) callAnnotation(call *sitter.Node) (ir.Annotation, bool) {
 			if ann.Kwargs == nil {
 				ann.Kwargs = map[string]interface{}{}
 			}
-			switch val.Type() {
+			switch val.Kind() {
 			case "string":
-				ann.Kwargs[k.Content(p.src)] = p.stringValue(val)
+				ann.Kwargs[k.Utf8Text(p.src)] = p.stringValue(val)
 			case "list":
-				ann.Kwargs[k.Content(p.src)] = p.listValues(val)
+				ann.Kwargs[k.Utf8Text(p.src)] = p.listValues(val)
 			default:
 				p.diag(arg, "annotation keyword argument is not a string literal")
 			}
@@ -245,17 +246,17 @@ func (p *pyParser) callAnnotation(call *sitter.Node) (ir.Annotation, bool) {
 // stringValue returns the content of a Python string literal.
 func (p *pyParser) stringValue(n *sitter.Node) string {
 	if content := firstChildOfType(n, "string_content"); content != nil {
-		return content.Content(p.src)
+		return content.Utf8Text(p.src)
 	}
-	return strings.Trim(n.Content(p.src), "\"'")
+	return strings.Trim(n.Utf8Text(p.src), "\"'")
 }
 
 // listValues returns the string elements of a list literal.
 func (p *pyParser) listValues(n *sitter.Node) []string {
 	var out []string
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		c := n.NamedChild(i)
-		if c.Type() == "string" {
+		c := n.NamedChild(uint(i))
+		if c.Kind() == "string" {
 			out = append(out, p.stringValue(c))
 		} else {
 			p.diag(c, "annotation list element is not a string literal")
@@ -266,7 +267,7 @@ func (p *pyParser) listValues(n *sitter.Node) []string {
 
 func (p *pyParser) fieldText(n *sitter.Node, field string) string {
 	if c := n.ChildByFieldName(field); c != nil {
-		return c.Content(p.src)
+		return c.Utf8Text(p.src)
 	}
 	return ""
 }
@@ -279,13 +280,13 @@ func (p *pyParser) diag(n *sitter.Node, msg string) {
 
 // --- shared small helpers ---
 
-func line(n *sitter.Node) int { return int(n.StartPoint().Row) + 1 }
+func line(n *sitter.Node) int { return int(n.StartPosition().Row) + 1 }
 
-func endLine(n *sitter.Node) int { return int(n.EndPoint().Row) + 1 }
+func endLine(n *sitter.Node) int { return int(n.EndPosition().Row) + 1 }
 
 func firstChildOfType(n *sitter.Node, t string) *sitter.Node {
 	for i := 0; i < int(n.NamedChildCount()); i++ {
-		if c := n.NamedChild(i); c.Type() == t {
+		if c := n.NamedChild(uint(i)); c.Kind() == t {
 			return c
 		}
 	}

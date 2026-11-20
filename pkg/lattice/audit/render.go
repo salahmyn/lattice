@@ -155,7 +155,7 @@ func WriteText(w io.Writer, r Report) {
 // ConfirmedText is a row's confirmed value for display. A human value always
 // carries its method: "human (signed by ana, SHA256:...)" or "human
 // (approved by ana on PR #7)".
-// @enforces confirm:INV-14
+// @enforces confirm:INV-15
 func ConfirmedText(row Row) string {
 	v := row.Signals.Confirmed.Value
 	if v != ConfirmedHuman {

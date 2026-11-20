@@ -15,7 +15,7 @@ func tuple() signature.Tuple {
 
 // The message carries every field of the tuple, and a tuple missing any of
 // them has no message: nothing signs or accepts it.
-// @verifies confirm:INV-9
+// @verifies confirm:INV-10
 func TestMessageNeedsEveryField(t *testing.T) {
 	msg, err := tuple().Message()
 	if err != nil {
@@ -59,7 +59,7 @@ func TestMessageNeedsEveryField(t *testing.T) {
 
 // Security-key signatures verify; a software key is refused with
 // SOFTWARE_KEY, and a signature without user presence is refused.
-// @verifies confirm:INV-8
+// @verifies confirm:INV-9
 func TestVerifyKeyTypes(t *testing.T) {
 	for _, kind := range []string{sigtest.SKEd25519, sigtest.SKECDSA} {
 		k := sigtest.NewKey(t, kind)
@@ -86,7 +86,7 @@ func TestVerifyKeyTypes(t *testing.T) {
 // A signature replayed onto another repository, decision, version, action,
 // packet or set of promises does not verify; neither does one made in
 // another namespace.
-// @verifies confirm:INV-9
+// @verifies confirm:INV-10
 func TestVerifyBindsTheTuple(t *testing.T) {
 	k := sigtest.NewKey(t, sigtest.SKEd25519)
 	sig := k.SignTuple(t, tuple(), sigtest.Options{})
@@ -122,7 +122,7 @@ func TestVerifyBindsTheTuple(t *testing.T) {
 // allowed_signers grants a key only what a plain line says: exact
 // principals, the lattice-decision namespace if namespaces is set, and no
 // line with cert-authority, validity or a pattern.
-// @verifies confirm:INV-10
+// @verifies confirm:INV-11
 func TestAllowedSigners(t *testing.T) {
 	k := sigtest.NewKey(t, sigtest.SKEd25519)
 	key := k.AuthorizedKey()
