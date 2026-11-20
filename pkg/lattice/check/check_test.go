@@ -775,7 +775,7 @@ func TestMarkdownNeverGreenForUnproven(t *testing.T) {
 
 // A STATEMENT_UNCHANGED note from impact rides on its promise's row and is
 // shown once in each form; it never changes the verdict, a gap or the merge.
-// @verifies check:INV-10
+// @verifies check:INV-11
 func TestStatementNoteIsInformational(t *testing.T) {
 	p, q := "fees:INV-1", "fees:INV-2"
 	note := impact.Note{Code: impact.NoteStatementUnchanged, Promise: p,
