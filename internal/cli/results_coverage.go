@@ -3,6 +3,7 @@ package cli
 // @module-feature coverage
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/check"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/coverage"
+	"github.com/salahmyn/lattice/pkg/lattice/gitstate"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/rtm"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
@@ -114,7 +116,7 @@ func newResultsIngestCommand(io *IO) *cobra.Command {
 				}
 			}
 			if len(inputs) > 0 {
-				dirty, dirtyFiles := gitDirty(base)
+				dirty, dirtyFiles := coverageDirty(base, ws.LatticeDir, inputs)
 				cs, notes, err := coverage.Ingest(ws.LatticeDir, kg, inputs, coverage.Options{
 					Commit: kg.GeneratedFromCommit, Dirty: dirty, DirtyFiles: dirtyFiles,
 					OnlyVerifiers: covCfg.PerTest.OnlyVerifiersOrDefault(),
@@ -249,11 +251,56 @@ func configInputs(base string, c config.Coverage) []coverage.Input {
 	return out
 }
 
-// gitDirty reports whether tracked files under dir have uncommitted
-// changes, naming up to ten. Lattice's own runtime state (lattice/.ledger,
-// lattice/.cache) is not code and does not count; untracked files, such as
-// the coverage reports themselves, do not either. Outside git it is clean.
-func gitDirty(dir string) (bool, []string) { return check.GitDirty(dir) }
+// gitDirty reports whether the working tree under dir differs from HEAD,
+// naming up to ten paths (check.GitDirty). Lattice's own runtime state does
+// not count. Outside git it is clean.
+func gitDirty(dir string, latticeDirs ...string) (bool, []string) {
+	return check.GitDirty(dir, latticeDirs...)
+}
+
+// coverageDirty is gitDirty for one coverage ingest: the reports and
+// per-test directories being read are the run's output, not code, so they
+// never make the tree dirty, tracked or not. Every other path counts as
+// gitDirty counts it.
+// @enforces check:INV-12
+func coverageDirty(dir, latticeDir string, inputs []coverage.Input) (bool, []string) {
+	ctx := context.Background()
+	files, err := gitstate.Dirty(ctx, dir, []string{latticeDir})
+	if err != nil {
+		return false, nil
+	}
+	top, err := gitstate.Top(ctx, dir)
+	if err != nil {
+		return false, nil
+	}
+	var own []string // the inputs, as slash paths relative to top
+	for _, in := range inputs {
+		abs, err := filepath.Abs(in.Path)
+		if err != nil {
+			continue
+		}
+		if real, err := filepath.EvalSymlinks(abs); err == nil {
+			abs = real
+		}
+		if rel, err := filepath.Rel(top, abs); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			own = append(own, filepath.ToSlash(rel))
+		}
+	}
+	var kept []string
+	for _, f := range files {
+		input := false
+		for _, o := range own {
+			if f == o || strings.HasPrefix(f, o+"/") {
+				input = true
+				break
+			}
+		}
+		if !input {
+			kept = append(kept, f)
+		}
+	}
+	return len(kept) > 0, gitstate.Abbrev(kept, 10)
+}
 
 // langAliases maps --lang spellings to adapter languages.
 var langAliases = map[string]string{

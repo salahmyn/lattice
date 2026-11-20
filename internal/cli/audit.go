@@ -58,7 +58,7 @@ error (exit 2).`,
 			if class != "" && !knownAuditClass(class) {
 				return io.fail("AUDIT_BAD_CLASS", "unknown class "+class, map[string]interface{}{"classes": audit.Classes})
 			}
-			dirty, _ := gitDirty(filepath.Dir(ws.LatticeDir))
+			dirty, _ := gitDirty(filepath.Dir(ws.LatticeDir), ws.LatticeDir)
 			rep := audit.Compute(audit.Collect(ws.LatticeDir, kg, dirty))
 			ids := splitPromises(promises)
 			if unknown := rep.UnknownPromises(ids); len(unknown) > 0 {

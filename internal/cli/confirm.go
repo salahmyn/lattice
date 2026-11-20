@@ -92,7 +92,7 @@ unknown, never confirmed. Run it in CI on the default branch.`,
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
-			dirty, _ := gitDirty(filepath.Dir(ws.LatticeDir))
+			dirty, _ := gitDirty(filepath.Dir(ws.LatticeDir), ws.LatticeDir)
 			rows := audit.Compute(audit.Collect(ws.LatticeDir, kg, dirty)).Rows
 
 			packet := func(d confirm.Decision) (string, bool) {

@@ -4,6 +4,7 @@ package impact
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/salahmyn/lattice/pkg/lattice/gitstate"
 )
 
 // repoGit runs read-only git commands in one work tree.
@@ -141,8 +144,11 @@ type lineRange struct{ from, to int }
 
 // changedFiles lists every file that differs between base and the working
 // tree, with the changed line ranges on each side. Untracked files that git
-// does not ignore are included as added: extraction reads them too.
-func changedFiles(g repoGit, base string) ([]FileChange, error) {
+// does not ignore are included as added: extraction reads them too. An
+// untracked file that is Lattice's own runtime state (gitstate.LatticeOwned,
+// with owned from gitstate.Owned) is not part of the change and is left out,
+// so the list agrees with Report.Uncommitted.
+func changedFiles(g repoGit, base string, owned []string) ([]FileChange, error) {
 	out, err := g.run("diff", "-M", "--name-status", "-z", "--no-ext-diff", base)
 	if err != nil {
 		return nil, err
@@ -170,6 +176,9 @@ func changedFiles(g repoGit, base string) ([]FileChange, error) {
 			continue
 		}
 		rel := string(p)
+		if gitstate.LatticeOwned(rel, owned) {
+			continue
+		}
 		n := countLines(filepath.Join(g.dir, filepath.FromSlash(rel)))
 		c := FileChange{Status: "A", NewPath: rel, Untracked: true}
 		if n > 0 {
@@ -303,10 +312,15 @@ func showBlob(g repoGit, commit, path string) ([]byte, bool) {
 	return out, true
 }
 
-// dirty reports whether the working tree differs from HEAD.
-func dirty(g repoGit) bool {
-	out, err := g.run("status", "--porcelain", "--untracked-files=normal")
-	return err == nil && len(bytes.TrimSpace(out)) > 0
+// dirty reports whether the working tree differs from HEAD by the rule check
+// and break read (gitstate): a modified, added or deleted path, or an
+// untracked one git does not ignore, counts unless it is Lattice's own
+// runtime state (every lattice/.ledger/ and lattice/.cache/, and latticeDir's
+// .ledger/ and .cache/). It runs on the same private index as the diff.
+// @enforces check:INV-12
+func dirty(ctx context.Context, g repoGit, latticeDir string) bool {
+	files, err := gitstate.Dirty(ctx, g.dir, []string{latticeDir}, g.env...)
+	return err == nil && len(files) > 0
 }
 
 func countLines(path string) int {
