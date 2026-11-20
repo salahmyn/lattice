@@ -26,3 +26,5 @@ invariants:
     statement: When the call graph has roots, a feature is reached when a root reaches any of its symbols; without roots FEATURE_UNREACHED keeps its flow-based rule.
   - id: INV-8
     statement: SUITE_OVERLAP fires for two suites whose verified targets have a Jaccard index at or above coverage.overlap.
+  - id: INV-9
+    statement: A Go call of an unexported member name on a value of unknown type resolves only among the caller's own package's members; another package's unexported member is never an edge or a candidate.

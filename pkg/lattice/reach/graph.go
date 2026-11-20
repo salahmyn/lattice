@@ -13,6 +13,8 @@ package reach
 import (
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 	"github.com/salahmyn/lattice/pkg/lattice/scip"
@@ -649,11 +651,13 @@ func (b *builder) resolveType(mc *modCtx, owner *node, t string) string {
 
 // byMember resolves a member called on a value of unknown type: the one
 // member of that name in the language, or, with several, an ambiguous
-// reference. A production caller never resolves to a test's member.
+// reference. A production caller never resolves to a test's member, and a
+// Go caller never to another package's unexported member (see visible).
+// @enforces reachability:INV-9
 func (b *builder) byMember(lang string, owner *node, name string, resolved func(string, string), unresolved func(string, []string), external func()) {
 	var cands []string
 	for _, f := range b.members[lang][name] {
-		if n := b.g.nodes[f]; n != nil && (!n.isTest || owner.isTest) {
+		if n := b.g.nodes[f]; n != nil && (!n.isTest || owner.isTest) && visible(lang, owner, n, name) {
 			cands = append(cands, f)
 		}
 	}
@@ -665,6 +669,23 @@ func (b *builder) byMember(lang string, owner *node, name string, resolved func(
 	default:
 		unresolved("ambiguous", cands)
 	}
+}
+
+// goLanguage is the Go adapter's language name.
+const goLanguage = "go"
+
+// visible reports whether owner's code can name the member cand by name.
+// In Go an unexported method name is distinct in every package: x.run()
+// calls a run declared in the caller's own package, even through an
+// interface or a promoted method, since a type gains another package's
+// unexported method only by embedding a type declared there. Dropping a
+// candidate of another package removes no edge the program can take, so
+// reach stays an upper bound. Other languages keep every candidate.
+func visible(lang string, owner, cand *node, name string) bool {
+	if r, _ := utf8.DecodeRuneInString(name); lang != goLanguage || name == "" || unicode.IsUpper(r) {
+		return true
+	}
+	return cand.namespace == owner.namespace
 }
 
 // scopes lists where a bare name of owner's code is looked up, innermost
