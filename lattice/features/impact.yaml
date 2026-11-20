@@ -18,3 +18,7 @@ invariants:
     statement: An enforcer that stops enforcing its invariant is reported, including a dropped @enforces tag on a symbol whose own lines are unchanged.
   - id: INV-4
     statement: The manifest diff names every changed field the schema has, matching list items by their id.
+  - id: INV-5
+    statement: When an enforcer's own lines change and its invariant's statement and tier do not, the report carries a STATEMENT_UNCHANGED note for that invariant; a promise the change adds, an edited statement or tier, or a change to verifiers only gets no note.
+  - id: INV-6
+    statement: The test listing (lattice impact --tests, and tests in lattice check --json) names every verifier of each touched promise, a changed verifier file included, grouped by the first break.runners entry whose glob matches as lattice break groups them; a verifier no entry matches is listed as unmatched with a reason, never dropped, and nothing is run.

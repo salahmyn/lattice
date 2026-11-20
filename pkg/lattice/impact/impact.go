@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/salahmyn/lattice/pkg/lattice/adapters"
+	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/scip"
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
@@ -41,6 +42,9 @@ type Input struct {
 	Since         string
 	MaxSymbols    int  // <= 0 takes DefaultMaxSymbols
 	IncludeDrafts bool // list criteria of draft and proposed BRDs
+	// Break, when set, makes the report list the verifier tests of the
+	// touched promises, grouped by its break.runners (Report.Tests).
+	Break *config.Break
 }
 
 // Report is the full impact of a change. Paths are repo-relative, as a pull
@@ -60,8 +64,15 @@ type Report struct {
 	DraftsIncluded     bool                 `json:"drafts_included"`
 	DraftCriteria      []AffectedCriterion  `json:"draft_criteria,omitempty"`
 	RemovedEnforcement []RemovedEnforcement `json:"removed_enforcement"`
-	ManifestDiff       ManifestDiff         `json:"manifest_diff"`
-	CodeRollup         CodeRollup           `json:"code_rollup"`
+	// Notes are informational readings of touched promises, such as an
+	// enforcer that changed under a statement that did not. They never
+	// change a verdict.
+	Notes        []Note       `json:"notes"`
+	ManifestDiff ManifestDiff `json:"manifest_diff"`
+	CodeRollup   CodeRollup   `json:"code_rollup"`
+	// Tests lists the verifier tests of the touched promises by runner. It is
+	// present only when Input.Break is set.
+	Tests *TestPlan `json:"tests,omitempty"`
 }
 
 // ChangedSymbol is a symbol whose own lines a hunk touches, on the base side,
@@ -199,6 +210,11 @@ func Compute(ctx context.Context, in Input) (Report, error) {
 		rep.DraftCriteria = drafts
 	}
 	rep.CodeRollup = rollup(in, pm, cc, approved, drafts)
+	rep.Notes = statementNotes(in.Graph.Features, baseFeatures, in.Graph.BRDs, md, cc)
+	if in.Break != nil {
+		plan := testPlan(in, pm, rep, drafts)
+		rep.Tests = &plan
+	}
 
 	normalize(&rep)
 	return rep, nil
@@ -244,6 +260,9 @@ func normalize(r *Report) {
 	}
 	if r.RemovedEnforcement == nil {
 		r.RemovedEnforcement = []RemovedEnforcement{}
+	}
+	if r.Notes == nil {
+		r.Notes = []Note{}
 	}
 	for _, k := range []*KindDiff{&r.ManifestDiff.Features, &r.ManifestDiff.BRDs, &r.ManifestDiff.EntryPoints} {
 		k.normalize()

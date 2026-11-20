@@ -154,7 +154,7 @@ func TestImpactJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, k := range []string{"since", "base", "head", "uncommitted", "changed_files", "changed_symbols",
-		"affected_criteria", "drafts_included", "draft_criteria", "removed_enforcement", "manifest_diff", "code_rollup"} {
+		"affected_criteria", "drafts_included", "draft_criteria", "removed_enforcement", "notes", "manifest_diff", "code_rollup"} {
 		if _, ok := rep[k]; !ok {
 			t.Errorf("JSON lacks %q", k)
 		}
@@ -191,5 +191,30 @@ func TestImpactRejectsUnknownFormat(t *testing.T) {
 	cmd.SetErr(&errOut)
 	if err := cmd.Execute(); err == nil || !strings.Contains(errOut.String(), "--format") {
 		t.Errorf("want a --format error, got %v: %s", err, errOut.String())
+	}
+}
+
+// --tests prints only the test listing: {runners, unmatched} with --json,
+// never empty silently in text, and refuses markdown.
+// @verifies impact:INV-6
+func TestImpactTestsFlag(t *testing.T) {
+	dir := impactRepo(t)
+	var plan map[string]interface{}
+	if err := json.Unmarshal([]byte(runImpact(t, dir, true, "--since", "main", "--tests")), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan) != 2 || plan["runners"] == nil || plan["unmatched"] == nil {
+		t.Fatalf("plan = %v", plan)
+	}
+	if out := runImpact(t, dir, false, "--since", "main", "--tests"); !strings.Contains(out, "# no touched promise has a verifier test") {
+		t.Errorf("text = %q", out)
+	}
+	var out, errOut bytes.Buffer
+	cmd := newImpactCommand(&IO{Repo: dir, Out: &out, Err: &errOut})
+	cmd.SetArgs([]string{"--since", "main", "--tests", "--format", "markdown"})
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	if err := cmd.Execute(); err == nil {
+		t.Errorf("--tests --format markdown was accepted:\n%s", out.String())
 	}
 }

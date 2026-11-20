@@ -92,6 +92,9 @@ func Run(ctx context.Context, ws *workspace.Workspace, kg schema.KnowledgeGraph,
 		return Report{}, runErr(RunExtract, err)
 	}
 	in := impact.Input{Workspace: ws, Registry: all.Registry(adCfg), Graph: kg, Since: opt.Base, IncludeDrafts: true}
+	if cfg, cerr := config.Load(ws.LatticeDir); cerr == nil {
+		in.Break = &cfg.Break
+	}
 	if corpus, cerr := scip.Load(SCIPIndexPaths(ws)...); cerr == nil {
 		in.Corpus = corpus
 	}
