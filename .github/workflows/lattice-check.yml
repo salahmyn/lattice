@@ -51,7 +51,7 @@ jobs:
           # HEAD is the commit the evidence is stamped with and the author sees.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod # caches the module and build caches, keyed on go.sum
       - run: go build -o dist/lattice ./cmd/lattice

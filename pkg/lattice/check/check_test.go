@@ -889,6 +889,36 @@ func TestPassesOnBaseIsANoteOnly(t *testing.T) {
 	}
 }
 
+var sampleTests = impact.TestPlan{
+	Runners: []impact.TestRunner{{Name: "vitest", Dir: "apps/web", Command: "pnpm vitest run {files} -t {filter}",
+		Run: "pnpm vitest run src/guard.test.ts -t '(guards the order)$'", Argv: []string{"pnpm", "vitest", "run", "src/guard.test.ts", "-t", "(guards the order)$"},
+		Files: []string{"src/guard.test.ts"}, Filter: "(guards the order)$", Tests: []string{"bookshop.TestGuard"}, Promises: []string{"bookshop:INV-1"}}},
+	Unmatched: []impact.UnmatchedTest{{File: "e2e/guard.spec.ts", Tests: []string{"bookshop.e2e"}, Promises: []string{"bookshop:INV-1"},
+		Reason: impact.ReasonNoRunnerMatches}},
+}
+
+// The check carries impact's test listing as it is, and an empty one when
+// impact listed none; it never changes the verdict.
+// @verifies impact:INV-6
+func TestCheckCarriesTests(t *testing.T) {
+	p := "bookshop:INV-1"
+	base := auditOf("base", good(p, 2))
+	im := impact.Report{ChangedSymbols: []impact.ChangedSymbol{guardEdited(p)}}
+	without := Compute(scenario(&base, auditOf("head", good(p, 2, noCoverage())), im))
+	if without.Tests.Runners == nil || without.Tests.Unmatched == nil || len(without.Tests.Runners)+len(without.Tests.Unmatched) != 0 {
+		t.Fatalf("tests = %+v", without.Tests)
+	}
+	im.Tests = &sampleTests
+	with := Compute(scenario(&base, auditOf("head", good(p, 2, noCoverage())), im))
+	if with.Verdict.State != without.Verdict.State || with.Verdict.Code != without.Verdict.Code || with.MergeAllowed != without.MergeAllowed {
+		t.Fatalf("the listing changed the verdict: %+v vs %+v", with.Verdict, without.Verdict)
+	}
+	js, _ := json.Marshal(with)
+	if !strings.Contains(string(js), `"tests":{"runners":[{"name":"vitest","dir":"apps/web"`) {
+		t.Errorf("json = %s", js)
+	}
+}
+
 // --- the frozen contract ---
 
 // The shape of lattice.check/1 is frozen by a golden file. A change that is
@@ -907,6 +937,7 @@ func TestCheckContractGolden(t *testing.T) {
 		Notes: []impact.Note{{Code: impact.NoteStatementUnchanged, Promise: p,
 			Text: "the enforcer of bookshop:INV-1 changed and its statement did not: re-read the statement and confirm it still holds",
 			Next: "read the statement of bookshop:INV-1 against bookshop.Guard; if it no longer describes the code, edit the statement in the feature file"}},
+		Tests: &sampleTests,
 	}
 	in := scenario(&base, head, im)
 	in.Waivers = []Waiver{{Subject: q + "/exercised", Kind: "no_tool", Reason: "no coverage tool"}}

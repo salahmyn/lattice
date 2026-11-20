@@ -97,6 +97,10 @@ func (c *computation) run() Report {
 		Waivers:  c.waivers(),
 		Note:     note,
 	}
+	rep.Tests = impact.TestPlan{Runners: []impact.TestRunner{}, Unmatched: []impact.UnmatchedTest{}}
+	if in.Impact.Tests != nil {
+		rep.Tests = *in.Impact.Tests
+	}
 	rep.Evidence.BaseAudit = BaseAudit{Present: in.Base != nil, Text: in.BaseNote}
 	rep.Evidence.FailsOnBase = proofEv
 	if in.Base != nil {

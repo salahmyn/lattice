@@ -128,8 +128,8 @@ func ownedPrefixes(top string, latticeDirs []string) []string {
 }
 
 // latticeOwned reports whether a changed path is Lattice's own runtime
-// state: the ledger that ingest, validate and check runs append to, and the
-// cache that holds ingested results, coverage and breaks.json. Neither is an
+// state: the ledger of gates, CRs, flags and sign-offs, and the cache that
+// holds ingested results, coverage, the last check runs and breaks.json. Neither is an
 // input of a break run. Source files, manifests and lattice.json are not
 // Lattice's own state and always count.
 // @enforces breaktest:INV-9

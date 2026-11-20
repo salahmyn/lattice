@@ -388,7 +388,11 @@ type group struct {
 // else Go's built-in. Verifiers no runner covers are returned apart.
 // @enforces breaktest:INV-6
 func (r *runner) groups(sels []results.Selector) ([]group, []results.Selector) {
-	cfg := r.opts.Config.Break
+	return groupVerifiers(r.opts.Config.Break, sels)
+}
+
+// groupVerifiers is the grouping of groups, for a break configuration.
+func groupVerifiers(cfg config.Break, sels []results.Selector) ([]group, []results.Selector) {
 	by := map[string]*group{}
 	var order []string
 	var none []results.Selector

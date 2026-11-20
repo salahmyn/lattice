@@ -312,5 +312,45 @@
       "in_change": true
     }
   ],
+  "tests": {
+    "runners": [
+      {
+        "name": "vitest",
+        "dir": "apps/web",
+        "command": "pnpm vitest run {files} -t {filter}",
+        "run": "pnpm vitest run src/guard.test.ts -t '(guards the order)$'",
+        "argv": [
+          "pnpm",
+          "vitest",
+          "run",
+          "src/guard.test.ts",
+          "-t",
+          "(guards the order)$"
+        ],
+        "files": [
+          "src/guard.test.ts"
+        ],
+        "filter": "(guards the order)$",
+        "tests": [
+          "bookshop.TestGuard"
+        ],
+        "promises": [
+          "bookshop:INV-1"
+        ]
+      }
+    ],
+    "unmatched": [
+      {
+        "file": "e2e/guard.spec.ts",
+        "tests": [
+          "bookshop.e2e"
+        ],
+        "promises": [
+          "bookshop:INV-1"
+        ],
+        "reason": "no break.runners entry matches"
+      }
+    ]
+  },
   "note": "UNPROVEN is not a pass: it means nothing fell and something is not shown. Unknown is never a pass; only CI's verdict counts."
 }

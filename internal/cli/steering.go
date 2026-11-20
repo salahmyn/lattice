@@ -20,32 +20,45 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
-// appendLedgerEvent best-effort appends a non-transition event to the
-// ledger (v0.8.1 — the ledger is the single event stream: check runs,
-// gates, CR events, flags, and sign-offs all land here rather than in
-// parallel logs). Failures warn but never fail the command that did
-// the real work.
+// appendLedgerEvent best-effort appends a decision or state-change event
+// (gate, CR, flag, sign-off) to the tracked ledger. Failures warn but never
+// fail the command that did the real work. A routine check run is not a
+// decision: it goes to the untracked last-runs cache instead (recordCheckRun),
+// so running a check never dirties a tracked file.
+// @enforces ledger:INV-3
 func appendLedgerEvent(io *IO, ws *workspace.Workspace, event, unit, evidence string) {
+	if event == ledger.EventCheckRun {
+		recordCheckRun(io, ws, unit, "", evidence)
+		return
+	}
+	if err := ledger.Record(ws.LatticeDir, ledgerEntry(io, event, unit, evidence)); err != nil {
+		io.printf("warning: ledger append failed: %v\n", err)
+	}
+}
+
+// recordCheckRun best-effort stores the latest run of a routine check
+// (validate, results ingest, runs-clean, backprop, sweep) in the untracked
+// last-runs cache, lattice/.cache/last-runs.json. The entry is overwritten
+// on every run and never appended to the ledger.
+func recordCheckRun(io *IO, ws *workspace.Workspace, check, commit, evidence string) {
+	e := ledgerEntry(io, ledger.EventCheckRun, "workspace", evidence)
+	e.Commit = commit
+	if err := ledger.RecordRun(ws.LatticeDir, check, e); err != nil {
+		io.printf("warning: recording the %s run failed: %v\n", check, err)
+	}
+}
+
+func ledgerEntry(io *IO, event, unit, evidence string) ledger.Entry {
 	actor := io.actor()
 	if actor == "" {
 		actor = "unattributed"
 	}
-	e := ledger.Entry{
+	return ledger.Entry{
 		At:       time.Now().UTC().Format(time.RFC3339),
 		Event:    event,
 		Actor:    actor,
 		Unit:     unit,
 		Evidence: evidence,
-	}
-	var err error
-	if event == ledger.EventCheckRun {
-		// A check run that repeats the last outcome adds no evidence.
-		_, err = ledger.RecordChange(ws.LatticeDir, e)
-	} else {
-		err = ledger.Record(ws.LatticeDir, e)
-	}
-	if err != nil {
-		io.printf("warning: ledger append failed: %v\n", err)
 	}
 }
 
@@ -228,7 +241,7 @@ func newLedgerCommand(io *IO) *cobra.Command {
 	var unit, actor string
 	cmd := &cobra.Command{
 		Use:   "ledger",
-		Short: "Show the append-only ledger of truth-level transitions",
+		Short: "Show the append-only ledger of decisions and state changes (gates, CRs, flags, sign-offs, transitions)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ws, err := openWorkspace(io)
 			if err != nil {
@@ -264,8 +277,51 @@ func newLedgerCommand(io *IO) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&unit, "unit", "", "filter to one unit (e.g. brd.x:US-1)")
 	cmd.Flags().StringVar(&actor, "actor-filter", "", "filter to one actor")
-	cmd.AddCommand(newLedgerRebuildCommand(io))
+	cmd.AddCommand(newLedgerRebuildCommand(io), newLedgerRunsCommand(io))
 	return cmd
+}
+
+// newLedgerRunsCommand shows the latest run of each routine check from the
+// untracked last-runs cache. Check runs are not ledgered; older ledgers may
+// still hold check-run lines, which `lattice ledger` keeps showing.
+func newLedgerRunsCommand(io *IO) *cobra.Command {
+	return &cobra.Command{
+		Use:   "runs",
+		Short: "Show the latest run of each check (validate, results ingest, runs-clean, backprop, sweep)",
+		Long: `Shows the latest run of each routine check, read from
+lattice/.cache/last-runs.json. That file is untracked and overwritten on
+every run: a check run is not a decision, so it is not appended to the
+tracked ledger (lattice/.ledger/ledger.jsonl), which records gates, CRs,
+flags, sign-offs and transitions only.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ws, err := openWorkspace(io)
+			if err != nil {
+				return io.fail("WORKSPACE_FAILED", err.Error(), nil)
+			}
+			runs, err := ledger.LoadRuns(ws.LatticeDir)
+			if err != nil {
+				return io.fail("LEDGER_FAILED", err.Error(), nil)
+			}
+			if io.JSON {
+				return io.printJSON(ledger.LastRuns{Schema: ledger.RunsSchema, Runs: runs})
+			}
+			if len(runs) == 0 {
+				io.printf("no check run recorded yet — run lattice validate\n")
+				return nil
+			}
+			names := make([]string, 0, len(runs))
+			for name := range runs {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				e := runs[name]
+				io.printf("%-15s %-20s %-10s %-22s %s\n",
+					name, e.At, shortCommit(e.Commit), truncate(e.Actor, 22), e.Evidence)
+			}
+			return nil
+		},
+	}
 }
 
 func newLedgerRebuildCommand(io *IO) *cobra.Command {

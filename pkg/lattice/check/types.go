@@ -13,6 +13,8 @@ package check
 
 // @module-feature check
 
+import "github.com/salahmyn/lattice/pkg/lattice/impact"
+
 // Contract is the version tag of the JSON report, frozen by a golden test.
 const Contract = "lattice.check/1"
 
@@ -296,6 +298,10 @@ type Report struct {
 	Weakenings   []Weakening  `json:"weakenings"`
 	BlindSpot    BlindSpot    `json:"blind_spot"`
 	Waivers      []Waiver     `json:"waivers"`
+	// Tests lists the verifier tests of the touched promises, grouped by the
+	// configured break.runners, as `lattice impact --tests` does. It is a
+	// listing for a script: nothing is run and it never changes the verdict.
+	Tests impact.TestPlan `json:"tests"`
 	// Note is carried on every report: UNPROVEN is not a pass.
 	Note string `json:"note"`
 }
