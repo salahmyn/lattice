@@ -14,6 +14,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/adapters/all"
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/coverage"
 	"github.com/salahmyn/lattice/pkg/lattice/impact"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/scip"
@@ -48,6 +49,10 @@ type RunOptions struct {
 	// SaveSnapshot writes the audit of HEAD as lattice/.cache/audit/<sha>.json,
 	// as the CLI does. The web API never sets it: it only reads.
 	SaveSnapshot bool
+	// Calls is the head's static call graph, which the test listing uses to
+	// find the tests that reach a touched line no promise guards. Nil leaves
+	// that to coverage and the file heuristic.
+	Calls impact.CallGraph
 }
 
 // Run is `lattice check --base`, as a function: the one verdict for a change.
@@ -98,6 +103,10 @@ func Run(ctx context.Context, ws *workspace.Workspace, kg schema.KnowledgeGraph,
 	if corpus, cerr := scip.Load(SCIPIndexPaths(ws)...); cerr == nil {
 		in.Corpus = corpus
 	}
+	if set, ok := coverage.Load(ws.LatticeDir); ok {
+		in.Coverage = coverage.NewIndex(set, kg)
+	}
+	in.Calls = opt.Calls
 	im, err := impact.Compute(ctx, in)
 	if err != nil {
 		return Report{}, runErr(RunBadBase, fmt.Errorf("--base %q (%s): %v", opt.Base, baseSHA[:min(10, len(baseSHA))], err))
@@ -107,7 +116,7 @@ func Run(ctx context.Context, ws *workspace.Workspace, kg schema.KnowledgeGraph,
 	return Compute(Input{
 		Rev: opt.Base, CI: opt.CI, Head: headAudit, Base: baseAudit, BaseNote: note,
 		Impact: im, KG: kg, Evidence: ev, Waivers: LoadWaivers(ws.LatticeDir),
-		Reconfirm: reconfirmedBy(ws, im, kg),
+		Reconfirm: reconfirmedBy(ws, im, kg), FailsOnBase: LoadBaseProof(ws.LatticeDir),
 	}), nil
 }
 

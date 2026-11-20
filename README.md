@@ -114,6 +114,8 @@ verdicts. Unknown is never a pass.
 
 - `lattice break` breaks each promise's enforcer in a temporary worktree and
   runs only its verifiers. A test that still passes is a **fake**.
+- `lattice break --fails-on-base <rev>` runs a change's new or edited tests on
+  the old code. A fix's test should fail there.
 - `lattice audit` classifies every promise (fake, break-tested, exercised,
   demonstrated only, a gap) and names the enforcer a finding is about.
 - `lattice check --base <rev>` gives the change one verdict and a merge rule:
@@ -121,7 +123,9 @@ verdicts. Unknown is never a pass.
   enforcer that changed under an unchanged statement, and lines no promise
   guards.
 - `lattice impact --since <rev> --tests` lists the tests that matter for a
-  change, grouped by runner, so a pre-push run stays short.
+  change, grouped by runner, so a pre-push run stays short. It also finds the
+  tests behind lines no promise guards (coverage, call graph, or a neighbouring
+  test file) and lists anything it can't place as `uncovered`.
 - `lattice prepare` and `lattice confirm` make confirmation a human act that
   the platform vouches for. An agent can prepare a decision branch. Only a
   human's approval counts.
@@ -176,7 +180,7 @@ A complete, validating three-language example lives in
 | `lattice extract` | Build the knowledge graph (`lattice.json`) |
 | `lattice validate` | Run every validation rule |
 | `lattice coverage` | Adoption report: discovery / docs / verification / BRD |
-| `lattice brd new\|list\|show\|link\|approve` | Manage Business Requirements Documents |
+| `lattice brd new\|list\|show\|link\|approve` | Manage Business Requirements Documents; `brd link --reconcile` completes one-sided links without voiding approval |
 | `lattice brd from-code <feature-id>` | LLM-regenerate a BRD from a feature (brownfield) |
 | `lattice feature show <id>` | Show one feature + reverse links |
 | `lattice feature spec <id>` | Emit the ≤500-word `.ai-spec.md` loading contract |
@@ -196,7 +200,7 @@ A complete, validating three-language example lives in
 | `lattice rtm` | Requirements traceability matrix with attestation header |
 | `lattice check --base <rev>` | One verdict for a change (ASSURED / UNPROVEN / BROKEN) and the merge rule |
 | `lattice impact --since <rev> [--tests]` | What a change touches; `--tests` lists the verifier tests to run, by runner |
-| `lattice break [--promise f:INV-n]` | Break each enforcer and see whether its verifiers notice |
+| `lattice break [--promise f:INV-n] [--fails-on-base <rev>]` | Break each enforcer and see whether its verifiers notice; `--fails-on-base` runs a change's new or edited tests on the old code |
 | `lattice audit [--promise f:INV-n]` | Classify every promise: fake, break-tested, exercised, a gap |
 | `lattice prepare brd\|promise\|waiver …` | Prepare a decision branch for a human to approve; never pushes |
 | `lattice confirm` | Read which decisions a human confirmed on the platform |

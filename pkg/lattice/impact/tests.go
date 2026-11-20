@@ -14,12 +14,16 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 )
 
-// TestPlan lists the verifier tests of the promises a change touches,
-// grouped by the configured break.runners, so a script can run only the
-// tests that matter. It only lists: nothing is run.
+// TestPlan lists the verifier tests of the promises a change touches, and
+// the tests that exercise the touched lines no promise guards, grouped by
+// the configured break.runners, so a script can run only the tests that
+// matter. It only lists: nothing is run.
 type TestPlan struct {
 	Runners   []TestRunner    `json:"runners"`
 	Unmatched []UnmatchedTest `json:"unmatched"`
+	// Uncovered are the touched symbols no promise guards and no evidence
+	// finds a test for: run the full suite before merge.
+	Uncovered []UncoveredSymbol `json:"uncovered"`
 }
 
 // TestRunner is one break.runners entry and the touched verifiers it runs.
@@ -39,15 +43,21 @@ type TestRunner struct {
 	JUnit    string   `json:"junit,omitempty"`
 	Tests    []string `json:"tests"`
 	Promises []string `json:"promises"`
+	// Why says, per test, why it is in the set: "promise <id>" for a
+	// verifier of a touched promise, "unguarded <symbol> via <evidence>"
+	// (coverage, call_graph or heuristic) for a test that exercises a
+	// touched symbol no promise guards.
+	Why map[string][]string `json:"why"`
 }
 
 // UnmatchedTest is a verifier file of a touched promise that no break.runners
 // entry matches. It is listed, never dropped.
 type UnmatchedTest struct {
-	File     string   `json:"file"`
-	Tests    []string `json:"tests"`
-	Promises []string `json:"promises"`
-	Reason   string   `json:"reason"`
+	File     string              `json:"file"`
+	Tests    []string            `json:"tests"`
+	Promises []string            `json:"promises"`
+	Reason   string              `json:"reason"`
+	Why      map[string][]string `json:"why"`
 }
 
 // Why a verifier file is unmatched.
@@ -59,12 +69,13 @@ const (
 // junitName is what {junit} is filled with: a report in the runner's dir.
 func junitName(r config.Runner) string { return "junit-" + r.Name + ".xml" }
 
-// testPlan lists the verifiers of every touched promise: one an enforcer
+// testPlan lists the verifiers of every touched promise (one an enforcer
 // change touches (changed, removed or added enforcement, or an affected
 // criterion's enforcer) and one a verifier change touches (a changed test
-// symbol, or any change to a file that holds a verifier). They are grouped by
-// the first break.runners entry whose glob matches, exactly as `lattice
-// break` groups them; the rest are unmatched, with the reason.
+// symbol, or any change to a file that holds a verifier), and the tests that
+// exercise a touched symbol no promise guards (see unguardedTests). They are
+// grouped by the first break.runners entry whose glob matches, exactly as
+// `lattice break` groups them; the rest are unmatched, with the reason.
 // @enforces impact:INV-6
 func testPlan(in Input, pm pathMap, rep Report, drafts []AffectedCriterion) TestPlan {
 	kg := in.Graph
@@ -116,32 +127,40 @@ func testPlan(in Input, pm pathMap, rep Report, drafts []AffectedCriterion) Test
 		}
 	}
 
+	why, uncovered := unguardedTests(in, pm, rep)
 	promisesOf := map[string][]string{}
+	whyOf := map[string][]string{}
 	var sels []results.Selector
-	for _, s := range results.Selectors(kg, true) {
+	for _, s := range results.Selectors(kg, false) {
 		var ps []string
 		for _, p := range verifies[s.Test] {
 			if touched[p] && !contains(ps, p) {
 				ps = append(ps, p)
 			}
 		}
-		if len(ps) == 0 {
+		if len(ps) == 0 && len(why[s.Test]) == 0 {
 			continue
 		}
 		sortRefs(ps)
 		promisesOf[s.Test] = ps
+		for _, p := range ps {
+			whyOf[s.Test] = append(whyOf[s.Test], "promise "+p)
+		}
+		whyOf[s.Test] = append(whyOf[s.Test], why[s.Test]...)
 		sels = append(sels, s)
 	}
 
-	plan := TestPlan{Runners: []TestRunner{}, Unmatched: []UnmatchedTest{}}
+	plan := TestPlan{Runners: []TestRunner{}, Unmatched: []UnmatchedTest{}, Uncovered: uncovered}
 	cfg := *in.Break
 	groups, none := breaktest.ByRunner(cfg, filepath.Dir(in.Workspace.LatticeDir), sels, junitName)
 	for _, g := range groups {
 		tr := TestRunner{Name: g.Runner.Name, Dir: g.Runner.Dir, Command: strings.Join(g.Runner.Command, " "),
-			Run: breaktest.ShellLine(g.Argv), Argv: g.Argv, Files: g.Files, Filter: g.Filter, JUnit: g.JUnit}
+			Run: breaktest.ShellLine(g.Argv), Argv: g.Argv, Files: g.Files, Filter: g.Filter, JUnit: g.JUnit,
+			Promises: []string{}, Why: map[string][]string{}}
 		for _, s := range g.Tests {
 			tr.Tests = appendNew(tr.Tests, s.Test)
 			tr.Promises = appendNew(tr.Promises, promisesOf[s.Test]...)
+			tr.Why[s.Test] = whyOf[s.Test]
 		}
 		sort.Strings(tr.Tests)
 		sortRefs(tr.Promises)
@@ -157,11 +176,13 @@ func testPlan(in Input, pm pathMap, rep Report, drafts []AffectedCriterion) Test
 		if !ok {
 			i = len(plan.Unmatched)
 			idx[s.File] = i
-			plan.Unmatched = append(plan.Unmatched, UnmatchedTest{File: s.File, Reason: reason})
+			plan.Unmatched = append(plan.Unmatched, UnmatchedTest{File: s.File, Reason: reason,
+				Promises: []string{}, Why: map[string][]string{}})
 		}
 		u := &plan.Unmatched[i]
 		u.Tests = appendNew(u.Tests, s.Test)
 		u.Promises = appendNew(u.Promises, promisesOf[s.Test]...)
+		u.Why[s.Test] = whyOf[s.Test]
 		sortRefs(u.Promises)
 	}
 	return plan
@@ -183,10 +204,11 @@ func appendNew(list []string, items ...string) []string {
 
 // WriteTests prints the plan as a shell script: one line per runner, its
 // ready-to-run command (in a subshell that enters the runner's dir) with the
-// runner and its promises in a trailing comment, then one comment line per
-// unmatched verifier file.
+// runner, its promises and the unguarded symbols it exercises in a trailing
+// comment, then one comment line per unmatched test file, then the
+// uncovered symbols, if any.
 func WriteTests(w io.Writer, p TestPlan) {
-	if len(p.Runners) == 0 && len(p.Unmatched) == 0 {
+	if len(p.Runners) == 0 && len(p.Unmatched) == 0 && len(p.Uncovered) == 0 {
 		fmt.Fprintln(w, "# no touched promise has a verifier test")
 		return
 	}
@@ -195,9 +217,36 @@ func WriteTests(w io.Writer, p TestPlan) {
 		if r.Dir != "" && r.Dir != "." {
 			line = "(cd " + breaktest.ShellLine([]string{r.Dir}) + " && " + r.Run + ")"
 		}
-		fmt.Fprintf(w, "%s  # %s: %s\n", line, r.Name, strings.Join(r.Promises, ", "))
+		fmt.Fprintf(w, "%s  # %s: %s\n", line, r.Name, reasons(r.Promises, r.Why))
 	}
 	for _, u := range p.Unmatched {
-		fmt.Fprintf(w, "# unmatched %s (%s): %s\n", u.File, strings.Join(u.Promises, ", "), u.Reason)
+		fmt.Fprintf(w, "# unmatched %s (%s): %s\n", u.File, reasons(u.Promises, u.Why), u.Reason)
 	}
+	if len(p.Uncovered) > 0 {
+		fmt.Fprintln(w, "# uncovered: touched lines no promise guards and no known test exercises")
+		for _, u := range p.Uncovered {
+			loc := u.File
+			if u.Lines != "" {
+				loc += ":" + u.Lines
+			}
+			fmt.Fprintf(w, "#   %s  %s\n", loc, u.Symbol)
+		}
+		fmt.Fprintln(w, "# run the full suite before merge")
+	}
+}
+
+// reasons is the trailing comment of a runner or unmatched line: its
+// promises, then each unguarded reason of its tests.
+func reasons(promises []string, why map[string][]string) string {
+	parts := append([]string{}, promises...)
+	var extra []string
+	for _, list := range why {
+		for _, r := range list {
+			if strings.HasPrefix(r, "unguarded ") {
+				extra = appendNew(extra, r)
+			}
+		}
+	}
+	sort.Strings(extra)
+	return strings.Join(append(parts, extra...), ", ")
 }

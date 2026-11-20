@@ -3,6 +3,7 @@ package cli
 // @module-feature impact
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -42,12 +43,17 @@ form; it starts with ` + impact.MarkdownMarker + ` so a job can update its
 own comment.
 
 --tests prints only the verifier tests of the touched promises (touched by an
-enforcer change or a verifier change, a changed verifier file included),
-grouped by the configured break.runners: one line per runner with its
-ready-to-run command, then each verifier file no runner matches. With --json
-it is {"runners": [...], "unmatched": [...]}. It only lists; it never runs a
-test. A verifier no break.runners entry matches is listed as unmatched with
-the reason, never dropped.`,
+enforcer change or a verifier change, a changed verifier file included), and
+the tests that exercise a touched line no promise guards, grouped by the
+configured break.runners: one line per runner with its ready-to-run command,
+then each test file no runner matches. A test of an unguarded line is found by
+per-test coverage (coverage), else the static call graph (call_graph), else a
+test file beside it with the same base name (heuristic); each test's "why"
+says which. An unguarded symbol none of them finds a test for is listed as
+uncovered: run the full suite before merge. With --json it is
+{"runners": [...], "unmatched": [...], "uncovered": [...]}. It only lists; it
+never runs a test. A test no break.runners entry matches is listed as
+unmatched with the reason, never dropped.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if io.JSON {
 				format = "json"
@@ -64,7 +70,7 @@ the reason, never dropped.`,
 			if err != nil {
 				return io.fail("NO_WORKSPACE", err.Error(), nil)
 			}
-			kg, err := readOnlyGraph(cmd, ws)
+			kg, calls, err := readOnlyGraphCalls(cmd, ws)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
@@ -82,6 +88,10 @@ the reason, never dropped.`,
 					return io.fail("BAD_CONFIG", cerr.Error(), nil)
 				}
 				in.Break = &cfg.Break
+				in.Calls = calls
+				if ix := coverageIndex(ws, kg); ix != nil {
+					in.Coverage = ix
+				}
 			}
 			if corpus, cerr := scip.Load(scipIndexPaths(ws)...); cerr != nil {
 				in.CorpusError = cerr.Error()
@@ -114,7 +124,7 @@ the reason, never dropped.`,
 	cmd.Flags().StringVar(&format, "format", "text", "output format: text, markdown or json (--json implies json)")
 	cmd.Flags().IntVar(&maxSymbols, "max-symbols", impact.DefaultMaxSymbols, "cap on enforcer symbols the code roll-up expands")
 	cmd.Flags().BoolVar(&includeDrafts, "include-drafts", true, "list criteria of draft and proposed BRDs in their own section")
-	cmd.Flags().BoolVar(&tests, "tests", false, "print only the verifier tests of the touched promises, grouped by break.runners (never runs them)")
+	cmd.Flags().BoolVar(&tests, "tests", false, "print only the tests the change touches, grouped by break.runners (never runs them)")
 	_ = cmd.MarkFlagRequired("since")
 	return cmd
 }
@@ -126,4 +136,20 @@ the reason, never dropped.`,
 // @enforces impact:INV-1
 func readOnlyGraph(cmd *cobra.Command, ws *workspace.Workspace) (schema.KnowledgeGraph, error) {
 	return buildGraphWith(cmd.Context(), ws, buildOptions{readOnly: true})
+}
+
+// readOnlyGraphCalls is readOnlyGraph with the static call graph it built,
+// or nil when there is none (review mode).
+func readOnlyGraphCalls(cmd *cobra.Command, ws *workspace.Workspace) (schema.KnowledgeGraph, impact.CallGraph, error) {
+	return graphCalls(cmd.Context(), ws)
+}
+
+// graphCalls builds the read-only graph and its call graph, as the test
+// listing of impact and check reads them.
+func graphCalls(ctx context.Context, ws *workspace.Workspace) (schema.KnowledgeGraph, impact.CallGraph, error) {
+	kg, rr, err := buildGraphReach(ctx, ws, buildOptions{readOnly: true})
+	if err != nil || rr == nil || rr.Graph == nil {
+		return kg, nil, err
+	}
+	return kg, rr.Graph, nil
 }

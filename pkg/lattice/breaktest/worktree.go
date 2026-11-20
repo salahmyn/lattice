@@ -162,21 +162,37 @@ type Worktree struct {
 // tree's uncommitted changes (modified, deleted and untracked files) are
 // copied in, so a dirty tree is broken and tested as it stands.
 func NewWorktree(ctx context.Context, repo Repo, overlay bool) (*Worktree, error) {
-	tmp, err := os.MkdirTemp("", "lattice-break-*")
+	w, err := newWorktree(ctx, repo, "HEAD")
 	if err != nil {
 		return nil, err
 	}
-	w := &Worktree{repo: repo, tmp: tmp, root: filepath.Join(tmp, "wt"), overlay: overlay}
-	w.Dir = filepath.Join(w.root, repo.Prefix)
-	if _, err := git(ctx, repo.Top, "worktree", "add", "--detach", w.root, "HEAD"); err != nil {
-		w.Close()
-		return nil, err
-	}
+	w.overlay = overlay
 	if overlay {
 		if err := w.applyOverlay(ctx); err != nil {
 			w.Close()
 			return nil, err
 		}
+	}
+	return w, nil
+}
+
+// NewWorktreeAt adds a detached worktree at rev, with nothing copied in. A
+// fails-on-base run puts the base commit's code here and copies chosen files
+// of the working tree on top with CopyIn.
+func NewWorktreeAt(ctx context.Context, repo Repo, rev string) (*Worktree, error) {
+	return newWorktree(ctx, repo, rev)
+}
+
+func newWorktree(ctx context.Context, repo Repo, rev string) (*Worktree, error) {
+	tmp, err := os.MkdirTemp("", "lattice-break-*")
+	if err != nil {
+		return nil, err
+	}
+	w := &Worktree{repo: repo, tmp: tmp, root: filepath.Join(tmp, "wt")}
+	w.Dir = filepath.Join(w.root, repo.Prefix)
+	if _, err := git(ctx, repo.Top, "worktree", "add", "--detach", w.root, rev); err != nil {
+		w.Close()
+		return nil, err
 	}
 	return w, nil
 }
@@ -198,7 +214,14 @@ func (w *Worktree) applyOverlay(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, rel := range changed {
+	return w.CopyIn(changed)
+}
+
+// CopyIn copies the named files (relative to the checkout's top) from the
+// working tree into the worktree, and removes the ones the working tree no
+// longer has. Symlinks and other non-regular files are skipped.
+func (w *Worktree) CopyIn(rels []string) error {
+	for _, rel := range rels {
 		src, dst := filepath.Join(w.repo.Top, rel), filepath.Join(w.root, rel)
 		info, err := os.Lstat(src)
 		if os.IsNotExist(err) {

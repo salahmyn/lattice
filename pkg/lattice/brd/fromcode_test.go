@@ -138,7 +138,7 @@ func TestFromCodeUnparseableJSON(t *testing.T) {
 // The regenerator may draft sources, but never a checked mark: checked_by
 // and checked_at the model writes are dropped, and so is a source with an
 // unknown kind or no ref. The prompt says so too.
-// @verifies brds:INV-11
+// @verifies brds:INV-12
 func TestFromCodeDropsCheckedMarks(t *testing.T) {
 	feat := schema.Manifest{ID: "fees", Version: 1, Purpose: "Withdrawal fees."}
 	body := `{"title": "Withdrawal fees", "business_problem": "p",

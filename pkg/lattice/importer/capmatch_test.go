@@ -65,11 +65,11 @@ func TestMatchCapabilities_LaravelNotification(t *testing.T) {
 
 func TestSymbolTokens(t *testing.T) {
 	cases := map[string][]string{
-		`Modules\Foo\Bar::toMail`:    {"mail"},                // get-like prefixes dropped via stopwords
-		`Modules\Foo\Bar::getEntity`: {"entity"},
+		`Modules\Foo\Bar::toMail`:     {"mail"}, // get-like prefixes dropped via stopwords
+		`Modules\Foo\Bar::getEntity`:  {"entity"},
 		`Modules\Foo\Bar::HTTPClient`: {"http", "client"},
-		`Modules\Foo\Bar`:            {"bar"},
-		`foo_bar.baz_quux::doIt`:     {"do", "it"}, // 'do' kept, 'it' dropped by stopwords actually...
+		`Modules\Foo\Bar`:             {"bar"},
+		`foo_bar.baz_quux::doIt`:      {"do", "it"}, // 'do' kept, 'it' dropped by stopwords actually...
 	}
 	// Adjust expectation: stopwords list excludes "it" — let's drop it.
 	cases[`foo_bar.baz_quux::doIt`] = []string{"do"}

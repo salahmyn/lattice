@@ -247,7 +247,7 @@ type llmBRDSource struct {
 
 // draftSources keeps the model's sources that have a known kind and a ref.
 // None of them carries a checked mark.
-// @enforces brds:INV-11
+// @enforces brds:INV-12
 func draftSources(in []llmBRDSource) []schema.BRDSource {
 	var out []schema.BRDSource
 	for _, s := range in {

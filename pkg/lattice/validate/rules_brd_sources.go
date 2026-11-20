@@ -20,7 +20,7 @@ import (
 //	                                   reverse), or checked_at not a date or
 //	                                   in the future.
 //
-// @enforces brds:INV-10
+// @enforces brds:INV-11
 func (c *corpus) checkBRDSources() []schema.Violation {
 	var v []schema.Violation
 	today := time.Now().UTC().Format("2006-01-02")

@@ -46,7 +46,7 @@ func sourceFindings(t *testing.T, sources string) map[string][]string {
 
 // Every malformed source shape gives its code and names the field; a
 // well-formed list gives none.
-// @verifies brds:INV-10
+// @verifies brds:INV-11
 func TestBRDSourceShapes(t *testing.T) {
 	valid := `sources:
   - kind: ticket
