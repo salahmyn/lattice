@@ -23,3 +23,5 @@ invariants:
     statement: An ingested run is stamped with the CI run that produced it (GITHUB_RUN_ID, CI_PIPELINE_ID and similar) or "local", so a check can tell CI evidence from a local run.
   - id: INV-7
     statement: A JUnit report with no test cases (an empty <testsuites> or <testsuite>, in any spelling) is an empty set, not an error; a report that cannot be parsed fails the ingest and names its file.
+  - id: INV-8
+    statement: A parameterized test never counts a report case that a plain test of its file names exactly, and a case two parameterized tests match equally gives both no outcome.

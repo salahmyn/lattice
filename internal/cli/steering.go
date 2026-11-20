@@ -334,7 +334,7 @@ func newLedgerRebuildCommand(io *IO) *cobra.Command {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
 			cfg, _ := config.Load(ws.LatticeDir)
-			set := results.Load(ws.LatticeDir)
+			set := results.Load(ws.LatticeDir).WithTests(kg.Tests)
 			m := rtm.Build(kg, rtm.Options{
 				MutationThreshold: cfg.MutationTesting.Thresholds.Default,
 				ResultOf:          resultOfFrom(set),
@@ -392,7 +392,7 @@ lease held by another actor are withheld so a fleet doesn't collide.`,
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
 			cfg, _ := config.Load(ws.LatticeDir)
-			set := results.Load(ws.LatticeDir)
+			set := results.Load(ws.LatticeDir).WithTests(kg.Tests)
 			m := rtm.Build(kg, rtm.Options{
 				MutationThreshold: cfg.MutationTesting.Thresholds.Default,
 				ResultOf:          resultOfFrom(set),

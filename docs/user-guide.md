@@ -592,6 +592,13 @@ package, arguments); `--json` gives the same as data. Use `--lang` and
 | `phpunit` | `--filter '/::testX$/'` | |
 | `pg_prove` | the test file | pgTAP runs a file as one unit |
 
+A parameterized TypeScript test (a template-literal title, a test in a loop,
+`test.each`) is listed once, with `"parameterized": true`. Its filter
+matches every expanded name: each placeholder becomes `.+?`, so
+`` header fits on ${view.name} `` gives `-t 'header fits on .+?$'`. The
+`{filter}` of a `break.runners` command (vitest `-t`, Playwright `-g`) is
+built the same way.
+
 A loop over Go verifiers, eight at a time:
 
 ```sh

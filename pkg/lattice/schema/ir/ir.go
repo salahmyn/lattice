@@ -43,6 +43,11 @@ type Symbol struct {
 	EnclosingFQN string     `json:"enclosing_fqn,omitempty"` // for methods
 	BaseClasses  []string   `json:"base_classes,omitempty"`  // FQNs of bases
 	IsTest       bool       `json:"is_test"`
+	// Parameterized marks a test whose name is a title template: one call
+	// site that runs once per row or loop iteration, under names the runner
+	// fills in ("rounds %s to %s", "fits on ${view.name}"). Placeholders
+	// are kept as written; a report joins each expanded name to it.
+	Parameterized bool `json:"parameterized,omitempty"`
 	// Exported reports whether the symbol is part of its module's public
 	// surface (TS `export`, a non-underscore Python name, a non-private PHP
 	// member). Private helpers are kept in the graph but excluded from a

@@ -202,7 +202,7 @@ sends the BRD back and the summary lists what to change.`,
 func councilEvidence(kg schema.KnowledgeGraph, latticeDir string, cfg config.Config, id string) string {
 	m := rtm.Build(kg, rtm.Options{
 		MutationThreshold: cfg.MutationTesting.Thresholds.Default,
-		ResultOf:          resultOfFrom(results.Load(latticeDir)),
+		ResultOf:          resultOfFrom(results.Load(latticeDir).WithTests(kg.Tests)),
 	})
 	crit, critDone, scen, scenDone := 0, 0, 0, 0
 	for _, r := range m.Rows {

@@ -24,6 +24,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
 // Outcome is the result of one test case.
@@ -49,6 +51,42 @@ type Set struct {
 	// Cases tells "one case seen through two keys" from "two different
 	// cases", which is what makes a lookup ambiguous.
 	Cases map[string]string `json:"cases,omitempty"`
+	// tests are the graph's tests, bound by WithTests, so a parameterized
+	// test's lookup knows which report cases other tests claim.
+	tests *testIndex
+}
+
+// testIndex is the graph's tests as Lookup compares them: plain tests by the
+// slug of their title, parameterized tests with their title pattern.
+type testIndex struct {
+	plain     map[string][][]string // last FQN segment -> FQN segments
+	templates []templateTest
+}
+
+type templateTest struct {
+	key  string
+	segs []string
+	re   *regexp.Regexp
+}
+
+// WithTests binds the set to the graph's tests. Without it, a parameterized
+// test takes every report case its title pattern matches; with it, a case a
+// plain test names exactly stays that test's, and a case two parameterized
+// tests match equally makes both ambiguous.
+func (s Set) WithTests(tests []schema.GraphSymbol) Set {
+	idx := &testIndex{plain: map[string][][]string{}}
+	for _, t := range tests {
+		key := normalize(t.FQN)
+		segs := strings.Split(key, ".")
+		if re, ok := templatePattern(segs[len(segs)-1]); ok {
+			idx.templates = append(idx.templates, templateTest{key: key, segs: segs, re: re})
+			continue
+		}
+		last := segs[len(segs)-1]
+		idx.plain[last] = append(idx.plain[last], segs)
+	}
+	s.tests = idx
+	return s
 }
 
 // cacheFile is the on-disk location of the ingested set, relative to the
@@ -320,8 +358,8 @@ func (s Set) lookup(ref string) (Outcome, bool, []string) {
 	if o, ok := s.Results[key]; ok {
 		return o, true, nil
 	}
-	if o, ok := s.lookupTemplate(key); ok {
-		return o, ok, nil
+	if o, ok, isTemplate, ambiguous := s.lookupTemplate(key); isTemplate {
+		return o, ok, ambiguous
 	}
 	last := key
 	if i := strings.LastIndex(key, "."); i >= 0 {
@@ -366,46 +404,146 @@ func (s Set) lookup(ref string) (Outcome, bool, []string) {
 	return best, found, nil
 }
 
-// lookupTemplate resolves a table-driven test (it.each / test.each), whose
-// FQN marks each title placeholder with a standalone "_" token
-// ("…test.fails-when-the-_-read-fails"). Every report case whose last segment
-// fills the placeholders is a row of it; among those, the rows with the
-// longest shared path to the ref (the same file) count. The test is
-// demonstrated only when every row passed, so the worst outcome wins.
-// @enforces results:INV-4
-func (s Set) lookupTemplate(key string) (Outcome, bool) {
-	lastDot := strings.LastIndex(key, ".")
-	last := key[lastDot+1:]
+// slugRun is what a title placeholder matches in a slug: any non-empty run
+// of slug words, as few as will do.
+const slugRun = `[a-z0-9]+?(?:-[a-z0-9]+)*?`
+
+// dupSuffix is the _2, _3, ... the TypeScript adapter appends to the second
+// and later test of a file with the same slug.
+var dupSuffix = regexp.MustCompile(`^(.+)_[0-9]+$`)
+
+// templatePattern turns the last FQN segment of a parameterized test
+// ("rounds-_-to-_", a title template whose placeholders are "_" tokens) into
+// an anchored pattern over a report case's slug: each placeholder matches
+// any non-empty text, the literal words match as themselves. A duplicate
+// suffix is dropped, so two call sites with one template share a pattern.
+// ok is false for a plain test's segment.
+func templatePattern(last string) (*regexp.Regexp, bool) {
+	if m := dupSuffix.FindStringSubmatch(last); m != nil {
+		last = m[1]
+	}
 	tokens := strings.Split(last, "-")
 	isTemplate := false
 	for i, t := range tokens {
 		if t == "_" {
-			tokens[i] = `[a-z0-9]+(?:-[a-z0-9]+)*`
+			tokens[i] = slugRun
 			isTemplate = true
 		} else {
 			tokens[i] = regexp.QuoteMeta(t)
 		}
 	}
 	if !isTemplate {
-		return "", false
+		return nil, false
 	}
-	re := regexp.MustCompile("^" + strings.Join(tokens, "-") + "$")
+	return regexp.MustCompile("^" + strings.Join(tokens, "-") + "$"), true
+}
+
+// sharedPath counts the trailing path segments two dotted keys share before
+// their last segment (the title): how sure a report case is to be in the
+// test's file.
+func sharedPath(a, b []string) int {
+	n := 0
+	for i, j := len(a)-2, len(b)-2; i >= 0 && j >= 0 && a[i] == b[j]; i, j = i-1, j-1 {
+		n++
+	}
+	return n
+}
+
+// lookupTemplate resolves a parameterized test (it.each / test.each, a
+// template-literal title, a test in a loop), whose FQN marks each title
+// placeholder with a standalone "_" token ("…test.fails-when-the-_-read-fails").
+// Every report case whose last segment fills the placeholders is an expansion
+// of it; among those, the ones with the longest shared path to the ref (the
+// same file) count. The test passes only when every expansion passed, so the
+// worst outcome wins. isTemplate is false when key is a plain test.
+//
+// With the graph's tests bound (WithTests), an expansion that a plain test
+// of the same file names exactly is that test's, not this one's, and an
+// expansion that another parameterized test matches as closely is
+// ambiguous: the ref then resolves to no outcome and the cases are returned.
+// @enforces results:INV-4, results:INV-8
+func (s Set) lookupTemplate(key string) (o Outcome, found, isTemplate bool, ambiguous []string) {
 	refSegs := strings.Split(key, ".")
-	best, bestScore, found := Outcome(""), -1, false
-	for k, o := range s.Results {
+	re, ok := templatePattern(refSegs[len(refSegs)-1])
+	if !ok {
+		return "", false, false, nil
+	}
+	type expansion struct {
+		key  string
+		segs []string
+	}
+	bestScore := -1
+	var rows []expansion
+	for k := range s.Results {
 		segs := strings.Split(k, ".")
 		if !re.MatchString(segs[len(segs)-1]) {
 			continue
 		}
-		score := 0 // trailing path segments shared before the title
-		for i, j := len(segs)-2, len(refSegs)-2; i >= 0 && j >= 0 && segs[i] == refSegs[j]; i, j = i-1, j-1 {
-			score++
-		}
-		if !found || score > bestScore || (score == bestScore && worse(o, best)) {
-			best, bestScore, found = o, score, true
+		switch score := sharedPath(segs, refSegs); {
+		case score > bestScore:
+			bestScore, rows = score, []expansion{{k, segs}}
+		case score == bestScore:
+			rows = append(rows, expansion{k, segs})
 		}
 	}
-	return best, found
+	sort.Slice(rows, func(i, j int) bool { return rows[i].key < rows[j].key })
+	tied := map[string]bool{}
+	best := Outcome("")
+	for _, r := range rows {
+		if s.tests != nil && s.claimedElsewhere(key, r.segs, bestScore, tied, s.caseID(r.key)) {
+			continue
+		}
+		if !found || worse(s.Results[r.key], best) {
+			best, found = s.Results[r.key], true
+		}
+	}
+	if len(tied) > 0 {
+		ids := make([]string, 0, len(tied))
+		for id := range tied {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		return "", false, true, ids
+	}
+	return best, found, true, nil
+}
+
+// claimedElsewhere reports whether a report case (its key's segments) that
+// the parameterized test key matches at score belongs to another test: a
+// plain test whose title is the case's and whose path agrees at least as
+// well, or a parameterized test that matches it on a longer path. A
+// parameterized test that matches it on the same path makes it ambiguous: the
+// case id goes into tied.
+// @enforces results:INV-8
+func (s Set) claimedElsewhere(key string, segs []string, score int, tied map[string]bool, id string) bool {
+	title := segs[len(segs)-1]
+	for _, plain := range s.tests.plain[title] {
+		if sharedPath(segs, plain) >= score {
+			return true
+		}
+	}
+	claimed := false
+	for _, t := range s.tests.templates {
+		if t.key == key || !t.re.MatchString(title) {
+			continue
+		}
+		switch other := sharedPath(segs, t.segs); {
+		case other > score:
+			claimed = true
+		case other == score:
+			tied[id] = true
+		}
+	}
+	return claimed
+}
+
+// caseID is the report case a key came from, the key itself in a set
+// ingested before case ids were recorded.
+func (s Set) caseID(k string) string {
+	if id := s.Cases[k]; id != "" {
+		return id
+	}
+	return k
 }
 
 // Tally counts the report cases in the set by outcome. One case is indexed

@@ -62,6 +62,35 @@ Module-level tags go in the file's first JSDoc block:
  */
 ```
 
+- **Tests** are the `it()` / `test()` calls of Jest, Vitest, Playwright,
+  Node and Deno test files, and those nested in `describe()` groups. A test
+  is named by its title, slugged: `it('rejects an overdraft', ...)` in
+  `tests/wallet.test.ts` is `tests.wallet.test.test.rejects-an-overdraft`.
+  A JSDoc tag directly above the call attaches to it; a `//` comment
+  carries module tags only.
+- **Parameterized tests** are one test per call site: a template-literal
+  title, a call inside a `for` loop or a `forEach` callback, and
+  `it.each` / `test.each` / `describe.each` tables (array or tagged
+  template). The name is the title as written, placeholders included
+  (`${view.name}`, `%s`, `$a`), and each placeholder is a `_` in the FQN:
+
+  ```typescript
+  for (const view of VIEWS) {
+    /** @verifies shop:INV-1 */
+    test(`header fits on ${view.name}`, async ({ page }) => { ... });
+  }
+  // e2e.shop.header.spec.test.header-fits-on-_  ("header fits on ${view.name}")
+  ```
+
+  A report names each run by its expanded title (`header fits on mobile`).
+  Every expanded name in the test's file whose title fits the template
+  joins it: the test passes only when every expansion passed, and one
+  failure fails it. A name a plain test of the file has exactly stays that
+  test's. A name two templates fit equally is ambiguous: neither test counts
+  it, and `lattice validate` warns `RESULT_AMBIGUOUS`. A second call site
+  with the same template in one file gets a `_2` suffix and is ambiguous
+  with the first. Rename one of them to tell their runs apart.
+
 ## PHP (8.0+)
 
 PHP 8 attributes from the `Lattice\Attributes` namespace. There is no docblock
