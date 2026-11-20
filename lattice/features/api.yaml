@@ -22,3 +22,5 @@ invariants:
     statement: Every GET under /api/v2 only reads. The graph is built read-only, and a request writes nothing to the workspace.
   - id: INV-5
     statement: GET /api/v2/check returns exactly the report of `lattice check --json`, because both call check.Run and encode it the same way, with no new arithmetic.
+  - id: INV-6
+    statement: A BRD page lists the BRD's sources; a source a human marked checked reads checked with honesty claimed, never a pass, and any other reads unchecked.
