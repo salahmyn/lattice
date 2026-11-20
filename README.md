@@ -112,8 +112,8 @@ says so with `@verifies wallet.fees:INV-1#a`; it still counts as a verifier of
 and the break runs, and shows it as `1a` in `lattice audit`, `lattice feature
 show` and `lattice rtm`. Cases are part of what a human confirms: editing one
 voids the confirmation. `INVARIANT_BROAD` (info) names invariants with no
-cases that make several claims: 30 words or more in two sentences, or in three
-sentences or semicolon clauses.
+cases that make several claims: 60 words or more in two sentences, or in three
+sentences or semicolon clauses, or 70 words or more however punctuated.
 
 ## Assurance: done right, not just done
 
