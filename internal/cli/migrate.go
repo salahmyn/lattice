@@ -118,7 +118,8 @@ func migrate(root string) (migrateResult, error) {
 		}
 		res.Moved = append(res.Moved, "(created) lattice/workspace.yaml")
 	}
-	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte(defaultGitignore), 0o644)
+	// Append the ignore lines the workspace needs; never rewrite the file.
+	_, _, _ = ensureGitignore(root, latticeDir)
 
 	res.Done = true
 	return res, nil

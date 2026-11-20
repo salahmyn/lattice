@@ -11,3 +11,5 @@ implements_brd: brd.adoption
 invariants:
   - id: INV-1
     statement: Setting a top-level key of a record keeps its other keys and comments; a record that is not a mapping is refused.
+  - id: INV-2
+    statement: init leaves .gitignore ignoring the workspace's cache and derived graph, appending only the missing lines and never rewriting the user's.
