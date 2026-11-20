@@ -14,7 +14,6 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/check"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/coverage"
-	"github.com/salahmyn/lattice/pkg/lattice/ledger"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/rtm"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
@@ -145,7 +144,7 @@ func newResultsIngestCommand(io *IO) *cobra.Command {
 					}
 				}
 			}
-			appendLedgerEvent(io, ws, ledger.EventCheckRun, "workspace",
+			recordCheckRun(io, ws, "results-ingest", kg.GeneratedFromCommit,
 				fmt.Sprintf("results ingest: %s @ %s", strings.Join(evidence, "; "), shortCommit(kg.GeneratedFromCommit)))
 			if io.JSON {
 				return io.printJSON(out)

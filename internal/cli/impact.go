@@ -18,7 +18,7 @@ import (
 func newImpactCommand(io *IO) *cobra.Command {
 	var since, format string
 	var maxSymbols int
-	var includeDrafts bool
+	var includeDrafts, tests bool
 	cmd := &cobra.Command{
 		Use:   "impact --since <ref>",
 		Short: "Read-only change-impact report for a pull request",
@@ -36,10 +36,18 @@ uncommitted changes) and reports, without writing anything:
   5. code roll-up      the SCIP blast radius of each changed enforcer, rolled
                        up to modules, test files and entry points (optional)
 
-Unlike backprop it records nothing in the ledger and raises no flag, so it
-is safe to run on every pull request. --format markdown is the PR-comment
+Unlike backprop it records nothing (not even a last-runs entry) and raises
+no flag, so it is safe to run on every pull request. --format markdown is the PR-comment
 form; it starts with ` + impact.MarkdownMarker + ` so a job can update its
-own comment.`,
+own comment.
+
+--tests prints only the verifier tests of the touched promises (touched by an
+enforcer change or a verifier change, a changed verifier file included),
+grouped by the configured break.runners: one line per runner with its
+ready-to-run command, then each verifier file no runner matches. With --json
+it is {"runners": [...], "unmatched": [...]}. It only lists; it never runs a
+test. A verifier no break.runners entry matches is listed as unmatched with
+the reason, never dropped.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if io.JSON {
 				format = "json"
@@ -48,6 +56,9 @@ own comment.`,
 			case "text", "markdown", "md", "json":
 			default:
 				return io.fail("BAD_FLAG", fmt.Sprintf("--format %q: want text, markdown or json", format), nil)
+			}
+			if tests && (format == "markdown" || format == "md") {
+				return io.fail("BAD_FLAG", "--tests prints text or json, not markdown", nil)
 			}
 			ws, err := openWorkspace(io)
 			if err != nil {
@@ -65,6 +76,13 @@ own comment.`,
 				Workspace: ws, Registry: all.Registry(adCfg), Graph: kg,
 				Since: since, MaxSymbols: maxSymbols, IncludeDrafts: includeDrafts,
 			}
+			if tests {
+				cfg, cerr := config.Load(ws.LatticeDir)
+				if cerr != nil {
+					return io.fail("BAD_CONFIG", cerr.Error(), nil)
+				}
+				in.Break = &cfg.Break
+			}
 			if corpus, cerr := scip.Load(scipIndexPaths(ws)...); cerr != nil {
 				in.CorpusError = cerr.Error()
 			} else {
@@ -73,6 +91,13 @@ own comment.`,
 			rep, err := impact.Compute(cmd.Context(), in)
 			if err != nil {
 				return io.fail("GIT_FAILED", err.Error(), nil)
+			}
+			if tests {
+				if format == "json" {
+					return io.printJSON(rep.Tests)
+				}
+				impact.WriteTests(io.Out, *rep.Tests)
+				return nil
 			}
 			switch format {
 			case "json":
@@ -89,6 +114,7 @@ own comment.`,
 	cmd.Flags().StringVar(&format, "format", "text", "output format: text, markdown or json (--json implies json)")
 	cmd.Flags().IntVar(&maxSymbols, "max-symbols", impact.DefaultMaxSymbols, "cap on enforcer symbols the code roll-up expands")
 	cmd.Flags().BoolVar(&includeDrafts, "include-drafts", true, "list criteria of draft and proposed BRDs in their own section")
+	cmd.Flags().BoolVar(&tests, "tests", false, "print only the verifier tests of the touched promises, grouped by break.runners (never runs them)")
 	_ = cmd.MarkFlagRequired("since")
 	return cmd
 }
