@@ -267,9 +267,18 @@ entries:
 
 ### Step 6 — Commit
 
-The whole `lattice/` directory (manifests, `lattice.json`, config, skills) is
-committed to git; `lattice/.cache/` is gitignored. Wire `lattice validate`
-into CI with the templates in `ci-templates/`.
+The `lattice/` directory (manifests, config, skills, the ledger) is committed
+to git. Two paths in it are not: `lattice/.cache/` (the runtime cache) and
+`lattice/lattice.json` (the graph). `lattice extract` rebuilds the graph from
+the source and manifests on every run, stamping the time and commit, so a
+tracked graph keeps the tree permanently dirty and `lattice break` refuses to
+run. `lattice init` makes `.gitignore` ignore both: it creates the file, or
+appends only the missing lines to an existing one under a short comment
+(your lines are never rewritten), and re-running it adds nothing. `lattice
+validate` warns `GRAPH_TRACKED` or `CACHE_TRACKED` when git tracks either;
+untrack with `git rm --cached lattice/lattice.json` (or `git rm -r --cached
+lattice/.cache`). Wire `lattice validate` into CI with the templates in
+`ci-templates/`; they rebuild the graph and upload it as a build artifact.
 
 > **Parallel branches.** `lattice.json` is rebuilt by `lattice extract` from
 > the source and manifests on every run, so teams (or agent fleets) working on

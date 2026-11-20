@@ -233,7 +233,7 @@ lattice/
 ├── views/               view-template overrides
 ├── import/              brownfield import session
 ├── graph/               knowledge-graph shards (when sharding is enabled)
-├── lattice.json         the knowledge graph (or shard index)
+├── lattice.json         gitignored: the knowledge graph (or shard index), rebuilt by every extract
 └── .cache/              gitignored: SCIP indexes, embeddings
 ```
 

@@ -33,3 +33,5 @@ invariants:
     statement: The coverage codes are off unless the workspace has a coverage block or sets their severity, and a declared floor turns on COVERAGE_BELOW_FLOOR.
   - id: INV-12
     statement: require_level accepts a level per criterion tier, and a criterion must reach the level of its tier.
+  - id: INV-13
+    statement: A tracked derived graph is GRAPH_TRACKED and tracked cache files are CACHE_TRACKED, and without git data neither fires.

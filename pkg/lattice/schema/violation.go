@@ -191,6 +191,10 @@ const (
 	CodeTestRetiredIllegally = "TEST_RETIRED_ILLEGALLY" // verifier disappeared without a CR retirement item (sweep)
 	CodeRevisionSchema       = "REVISION_SCHEMA"        // CR file parse / required-field error
 	CodeCriterionFlagged     = "CRITERION_FLAGGED"      // open meaning/demotion flag — reported alongside green, never hidden
+
+	// Workspace hygiene: derived files git should not track (warning).
+	CodeGraphTracked = "GRAPH_TRACKED" // lattice/lattice.json is tracked, so every extract dirties the tree
+	CodeCacheTracked = "CACHE_TRACKED" // files under lattice/.cache/ are tracked
 )
 
 // Info is the lowest violation severity — surfaced in the dashboard but

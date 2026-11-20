@@ -48,4 +48,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lattice-json
-          path: lattice.json
+          path: lattice/lattice.json
