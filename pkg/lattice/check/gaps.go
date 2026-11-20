@@ -381,7 +381,7 @@ func (c *computation) outOfReach() []OutOfReach {
 // rows builds the touched promises. Impact's notes ride on their promise's
 // row as information: nothing here or after reads them for a gap, the
 // verdict or the merge rule.
-// @enforces check:INV-10
+// @enforces check:INV-11
 func (c *computation) rows(gaps []Gap) []PromiseRow {
 	byPromise := map[string][]Gap{}
 	for _, g := range gaps {
