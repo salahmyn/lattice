@@ -1603,8 +1603,8 @@ waiver is shown and never counted as proof.
 
 The decision file records `{action, id, version, packet_hash, rows, reason,
 prepared_by, prepared_at}`. `prepared_by` is your git identity, for display only.
-The `packet_hash` covers the BRD version's content (not its status or approval
-block), each promise's structural signals (text, tier, enforcers, verifiers) and
+The `packet_hash` covers the BRD version's content (not its status, its approval
+block or a source's checked mark), each promise's structural signals (text, tier, enforcers, verifiers) and
 the structural diff since the last confirmed version. Run-dependent signals are
 left out, so a better test run never voids a confirmation.
 
@@ -1785,7 +1785,7 @@ Notes:
 
 The API computes nothing that counts. Every value comes from the audit, the check, `confirm`
 and `prepare`, and a field the kernel has no source for reads
-`{"state": "unknown", "code": "NOT_COMPUTED"}`, never a guess (the story, sources, cases, the
+`{"state": "unknown", "code": "NOT_COMPUTED"}`, never a guess (the story, a feature's sources, cases, the
 text-only diff, the blind spot outside a change, where a feature runs, open proposals). A view
 of one promise, feature or BRD is never `ASSURED` or `BROKEN`: those need a base, so ask
 `/api/v2/check`. Unknown, `UNPROVEN` and partial are never a `pass`; every payload is checked
@@ -2296,6 +2296,49 @@ has not acknowledged yet. It reports `BRD_COUNCIL_INVALID` (error) for a
 council approval that no pinned mandate, floor check or unanimous vote
 supports, such as a hand-written `approval` block. Switching council mode
 off later does not void the approvals it already gave.
+
+### 7c. BRD sources
+
+A BRD can name the documents its intent was first written in: tickets,
+roadmap items, help pages, API docs and ADRs. `sources` is optional and comes
+after the other BRD fields.
+
+```yaml
+sources:
+  - kind: ticket               # ticket | roadmap | help_page | api_doc | adr
+    ref: WAL-12
+    title: Withdrawal fees     # optional
+    url: https://tracker.example/WAL-12   # optional
+    checked_by: ana@example.com           # optional; set by a human only
+    checked_at: "2026-11-10"              # required with checked_by
+```
+
+`checked_by` and `checked_at` say that a person compared the BRD with the
+source. Only a person sets them. `lattice brd from-code` may draft sources from
+the evidence, but it drops any checked mark the model writes. Agents follow the
+same rule.
+
+`lattice validate` checks the shape only. It never opens a URL and never sets
+or infers a checked mark.
+
+- `BRD_SOURCE_INVALID` (error): the kind is not in the list, the `ref` is
+  empty, or the `url` is not an absolute `http(s)` URL.
+- `BRD_SOURCE_CHECK_INVALID` (error): `checked_by` and `checked_at` are not
+  set together, or `checked_at` is not a `YYYY-MM-DD` date or is in the future.
+
+`GET /api/v2/brds/{id}` lists the sources under `sources.entries`. A checked
+source reads `state: checked` with `honesty: claimed`, plus who checked it and
+when: it is a person's claim, not verified. Any other source reads
+`state: unchecked`.
+
+Sources are part of the review packet. Adding or editing a source changes the
+`packet_hash`, so a confirmed decision reads stale and needs a new review. The
+change is text-only: it is not in the structural diff. A checked mark is left
+out of the hash, so marking a source checked after approval does not void the
+approval.
+
+The BRD's `story` field stays `NOT_COMPUTED` (`params.reason: HELD_BY_DECISION`).
+The name is reserved for the planned story layer and is not settled yet.
 
 ---
 
