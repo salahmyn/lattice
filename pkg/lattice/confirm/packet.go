@@ -78,11 +78,16 @@ func FactsFor(rows []audit.Row, refs []string) []PromiseFacts {
 // promises' structural signals and the structural diff since the last
 // confirmed version. The BRD's status and approval block are left out: they
 // are what a decision changes or displays, and hashing them would make every
-// decision stale the moment it landed.
+// decision stale the moment it landed. A source's checked_by and checked_at
+// are left out for the same reason: they record a later human check, not a
+// change to the intent. A source's kind, ref, title and url stay in, so
+// editing a source makes the decision stale as a text-only change (it is
+// not in the structural diff).
 // @enforces confirm:INV-3
 func PacketHash(in PacketInput) string {
 	b := in.BRD
 	b.Status, b.Approval, b.SourcePath, b.HumanReviewRequired = "", nil, "", false
+	b.Sources = schema.WithoutChecks(b.Sources)
 	body, _ := schema.MarshalCanonical(b)
 	h := sha256.New()
 	fmt.Fprintf(h, "brd\n%s\n", body)

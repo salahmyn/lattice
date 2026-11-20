@@ -72,6 +72,8 @@ $ lattice feature show checkout.refund
 One BRD points down at many features; one feature points up at one BRD.
 Greenfield authoring (`lattice brd new`) and brownfield regeneration
 (`lattice brd from-code`) produce the same on-disk shape.
+A BRD may list its `sources` (tickets, roadmap items, help pages, API docs,
+ADRs); only a human marks a source checked.
 
 ## Four truth-levels, honestly computed
 

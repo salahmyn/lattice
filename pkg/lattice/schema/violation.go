@@ -93,6 +93,12 @@ const (
 	CodeBRDUnapprovedLLM  = "BRD_UNAPPROVED_LLM"  // llm_from_code draft needs human sign-off
 	CodeFeatureBRDMissing = "FEATURE_BRD_MISSING" // feature.implements_brd names a missing BRD
 	CodeBRDLinkOneSided   = "BRD_LINK_ONE_SIDED"  // implements_via and implements_brd disagree (warning)
+	// A source with an unknown kind, an empty ref, or a url that is not an
+	// absolute http(s) URL (error).
+	CodeBRDSourceInvalid = "BRD_SOURCE_INVALID"
+	// A source's checked_by and checked_at are not set together, or
+	// checked_at is not a date or lies in the future (error).
+	CodeBRDSourceCheckInvalid = "BRD_SOURCE_CHECK_INVALID"
 
 	// RTM — Requirements Traceability Matrix (v0.6)
 	//

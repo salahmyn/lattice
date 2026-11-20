@@ -3,6 +3,7 @@ package brd
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
@@ -131,5 +132,43 @@ func TestFromCodeUnparseableJSON(t *testing.T) {
 	}
 	if raw != "not json at all" {
 		t.Errorf("raw response should be returned for debugging, got %q", raw)
+	}
+}
+
+// The regenerator may draft sources, but never a checked mark: checked_by
+// and checked_at the model writes are dropped, and so is a source with an
+// unknown kind or no ref. The prompt says so too.
+// @verifies brds:INV-11
+func TestFromCodeDropsCheckedMarks(t *testing.T) {
+	feat := schema.Manifest{ID: "fees", Version: 1, Purpose: "Withdrawal fees."}
+	body := `{"title": "Withdrawal fees", "business_problem": "p",
+	  "sources": [
+	    {"kind": "ticket", "ref": "WAL-12", "title": "Withdrawal fees", "url": "https://tracker.example/WAL-12",
+	     "checked_by": "ana@example.com", "checked_at": "2026-11-10"},
+	    {"kind": "adr", "ref": "ADR-7", "checked_by": "model", "checked_at": "2026-11-11"},
+	    {"kind": "wiki", "ref": "W-1"},
+	    {"kind": "ticket", "ref": ""}
+	  ]}`
+	b, _, err := FromCode(context.Background(), feat, nil, FromCodeOptions{Provider: fakeLLM{body: body}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := schema.MarshalCanonical(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	y := string(out)
+	for _, want := range []string{"sources:", "kind: ticket", "ref: WAL-12", "url: https://tracker.example/WAL-12", "ref: ADR-7"} {
+		if !strings.Contains(y, want) {
+			t.Errorf("regenerated BRD lacks %q:\n%s", want, y)
+		}
+	}
+	for _, never := range []string{"checked_by", "checked_at", "W-1", "kind: wiki"} {
+		if strings.Contains(y, never) {
+			t.Errorf("regenerated BRD carries %q:\n%s", never, y)
+		}
+	}
+	if !strings.Contains(FromCodePrompt, "Never write checked_by or checked_at") {
+		t.Error("the prompt must forbid checked marks")
 	}
 }

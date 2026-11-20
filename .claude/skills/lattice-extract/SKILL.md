@@ -36,6 +36,9 @@ the authoritative rules.
 - Lifecycle is exactly: `draft → proposed → approved → superseded`.
 - Do **not** fabricate `regulatory` / `legal` / `financial` constraints — those
   must come from a human. Inventing them is high-risk.
+- You may draft `sources` (ticket, roadmap, help_page, api_doc, adr) that the
+  evidence names. Never write `checked_by` or `checked_at`: only a human sets
+  them.
 - Preserve canonical YAML field order (struct order); don't reorder keys.
 
 ## Story / PRD layer (design-phase — not in code yet)
