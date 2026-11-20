@@ -1266,6 +1266,54 @@ still keeps the rest of the commit's runs.
 The result is `lattice/.cache/results/breaks.json` (`lattice.breaks/1`,
 derived and gitignored). A promise with several enforcers has one run each.
 Nothing blocks on it yet: it is evidence for `lattice audit`.
+
+### Prove a new test fails on the old code
+
+For a fix, the proof that matters is that the new test fails on the code
+before the fix. `lattice break` does not show that: it breaks the enforcer
+crudely (an early return), not the way the old code was wrong.
+`--fails-on-base` does it without stashing and rebuilding by hand:
+
+```sh
+lattice break --fails-on-base origin/main
+```
+
+It takes the verifiers the change from `merge-base(origin/main, HEAD)` to the
+working tree adds or edits (as `lattice impact` finds them), runs each one at
+head, then runs it again on the base commit's production code with the head's
+test files copied on top. Both runs happen in temporary worktrees, with the same
+`break.runners`, `break.commands`, `break.setup` and Go's built-in `go test -run`
+as a break. A non-Go failure on base counts only when the test itself failed:
+output that says an import did not resolve (`Cannot find module`,
+`does not provide an export named`, `ERR_MODULE_NOT_FOUND`,
+`Failed to resolve import`, `Module not found`, `has no exported member`,
+`TS2305`/`TS2307`/`TS2724`, `ImportError`, `ModuleNotFoundError`,
+`cannot import name`, pytest's `ERROR collecting`) reads `unknown`. An assertion
+or a `TypeError` in the test body is a real failure. Each verifier gets one
+outcome:
+
+| Outcome | Meaning |
+|---|---|
+| `fails_on_base` | it passes at head and fails on the old code: it detects the old behaviour |
+| `passes_on_base` | it passes on the old code too: it does not tell the old behaviour from the new |
+| `unknown` | it fails at head, does not compile on base (it calls an API the change adds), does not load on base (a module or export it imports does not resolve there), has no runner, timed out or did not run; the reason says which. Unknown is never a pass |
+
+The files copied onto the base are the verifier files, the changed test files in
+their directories and the changed files under their `testdata/`; `overlay` in the
+result lists them. Production code is never copied. Test helpers in other
+directories (a shared test-utility package, a parent `conftest.py`, a test setup
+file) and changed dependencies are not copied, so a test that needs them reads
+`unknown` or runs against the base versions.
+
+The result is `lattice/.cache/results/fails-on-base.json`
+(`lattice.fails_on_base/1`), stamped with `base`, `head`, `ci_run` and `dirty`
+like `breaks.json`. `--json` prints it. `--promise`, `--feature`, `--timeout` and
+`--allow-dirty` work as for a break: a dirty tree is refused unless allowed, and
+`dirty: true` is recorded. `lattice check --base` reads the file when its base
+and head match the change, and adds a `PASSES_ON_BASE` note to each touched
+promise of a verifier that passes on base. The note is information only: it
+never changes the verdict, a gap or `merge_allowed`.
+
 ## 4j. The audit: is each promise kept, or does it only look done?
 
 `lattice audit` gives every invariant one class. It computes nothing new about

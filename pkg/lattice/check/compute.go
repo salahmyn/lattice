@@ -33,6 +33,9 @@ type Input struct {
 	// (Reconfirmed): its confirmed gap is pending on this pull request's
 	// approval rather than a weakening.
 	Reconfirm map[string]bool
+	// FailsOnBase is lattice break --fails-on-base's result, or nil. It only
+	// adds notes.
+	FailsOnBase *BaseProof
 }
 
 // Compute builds the report. It is a pure function of its input.
@@ -53,6 +56,8 @@ type computation struct {
 	weakBy map[string][]Weakening
 	// lines is the scan of the touched production symbols.
 	lines lineScan
+	// baseNotes are the PASSES_ON_BASE notes, by promise.
+	baseNotes map[string][]Note
 }
 
 func (c *computation) run() Report {
@@ -72,6 +77,8 @@ func (c *computation) run() Report {
 	c.findTouched()
 	c.findWeakenings()
 
+	proofEv, baseNotes := c.baseProof()
+	c.baseNotes = baseNotes
 	c.lines = c.untraced()
 	untraced, newUntraced := c.lines.untraced, c.lines.newUntraced
 	gaps := c.gaps(len(untraced) > 0)
@@ -95,6 +102,7 @@ func (c *computation) run() Report {
 		rep.Tests = *in.Impact.Tests
 	}
 	rep.Evidence.BaseAudit = BaseAudit{Present: in.Base != nil, Text: in.BaseNote}
+	rep.Evidence.FailsOnBase = proofEv
 	if in.Base != nil {
 		rep.Evidence.BaseAudit.Commit = in.Base.Commit
 	}
