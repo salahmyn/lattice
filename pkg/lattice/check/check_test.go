@@ -909,3 +909,45 @@ func TestMissingResultsIsNotAFall(t *testing.T) {
 		t.Errorf("a red result at head falls: %s %+v", rep.Verdict.State, rep.Weakenings)
 	}
 }
+
+// CI skips the break run when no code changed. An untouched promise whose base
+// passed through a killed break then reads unknown at head: that is evidence
+// not gathered, not a new gap, and the merge is not refused for it. A touched
+// promise in the same change still needs a fresh run.
+// @verifies check:INV-10
+func TestUntouchedBreakNotRerunIsNotANewGap(t *testing.T) {
+	p, q := "bookshop:INV-1", "bookshop:INV-2"
+	base := auditOf("base", good(p, 1), good(q, 2))
+	head := auditOf("head", good(p, 1, noCoverage()), good(q, 2, noBreak()))
+	in := scenario(&base, head, impact.Report{})
+	in.Evidence.Breaks = EvidenceItem{Counted: true} // no breaks.json at head
+	rep := Compute(in)
+	for _, sig := range []string{SigExercised, SigBreakTested} {
+		for _, pr := range []string{p, q} {
+			if g, ok := gapOf(rep, pr, sig); ok {
+				t.Errorf("%s %s: a signal that was not re-run reads as a gap: %+v", pr, sig, g)
+			}
+		}
+	}
+	if !rep.MergeAllowed {
+		t.Errorf("merge refused for evidence not gathered: %+v", rep.Merge)
+	}
+
+	// The same change touching p: p needs a fresh run, so its gap counts.
+	in = scenario(&base, head, impact.Report{ChangedSymbols: []impact.ChangedSymbol{guardEdited(p)}})
+	in.Evidence.Breaks = EvidenceItem{Counted: true}
+	rep = Compute(in)
+	if g, ok := gapOf(rep, p, SigExercised); !ok || !g.Blocks {
+		t.Errorf("a touched promise without a fresh run must keep its blocking gap: %+v ok=%v", g, ok)
+	}
+
+	// With break results at head, an untouched promise that lost its signal
+	// still counts (TestUntouchedPromiseGapGrowthCounts), and so does a survival.
+	head = auditOf("head", good(p, 1), good(q, 2, survived()))
+	in = scenario(&base, head, impact.Report{})
+	in.Evidence.Breaks = EvidenceItem{Counted: true}
+	rep = Compute(in)
+	if _, ok := gapOf(rep, q, SigBreakTested); !ok {
+		t.Errorf("a survival is evidence, never 'not re-run'")
+	}
+}
