@@ -467,3 +467,49 @@ func TestMarkdownShape(t *testing.T) {
 }
 
 func sym(from, to int) schema.GraphSymbol { return schema.GraphSymbol{Line: from, EndLine: to} }
+
+// Added enforcement lists every enforcement pair the base did not hold: a new
+// symbol in a new file, a renamed symbol, and a tag added above an unchanged
+// symbol. A kept enforcer, and a symbol that moved files under its own name,
+// are not listed.
+// @verifies check:INV-14
+func TestAddedEnforcement(t *testing.T) {
+	r := newRepo(t)
+	r.write("lattice/features/refund.yaml", featureBase)
+	r.write("refund/guard.go", "package refund\n\n// @module-feature refund\n\n// Guard checks a refund.\n// @enforces refund:INV-1\nfunc Guard() bool {\n\treturn rule()\n}\n\n"+
+		"// rule is the check.\n// @enforces refund:INV-1\nfunc rule() bool {\n\treturn true\n}\n")
+	r.write("refund/limit.go", "package refund\n\n// @module-feature refund\n\n// Limit caps refunds.\nfunc Limit() int {\n\treturn 1\n}\n")
+	r.write("refund/kept.go", simpleGo("refund", "Kept", "refund:INV-6"))
+	r.commit("base")
+
+	r.git("checkout", "-q", "-b", "change")
+	r.write("refund/guard.go", "package refund\n\n// @module-feature refund\n\n// Guard checks a refund.\n// @enforces refund:INV-1\nfunc Guard() bool {\n\treturn rules.Rule()\n}\n")
+	r.write("refund/rules/rules.go", simpleGo("rules", "Rule", "refund:INV-1"))
+	r.write("refund/limit.go", "package refund\n\n// @module-feature refund\n\n// Limit caps refunds.\n// @enforces refund:INV-2\nfunc Limit() int {\n\treturn 1\n}\n")
+	r.mv("refund/kept.go", "refund/other/kept.go")
+	r.commit("change")
+
+	rep := r.report(r.input("main"))
+	got := map[string]string{}
+	for _, a := range rep.AddedEnforcement {
+		got[a.Symbol+" "+a.Invariant] = a.File
+		if a.Change != ChangeEnforcementAdded {
+			t.Errorf("%+v: change %q", a, a.Change)
+		}
+	}
+	want := map[string]string{
+		"refund.rules.Rule refund:INV-1": "refund/rules/rules.go",
+		"refund.Limit refund:INV-2":      "refund/limit.go",
+	}
+	if len(got) != len(want) {
+		t.Errorf("added enforcement = %+v, want %v", rep.AddedEnforcement, want)
+	}
+	for k, f := range want {
+		if got[k] != f {
+			t.Errorf("%s: file %q, want %q (all %+v)", k, got[k], f, rep.AddedEnforcement)
+		}
+	}
+	if len(rep.RemovedEnforcement) != 1 || rep.RemovedEnforcement[0].Symbol != "refund.rule" {
+		t.Errorf("removed = %+v, want refund.rule only", rep.RemovedEnforcement)
+	}
+}
