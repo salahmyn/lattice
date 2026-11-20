@@ -2002,6 +2002,10 @@ human's own GitHub token.
   fine-grained "SSH signing keys" account permission), and check the
   fingerprint every verdict shows against your own key
   (`ssh-keygen -lf ~/.ssh/id_ed25519_sk.pub`).
+- Trust is read from the default branch's history, so protect that branch
+  against force pushes: a rewritten history can start trust at a new root.
+  The `ROOT_SIGNERS` commit `confirm` reports would then change, which is what
+  to watch for.
 - The terminal and CI refusals of `lattice sign` are friction, not a boundary:
   the boundary is the touch on the hardware key.
 
