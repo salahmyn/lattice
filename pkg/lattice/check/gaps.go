@@ -137,6 +137,24 @@ func gapStates(r audit.Row) map[string]string {
 	return out
 }
 
+// notRerun reports whether an untouched promise's gap on a break-based signal
+// comes only from break results missing at head: no break run happened at
+// head at all (CI skips it when no code changed), the signal reads unknown
+// (not a survival, and not per-test coverage saying "no"), and the base had no
+// gap on it. That is evidence not gathered, which is never a fall and never a
+// new gap; a touched promise still needs a fresh run.
+// @enforces check:INV-10
+func notRerun(breaksNotRun bool, name string, a Assurance, baseGaps map[string]string) bool {
+	if !breaksNotRun || a.State != Unknown {
+		return false
+	}
+	if name != SigBreakTested && name != SigExercised {
+		return false
+	}
+	_, was := baseGaps[name]
+	return !was
+}
+
 // --- per-promise assurance at head ---
 
 func (c *computation) suiteAssurance() Assurance {
@@ -219,6 +237,9 @@ func (c *computation) gaps(touchedAny bool) []Gap {
 		}
 	}
 	sort.Strings(considered)
+	// With no break results at head at all, a break-based signal of an
+	// untouched promise was not re-run, not weakened: it is not a new gap.
+	breaksNotRun := !c.in.Evidence.Breaks.Present
 
 	for _, p := range considered {
 		r := c.headRows[p]
@@ -239,6 +260,9 @@ func (c *computation) gaps(touchedAny bool) []Gap {
 				if _, was := baseGaps[name]; was {
 					mine = append(mine, Gap{Promise: p, Signal: name, State: Pass, Honesty: a.Honesty, Delta: DeltaClosed, Text: "closed since base"})
 				}
+				continue
+			}
+			if !wasTouched && notRerun(breaksNotRun, name, a, baseGaps) {
 				continue
 			}
 			g := Gap{Promise: p, Signal: name, State: a.State, Honesty: a.Honesty, Code: a.Code, Text: a.Text,
