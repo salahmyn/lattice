@@ -1,0 +1,16 @@
+id: ep.cli.audit
+version: 1
+status: production
+kind: cli
+purpose: 'Classify every invariant: fake, break_tested, exercised, demonstrated_only, a gap, or unknown'
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: lattice audit
+handler:
+  symbol: internal.cli.newAuditCommand
+  file: internal/cli/audit.go
+flow:
+  - feature: cli
+  - feature: audit

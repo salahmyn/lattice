@@ -118,9 +118,20 @@ func renderArgs(args []interface{}) string {
 // type, subtests of a renamed test) move with it. It then resolves each
 // import to its workspace package and links convention methods to their
 // types, for the call graph (golang_refs.go).
+//
+// A renamed production symbol in a file of the same package is a variant
+// of the first one (a build-constrained file): a call resolves to the
+// first by name, so the first references each variant, and a variant is
+// reached exactly when the first is. Across platforms this errs towards
+// reaching both, never towards missing the one a build compiles.
 // @enforces adapters.go:INV-3
+// @enforces adapters.go:INV-5
 func (*Adapter) Resolve(modules []ir.Module) []ir.Module {
+	type loc struct{ mod, sym int }
 	seen := map[string]bool{}
+	first := map[string]loc{}      // FQN -> its first production declaration
+	variants := map[loc][]string{} // first declaration -> its variants' FQNs
+	isTest := func(i int) bool { return strings.HasSuffix(modules[i].File, "_test.go") }
 	for i := range modules {
 		syms := modules[i].Symbols
 		suffix := "@" + strings.TrimSuffix(path.Base(modules[i].File), path.Ext(modules[i].File))
@@ -138,6 +149,7 @@ func (*Adapter) Resolve(modules []ir.Module) []ir.Module {
 		}
 		for j := range syms {
 			s := &syms[j]
+			orig := s.FQN
 			s.FQN, s.EnclosingFQN = rename(s.FQN), rename(s.EnclosingFQN)
 			if seen[s.FQN] {
 				nu := s.FQN + suffix
@@ -148,6 +160,20 @@ func (*Adapter) Resolve(modules []ir.Module) []ir.Module {
 				s.FQN = nu
 			}
 			seen[s.FQN] = true
+			if isTest(i) {
+				continue
+			}
+			if f, ok := first[orig]; !ok {
+				first[orig] = loc{i, j}
+			} else if s.FQN != orig && modules[f.mod].Package == modules[i].Package {
+				variants[f] = append(variants[f], s.FQN)
+			}
+		}
+	}
+	for f, fqns := range variants {
+		fs := &modules[f.mod].Symbols[f.sym]
+		for _, v := range fqns {
+			fs.Refs = append(fs.Refs, ir.Ref{Name: fs.Name, Target: v, Kind: ir.RefValue, Line: fs.Line})
 		}
 	}
 	resolveImports(modules)

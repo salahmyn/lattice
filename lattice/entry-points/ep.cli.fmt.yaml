@@ -1,0 +1,17 @@
+id: ep.cli.fmt
+version: 1
+status: production
+kind: cli
+purpose: Rewrite features, BRDs and entry points in canonical field order
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: lattice fmt
+handler:
+  symbol: internal.cli.newFmtCommand
+  file: internal/cli/fmt.go
+flow:
+  - feature: cli
+  - feature: workspace
+  - feature: schema

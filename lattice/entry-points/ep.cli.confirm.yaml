@@ -1,0 +1,19 @@
+id: ep.cli.confirm
+version: 1
+status: production
+kind: cli
+purpose: Compute which decisions a human confirmed, from the platform's approvals
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: lattice confirm
+handler:
+  symbol: internal.cli.newConfirmCommand
+  file: internal/cli/confirm.go
+flow:
+  - feature: cli
+  - feature: confirm
+  - feature: audit
+  - feature: brds
+  - feature: results

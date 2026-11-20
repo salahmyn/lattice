@@ -314,14 +314,14 @@ func (s *Server) v2BRD(wr http.ResponseWriter, r *http.Request) {
 		Confirmation: conf, Features: w.featuresOf(*b), TierMax: tierMaxOf(*b),
 		Owners: map[string]string{},
 		Intent: contract.Intent{
-			Story:           contract.NotComputed("the story (the story layer is not in code)"),
+			Story:           heldStory(),
 			BusinessProblem: b.BusinessProblem, Goals: nonNil(b.BusinessGoals), Scenarios: []contract.Scenario{},
 			OutOfScope: nonNil(b.OutOfScope), OpenQuestions: nonNil(b.OpenQuestions),
 		},
 		Criteria: []contract.Criterion{}, Promises: []contract.Promise{}, Constraints: []contract.Constraint{},
 		Council: w.council(*b), Waivers: []contract.Waiver{},
 		BlindSpot: contract.NotComputed("the blind spot (untraced touched lines are measured per change: lattice check)"),
-		Sources:   contract.NotComputed("sources (ADRs and tickets)"),
+		Sources:   sourcesOf(*b),
 	}
 	for role, v := range map[string]string{"business_owner": b.Stakeholders.BusinessOwner, "product_owner": b.Stakeholders.ProductOwner,
 		"engineering_owner": b.Stakeholders.EngineeringOwner, "legal": b.Stakeholders.Legal, "compliance": b.Stakeholders.Compliance} {
@@ -361,6 +361,41 @@ func (s *Server) v2BRD(wr http.ResponseWriter, r *http.Request) {
 		page.Packet = w.packet(*b, page.Promises, page.Counts)
 	}
 	writeV2(wr, http.StatusOK, page, contract.LintOptions{})
+}
+
+// heldStory is the BRD's story: not computed, and held on purpose. The word
+// is reserved for the planned story layer, whose name is not settled yet.
+func heldStory() contract.Assurance {
+	a := contract.NotComputed("the story (held until the story layer's name is settled)")
+	a.Params = map[string]interface{}{"reason": contract.ReasonHeldByDecision}
+	return a
+}
+
+// sourcesOf lists the BRD's sources as the BRD states them. A checked mark
+// is reported as a human's claim (honesty claimed), never as verified: the
+// kernel never fetches a source or checks it itself.
+// @enforces api:INV-6
+func sourcesOf(b schema.BRD) contract.Sources {
+	out := contract.Sources{Entries: []contract.Source{}}
+	checked := 0
+	for _, s := range b.Sources {
+		e := contract.Source{Kind: string(s.Kind), Ref: s.Ref, Title: s.Title, URL: s.URL}
+		if s.CheckedBy != "" && s.CheckedAt != "" {
+			checked++
+			e.State, e.Honesty, e.Code = contract.StateChecked, contract.Claimed, "SOURCE_CHECK_CLAIMED"
+			e.Params = map[string]interface{}{"by": s.CheckedBy, "at": s.CheckedAt}
+			e.Text = s.CheckedBy + " says they checked the BRD against " + s.Ref + " on " + s.CheckedAt + " (not verified)"
+			e.CheckedBy, e.CheckedAt = s.CheckedBy, s.CheckedAt
+		} else {
+			e.State, e.Honesty, e.Code = contract.StateUnchecked, contract.Fact, "SOURCE_UNCHECKED"
+			e.Text = "no one has recorded checking the BRD against " + s.Ref
+		}
+		out.Entries = append(out.Entries, e)
+	}
+	out.Assurance = contract.Assurance{State: contract.StateInfo, Honesty: contract.Fact, Code: "SOURCES",
+		Params: map[string]interface{}{"count": len(out.Entries), "checked": checked},
+		Text:   strconv.Itoa(len(out.Entries)) + " source(s), " + strconv.Itoa(checked) + " marked checked by a human"}
+	return out
 }
 
 func nonNil(s []string) []string {

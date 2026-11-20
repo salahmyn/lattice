@@ -17,3 +17,5 @@ invariants:
     statement: 'A name Go allows twice in one directory keeps a unique FQN: the first file in path order keeps it, a later one is suffixed with its file stem.'
   - id: INV-4
     statement: A comment line that starts with a tag name but reads as prose is not a tag.
+  - id: INV-5
+    statement: A production declaration renamed for a build-constrained file of the same package is reached whenever the declaration that kept the name is.

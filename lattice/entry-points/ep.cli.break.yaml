@@ -1,0 +1,16 @@
+id: ep.cli.break
+version: 1
+status: production
+kind: cli
+purpose: Break each promise's enforcer and see whether its verifiers notice
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: lattice break
+handler:
+  symbol: internal.cli.newBreakCommand
+  file: internal/cli/break.go
+flow:
+  - feature: cli
+  - feature: breaktest
