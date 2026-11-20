@@ -13,7 +13,9 @@
 //     user-presence flag;
 //   - the key is listed for the signer's login in lattice/allowed_signers at
 //     the base commit (the first parent of the default-branch commit that
-//     introduced the signature) and still at the tip of the default branch;
+//     introduced the signature) and still at the tip of the default branch,
+//     and trusted there: listed in the first allowed_signers (the root of
+//     trust), or added by a change endorsed by a key trusted before it;
 //   - the key is among the login's SSH signing keys on the code host. That
 //     check needs the network and lives in package confirm.
 //
@@ -241,6 +243,13 @@ func Verify(armoured []byte, t Tuple) (Verified, *Failure) {
 		f.Unknown = true
 		return Verified{}, f
 	}
+	return verifyMessage(armoured, msg, "this decision (repository, id, version, action, packet, rows)")
+}
+
+// verifyMessage checks an armoured signature over msg: the format, the key
+// type, the namespace, the user-presence flag and the signature itself.
+// what names the message in the failure text.
+func verifyMessage(armoured, msg []byte, what string) (Verified, *Failure) {
 	s, err := Parse(armoured)
 	if err != nil {
 		return Verified{}, asFailure(err)
@@ -263,7 +272,7 @@ func Verify(armoured []byte, t Tuple) (Verified, *Failure) {
 		return v, asFailure(err)
 	}
 	if err := s.PublicKey.Verify(data, s.Sig); err != nil {
-		return v, fail(CodeInvalid, "the signature does not verify over this decision (repository, id, version, action, packet, rows): %v", err)
+		return v, fail(CodeInvalid, "the signature does not verify over %s: %v", what, err)
 	}
 	return v, nil
 }

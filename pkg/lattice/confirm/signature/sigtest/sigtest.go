@@ -114,6 +114,16 @@ func (k *Key) SignTuple(t testing.TB, tu signature.Tuple, o Options) []byte {
 	return k.Sign(t, msg, o)
 }
 
+// SignChange signs an endorsement of a change to allowed_signers.
+func (k *Key) SignChange(t testing.TB, c signature.SignersChange, o Options) []byte {
+	t.Helper()
+	msg, err := c.Message()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k.Sign(t, msg, o)
+}
+
 // Sign makes an armoured SSHSIG signature over message.
 func (k *Key) Sign(t testing.TB, message []byte, o Options) []byte {
 	t.Helper()
@@ -235,6 +245,30 @@ func (r *Repo) Merge(branch string) string {
 	r.t.Helper()
 	r.Git("merge", "-q", "--no-ff", "-m", "merge "+branch, branch)
 	return r.Git("rev-parse", "HEAD")
+}
+
+// RebaseMerge lands a branch on the current one the way a rebase merge does:
+// each of its commits is replayed on its own, with no merge commit.
+func (r *Repo) RebaseMerge(branch string) string {
+	r.t.Helper()
+	into := r.Git("rev-parse", "--abbrev-ref", "HEAD")
+	r.Git("checkout", "-q", branch)
+	r.Git("rebase", "-q", into)
+	r.Git("checkout", "-q", into)
+	r.Git("merge", "-q", "--ff-only", branch)
+	return r.Git("rev-parse", "HEAD")
+}
+
+// Endorse writes lattice/allowed_signers with body and its endorsement by k,
+// over the change after the last commit that changed the file on base.
+func (r *Repo) Endorse(k *Key, base, body string) {
+	r.t.Helper()
+	after := r.Git("log", "--first-parent", "-n", "1", "--format=%H", base, "--", "lattice/"+signature.AllowedSignersFile)
+	if after == "" {
+		after = "none"
+	}
+	r.Write("lattice/"+signature.AllowedSignersFile, body)
+	r.Write("lattice/"+signature.SignersSigFile, string(k.SignChange(r.t, signature.SignersChange{Repository: Repository, After: after, Signers: []byte(body)}, Options{})))
 }
 
 // T is the test the repository belongs to.

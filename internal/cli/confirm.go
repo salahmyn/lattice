@@ -41,8 +41,13 @@ must cover this repository, decision id, version, action, packet hash and
 rows in the lattice-decision namespace, the key must be listed for the
 signer's GitHub login in lattice/allowed_signers at the base commit (the first
 parent of the default-branch commit that introduced the signature) and still at
-the tip, and GitHub must list it among that login's SSH signing keys. A non-sk
-key reads SOFTWARE_KEY; an unreadable GitHub reads unknown, never confirmed.
+the tip, and GitHub must list it among that login's SSH signing keys. Trust in
+allowed_signers is followed along the default branch's history: the first
+version listing a signer is the root (reported as ROOT_SIGNERS), and a key
+added later counts only when lattice/allowed_signers.sig in the same commit
+endorses the change with a key trusted before it (else SIGNER_NOT_ENDORSED,
+unknown); removing a key needs nothing. A non-sk key reads SOFTWARE_KEY; an
+unreadable GitHub or a shallow clone reads unknown, never confirmed.
 Records carry via: review or via: signature, with the login and fingerprint.
 
 Writes lattice/.cache/confirm.json (lattice.confirm/1), derived and never

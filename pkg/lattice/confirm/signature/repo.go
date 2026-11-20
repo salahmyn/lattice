@@ -82,15 +82,18 @@ type Evidence struct {
 	// Base is Introduced's first parent: the default branch before that
 	// change. allowed_signers is read here.
 	Base string
-	// Logins are the principals allowed_signers grants the key, at Base and
-	// still at the tip of Ref.
+	// Logins are the principals allowed_signers trusts the key for, at Base
+	// and still at the tip of Ref: listed, and either in the root version or
+	// added by an endorsed change.
 	Logins []string
+	// Root is the commit whose allowed_signers is the root of trust.
+	Root string
 }
 
 // Evaluate checks the signature beside a decision file, as of r.Ref. present
 // is false when there is no signature file. On a failure the evidence still
 // carries the fingerprint when the signature parsed.
-// @enforces confirm:INV-11
+// @enforces confirm:INV-11, confirm:INV-17
 func (r Repo) Evaluate(decisionPath string, d Decision) (ev Evidence, f *Failure, present bool) {
 	ev.Path = SigPath(decisionPath)
 	data, err := r.show(r.Ref, ev.Path)
@@ -113,31 +116,52 @@ func (r Repo) Evaluate(decisionPath string, d Decision) (ev Evidence, f *Failure
 			Text: "commit " + short(ev.Introduced) + " that introduced the signature has no parent here (a root commit, or a shallow clone): allowed_signers has no base to be read at"}, true
 	}
 	allowed := path.Join(r.LatticeRel, AllowedSignersFile)
-	atBase := r.principals(ev.Base, allowed, v.Key)
+	base := r.Trust(ev.Base)
+	if base.Failure != nil {
+		return ev, base.Failure, true
+	}
+	ev.Root = base.Root
+	atBase, unendorsed := base.Logins(v.Key)
 	if len(atBase) == 0 {
+		if len(unendorsed) > 0 {
+			return ev, notEndorsed(base, unendorsed[0], v, allowed, "the base commit "+short(ev.Base)), true
+		}
 		return ev, fail(CodeNotAllowed, "key %s is not in %s at the base commit %s, the default branch before %s introduced the signature: a key enrolled in the same change does not count",
 			Short(ev.Fingerprint), allowed, short(ev.Base), short(ev.Introduced)), true
 	}
-	atTip := r.principals(r.Ref, allowed, v.Key)
+	tip := r.Trust(r.Ref)
+	if tip.Failure != nil {
+		return ev, tip.Failure, true
+	}
+	atTip, unendorsedTip := tip.Logins(v.Key)
 	for _, l := range atBase {
 		if containsFold(atTip, l) {
 			ev.Logins = append(ev.Logins, l)
 		}
 	}
 	if len(ev.Logins) == 0 {
+		for _, l := range atBase {
+			if containsFold(unendorsedTip, l) {
+				return ev, notEndorsed(tip, l, v, allowed, "the tip of "+r.Ref), true
+			}
+		}
 		return ev, fail(CodeRevoked, "key %s was in %s at %s but is no longer at the tip of %s: removing a key un-confirms what it signed",
 			Short(ev.Fingerprint), allowed, short(ev.Base), r.Ref), true
 	}
 	return ev, nil, true
 }
 
-func (r Repo) principals(rev, file string, key ssh.PublicKey) []string {
-	data, err := r.show(rev, file)
-	if err != nil {
-		return nil
+// notEndorsed is the verdict on a signature by a key the file lists for
+// login but that was added without an endorsement: unknown, never human.
+// @enforces confirm:INV-17
+func notEndorsed(t Trust, login string, v Verified, allowed, where string) *Failure {
+	text := "key " + Short(v.Fingerprint) + " is listed for " + login + " in " + allowed + " at " + where + ", but"
+	if c := t.ChangeAdding(login, v.Key); c != nil {
+		text += " commit " + short(c.Commit) + " added it without an endorsement by a key trusted before it (" + c.Text + ")"
+	} else {
+		text += " it was added without an endorsement by a key trusted before it"
 	}
-	signers, _ := ParseAllowedSigners(data)
-	return Principals(signers, key, Namespace)
+	return &Failure{Code: CodeNotEndorsed, Unknown: true, Text: text}
 }
 
 func (r Repo) show(rev, p string) ([]byte, error) { return r.run("show", rev+":"+p) }

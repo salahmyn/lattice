@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/salahmyn/lattice/pkg/lattice/confirm/signature"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
@@ -279,6 +280,31 @@ func TestConfirmContractGolden(t *testing.T) {
 		t.Fatal(err)
 	}
 	golden(t, "testdata/confirm.golden.json", append(got, '\n'))
+}
+
+// A signature verdict and the trust report of allowed_signers add fields to
+// lattice.confirm/1 and rename none; their shape is frozen too.
+func TestConfirmSignatureContractGolden(t *testing.T) {
+	f := File{Contract: Schema, Commit: "deadbeef", Branch: "main", GeneratedAt: "2026-01-02T03:04:05Z",
+		Assurance: Assurance{State: "pass", Honesty: "fact", Code: "PLATFORM_READ", Text: "approvals read from the platform"},
+		Records: []Record{{
+			ID: "brd.x", Version: 2, Action: ActionApprove, State: StateConfirmed, Via: ViaSignature, ApproverLogin: "ana",
+			Fingerprint: "SHA256:Xb3k9abcdefghijklmnop", VerifiedAt: "2026-01-02T03:04:05Z", DecisionSHA: "c0ffee",
+			DecisionPath: "lattice/decisions/approvals/brd.x-v2-9e1f04ab.yaml", SignatureBase: "ba5e",
+			Assurance: Assurance{State: StateConfirmed, Honesty: "fact", Code: signature.CodeSigned, Text: "signed by ana with hardware key SHA256:Xb3k9abcdefg"},
+		}},
+		Signers: &Signers{Root: "r00t", Changes: []signature.Change{
+			{Commit: "r00t", Code: signature.CodeRootSigners, Added: []string{"ana SHA256:Xb3k9abcdefghijklmnop"}, Text: "the first allowed_signers with a signer is the root of trust"},
+			{Commit: "e2d0", Code: signature.CodeEndorsed, Added: []string{"bo SHA256:Q7"}, EndorsedBy: []string{"ana"}, Fingerprint: "SHA256:Xb3k9abcdefghijklmnop", Text: "endorsed by ana"},
+			{Commit: "0b0e", Code: signature.CodeNotEndorsed, Added: []string{"cy SHA256:Z1"}, Text: "signers added with no endorsement"},
+			{Commit: "de1e", Code: signature.CodeRemoved, Removed: []string{"cy SHA256:Z1"}, Text: "removed cy SHA256:Z1"},
+		}, Assurance: Assurance{State: "pass", Honesty: "fact", Code: signature.CodeRootSigners, Params: map[string]interface{}{"root": "r00t"}, Text: "trust starts at r00t"}},
+	}
+	got, err := json.MarshalIndent(Seal(f, Stamp{CIRun: "4812", Platform: "github", Repository: "acme/shop"}), "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "testdata/confirm-signature.golden.json", append(got, '\n'))
 }
 
 func golden(t *testing.T, rel string, got []byte) {
