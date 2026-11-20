@@ -317,29 +317,3 @@ func writeString(b *bytes.Buffer, s []byte) {
 	b.Write(n[:])
 	b.Write(s)
 }
-
-// Armour wraps a raw SSHSIG blob the way ssh-keygen writes it.
-func Armour(raw []byte) []byte {
-	enc := base64.StdEncoding.EncodeToString(raw)
-	var b strings.Builder
-	b.WriteString(armourBegin + "\n")
-	for len(enc) > 70 {
-		b.WriteString(enc[:70] + "\n")
-		enc = enc[70:]
-	}
-	b.WriteString(enc + "\n" + armourEnd + "\n")
-	return []byte(b.String())
-}
-
-// Blob assembles a raw SSHSIG blob from its parts.
-func Blob(pub ssh.PublicKey, namespace string, reserved []byte, hashAlg string, sig *ssh.Signature) []byte {
-	var b bytes.Buffer
-	b.WriteString(magic)
-	var v [4]byte
-	binary.BigEndian.PutUint32(v[:], sigVersion)
-	b.Write(v[:])
-	for _, f := range [][]byte{pub.Marshal(), []byte(namespace), reserved, []byte(hashAlg), ssh.Marshal(sig)} {
-		writeString(&b, f)
-	}
-	return b.Bytes()
-}

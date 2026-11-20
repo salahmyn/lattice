@@ -7,11 +7,13 @@ package sigtest
 // @module-feature confirm
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/binary"
 	"math/big"
 	"os"
@@ -149,7 +151,7 @@ func (k *Key) Sign(t testing.TB, message []byte, o Options) []byte {
 		}
 		sig = &ssh.Signature{Format: ssh.KeyAlgoSKECDSA256, Blob: ssh.Marshal(struct{ R, S *big.Int }{r, s}), Rest: skRest(flags)}
 	}
-	return signature.Armour(signature.Blob(k.Pub, o.Namespace, nil, o.HashAlg, sig))
+	return armour(blob(k.Pub, o.Namespace, nil, o.HashAlg, sig))
 }
 
 // skBlob is what a FIDO authenticator signs (PROTOCOL.u2f):
@@ -237,3 +239,40 @@ func (r *Repo) Merge(branch string) string {
 
 // T is the test the repository belongs to.
 func (r *Repo) T() testing.TB { return r.t }
+
+// The SSHSIG wire format (PROTOCOL.sshsig), as ssh-keygen -Y sign writes it.
+const (
+	armourBegin = "-----BEGIN SSH SIGNATURE-----"
+	armourEnd   = "-----END SSH SIGNATURE-----"
+	magic       = "SSHSIG"
+	sigVersion  = 1
+)
+
+// armour wraps a raw SSHSIG blob the way ssh-keygen writes it.
+func armour(raw []byte) []byte {
+	enc := base64.StdEncoding.EncodeToString(raw)
+	var b strings.Builder
+	b.WriteString(armourBegin + "\n")
+	for len(enc) > 70 {
+		b.WriteString(enc[:70] + "\n")
+		enc = enc[70:]
+	}
+	b.WriteString(enc + "\n" + armourEnd + "\n")
+	return []byte(b.String())
+}
+
+// blob assembles a raw SSHSIG blob from its parts.
+func blob(pub ssh.PublicKey, namespace string, reserved []byte, hashAlg string, sig *ssh.Signature) []byte {
+	var b bytes.Buffer
+	b.WriteString(magic)
+	var v [4]byte
+	binary.BigEndian.PutUint32(v[:], sigVersion)
+	b.Write(v[:])
+	for _, f := range [][]byte{pub.Marshal(), []byte(namespace), reserved, []byte(hashAlg), ssh.Marshal(sig)} {
+		var n [4]byte
+		binary.BigEndian.PutUint32(n[:], uint32(len(f)))
+		b.Write(n[:])
+		b.Write(f)
+	}
+	return b.Bytes()
+}
