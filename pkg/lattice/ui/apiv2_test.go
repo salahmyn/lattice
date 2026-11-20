@@ -136,6 +136,13 @@ func newV2Fixture(t *testing.T) *v2Fixture {
 		EntryPoints: []schema.EntryPoint{{ID: "ep.post_refunds", Kind: schema.EntryPointKindHTTP,
 			Trigger: schema.Trigger{Method: "POST", Path: "/refunds"}, Flow: []schema.FlowStep{{Feature: "checkout"}, {Feature: "refunds"}}}},
 	}
+	// brd.refunds names two sources, one a human marked checked.
+	if err := yaml.Unmarshal([]byte(`sources:
+  - {kind: ticket, ref: RF-12, title: Refund cap, url: 'https://tracker.example/RF-12', checked_by: ana@example.com, checked_at: 2026-10-27}
+  - {kind: adr, ref: ADR-3}
+`), &kg.BRDs[0]); err != nil {
+		t.Fatal(err)
+	}
 	f := &v2Fixture{root: root, dir: dir, kg: kg}
 	f.srv = New(&workspace.Workspace{LatticeDir: dir}, Options{
 		GraphBuilder: func(context.Context) (schema.KnowledgeGraph, error) { return f.kg, nil },
@@ -284,7 +291,7 @@ func TestAPIV2NotComputedFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, a := range map[string]contract.Assurance{
-		"intent.story": page.Intent.Story, "sources": page.Sources, "blind_spot": page.BlindSpot,
+		"intent.story": page.Intent.Story, "blind_spot": page.BlindSpot,
 		"packet.blind_spot": page.Packet.BlindSpot, "packet.diff.text_only": page.Packet.Diff.TextOnly,
 		"promises[0].cases": page.Promises[0].Cases,
 	} {
@@ -296,6 +303,49 @@ func TestAPIV2NotComputedFields(t *testing.T) {
 	var q contract.Queue
 	if err := json.Unmarshal(body, &q); err != nil || q.Proposals.Code != contract.CodeNotComputed {
 		t.Errorf("proposals = %+v (%v)", q.Proposals, err)
+	}
+}
+
+// The BRD page lists the BRD's sources. A checked mark reads checked with
+// honesty claimed, with who and when; a source with none reads unchecked.
+// The story stays NOT_COMPUTED, held by decision.
+// @verifies api:INV-6
+func TestAPIV2BRDSources(t *testing.T) {
+	f := newV2Fixture(t)
+	_, body := f.get(t, "/api/v2/brds/brd.refunds")
+	var page struct {
+		Intent struct {
+			Story map[string]interface{} `json:"story"`
+		} `json:"intent"`
+		Sources map[string]interface{} `json:"sources"`
+	}
+	if err := json.Unmarshal(body, &page); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := page.Sources["entries"].([]interface{})
+	if page.Sources["state"] != contract.StateInfo || len(entries) != 2 {
+		t.Fatalf("sources = %v", page.Sources)
+	}
+	checked, _ := entries[0].(map[string]interface{})
+	for k, want := range map[string]string{"kind": "ticket", "ref": "RF-12", "url": "https://tracker.example/RF-12",
+		"state": "checked", "honesty": "claimed", "checked_by": "ana@example.com", "checked_at": "2026-10-27"} {
+		if checked[k] != want {
+			t.Errorf("checked source %s = %v, want %q", k, checked[k], want)
+		}
+	}
+	unchecked, _ := entries[1].(map[string]interface{})
+	if unchecked["ref"] != "ADR-3" || unchecked["state"] != "unchecked" || unchecked["honesty"] != "fact" || unchecked["checked_by"] != nil {
+		t.Errorf("unchecked source = %v", unchecked)
+	}
+	params, _ := page.Intent.Story["params"].(map[string]interface{})
+	if page.Intent.Story["code"] != contract.CodeNotComputed || params["reason"] != "HELD_BY_DECISION" {
+		t.Errorf("story = %v, want NOT_COMPUTED held by decision", page.Intent.Story)
+	}
+	// A claim is never a pass, and a checked mark is always a claim.
+	for _, bad := range []string{`{"state":"pass","honesty":"claimed","code":"X"}`, `{"state":"checked","honesty":"fact","code":"X"}`} {
+		if got, _ := contract.Lint([]byte(bad), contract.LintOptions{}); len(got) == 0 {
+			t.Errorf("lint passed %s", bad)
+		}
 	}
 }
 

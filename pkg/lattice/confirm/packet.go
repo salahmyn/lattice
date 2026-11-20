@@ -111,6 +111,10 @@ func FactsFor(rows []audit.Row, refs []string) []PromiseFacts {
 // decision stale the moment it landed. implements_via is hashed as the BRD's
 // Scope: completing a link the feature already declares is bookkeeping and
 // keeps the hash, while a feature entering or leaving the scope changes it.
+// A source's checked_by and checked_at are left out as well: they record a
+// later human check, not a change to the intent. A source's kind, ref, title
+// and url stay in, so editing a source makes the decision stale as a
+// text-only change (it is not in the structural diff).
 // @enforces confirm:INV-3, confirm:INV-8
 func PacketHash(in PacketInput) string {
 	b := in.BRD
@@ -135,6 +139,7 @@ func PacketHashFor(in PacketInput, pinned string) string {
 
 func packetHash(b schema.BRD, in PacketInput) string {
 	b.Status, b.Approval, b.SourcePath, b.HumanReviewRequired = "", nil, "", false
+	b.Sources = schema.WithoutChecks(b.Sources)
 	body, _ := schema.MarshalCanonical(b)
 	h := sha256.New()
 	fmt.Fprintf(h, "brd\n%s\n", body)

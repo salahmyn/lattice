@@ -13,9 +13,10 @@ import (
 var allowedStates = map[string]bool{
 	StatePass: true, StateFail: true, StateUnknown: true, StateInfo: true, StateDrifted: true,
 	StatePresent: true, StatePartial: true, StateAbsent: true, StateStale: true,
+	StateChecked: true, StateUnchecked: true,
 }
 
-var honesties = map[string]bool{Fact: true, UpperBound: true, Proxy: true}
+var honesties = map[string]bool{Fact: true, UpperBound: true, Proxy: true, Claimed: true}
 
 // verdictStates are the states of a verdict object.
 var verdictStates = map[string]bool{"ASSURED": true, "UNPROVEN": true, "BROKEN": true, StateUnknown: true}
@@ -30,7 +31,10 @@ type LintOptions struct {
 // Lint walks a JSON payload and lists every place it breaks the floor:
 //
 //   - an assurance value (an object with state and honesty) has a state
-//     outside the closed list, or an honesty outside fact, upper_bound, proxy;
+//     outside the closed list, or an honesty outside fact, upper_bound, proxy,
+//     claimed;
+//   - a claim (honesty claimed) reads pass, or a checked source is not
+//     labelled a claim;
 //   - a pass carries a code that names missing evidence (NOT_COMPUTED, NO_*,
 //     NOT_*, PARTIAL*, *_UNKNOWN, CONFIRMED_*, LIVE_*, BREAK_SURVIVED, ...);
 //     a descriptive code, such as the check's UNTRACED_LINES on an empty
@@ -104,7 +108,13 @@ func lintObject(m map[string]interface{}, path string, opt LintOptions, out *[]s
 			bad("state %q is not an assurance state", state)
 		}
 		if !honesties[honesty] {
-			bad("honesty %q is not fact, upper_bound or proxy", honesty)
+			bad("honesty %q is not fact, upper_bound, proxy or claimed", honesty)
+		}
+		if honesty == Claimed && state == StatePass {
+			bad("a claim reads pass; a human's claim is not verified evidence")
+		}
+		if state == StateChecked && honesty != Claimed {
+			bad("a checked source reads %q; a checked mark is a human's claim", honesty)
 		}
 		switch {
 		case state == StatePass && gapCode(code):

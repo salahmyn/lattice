@@ -97,6 +97,11 @@ type BRD struct {
 	// the BRD_UNAPPROVED_LLM rule covers the policy.
 	HumanReviewRequired bool `yaml:"human_review_required,omitempty"`
 
+	// Sources are where the intent was written down before the BRD: tickets,
+	// roadmap items, help pages, API docs and ADRs. The kernel checks their
+	// shape only; it never fetches a URL and never sets a checked mark.
+	Sources []BRDSource `yaml:"sources,omitempty"`
+
 	// --- Auto-populated (never hand-edited) ---
 	// SourcePath is the repo-relative path the BRD was loaded from.
 	SourcePath string `yaml:"-"`
@@ -265,6 +270,46 @@ type BRDConstraint struct {
 	Kind BRDConstraintKind `yaml:"kind"`
 	Ref  string            `yaml:"ref,omitempty"`
 	Note string            `yaml:"note,omitempty"`
+}
+
+// BRDSourceKind is what kind of document a BRD source is.
+type BRDSourceKind string
+
+const (
+	SourceTicket   BRDSourceKind = "ticket"
+	SourceRoadmap  BRDSourceKind = "roadmap"
+	SourceHelpPage BRDSourceKind = "help_page"
+	SourceAPIDoc   BRDSourceKind = "api_doc"
+	SourceADR      BRDSourceKind = "adr"
+)
+
+// ValidBRDSourceKinds lists every legal source kind.
+var ValidBRDSourceKinds = []BRDSourceKind{SourceTicket, SourceRoadmap, SourceHelpPage, SourceAPIDoc, SourceADR}
+
+// BRDSource is one document the BRD's intent comes from. CheckedBy and
+// CheckedAt record that a human compared the BRD with the source. They are
+// set by a human only: a regenerator drops them, and the kernel reports them
+// as a claim, never as verified.
+type BRDSource struct {
+	Kind      BRDSourceKind `yaml:"kind"`
+	Ref       string        `yaml:"ref"`
+	Title     string        `yaml:"title,omitempty"`
+	URL       string        `yaml:"url,omitempty"`
+	CheckedBy string        `yaml:"checked_by,omitempty"`
+	CheckedAt string        `yaml:"checked_at,omitempty"` // YYYY-MM-DD
+}
+
+// WithoutChecks returns a copy of the sources with every checked mark removed.
+func WithoutChecks(src []BRDSource) []BRDSource {
+	if src == nil {
+		return nil
+	}
+	out := make([]BRDSource, len(src))
+	for i, s := range src {
+		s.CheckedBy, s.CheckedAt = "", ""
+		out[i] = s
+	}
+	return out
 }
 
 // BRDApproval freezes who signed off on which version. ApprovedVersion
