@@ -2,7 +2,7 @@
 
 All notable changes to Lattice are documented in this file.
 
-## [0.16.0] — 2026-11-21
+## [0.16.0] — 2026-11-20
 
 Assurance done right on real projects: a human confirmation that works on a single-maintainer
 repository, acceptance cases under invariants, a test plan for the lines no promise guards, and
