@@ -20,6 +20,7 @@ import (
 
 	"github.com/salahmyn/lattice/pkg/lattice/adapters"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/gitstate"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/scip"
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
@@ -188,14 +189,14 @@ func Compute(ctx context.Context, in Input) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	changes, err := changedFiles(g, base)
+	changes, err := changedFiles(g, base, gitstate.Owned(top, []string{in.Workspace.LatticeDir}))
 	if err != nil {
 		return Report{}, err
 	}
 
 	pm := newPathMap(top, in.Workspace)
 	rep := Report{
-		Since: in.Since, Base: base, Head: head, Uncommitted: dirty(g),
+		Since: in.Since, Base: base, Head: head, Uncommitted: dirty(ctx, g, in.Workspace.LatticeDir),
 		ChangedFiles: changes, DraftsIncluded: in.IncludeDrafts,
 	}
 

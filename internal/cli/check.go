@@ -106,7 +106,7 @@ disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
 				if err != nil {
 					return usageError(io, "GIT_FAILED", err.Error())
 				}
-				dirty, _ := gitDirty(filepath.Dir(ws.LatticeDir))
+				dirty, _ := gitDirty(filepath.Dir(ws.LatticeDir), ws.LatticeDir)
 				ev := check.GatherSnapshot(ws.LatticeDir, head, ci)
 				src := audit.Collect(ws.LatticeDir, kg, dirty)
 				if ci {

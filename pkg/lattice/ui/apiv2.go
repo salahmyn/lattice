@@ -85,7 +85,7 @@ func (s *Server) gitState() (head string, dirty *bool) {
 	if err != nil {
 		return "", nil
 	}
-	d, _ := check.GitDirty(s.repoDir())
+	d, _ := check.GitDirty(s.repoDir(), s.ws.LatticeDir)
 	return h, &d
 }
 

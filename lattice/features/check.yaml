@@ -33,3 +33,5 @@ invariants:
     statement: A break-based gap (break_tested, or exercised read through it) of a promise the change does not touch is not a new gap when no break run happened at head at all and the base had no gap on it; evidence not gathered is never a fall and never blocks a merge. A touched promise still needs a fresh run, and a survival or per-test coverage saying no still counts.
   - id: INV-11
     statement: An informational note on a touched promise, such as STATEMENT_UNCHANGED (an enforcer changed and its statement and tier did not), is shown on the promise's row and never changes the verdict, a gap or merge_allowed.
+  - id: INV-12
+    statement: Whether the working tree differs from HEAD is read by one rule everywhere, the dirty flag of check, audit, confirm, prepare and the web API and the uncommitted flag of impact alike. A modified, added or deleted path, or an untracked one git does not ignore, counts; Lattice's own runtime state never does, which is every lattice/.ledger/ and lattice/.cache/ and the workspace's own .ledger/ and .cache/ whatever its directory is called. A coverage ingest also leaves out the reports it reads.
