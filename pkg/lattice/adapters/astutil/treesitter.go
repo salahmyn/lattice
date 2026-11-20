@@ -10,16 +10,18 @@ import (
 	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
-// ErrParseCancelled is returned when tree-sitter gives up on a parse
-// without the context being done.
-var ErrParseCancelled = errors.New("tree-sitter parse cancelled")
+// ErrParseFailed is returned when tree-sitter returns no tree.
+var ErrParseFailed = errors.New("tree-sitter returned no tree")
 
 // Parse runs a tree-sitter grammar over src. The parser is freed before
 // Parse returns; the caller owns the tree and must Close it, and must not
 // use any of its nodes after that.
 //
-// A context that can be cancelled stops the parse part way through, as the
-// earlier bindings did; a context that cannot skips the progress callback.
+// A done context stops the work before the parse, so cancellation is per
+// file (a file parses in milliseconds). Parse does not cancel part way
+// through a file: the binding's ParseWithOptions registers the options it
+// is given and never releases them, which would leak a little memory on
+// every parse.
 func Parse(ctx context.Context, lang *sitter.Language, src []byte) (*sitter.Tree, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -29,25 +31,9 @@ func Parse(ctx context.Context, lang *sitter.Language, src []byte) (*sitter.Tree
 	if err := parser.SetLanguage(lang); err != nil {
 		return nil, fmt.Errorf("tree-sitter grammar: %w", err)
 	}
-	var tree *sitter.Tree
-	if ctx.Done() == nil {
-		tree = parser.Parse(src, nil)
-	} else {
-		n := len(src)
-		tree = parser.ParseWithOptions(func(i int, _ sitter.Point) []byte {
-			if i < n {
-				return src[i:]
-			}
-			return []byte{}
-		}, nil, &sitter.ParseOptions{
-			ProgressCallback: func(sitter.ParseState) bool { return ctx.Err() != nil },
-		})
-	}
+	tree := parser.Parse(src, nil)
 	if tree == nil {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		return nil, ErrParseCancelled
+		return nil, ErrParseFailed
 	}
 	return tree, nil
 }

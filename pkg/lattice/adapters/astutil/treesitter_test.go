@@ -3,10 +3,7 @@ package astutil_test
 import (
 	"context"
 	"errors"
-	"strings"
-	"sync/atomic"
 	"testing"
-	"time"
 	"unsafe"
 
 	sitter "github.com/tree-sitter/go-tree-sitter"
@@ -49,38 +46,12 @@ func TestParseAcceptsEveryGrammar(t *testing.T) {
 	}
 }
 
-func TestParseStopsOnADoneContext(t *testing.T) {
+func TestParseReturnsACancelledContextsError(t *testing.T) {
 	lang := sitter.NewLanguage(gogrammar.Language())
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := astutil.Parse(ctx, lang, []byte("package p\n")); !errors.Is(err, context.Canceled) {
-		t.Fatalf("cancelled before the parse: err = %v, want context.Canceled", err)
+	tree, err := astutil.Parse(ctx, lang, []byte("package p\n"))
+	if !errors.Is(err, context.Canceled) || tree != nil {
+		t.Fatalf("cancelled context: tree = %v, err = %v, want no tree and context.Canceled", tree, err)
 	}
-
-	// A context that is done once the parse has started: the progress
-	// callback must see it and stop the parse part way through.
-	src := []byte("package p\n" + strings.Repeat("func f() { x := []int{1, 2, 3}; _ = x }\n", 20000))
-	late := &lateCancel{Context: context.Background()}
-	if _, err := astutil.Parse(late, lang, src); !errors.Is(err, context.Canceled) {
-		t.Fatalf("cancelled during the parse: err = %v, want context.Canceled", err)
-	}
-	if late.calls.Load() < 3 {
-		t.Fatalf("Err called %d times; the progress callback never ran", late.calls.Load())
-	}
-}
-
-// lateCancel reports itself cancelled from its second Err call on: Parse's
-// own check before parsing passes, the first progress callback stops it.
-type lateCancel struct {
-	context.Context
-	calls atomic.Int32
-}
-
-func (c *lateCancel) Done() <-chan struct{}       { return make(chan struct{}) }
-func (c *lateCancel) Deadline() (time.Time, bool) { return time.Time{}, false }
-func (c *lateCancel) Err() error {
-	if c.calls.Add(1) > 1 {
-		return context.Canceled
-	}
-	return nil
 }
