@@ -87,6 +87,10 @@ const (
 	junitToken    = "{junit}"
 )
 
+// keySQL stands for the SQL object files in an invocation key: they are
+// temporary files, so their paths would make every key unique.
+var keySQL = sqlFiles{patched: patchedSQLToken, original: originalSQLToken}
+
 // invocationKey names what a group's baseline runs: the runner or template
 // and the command exactly as rendered ({files}, {filter} and {junit}
 // substituted), with the worktree and the report path as placeholders. Two
@@ -111,10 +115,10 @@ func invocationKey(g group) string {
 	case kindRunner:
 		rn := g.runner
 		d.Runner = &rn
-		d.Dir, d.Argv = render(g, worktreeToken, junitToken)
+		d.Dir, d.Argv = render(g, worktreeToken, junitToken, keySQL)
 	default:
 		d.Template = g.tmpl
-		d.Dir, d.Argv = render(g, worktreeToken, junitToken)
+		d.Dir, d.Argv = render(g, worktreeToken, junitToken, keySQL)
 	}
 	b, _ := json.Marshal(d)
 	return sha(b)
@@ -122,10 +126,10 @@ func invocationKey(g group) string {
 
 // baseline runs the verifiers unbroken. Each group's invocation runs at
 // most once per tree; see baselineGroup.
-func (r *runner) baseline(ctx context.Context, groups []group) baseline {
+func (r *runner) baseline(ctx context.Context, groups []group, sql sqlFiles) baseline {
 	var all []execResult
 	for _, g := range groups {
-		res := r.baselineGroup(ctx, g)
+		res := r.baselineGroup(ctx, g, sql)
 		all = append(all, res)
 		if res.status == statusTimeout || ctx.Err() != nil {
 			break
@@ -149,7 +153,7 @@ func (r *runner) baseline(ctx context.Context, groups []group) baseline {
 // are accounted from that invocation's report, so a shared run never counts
 // a verifier as executed that it did not execute.
 // @enforces breaktest:INV-13
-func (r *runner) baselineGroup(ctx context.Context, g group) execResult {
+func (r *runner) baselineGroup(ctx context.Context, g group, sql sqlFiles) execResult {
 	key := invocationKey(g)
 	if inv, ok := r.shared[key]; ok {
 		r.counts.Reused++
@@ -160,7 +164,7 @@ func (r *runner) baselineGroup(ctx context.Context, g group) execResult {
 		r.shared[key] = inv
 		return inv.result(g)
 	}
-	inv := r.invoke(ctx, g)
+	inv := r.invoke(ctx, g, sql)
 	r.counts.Run++
 	if inv.reusable() {
 		r.shared[key] = inv

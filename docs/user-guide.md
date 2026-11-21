@@ -1384,7 +1384,8 @@ break:
 - `command` is an argument list, run without a shell. `{files}` as its own
   element becomes one argument per file; `{filter}` (a regular expression over
   the test titles, a `-k` expression for Python) and `{junit}` are replaced
-  where they appear. `dir` (optional) is the working directory, and file paths
+  where they appear; a SQL break also has `{patched_sql}` and `{original_sql}`
+  (below). `dir` (optional) is the working directory, and file paths
   are then given relative to it.
 - A `break.commands.<lang>` shell template (with `{files}`, `{filter}` and
   `{junit}`, shell-quoted) is the fallback for a verifier no runner matches, as
@@ -1415,6 +1416,61 @@ break:
   `unknown`, not `killed`. pg_prove runs whole files, so `{filter}` does not
   apply. With Supabase, `{ supabase db reset || exit 125; } && supabase test db`
   fits the same way.
+- **Applying only the broken object.** The full reset above rebuilds the whole
+  database for every break, which is most of a SQL break's time. For a SQL
+  break a runner may name two more placeholders instead:
+  - `{patched_sql}` is the path of a temporary `.sql` file holding the broken
+    object's whole statement, with the break applied;
+  - `{original_sql}` is the same statement unbroken.
+
+  A function or procedure is written as `CREATE OR REPLACE` (the keywords are
+  added when the migration wrote a plain `CREATE`). A policy cannot be replaced
+  in place, so its two files start with `DROP POLICY IF EXISTS <name> ON
+  <table>;` before the `CREATE POLICY`; a trigger likewise starts with `DROP
+  TRIGGER IF EXISTS <name> ON <table>;`. The files are written outside the
+  worktree, and in a `break.commands` template the paths are shell-quoted. A
+  runner applies the patched file, runs the tests, and always puts the original
+  back. This one needs the database migrated once beforehand, here by a
+  `break.setup` step with the `db/reset.sh` of the example above:
+
+  ```yaml
+  break:
+    setup:
+      - db/reset.sh
+    runners:
+      - name: pgtap-swap
+        match: ["db/tests/**/*.sql"]
+        command:
+          - sh
+          - -c
+          - |
+            psql -v ON_ERROR_STOP=1 -q -f "$1" || exit 125
+            original=$2
+            shift 2
+            pg_prove -d "$PGDATABASE" "$@"
+            status=$?
+            psql -v ON_ERROR_STOP=1 -q -f "$original" || exit 125
+            exit $status
+          - sh
+          - "{patched_sql}"
+          - "{original_sql}"
+          - "{files}"
+  ```
+
+  The baseline has no broken object, so a baseline command that names the
+  placeholders gets `{original_sql}` for both. The temporary paths are not part
+  of the baseline's cache key, so promises that run the same command still share
+  one baseline. A command that names either placeholder for a break that is not
+  SQL, for a SQL break with a patch script (`lattice/breaks/...`), or for a
+  statement that cannot be isolated does not run: the break reads `unknown`
+  ("{patched_sql} not available for this break"), never `survived`.
+
+  The full reset stays the safe default. Swapping one object is not safe when
+  other objects depend on its definition in a way that replacing it does not
+  update (an index or generated column built on a function, a view that was
+  materialised with its result), or when the tests depend on data that a
+  migration seeded after the object, by calling the unbroken object. Use the
+  reset for those.
 
 **The worktree.** A temporary worktree has no `node_modules`, so `lattice break`
 symlinks each `node_modules` directory of the main checkout into the same relative

@@ -38,7 +38,8 @@ func newBreakCommand(io *IO) *cobra.Command {
 			"TypeScript/JavaScript, Python). A patch at lattice/breaks/<feature>/<INV>.patch\n" +
 			"replaces it for that promise (use one for SQL). Go verifiers run with `go test\n" +
 			"-run`; other frameworks need break.runners in config.yaml (a glob over the test\n" +
-			"files and a command with {files}, {filter} and {junit}), or break.commands.<lang>\n" +
+			"files and a command with {files}, {filter} and {junit}; a SQL break also has\n" +
+			"{patched_sql} and {original_sql}), or break.commands.<lang>\n" +
 			"as a fallback. break.setup runs commands in the worktree first, and node_modules\n" +
 			"directories are linked from the main checkout unless break.link_node_modules is\n" +
 			"false. A verifier that did not run is listed in not_run_verifiers.\n" +

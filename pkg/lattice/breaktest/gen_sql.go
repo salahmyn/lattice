@@ -328,9 +328,27 @@ func (s sqlStmt) header() (sqlEnforcer, string, int, bool) {
 // this cannot place exactly is a *NoBreak.
 // @enforces breaktest:INV-1
 func generateSQL(src []byte, sym Symbol) (Break, error) {
+	st, kind, next, err := locateSQL(src, sym)
+	if err != nil {
+		return Break{}, err
+	}
+	switch kind {
+	case sqlPolicy:
+		return st.policyBreak(next)
+	case sqlTrigger:
+		return st.triggerBreak(next)
+	}
+	return st.functionBreak(next, kind == sqlProcedure)
+}
+
+// locateSQL finds the CREATE statement of an enforcer symbol: the one that
+// starts on its line and has its name. It returns the statement, its kind and
+// the index of the token after its name (after the table, for a policy or
+// trigger).
+func locateSQL(src []byte, sym Symbol) (sqlStmt, sqlEnforcer, int, error) {
 	toks, err := sqlLex(src, 0, len(src), 1)
 	if err != nil {
-		return Break{}, noBreak("SQL does not scan: %v; add a script", err)
+		return sqlStmt{}, 0, 0, noBreak("SQL does not scan: %v; add a script", err)
 	}
 	for _, st := range sqlStatements(src, toks) {
 		if st.toks[0].line != sym.Line {
@@ -340,15 +358,9 @@ func generateSQL(src []byte, sym Symbol) (Break, error) {
 		if !ok || name != sym.Name {
 			continue
 		}
-		switch kind {
-		case sqlPolicy:
-			return st.policyBreak(next)
-		case sqlTrigger:
-			return st.triggerBreak(next)
-		}
-		return st.functionBreak(next, kind == sqlProcedure)
+		return st, kind, next, nil
 	}
-	return Break{}, noBreak("no SQL function, policy or trigger %s at line %d", sym.Name, sym.Line)
+	return sqlStmt{}, 0, 0, noBreak("no SQL function, policy or trigger %s at line %d", sym.Name, sym.Line)
 }
 
 // policyBreak turns USING (expr) and WITH CHECK (expr) into

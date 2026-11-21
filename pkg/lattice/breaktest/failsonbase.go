@@ -310,7 +310,7 @@ func runOnBase(ctx context.Context, rh, rb *runner, t baseTarget) BaseRun {
 		run.Head, run.Reason = HeadError, "at head: "+err.Error()
 		return run
 	}
-	head := rh.runGroups(ctx, groups)
+	head := rh.runGroups(ctx, groups, sqlFiles{})
 	switch {
 	case head.status == statusFail:
 		run.Head, run.Reason = HeadFail, "fails at head too, so the base run says nothing: "+head.reason
@@ -328,7 +328,7 @@ func runOnBase(ctx context.Context, rh, rb *runner, t baseTarget) BaseRun {
 		run.Reason = "on base: " + err.Error()
 		return run
 	}
-	base := rb.runGroups(ctx, groups)
+	base := rb.runGroups(ctx, groups, sqlFiles{})
 	run.Outcome, run.Reason, run.FailedTests = judgeBase(groups[0].kind == kindGo, head, base, t.test.FQN)
 	return run
 }
