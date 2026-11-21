@@ -7,10 +7,12 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
-// --unsigned lists a current version that rests on a local note (an
-// approval or an ack) and each review-route confirmation of a current
-// version, with the exact commands; it leaves out what a signature already
-// confirms, older versions, and a council's approval no human acked.
+// --unsigned lists a current version that rests on a typed note (an
+// approval or an ack, with or without the local mark files written before
+// it lack), a council's approval its delegating human has not acked, and
+// each review-route confirmation of a current version, with the exact
+// commands; it leaves out what a signature already confirms, older
+// versions, and an agent's own approval.
 // @verifies confirm:INV-19
 func TestListUnsigned(t *testing.T) {
 	local := func(id string, v int, by string) schema.BRD {
@@ -20,9 +22,18 @@ func TestListUnsigned(t *testing.T) {
 	acked := local("brd.wallet", 2, "council:m-brd")
 	acked.Approval.Mandate, acked.Approval.HumanReview, acked.Approval.ReviewedBy = "m-brd", schema.HumanReviewAcknowledged, "bo@example.com"
 	council := local("brd.loans", 1, "council:m-brd")
-	council.Approval.Mandate, council.Approval.Local = "m-brd", false
+	council.Approval.Mandate, council.Approval.Local, council.Approval.DelegatedBy = "m-brd", false, "owner@example.com"
+	council.Approval.HumanReview = schema.HumanReviewPending
+	// Written before the local mark existed: an ack and an approval.
+	legacyAck := local("brd.rates", 5, "council:m-brd")
+	legacyAck.Approval.Mandate, legacyAck.Approval.HumanReview, legacyAck.Approval.ReviewedBy = "m-brd", schema.HumanReviewAcknowledged, "owner@example.com"
+	legacyAck.Approval.Local = false
+	legacyApprove := local("brd.limits", 2, "ana@example.com")
+	legacyApprove.Approval.Local = false
+	agent := local("brd.fx", 1, "agent-drafter")
+	agent.Approval.Local = false
 	brds := []schema.BRD{local("brd.fees", 3, "ana@example.com"), acked, local("brd.orders", 1, "ana@example.com"), council,
-		{ID: "brd.cards", Version: 4, Status: schema.BRDApproved}}
+		{ID: "brd.cards", Version: 4, Status: schema.BRDApproved}, legacyAck, legacyApprove, agent}
 
 	pcPath := "lattice/decisions/approvals/brd.orders-v1.confirm-1a2b3c4d-77aa88bb.yaml"
 	cardsPath := "lattice/decisions/approvals/brd.cards-v4-55cc66dd.yaml"
@@ -50,6 +61,9 @@ func TestListUnsigned(t *testing.T) {
 		"brd.ack brd.wallet v2":         {"lattice prepare brd ack brd.wallet", "git switch decision/brd.wallet-v2.ack-abcdef01", "lattice sign brd.wallet-v2.ack-abcdef01"},
 		"promise.confirm brd.orders v1": {"lattice sign " + pcPath},
 		"brd.approve brd.cards v4":      {"lattice sign " + cardsPath},
+		"brd.ack brd.loans v1":          {"lattice prepare brd ack brd.loans", "git switch decision/brd.loans-v1.ack-abcdef01", "lattice sign brd.loans-v1.ack-abcdef01"},
+		"brd.ack brd.rates v5":          {"lattice prepare brd ack brd.rates", "git switch decision/brd.rates-v5.ack-abcdef01", "lattice sign brd.rates-v5.ack-abcdef01"},
+		"brd.approve brd.limits v2":     {"lattice prepare brd approve brd.limits --version 2", "git switch decision/brd.limits-v2-abcdef01", "lattice sign brd.limits-v2-abcdef01"},
 	}
 	if len(got) != len(want) {
 		t.Errorf("listed %d, want %d: %+v", len(got), len(want), l.Decisions)
@@ -66,6 +80,12 @@ func TestListUnsigned(t *testing.T) {
 	}
 	if u := got["brd.approve brd.fees v3"]; u.Rests != RestsLocal || u.By != "ana@example.com" || u.DecisionPath != "" {
 		t.Errorf("a local note: %+v", u)
+	}
+	if u := got["brd.ack brd.loans v1"]; u.Rests != RestsCouncil || u.By != "owner@example.com" || !strings.Contains(u.Text, "read the council's decision") {
+		t.Errorf("a council's approval awaiting its human: %+v", u)
+	}
+	if u := got["brd.ack brd.rates v5"]; u.Rests != RestsLocal || u.By != "owner@example.com" {
+		t.Errorf("an ack written before the local mark: %+v", u)
 	}
 	if u := got["brd.approve brd.cards v4"]; u.Rests != RestsReview || u.By != "cy" || u.PR != 9 || u.DecisionPath != cardsPath {
 		t.Errorf("a review: %+v", u)

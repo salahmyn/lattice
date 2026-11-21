@@ -10,3 +10,5 @@ implements_brd: brd.adoption
 invariants:
   - id: INV-1
     statement: A loopback-bound server refuses a request whose Host is not a loopback name.
+  - id: INV-2
+    statement: The block map colours a block only by the weakest audit class, in the audit's own order, of the promises it holds; a promise the audit has no row for reads unknown, and only the audit's positive classes are drawn as a pass.

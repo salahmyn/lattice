@@ -219,11 +219,11 @@ A complete, validating three-language example lives in
 | `lattice import scan\|review\|inscribe` | Brownfield import session |
 | `lattice analyze proposal <f>` | Conflict and impact analysis |
 | `lattice patch --from-file <f>` | Preview/apply a typed artifact edit |
-| `lattice serve` | Web UI (live updates, search); block map at `/map`, views at `/views` |
+| `lattice serve` | Web UI (live updates, search); block map at `/map` (with an assurance lens), views at `/views` |
 | `lattice refresh` | Rebuild the block graph from the workspace's sources and judgments |
 | `lattice record list\|get\|put` | Authored records (judgments, initiatives, evidence, BRDs) in the store |
 | `lattice store search\|relations\|export` | Query the stored block graph |
-| `lattice export map\|views\|features` | Self-contained map or views page; Gherkin `.feature` files |
+| `lattice export map\|views\|features` | Self-contained map (graph and audit inlined) or views page; Gherkin `.feature` files |
 | `lattice view <name>` | Render developer / product / business / c4 views |
 | `lattice journey <brd>` \| `lattice actor list` | Journey and actor views |
 | `lattice rtm` | Requirements traceability matrix with attestation header |
@@ -261,6 +261,14 @@ of blocks and edges, stamped with the commit and release each source
 reflects. `lattice serve` shows it at `/map`; `lattice export map` writes
 the same page as one file. Storage is files by default, or PostgreSQL
 (`storage: {backend: postgres}`) for search and relation queries.
+
+The map's **Assurance** toggle (`a`) colours each block by the audit
+class of the promises it holds, the weakest by the audit's own order:
+fake, a gap, unknown, demonstrated only, exercised or break-tested. The
+classes, the order and the colour of each come with the map's data
+(`/api/graph`, or inlined by `export map`); the page computes none of them.
+Only break-tested and exercised are green. A promise with no audit row, or
+an export whose audit could not run, reads unknown (hatched grey).
 
 ## Web UI
 

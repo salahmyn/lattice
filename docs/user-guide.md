@@ -1051,6 +1051,40 @@ entries:
   - {id: sys.checkout, title: Checkout, owner: team-checkout}
 ```
 
+### The assurance lens
+
+**Assurance** in the header (or `a`) colours every block by its
+assurance: the class `lattice audit` computed for the promises the block
+holds. An invariant block holds its own promise, a feature block its
+invariants, and any other block the promises of the blocks inside it.
+
+- A block that holds several promises takes the **weakest** class, in the
+  audit's order: fake, unenforced, unverified, not demonstrated, unknown,
+  demonstrated only, exercised, break-tested. Its count per class shows on
+  the box, in its tooltip and in its details, which also list each
+  promise with the audit's reason and its acceptance cases' coverage.
+- Each class has one colour. Only **break-tested** (solid green) and
+  **exercised** (green outline) are drawn as a pass. **Unknown** is
+  hatched grey, and so is a promise block the audit has no row for (a
+  stored graph older than the features: run `lattice refresh`). A block
+  that holds no promise is faded.
+- While the lens is on, kind and wiring colours on the blocks go grey, so
+  every colour on a block is an audit class.
+- The legend under the tabs gives each class with its meaning and count,
+  the evidence the audit read, and the rule: unknown is never a pass.
+- Discover gains an **Assurance** column and chips; it sorts in the
+  audit's order. A group made by a lens other than containment is not one
+  block, so it is not coloured.
+
+The page computes no class. `/api/graph` (and the data `lattice export
+map` inlines) carries an `assurance` object beside the graph: the audit's
+classes in order, the style of each class, the legend, every promise with
+its class, and for every block its weakest class, count per class and
+promises. `serve` audits the live workspace on each request, read-only;
+`export map` audits it once. When the audit cannot run, every promise reads
+unknown and the legend says why. The lens only shows: it confirms and
+prepares nothing.
+
 ### Focus
 
 Focus puts one block in the centre, the blocks that link to it on the
@@ -1133,14 +1167,15 @@ walks it:
 
 The keys are `tab` (`diag`, `focus`, `flows`, `discover`), `id` (the
 focused or selected block), `hops`, `ctx`, `lens`, `root` (the box drilled
-into), `init` (the proposal), `flow`, `lanes` and `hide` (hidden kinds).
+into), `init` (the proposal), `flow`, `lanes`, `hide` (hidden kinds) and
+`as` (`as=1`: the assurance lens on).
 In `lattice serve`, the pages of a feature, a BRD and an entry point link
 to `/map#tab=focus&id=<block>` when the graph has a block for them:
 `feat:<id>`, `ep:<id>`, and for a BRD its features' blocks and the blocks
 it names.
 
-Keys: `/` search, `Esc` close, `f` fit; in Focus also `[` `]` back and
-forward, `1` `2` `3` hops and `c` system context.
+Keys: `/` search, `a` the assurance lens, `Esc` close, `f` fit; in Focus
+also `[` `]` back and forward, `1` `2` `3` hops and `c` system context.
 
 ### Checking it in a browser
 
@@ -1996,8 +2031,12 @@ where trust started, so `confirm` and the readers need the full history
 (`fetch-depth: 0`).
 
 **Re-confirm by signature.** `lattice confirm --unsigned` lists the decisions a
-signature could re-confirm, and the exact commands for each. It reads only: it
-signs, prepares and writes nothing (`lattice.confirm-unsigned/1`).
+signature could confirm, and the exact commands for each: an approval or
+acknowledgement typed into a BRD file (by `brd approve`, `brd ack`, or written
+before Lattice marked such notes `local`), a council's approval that its
+delegating human has not acknowledged yet (`council`: read the council's decision
+first), and a confirmation by review. It reads only: it signs, prepares and
+writes nothing (`lattice.confirm-unsigned/1`).
 
 ```text
 local  brd.ack brd.refunds v3  (a local note typed as ana@example.com, not a confirmation; ...)
