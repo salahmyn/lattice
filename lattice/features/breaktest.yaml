@@ -16,13 +16,13 @@ invariants:
   - id: INV-3
     statement: A break that does not compile (only an explicit build marker or a runner exit of 125 counts, a runtime failure is a failing test), a baseline that fails or runs no test, a timeout or a missing runner reads unknown, never killed or survived.
   - id: INV-4
-    statement: Verifiers that pass before and after the break read survived, and verifiers that pass before and fail after read killed.
+    statement: Verifiers that pass before and after the break read survived if every one ran, else unknown; those that pass before and fail after read killed.
   - id: INV-5
     statement: An earlier outcome is reused only when the enforcer, verifier, method, script and runner-configuration hashes all match, and unknown outcomes are never reused.
   - id: INV-6
     statement: A promise's verifiers are grouped by test runner (the first break.runners glob that matches, then the language template, then Go) and every group runs; the promise is killed only when a group fails after the break and every group passed at baseline.
   - id: INV-7
-    statement: Each run records the verifiers that ran, the ones that did not (no runner, or no test selected) and the tests that failed; a baseline that executes no test reads unknown, never survived.
+    statement: Each run records the verifiers that ran both times, the others (no runner, no test selected or run) and the tests that failed; a baseline that executes no test reads unknown, never survived.
   - id: INV-8
     statement: The worktree is prepared before the first baseline (node_modules linked, break.setup run), and a setup that fails reads unknown for every run.
   - id: INV-9

@@ -54,7 +54,7 @@ type breakSummary struct {
 	Ran      bool `json:"ran"` // some run was killed or survived
 	// UnknownReasons are the three most common reasons of the unknown runs.
 	// Runs with no runner count under one reason, "no runner configured",
-	// whatever languages each lacks.
+	// whatever languages each lacks, and partial runs under another.
 	UnknownReasons []reasonCount `json:"unknown_reasons,omitempty"`
 	// MissingRunners counts, per language, the unknown runs that lack its
 	// runner, most first: a run whose verifiers need two runners counts
@@ -65,8 +65,12 @@ type breakSummary struct {
 	Baselines breaktest.BaselineCounts `json:"baselines"`
 }
 
-// noRunnerReason is the reason a summary groups runs with no runner under.
-const noRunnerReason = "no runner configured"
+// noRunnerReason is the reason a summary groups runs with no runner under,
+// and partialReason the one it groups partial runs under.
+const (
+	noRunnerReason = "no runner configured"
+	partialReason  = "partial: some verifiers did not run"
+)
 
 // breakOutput is what `lattice break --json` prints: the report as written
 // to breaks.json, the summary of the shown runs, and, when --fail-on
@@ -102,6 +106,10 @@ func summarize(runs []breaktest.Run) breakSummary {
 				for _, l := range langs {
 					missing[l]++
 				}
+				continue
+			}
+			if breaktest.IsPartial(r.Reason) {
+				reasons[partialReason]++
 				continue
 			}
 			reasons[r.Reason]++

@@ -111,10 +111,10 @@ func short(sha string) string {
 // breakSignal folds one promise's runs, one outcome per enforcer. A run that
 // survived with every verifier run, on any enforcer, makes it survived (the
 // verifiers cannot tell that enforcer is broken); else a killed run makes it
-// killed (a fact about that one break); else a run that survived while some
-// verifier did not run makes it partial_run (the break says nothing about the
-// verifiers that could not run); else unknown, with the reasons. A run on a
-// dirty tree is noted, not discarded.
+// killed (a fact about that one break); else a partial run (see partialRun)
+// makes it partial_run (the break says nothing about the verifiers that could
+// not run); else unknown, with the reasons. A run on a dirty tree is noted,
+// not discarded.
 // @enforces audit:INV-3
 func breakSignal(runs []BreakRun) (Signal, []BreakRun) {
 	s := Signal{Value: "unknown", Honesty: Fact}
@@ -130,7 +130,7 @@ func breakSignal(runs []BreakRun) (Signal, []BreakRun) {
 		switch {
 		case r.Outcome == "survived" && len(r.NotRunVerifiers) == 0:
 			full = append(full, r)
-		case r.Outcome == "survived":
+		case partialRun(r):
 			partial = append(partial, r)
 		case r.Outcome == "killed":
 			killed = append(killed, r)
@@ -177,6 +177,21 @@ func breakSignal(runs []BreakRun) (Signal, []BreakRun) {
 	return s, runs
 }
 
+// partialPrefix starts the reason lattice break gives a partial run.
+const partialPrefix = "partial: "
+
+// partialRun reports whether a run's break left the verifiers that ran green
+// while some verifier did not run. lattice break reads such a run unknown,
+// with a "partial: " reason; a breaks.json written before that rule has it as
+// survived with not_run_verifiers. Either way the break says nothing about
+// the verifiers that did not run.
+func partialRun(r BreakRun) bool {
+	if len(r.NotRunVerifiers) == 0 {
+		return false
+	}
+	return r.Outcome == "survived" || (r.Outcome == "unknown" && strings.HasPrefix(r.Reason, partialPrefix))
+}
+
 // notRun lists the verifiers the runs left unrun, sorted, once each.
 func notRun(runs []BreakRun) []string {
 	seen := map[string]bool{}
@@ -202,7 +217,7 @@ func perEnforcer(runs []BreakRun, skip string) string {
 			continue
 		}
 		p := r.Enforcer + ": " + r.Outcome
-		if r.Outcome == "survived" && len(r.NotRunVerifiers) > 0 {
+		if partialRun(r) {
 			p += " (verifiers not run: " + strings.Join(r.NotRunVerifiers, ", ") + ")"
 		}
 		parts = append(parts, p)
@@ -282,7 +297,7 @@ func readEnforcer(runs []BreakRun) EnforcerOutcome {
 	if r, ok := pick(func(r BreakRun) bool { return r.Outcome == "killed" }); ok {
 		return EnforcerOutcome{Outcome: OutcomeKilled, Reason: "breaking it" + methodNote(r) + " made the verifiers fail"}
 	}
-	if r, ok := pick(func(r BreakRun) bool { return r.Outcome == "survived" }); ok {
+	if r, ok := pick(partialRun); ok {
 		return EnforcerOutcome{Outcome: OutcomeUnknown,
 			Reason: "survived" + methodNote(r) + ", but verifiers did not run: " + strings.Join(r.NotRunVerifiers, ", ")}
 	}

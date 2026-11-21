@@ -80,13 +80,16 @@ type Run struct {
 	// to the contract.
 	Cached bool `json:"cached,omitempty"`
 
-	// RanVerifiers are the verifiers that executed: from the JUnit report
-	// when the runner has {junit}, from Go's -v pass lines, else every
-	// verifier the runner was given.
+	// RanVerifiers are the verifiers that executed at baseline and, when no
+	// group failed after the break, after it too: from the JUnit report when
+	// the runner has {junit}, from Go's -v pass lines, else every verifier
+	// the runner was given.
 	RanVerifiers []string `json:"ran_verifiers,omitempty"`
-	// NotRunVerifiers are the verifiers that did not execute: no runner
-	// matches their file, or the runner's filter selected no test for them.
-	// A survived outcome with any of these says nothing about them.
+	// NotRunVerifiers are the verifiers that did not execute at baseline or
+	// after the break: no runner matches their file, the runner's filter
+	// selected no test for them, or the JUnit report does not show them run.
+	// A run with any of these is never survived: it is killed when a group
+	// failed after the break, else unknown with a PartialPrefix reason.
 	NotRunVerifiers []string `json:"not_run_verifiers,omitempty"`
 	// FailedTests are the names of the tests that failed after the break.
 	FailedTests []string `json:"failed_tests,omitempty"`
@@ -97,8 +100,9 @@ type Run struct {
 
 // GeneratorVersion stamps the generators, the runner logic and the outcome
 // rules. It is part of the cache key, so a change to any of them invalidates
-// cached outcomes.
-const GeneratorVersion = "2"
+// cached outcomes. 3: a break that left the verifiers that ran green while
+// others did not run reads unknown, not survived.
+const GeneratorVersion = "3"
 
 // cacheKey is what makes an earlier outcome valid again: the same enforcer
 // source, the same verifier source, the same way of breaking it, and the

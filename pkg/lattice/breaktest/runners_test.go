@@ -124,6 +124,32 @@ func TestCombine(t *testing.T) {
 	}
 }
 
+// A break every group passed is survived only when each verifier ran at
+// baseline and after the break. One that did not run at baseline (no runner,
+// no test selected) or ran only at baseline makes it unknown, with a partial
+// reason, and is recorded as not run.
+// @verifies breaktest:INV-4
+// @verifies breaktest:INV-7
+func TestSurvivedOrPartial(t *testing.T) {
+	run := Run{Verifiers: []string{"a", "b"}, RanVerifiers: []string{"a", "b"}}
+	if o, why := survivedOrPartial(&run, []string{"a", "b"}, map[string]string{}); o != Survived || why != "" ||
+		len(run.NotRunVerifiers) != 0 || len(run.RanVerifiers) != 2 {
+		t.Errorf("every verifier ran: %s %q %+v", o, why, run)
+	}
+
+	// c has no runner; d ran at baseline only.
+	run = Run{Verifiers: []string{"a", "c", "d"}, RanVerifiers: []string{"a", "d"}, NotRunVerifiers: []string{"c"}}
+	o, why := survivedOrPartial(&run, []string{"a"}, map[string]string{"c": "no runner matches x/c_test.ts"})
+	want := "partial: the 1 verifier(s) that ran passed after the break; 2 verifier(s) did not run: " +
+		"c (no runner matches x/c_test.ts); d (did not run after the break)"
+	if o != Unknown || why != want || !IsPartial(why) {
+		t.Errorf("partial: %s %q, want %q", o, why, want)
+	}
+	if !reflect.DeepEqual(run.RanVerifiers, []string{"a"}) || !reflect.DeepEqual(run.NotRunVerifiers, []string{"c", "d"}) {
+		t.Errorf("ran %v, not run %v", run.RanVerifiers, run.NotRunVerifiers)
+	}
+}
+
 // With {junit} the tests that executed come from the report: a verifier the
 // runner's filter selected nothing for is not run, and a skipped one is not
 // either. Without it the count cannot be checked.
