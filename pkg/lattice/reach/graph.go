@@ -65,6 +65,9 @@ type Unresolved struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name,omitempty"`
 	Qualifier string `json:"qualifier,omitempty"`
+	// Secret is the Vault secret a computed request read its URL whole from,
+	// when no http.secrets entry declares its route.
+	Secret string `json:"secret,omitempty"`
 	// Why: ambiguous (several members share the name, or several routes
 	// serve the request), missing (it names a module of the workspace, or a
 	// database function, that has no such symbol, or a handler that is no
@@ -202,8 +205,6 @@ func Build(modules []ir.Module, opts Options) *Graph {
 		}
 	}
 
-	b.http = g.collectHTTPEnds(opts.EntryPoints)
-	g.http = b.http
 	b.collectEntryConsumers(opts.EntryPoints)
 	for _, o := range opts.Origins {
 		if ir.ValidHTTPOrigin(o) {
@@ -211,6 +212,15 @@ func Build(modules []ir.Module, opts Options) *Graph {
 		}
 	}
 
+	// A request is joined to a route once the other calls are resolved: the
+	// ends of an edge function depend on what its serve call calls.
+	type pending struct {
+		mc    *modCtx
+		owner *node
+		from  string
+		ref   ir.Ref
+	}
+	var requests []pending
 	scipLangs := map[string]bool{}
 	for lang, c := range opts.SCIP {
 		if c != nil && !c.Empty() {
@@ -235,14 +245,22 @@ func Build(modules []ir.Module, opts Options) *Graph {
 		mc := b.context(mi)
 		for _, s := range m.Symbols {
 			for _, r := range s.Refs {
-				if !viaSCIP || isAsyncKind(r.Kind) {
+				switch {
+				case viaSCIP && !isAsyncKind(r.Kind):
+				case r.Kind == ir.RefHTTP:
+					requests = append(requests, pending{mc, g.nodes[s.FQN], s.FQN, r})
+				default:
 					b.resolve(mc, g.nodes[s.FQN], s.FQN, r)
 				}
 			}
 		}
 		for _, nd := range m.Nodes {
 			for _, r := range nd.Refs {
-				if !viaSCIP || isAsyncKind(r.Kind) {
+				switch {
+				case viaSCIP && !isAsyncKind(r.Kind):
+				case r.Kind == ir.RefHTTP:
+					requests = append(requests, pending{mc, g.nodes[nd.FQN], nd.FQN, r})
+				default:
 					b.resolve(mc, g.nodes[nd.FQN], nd.FQN, r)
 				}
 			}
@@ -250,6 +268,11 @@ func Build(modules []ir.Module, opts Options) *Graph {
 	}
 	for lang := range scipLangs {
 		b.scipEdges(lang, opts.SCIP[lang])
+	}
+	b.http = g.collectHTTPEnds(opts.EntryPoints)
+	g.http = b.http
+	for _, p := range requests {
+		b.resolve(p.mc, p.owner, p.from, p.ref)
 	}
 
 	// A member that is reached makes its type used.
@@ -518,7 +541,7 @@ func (b *builder) resolve(mc *modCtx, owner *node, from string, r ir.Ref) {
 			g.Stats.NoRoute++
 		}
 		g.Unresolved = append(g.Unresolved, Unresolved{From: from, File: m.File, Line: r.Line, Kind: r.Kind,
-			Name: r.Name, Qualifier: r.Qualifier, Why: why, Candidates: cands})
+			Name: r.Name, Qualifier: r.Qualifier, Secret: r.Secret, Why: why, Candidates: cands})
 	}
 	external := func() { g.Stats.External++ }
 

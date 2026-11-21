@@ -320,3 +320,37 @@ func TestBreakEdgesTable(t *testing.T) {
 		}
 	}
 }
+
+// An edge function laid out as real projects do (index.ts serves a handler
+// built in handler.ts, and a route is declared for the handler) is one
+// endpoint: the hop from the client to it is resolved and its edge break runs,
+// not skipped as ambiguous.
+// @verifies breaktest:INV-19
+func TestBreakEdgesEdgeFunctionWithDeclaredRoute(t *testing.T) {
+	dir := edgeFixture(t, func(files map[string]string) {
+		for _, f := range []string{"api/routes.ts", "web/main.ts", "web/refunds.e2e.test.ts"} {
+			delete(files, f)
+		}
+		files["lattice/config.yaml"] = "break:\n  runners:\n    - name: e2e\n      match: [\"web/*.e2e.test.ts\"]\n      command: [sh, -c, " +
+			shellYAML(`for n in $(grep -oE "invoke\('[^']*'" web/client.ts | sed "s/invoke('//; s/'//"); do test -d "supabase/functions/$n" || { echo "not ok 1 - $n is not served"; exit 1; }; done; echo 'ok 1 - functions answer'`) +
+			", sh, \"{files}\"]\n"
+		files["web/main.ts"] = "/** @module-feature orders */\n\nimport { loadOrders } from './client';\n\nloadOrders();\n"
+		files["web/client.ts"] = "/** @module-feature orders */\n\nexport function loadOrders() {\n  return supabase.functions.invoke('list-orders');\n}\n"
+		files["supabase/functions/list-orders/index.ts"] = "/** @module-feature orders */\n\nimport { createHandler } from './handler.ts';\n\nDeno.serve(createHandler({}));\n"
+		files["supabase/functions/list-orders/handler.ts"] = "/** @module-feature orders */\n\n/** @enforces orders:INV-1 */\nexport function createHandler(deps: unknown) {\n  return async (req: Request) => new Response('[]');\n}\n"
+		files["web/orders.e2e.test.ts"] = "/** @module-feature orders */\n\n/** @verifies orders:INV-1 */\ntest('orders load', () => {});\n"
+		files["lattice/entry-points/ep.orders.list.yaml"] = "id: ep.orders.list\nversion: 1\nstatus: production\nkind: http_route\npurpose: Lists orders\nowners:\n  business: nobody\n  engineering: nobody\n" +
+			"trigger:\n  method: POST\n  path: /functions/v1/list-orders\nhandler:\n  symbol: supabase.functions.list-orders.handler.createHandler\n  file: supabase/functions/list-orders/handler.ts\nflow:\n  - feature: orders\n"
+	})
+	rep, out, err := runBreak(t, dir, "--edges", "--promise", "orders:INV-1")
+	if err != nil {
+		t.Fatalf("break --edges: %v\n%s", err, out)
+	}
+	runs := edgeRuns(rep)["orders:INV-1"]
+	if len(runs) != 1 {
+		t.Fatalf("edge runs = %+v", runs)
+	}
+	if r := runs[0]; r.Hop == nil || r.Hop.Kind != "http" || strings.HasPrefix(r.Reason, "skipped: ") || r.Outcome == breaktest.Unknown || r.Baseline != "pass" {
+		t.Errorf("the hop to the edge function must run: hop %+v outcome %s baseline %q reason %q", r.Hop, r.Outcome, r.Baseline, r.Reason)
+	}
+}

@@ -44,8 +44,9 @@ type RuntimeRoot struct {
 	// call builds.
 	Calls []string
 	// Reaches are the nodes a cron job's body reaches by a direct call, or
-	// by one http hop to an edge function and then direct calls, to
-	// reachDepth edges in all. Calls are among them.
+	// by one http hop to an edge function (the job's own, or that of a
+	// function it calls) and then direct calls, to reachDepth edges in all.
+	// Calls are among them.
 	Reaches []string
 	// Blocked is empty for a root that can become an entry point; otherwise
 	// the reason it cannot (Blocked*).
@@ -123,17 +124,19 @@ func (g *Graph) RuntimeRoots() []RuntimeRoot {
 }
 
 // reachDepth is the most edges a cron job's reach follows: the job's call to
-// the edge function, the function's serve call to its handler, and one call
-// beyond.
+// the edge function (or to a function that posts to it), the function's serve
+// call to its handler, and one call beyond.
 const reachDepth = 3
 
 // cronReach lists what a cron job's body reaches: the nodes it calls directly
 // and, through an http edge (a net.http_post to an edge function), the nodes
-// that function's code calls, up to reachDepth edges from the job. A path
-// that does not start with an http edge stops at its first node, so a job
-// that calls a SQL function does not cover everything that function calls.
-// Only an edge of the synchronous call graph is followed: a member, publish
-// or consume edge is not.
+// that function's code calls, up to reachDepth edges from the job. The http
+// edge may be the job's own or that of a function the job calls directly (a
+// job that runs `select public.call_enrich()`, where call_enrich posts to the
+// edge function). Any other path stops at its first node, so a job that calls
+// a SQL function does not cover everything that function calls. Only an edge
+// of the synchronous call graph is followed: a member, publish or consume edge
+// is not.
 func cronReach(from string, edgesFrom map[string][]Edge) []string {
 	seen := map[string]bool{}
 	var out []string
@@ -143,28 +146,40 @@ func cronReach(from string, edgesFrom map[string][]Edge) []string {
 			out = append(out, fqn)
 		}
 	}
+	// follow adds what direct calls reach from the frontier, one edge per
+	// depth from startDepth to reachDepth.
+	follow := func(frontier []string, startDepth int) {
+		for depth := startDepth; depth <= reachDepth; depth++ {
+			var next []string
+			for _, f := range frontier {
+				for _, e := range edgesFrom[f] {
+					if e.Kind == "member" || isAsyncKind(e.Kind) || seen[e.To] {
+						continue
+					}
+					add(e.To)
+					next = append(next, e.To)
+				}
+			}
+			frontier = next
+		}
+	}
 	for _, e := range edgesFrom[from] {
 		if e.Kind == "member" {
 			continue
 		}
 		add(e.To)
-		if e.Kind != ir.RefHTTP {
+		if e.Kind == ir.RefHTTP {
+			follow([]string{e.To}, 2)
 			continue
 		}
-		frontier := []string{e.To}
-		for depth := 2; depth <= reachDepth; depth++ {
-			var next []string
-			for _, f := range frontier {
-				for _, e2 := range edgesFrom[f] {
-					if e2.Kind == "member" || isAsyncKind(e2.Kind) || seen[e2.To] {
-						continue
-					}
-					add(e2.To)
-					next = append(next, e2.To)
-				}
+		var posted []string
+		for _, e2 := range edgesFrom[e.To] {
+			if e2.Kind == ir.RefHTTP {
+				add(e2.To)
+				posted = append(posted, e2.To)
 			}
-			frontier = next
 		}
+		follow(posted, 3)
 	}
 	sort.Strings(out)
 	return out
@@ -196,13 +211,15 @@ func EdgeFunctionPath(file string) string {
 //   - the root is a serve handler and the entry point is an http_route or a
 //     webhook whose trigger path equals the path the platform serves the
 //     function at, whatever its method (a proposal has none); or whose handler
-//     is a direct callee of the serve node (Deno.serve(createHandler(...))
-//     calls createHandler, which a manifest names);
+//     the serve call calls anywhere in its argument expression, at any depth
+//     (Deno.serve(withSentry('n', createHandler(...))) calls createHandler,
+//     which a manifest names);
 //   - the root is a cron job and the entry point is a cron with the same job
 //     name; or, when either names no job, with the same schedule and a handler
 //     the job's body reaches: by a direct call, or by one http hop to an edge
-//     function followed by direct calls, to depth 3 (a net.http_post to
-//     /functions/v1/<fn> reaches <fn>'s handler). A different schedule never
+//     function, the job's own or that of a function it calls, followed by
+//     direct calls, to depth 3 (a net.http_post to /functions/v1/<fn> reaches
+//     <fn>'s handler). A different schedule never
 //     covers, a different job name always keeps two jobs apart, and two jobs
 //     on one schedule that reach different functions are not merged.
 func (r RuntimeRoot) CoveredBy(eps []schema.EntryPoint) bool {
@@ -254,7 +271,8 @@ func (r RuntimeRoot) servedAt(ep schema.EntryPoint) bool {
 }
 
 // callsHandler reports an http_route or webhook entry point whose handler the
-// serve root r calls directly.
+// serve root r calls: the adapter records every call in the serve call's
+// arguments as the serve node's own, however deeply it is nested.
 func (r RuntimeRoot) callsHandler(ep schema.EntryPoint) bool {
 	return (ep.Kind == schema.EntryPointKindHTTP || ep.Kind == schema.EntryPointKindWebhook) &&
 		containsFQN(r.Calls, ep.Handler.Symbol)

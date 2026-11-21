@@ -155,6 +155,12 @@ type HTTP struct {
 	// a URL that is exactly that origin and a literal path is a path-only
 	// request. Checked by validate, not here.
 	Origins []string `yaml:"origins,omitempty"`
+	// Secrets maps the name of a secret the code reads a whole URL from
+	// (Supabase Vault: vault.decrypted_secrets) to the route path that URL
+	// points at, such as "/functions/v1/ai-enrich": a request whose URL is
+	// that secret, alone or followed by a literal, joins the route at that
+	// path. Checked by validate, not here.
+	Secrets map[string]string `yaml:"secrets,omitempty"`
 }
 
 // Channels is the channels: block of workspace.yaml: the project's own

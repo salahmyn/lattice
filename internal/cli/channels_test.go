@@ -140,3 +140,81 @@ func TestValidateReportsBadChannelWrapper(t *testing.T) {
 		}
 	}
 }
+
+const vaultFeature = `id: enrich
+version: 1
+status: production
+purpose: |
+  Enriches records on a schedule.
+owners:
+  business: nobody
+  engineering: nobody
+invariants:
+  - id: INV-1
+    statement: A record is enriched at most once.
+`
+
+// vaultFixture is a cron job that runs a SQL function, which reads the URL of
+// an edge function whole from a Vault secret and posts to it. The handler
+// keeps the promise.
+func vaultFixture(t *testing.T, workspaceYAML string) string {
+	t.Helper()
+	dir := t.TempDir()
+	files := map[string]string{
+		"lattice/config.yaml":                  "{}\n",
+		"lattice/adapters.yaml":                "adapters:\n  typescript:\n    enabled: true\n  postgres:\n    enabled: true\n",
+		"lattice/workspace.yaml":               workspaceYAML,
+		"lattice/features/enrich.yaml":         vaultFeature,
+		"supabase/functions/enrich/index.ts":   "/** @module-feature enrich */\n\nimport { createHandler } from './handler.ts';\n\nDeno.serve(createHandler({}));\n",
+		"supabase/functions/enrich/handler.ts": "/** @module-feature enrich */\n\n/** @enforces enrich:INV-1 */\nexport function createHandler(deps: unknown) {\n  return async (req: Request) => new Response('ok');\n}\n",
+		"supabase/migrations/001_enrich.sql": "create function public.call_enrich() returns void language plpgsql as $$\ndeclare v_url text;\nbegin\n" +
+			"  select decrypted_secret into v_url from vault.decrypted_secrets where name = 'enrich_url';\n" +
+			"  perform net.http_post(url := v_url, body := '{}'::jsonb);\nend $$;\n" +
+			"select cron.schedule('enrich-job', '*/5 * * * *', $$ select public.call_enrich() $$);\n",
+	}
+	for name, body := range files {
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// A secret declared in workspace.yaml http.secrets gives the request that
+// reads its URL whole the declared route: the cron job reaches the edge
+// function's handler through resolved hops, and the slice of the handler's
+// promise has a path from the job. Without the declaration the URL is
+// computed and the job reaches nothing.
+// @verifies reachability:INV-11
+func TestSliceThroughAVaultSecretURL(t *testing.T) {
+	declared := "mode: embedded\nhttp:\n  secrets:\n    enrich_url: /functions/v1/enrich\n"
+	rec := sliceJSON(t, vaultFixture(t, declared), "enrich:INV-1")
+	if rec.Reading != slice.ReadingComplete {
+		t.Fatalf("declared secret: reading %q: %s", rec.Reading, rec.Why)
+	}
+	fromCron := func(rec slice.Record) (http bool, found bool) {
+		for _, p := range rec.Paths {
+			if p.Root.FQN != "sql.cron.enrich_job" {
+				continue
+			}
+			found = true
+			for _, h := range p.Hops {
+				if h.Kind == "http" && h.Truth == slice.TruthResolved {
+					http = true
+				}
+			}
+		}
+		return http, found
+	}
+	if http, found := fromCron(rec); !found || !http {
+		t.Errorf("declared secret: want a path from the cron job with a resolved http hop: %+v", rec.Paths)
+	}
+	undeclared := sliceJSON(t, vaultFixture(t, "mode: embedded\n"), "enrich:INV-1")
+	if _, found := fromCron(undeclared); found {
+		t.Errorf("undeclared secret: the cron job must not reach the handler: %+v", undeclared.Paths)
+	}
+}

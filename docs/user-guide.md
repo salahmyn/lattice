@@ -424,15 +424,17 @@ runtime root, so the root is not proposed, when any of these holds:
   `webhook`, and its `trigger.path` equals the path the platform serves the
   function at (`/functions/v1/<name>`), whatever its method: a proposal has no
   method;
-- the root is a serve handler and the entry point's handler is a direct
-  callee of the serve call: `Deno.serve(createHandler(...))` calls
-  `createHandler`, and a manifest names that function;
+- the root is a serve handler and the entry point's handler is called
+  anywhere in the serve call's argument expression, at any depth:
+  `Deno.serve(createHandler(...))` and `Deno.serve(withSentry('n',
+  createHandler(...)))` both call `createHandler`, and a manifest names that
+  function. A handler the serve call does not mention does not cover it;
 - the root is a cron job and the entry point is a `cron` with the same
   `trigger.job`; or, when either names no job, with the same
   `trigger.schedule` and a handler the job's body reaches: by a direct call, or
   by one `http` hop (`net.http_post` to `/functions/v1/<name>`, see
-  [HTTP edges](#4q-http-edges-and-edge-truth)) followed by direct calls of that
-  function's code, to a depth of 3 edges. A different schedule never covers, a
+  [HTTP edges](#4q-http-edges-and-edge-truth)), the job's own or that of a function
+  it calls, followed by direct calls of that function's code, to a depth of 3 edges. A different schedule never covers, a
   different job name always keeps two jobs apart, and two jobs on one schedule
   that reach different functions are never merged;
 - the root is a detected route and the entry point has the same kind, method
@@ -3210,12 +3212,46 @@ A URL that is exactly one such origin followed by literal text is path-only:
 nothing declares. `name` is letters, digits and `_` for `env:`, and also `.` and `-`
 for `setting:`; an empty or malformed name is a `VALIDATE_POLICY` error.
 
+A URL read whole from Supabase Vault has no literal path anywhere in the code, so no
+origin rule can join it. Declare which route each secret holds, in `lattice/workspace.yaml`:
+
+```yaml
+http:
+  secrets:
+    ai_enrich_url: /functions/v1/ai-enrich   # the secret holds the full URL of this route
+```
+
+The SQL adapter then reads, inside one function body, a variable set from that secret by
+`select decrypted_secret into v from vault.decrypted_secrets where name = 'ai_enrich_url'`
+or by `v := (select decrypted_secret from vault.decrypted_secrets where name = '...')`
+(`name = '<literal>'` may sit anywhere in the `where`, and the view may carry an alias). A
+`net.http_*` call whose `url` is exactly that variable, or the variable `|| '/literal'`,
+gets the key of the declared path plus the literal (a scalar subquery of the same read
+works as the URL too). The read is function-local and straight-line: a variable that is
+assigned twice or after the request, a secret name that is computed or is one of several
+(`or`), or any other computed part keeps the URL `dynamic`. A secret nothing declares stays
+`dynamic` too, and `HTTP_CALL_DYNAMIC` names it and says to declare it under `http.secrets`.
+Each key is a non-empty secret name and each value a path that starts with `/`; a bad entry
+is a `VALIDATE_POLICY` error, and the join ignores it.
+
+A cron job that runs such a function reaches the edge function's handler (the job's call to
+the function, the function's http hop, the serve call, the handler: three edges), so a
+declared `cron` entry point for the handler on the job's schedule covers the job and it is
+not proposed again.
+
 **In ends** are the routes the code serves: routes the adapters detected
 (`app.get('/api/orders', listOrders)`), declared `http_route` entry points
 (`trigger.method` + `trigger.path`), and an edge function's `serve` handler, which the
 platform serves at `/functions/v1/<name>` for supabase/functions/<name>/index.ts and
 which answers every method. A route whose handler is not a symbol of the graph has no
 node to draw an edge to and is left out. An axios call is a request, never a route.
+
+An edge function is one end, however it is described. When a declared `http_route` covers
+its serve call (the rules under [What counts as covered](#4b-entry-points--flows-v030)),
+the declared route and the platform's end name the same target, the serve node, so a call
+to `POST /functions/v1/<name>` has one candidate and resolves. Two different handlers on
+one key are two routes, not one: declared routes that name different handlers for the
+same function, or a route another module registers at its path, stay ambiguous.
 
 **Matching** normalises path parameters on both sides, so `/orders/:id`,
 `/orders/{id}` and `/orders/[id]` are one shape. The method must match (an `ANY` end

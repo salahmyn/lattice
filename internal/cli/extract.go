@@ -191,6 +191,10 @@ func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOpt
 		if c, ok := a.(ir.HTTPOriginConfigurable); ok {
 			c.SetHTTPOrigins(ws.HTTP.Origins)
 		}
+		// Declared Vault secrets: a URL read whole from one is a route path.
+		if c, ok := a.(ir.HTTPSecretConfigurable); ok {
+			c.SetHTTPSecrets(ws.HTTP.Secrets)
+		}
 	}
 
 	if withCodeGraph && !ws.Review {
@@ -326,6 +330,7 @@ func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOpt
 	// entry point's.
 	kg.Violations = append(kg.Violations, graph.AssignLayers(&kg, ws.Layers)...)
 	kg.Violations = append(kg.Violations, graph.CheckHTTPOrigins(ws.HTTP.Origins)...)
+	kg.Violations = append(kg.Violations, graph.CheckHTTPSecrets(ws.HTTP.Secrets)...)
 	pubWrappers, conWrappers := ws.Channels.Wrappers()
 	kg.Violations = append(kg.Violations, graph.CheckChannelWrappers(pubWrappers, conWrappers)...)
 

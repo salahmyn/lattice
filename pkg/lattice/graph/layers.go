@@ -98,6 +98,34 @@ func CheckHTTPOrigins(origins []string) []schema.Violation {
 	return out
 }
 
+// CheckHTTPSecrets reports each http.secrets entry of workspace.yaml whose
+// secret name is empty or whose route path does not start with "/" as a
+// VALIDATE_POLICY error. The adapters ignore such an entry.
+// @enforces reachability:INV-11
+func CheckHTTPSecrets(secrets map[string]string) []schema.Violation {
+	names := make([]string, 0, len(secrets))
+	for n := range secrets {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	var out []schema.Violation
+	for _, n := range names {
+		p := secrets[n]
+		if strings.TrimSpace(n) != "" && strings.HasPrefix(p, "/") {
+			continue
+		}
+		out = append(out, schema.Violation{
+			Code: schema.CodeValidatePolicy, Severity: schema.SeverityError,
+			Subject:  fmt.Sprintf("http.secrets[%q]", n),
+			Message:  fmt.Sprintf("workspace.yaml http.secrets[%q]: %q is not a route path (the key is a secret name, the value a path that starts with /)", n, p),
+			Location: &schema.Location{File: "workspace.yaml"},
+			NextAction: &schema.NextAction{Kind: "edit_workspace",
+				Detail: `write each entry like "ai_enrich_url: /functions/v1/ai-enrich": the secret's name, then the route path its URL points at`},
+		})
+	}
+	return out
+}
+
 // CheckChannelWrappers reports each channels: entry of workspace.yaml that
 // cannot be read (an empty call, a negative argument index, a kind that is not
 // one of ir.ChannelKinds, a handler_arg below -1) as a

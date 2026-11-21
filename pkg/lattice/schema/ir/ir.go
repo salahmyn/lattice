@@ -140,6 +140,10 @@ type Ref struct {
 	// edits exactly this span and nothing else.
 	LitStart int `json:"lit_start,omitempty"`
 	LitEnd   int `json:"lit_end,omitempty"`
+	// Secret, on a request with no name, is the Vault secret the URL was
+	// read whole from when no http.secrets entry declares its route: the
+	// finding for a computed URL names it, so it can be declared.
+	Secret string `json:"secret,omitempty"`
 }
 
 // HasLiteral reports whether the reference records where its literal is.

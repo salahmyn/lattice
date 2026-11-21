@@ -482,3 +482,120 @@ func TestCoverageNeedsTheSameScheduleAndPath(t *testing.T) {
 		}
 	}
 }
+
+// wrappedServe parses an edge function whose serve call wraps the handler it
+// builds: Deno.serve(withSentry('n', createHandler({}))).
+func wrappedServe(t *testing.T, serveCall string) *reach.Graph {
+	t.Helper()
+	mods, err := func() ([]ir.Module, error) {
+		var out []ir.Module
+		ts := typescript.New()
+		for _, f := range []struct{ path, src string }{
+			{"supabase/functions/n/index.ts", "import { createHandler } from './handler.ts';\nimport { withSentry } from '../_shared/sentry.ts';\n" + serveCall + "\n"},
+			{"supabase/functions/n/handler.ts", "export function createHandler(deps: unknown) { return async (req: Request) => new Response('ok'); }\n"},
+			{"supabase/functions/n/other.ts", "export function other() { return 1; }\n"},
+			{"supabase/functions/_shared/sentry.ts", "export function withSentry(name: string, h: unknown) { return h; }\n"},
+		} {
+			m, err := ts.Parse(context.Background(), f.path, []byte(f.src))
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, m)
+		}
+		return ts.Resolve(out), nil
+	}()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return reach.Build(mods, reach.Options{})
+}
+
+// A declared entry point covers a serve root whose call mentions the handler
+// anywhere in its argument expression, however deep the wrappers nest. A
+// handler the serve call does not mention is still proposed.
+// @verifies entrypoints:INV-5
+func TestWrappedServeHandlerIsCovered(t *testing.T) {
+	g := wrappedServe(t, "Deno.serve(withSentry('n', createHandler({})));")
+	declared := func(symbol string) []schema.EntryPoint {
+		return []schema.EntryPoint{{ID: "ep.n", Kind: schema.EntryPointKindHTTP, Status: schema.StatusProduction,
+			Trigger: schema.Trigger{Method: "POST", Path: "/somewhere/else"}, Handler: schema.Handler{Symbol: symbol}}}
+	}
+	propose := func(g *reach.Graph, symbol string) []schema.EntryPoint {
+		return entrypoints.ProposeFromRuntime(entrypoints.RuntimeInput{Roots: g.RuntimeRoots(), Known: declared(symbol), Reach: g})
+	}
+	if got := propose(g, "supabase.functions.n.handler.createHandler"); len(got) != 0 {
+		t.Errorf("a handler named inside the wrapped serve call is covered, got %+v", got)
+	}
+	deep := wrappedServe(t, "Deno.serve(withSentry('n', withSentry('m', createHandler({}))));")
+	if got := propose(deep, "supabase.functions.n.handler.createHandler"); len(got) != 0 {
+		t.Errorf("a handler nested two wrappers deep is covered, got %+v", got)
+	}
+	if got := propose(g, "supabase.functions.n.other.other"); len(got) != 1 {
+		t.Errorf("a handler the serve call does not reference still proposes the root, got %+v", got)
+	}
+}
+
+// vaultLayout is the layout of an edge function a cron job calls through a
+// SQL function that reads the function's URL whole from Vault.
+func vaultLayout(t *testing.T, secrets map[string]string, cronBody string) *reach.Graph {
+	t.Helper()
+	parse := func(a adapters.LanguageAdapter, files map[string]string) []ir.Module {
+		var out []ir.Module
+		var names []string
+		for p := range files {
+			names = append(names, p)
+		}
+		sort.Strings(names)
+		for _, p := range names {
+			m, err := a.Parse(context.Background(), p, []byte(files[p]))
+			if err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, m)
+		}
+		if r, ok := a.(adapters.Resolver); ok {
+			out = r.Resolve(out)
+		}
+		return out
+	}
+	mods := parse(typescript.New(), map[string]string{
+		"supabase/functions/enrich/index.ts":   "import { createHandler } from './handler.ts';\nDeno.serve(createHandler({}));\n",
+		"supabase/functions/enrich/handler.ts": "export function createHandler(deps: unknown) { return async (req: Request) => new Response('ok'); }\n",
+	})
+	pg := postgres.New(nil, nil)
+	pg.SetHTTPSecrets(secrets)
+	mods = append(mods, parse(pg, map[string]string{
+		"db/migrations/001_fns.sql": "create function public.call_enrich() returns void language plpgsql as $$\ndeclare v_url text;\nbegin\n" +
+			"  select decrypted_secret into v_url from vault.decrypted_secrets where name = 'enrich_url';\n" +
+			"  perform net.http_post(url := v_url, body := '{}'::jsonb);\nend $$;\n",
+		"db/migrations/002_cron.sql": "select cron.schedule('enrich-job', '*/5 * * * *', $$ " + cronBody + " $$);\n",
+	})...)
+	return reach.Build(mods, reach.Options{})
+}
+
+// A cron job that calls a SQL function, which posts to an edge function at a
+// URL read whole from a declared Vault secret, reaches the function's handler:
+// a declared cron entry point for that handler on the job's schedule covers
+// the job, so only the serve root is left to propose when nothing covers it.
+// Without the declaration the URL is computed, no edge exists, and the job is
+// proposed again.
+// @verifies entrypoints:INV-5
+func TestVaultURLCronJobIsCovered(t *testing.T) {
+	declared := []schema.EntryPoint{{ID: "ep.enrich.cron", Kind: schema.EntryPointKindCron, Status: schema.StatusProduction,
+		Trigger: schema.Trigger{Schedule: "*/5 * * * *"},
+		Handler: schema.Handler{Symbol: "supabase.functions.enrich.handler.createHandler"}}}
+	proposed := func(g *reach.Graph) []string {
+		var kinds []string
+		for _, ep := range entrypoints.ProposeFromRuntime(entrypoints.RuntimeInput{Roots: g.RuntimeRoots(), Known: declared, Reach: g}) {
+			kinds = append(kinds, ep.Kind)
+		}
+		return kinds
+	}
+	g := vaultLayout(t, map[string]string{"enrich_url": "/functions/v1/enrich"}, "select public.call_enrich();")
+	if got := proposed(g); len(got) != 1 || got[0] != schema.EntryPointKindHTTP {
+		t.Errorf("declared secret: the cron job is covered, only the serve root is proposed, got %v", got)
+	}
+	if got := proposed(vaultLayout(t, nil, "select public.call_enrich();")); len(got) != 2 {
+		t.Errorf("undeclared secret: the job and the serve root are proposed, got %v", got)
+	}
+}

@@ -187,6 +187,18 @@ func TestOpenReadsHTTPOrigins(t *testing.T) {
 	}
 }
 
+func TestOpenReadsHTTPSecrets(t *testing.T) {
+	root := t.TempDir()
+	writeLatticeDir(t, filepath.Join(root, "lattice"), "http:\n  secrets:\n    ai_enrich_url: /functions/v1/ai-enrich\n")
+	w, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(w.HTTP.Secrets) != 1 || w.HTTP.Secrets["ai_enrich_url"] != "/functions/v1/ai-enrich" {
+		t.Errorf("secrets = %+v", w.HTTP.Secrets)
+	}
+}
+
 func TestOpenReadsChannelWrappers(t *testing.T) {
 	root := t.TempDir()
 	writeLatticeDir(t, filepath.Join(root, "lattice"), `channels:
