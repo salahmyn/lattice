@@ -52,6 +52,9 @@ type Privilege struct {
 	Line    int
 	Default bool   // no statement decides it: PostgreSQL's or the platform's default
 	Reason  string // why the state is unknown
+	// Via is the membership chain a granted privilege came through, such as
+	// "via app_writer (m.sql:4)"; empty when the role holds it itself.
+	Via string
 }
 
 // ExecutableBy resolves the EXECUTE privilege of a role on a SQL function from
@@ -63,9 +66,113 @@ type Privilege struct {
 // statement names, once PUBLIC is revoked, holds what the platform grants
 // new functions directly: granted when default_execute lists it, revoked when
 // default_execute is declared without it, unknown when it is not declared.
+// A role also holds EXECUTE through any role it is a member of (mem, as the
+// adapter folded GRANT role TO role), followed transitively. A membership
+// that is unknown (WITH INHERIT FALSE, a NOINHERIT member, a statement the
+// adapter could not read) makes what lies behind it unknown unless another
+// path already grants.
 // Anything the adapter could not resolve is unknown, never revoked.
 // @enforces adapters.postgres:INV-5
-func ExecutableBy(sym ir.Symbol, role string, defaultExecute *[]string) Privilege {
+func ExecutableBy(sym ir.Symbol, role string, defaultExecute *[]string, mem []ir.Membership) Privilege {
+	own := ownPrivilege(sym, role, defaultExecute)
+	if own.State == ir.ExecGranted || len(mem) == 0 {
+		return own
+	}
+	// A statement the adapter could not read to a member (or to any role)
+	// may have added or removed any membership of it, so its memberships
+	// are unknown, whatever an earlier statement said.
+	wildAll, wild := "", map[string]string{}
+	for _, m := range mem {
+		if m.Role == ir.MemberAny && m.Member != ir.MemberAny {
+			wild[m.Member] = m.Reason
+		} else if m.Member == ir.MemberAny {
+			wildAll = m.Reason
+		}
+	}
+	edges := map[string][]ir.Membership{}
+	for _, m := range mem {
+		if m.State == ir.ExecRevoked || m.Member == ir.MemberAny || m.Role == ir.MemberAny {
+			continue
+		}
+		if why, ok := wild[m.Member]; ok && m.State == ir.ExecGranted {
+			m.State, m.Reason = ir.ExecUnknown, why
+		} else if wildAll != "" && m.State == ir.ExecGranted {
+			m.State, m.Reason = ir.ExecUnknown, wildAll
+		}
+		edges[m.Member] = append(edges[m.Member], m)
+	}
+	// walk reaches the roles role is a member of, nearest first. With
+	// certain set only granted memberships are followed.
+	type hop struct {
+		role  string
+		chain []ir.Membership
+	}
+	walk := func(certain bool) (out []hop) {
+		seen := map[string]bool{role: true}
+		queue := []hop{{role: role}}
+		for len(queue) > 0 {
+			h := queue[0]
+			queue = queue[1:]
+			if h.role != role {
+				out = append(out, h)
+			}
+			for _, e := range edges[h.role] {
+				if seen[e.Role] || certain && e.State != ir.ExecGranted {
+					continue
+				}
+				seen[e.Role] = true
+				queue = append(queue, hop{e.Role, append(append([]ir.Membership(nil), h.chain...), e)})
+			}
+		}
+		return out
+	}
+	unknown := ""
+	if own.State == ir.ExecUnknown {
+		unknown = own.Reason
+	}
+	sure := map[string]bool{}
+	for _, h := range walk(true) {
+		sure[h.role] = true
+		p := ownPrivilege(sym, h.role, defaultExecute)
+		switch p.State {
+		case ir.ExecGranted:
+			var via []string
+			for _, e := range h.chain {
+				via = append(via, fmt.Sprintf("via %s (%s:%d)", e.Role, e.File, e.Line))
+			}
+			p.Via = strings.Join(via, " ")
+			return p
+		case ir.ExecUnknown:
+			if unknown == "" {
+				unknown = fmt.Sprintf("%s is a member of %s, whose privilege is unknown: %s", role, h.role, p.Reason)
+			}
+		}
+	}
+	for _, h := range walk(false) {
+		if sure[h.role] {
+			continue
+		}
+		last := h.chain[len(h.chain)-1]
+		if p := ownPrivilege(sym, h.role, defaultExecute); p.State != ir.ExecRevoked && unknown == "" {
+			unknown = fmt.Sprintf("%s may be a member of %s (%s:%d: %s)", role, h.role, last.File, last.Line, last.Reason)
+		}
+	}
+	if unknown == "" {
+		if why, ok := wild[role]; ok {
+			unknown = why
+		} else if wildAll != "" {
+			unknown = wildAll
+		}
+	}
+	if unknown != "" {
+		return Privilege{State: ir.ExecUnknown, Reason: unknown}
+	}
+	return own
+}
+
+// ownPrivilege is what the statements and the platform default give the role
+// itself, with no membership followed.
+func ownPrivilege(sym ir.Symbol, role string, defaultExecute *[]string) Privilege {
 	ex := sym.Execute
 	if ex == nil {
 		return Privilege{State: ir.ExecUnknown, Reason: "the adapter read no EXECUTE facts for " + sym.FQN}
@@ -142,6 +249,10 @@ func containsRole(list []string, role string) bool {
 // Both are info and stay on: a code that were off would hide an unknown.
 // @enforces adapters.postgres:INV-6
 func CheckExposure(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string, defaultExecute *[]string) []schema.Violation {
+	var mem []ir.Membership
+	for _, m := range mods {
+		mem = append(mem, m.Memberships...)
+	}
 	fns := map[string]ir.Symbol{}
 	for _, m := range mods {
 		for _, s := range m.Symbols {
@@ -194,10 +305,14 @@ func CheckExposure(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string
 		loc := &schema.Location{File: sym.File, Line: sym.Line}
 		var exposed, unknown []string
 		for _, r := range roles {
-			p := ExecutableBy(sym, r, defaultExecute)
+			p := ExecutableBy(sym, r, defaultExecute, mem)
 			switch p.State {
 			case ir.ExecGranted:
-				exposed = append(exposed, fmt.Sprintf("%s (%s)", r, cite(p)))
+				if p.Via != "" {
+					exposed = append(exposed, fmt.Sprintf("%s %s, granted at %s", r, p.Via, cite(p)))
+				} else {
+					exposed = append(exposed, fmt.Sprintf("%s (%s)", r, cite(p)))
+				}
 			case ir.ExecUnknown:
 				unknown = append(unknown, fmt.Sprintf("%s: %s", r, p.Reason))
 			}

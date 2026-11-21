@@ -271,3 +271,81 @@ func TestExecuteNoFalseUnknown(t *testing.T) {
 		t.Errorf("Unknown = %q", got.Execute.Unknown)
 	}
 }
+
+// memberships resolves the files and returns the folded role memberships as
+// "member>role state file:line".
+func memberships(t *testing.T, files ...string) []string {
+	t.Helper()
+	a := New(nil, nil)
+	var mods []ir.Module
+	for i := 0; i+1 < len(files); i += 2 {
+		mods = append(mods, parse(t, a, files[i], files[i+1]))
+	}
+	var out []string
+	for _, m := range a.Resolve(mods) {
+		for _, x := range m.Memberships {
+			out = append(out, fmt.Sprintf("%s>%s %s %s:%d", x.Member, x.Role, x.State, x.File, x.Line))
+		}
+	}
+	return out
+}
+
+func wantMembers(t *testing.T, name string, got []string, want ...string) {
+	t.Helper()
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("%s:\n%s\nwant:\n%s", name, strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// Role membership is read from GRANT role TO role, REVOKE role FROM role and
+// CREATE ROLE ... IN ROLE | ROLE | ADMIN, in apply order; a membership that
+// does not pass privileges on automatically, or a statement the adapter
+// cannot read, is unknown, never revoked.
+// @verifies adapters.postgres:INV-5
+func TestMembershipFacts(t *testing.T) {
+	wantMembers(t, "grant, with options", memberships(t, m1,
+		"grant app_writer, auditor to authenticated, \"Svc\" with admin option granted by owner;\n"),
+		"Svc>app_writer granted "+m1+":1", "Svc>auditor granted "+m1+":1",
+		"authenticated>app_writer granted "+m1+":1", "authenticated>auditor granted "+m1+":1")
+	wantMembers(t, "revoke removes it", memberships(t, m1, "grant app_writer to authenticated;\n",
+		m2, "revoke app_writer from authenticated cascade;\n"),
+		"authenticated>app_writer revoked "+m2+":1")
+	wantMembers(t, "revoke admin option leaves it", memberships(t, m1, "grant app_writer to authenticated;\nrevoke admin option for app_writer from authenticated;\n"),
+		"authenticated>app_writer granted "+m1+":1")
+	wantMembers(t, "create role", memberships(t, m1,
+		"create role reporter login in role app_writer, auditor role helper admin boss;\n"),
+		"boss>reporter granted "+m1+":1", "helper>reporter granted "+m1+":1",
+		"reporter>app_writer granted "+m1+":1", "reporter>auditor granted "+m1+":1")
+	wantMembers(t, "inherit false", memberships(t, m1, "grant app_writer to authenticated with inherit false;\n"),
+		"authenticated>app_writer unknown "+m1+":1")
+	got := memberships(t, m1, "create role x noinherit in role app_writer;\n")
+	if len(got) != 1 || !strings.HasPrefix(got[0], "x>app_writer unknown") {
+		t.Errorf("a NOINHERIT member: %v", got)
+	}
+	got = memberships(t, m1, "create role x in role app_writer;\nalter role x noinherit;\n", m2, "alter role x inherit;\n")
+	wantMembers(t, "alter role inherit", got, "x>app_writer granted "+m1+":1")
+}
+
+// A membership statement inside a DO block, a function body or an EXECUTE
+// string leaves the roles it targets unknown; one that names none leaves every
+// role unknown; so does one the parser cannot read.
+// @verifies adapters.postgres:INV-5
+func TestMembershipUnknown(t *testing.T) {
+	for name, c := range map[string]struct{ sql, want string }{
+		"do block":    {"do $$ begin grant app_writer to authenticated; end $$;\n", "authenticated>* unknown"},
+		"execute":     {"do $$ begin execute 'revoke app_writer from anon'; end $$;\n", "anon>* unknown"},
+		"body":        {"create function public.g() returns void language plpgsql as $$ begin grant a to b; end $$;\n", "b>* unknown"},
+		"computed":    {"do $$ begin execute format('grant %s to %s', 'a', 'b'); end $$;\n", "*>* unknown"},
+		"create role": {"do $$ begin create role x in role app_writer; end $$;\n", "x>* unknown"},
+		"unreadable":  {"grant app_writer;\n", "*>* unknown"},
+	} {
+		got := memberships(t, m1, c.sql)
+		if len(got) != 1 || !strings.HasPrefix(got[0], c.want) {
+			t.Errorf("%s: %v, want %s", name, got, c.want)
+		}
+	}
+	// An object grant inside a DO block is not a membership statement.
+	if got := memberships(t, m1, "do $$ begin grant execute on function public.f() to anon; end $$;\n"); len(got) != 0 {
+		t.Errorf("object grant read as membership: %v", got)
+	}
+}

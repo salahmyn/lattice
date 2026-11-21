@@ -3605,7 +3605,14 @@ that its inputs are forgeable; the case says what the test is for.
   names are unknown for functions created later;
 - `ALTER FUNCTION ... SET SCHEMA`, and a `GRANT` or `REVOKE` on functions that the parser could
   not read;
-- a role no statement names once `PUBLIC` is revoked, while `sql.default_execute` is unset.
+- a role no statement names once `PUBLIC` is revoked, while `sql.default_execute` is unset;
+- a membership statement the parser cannot read, or that sits in a `DO` block, function body or
+  `EXECUTE` string (the roles it targets, or every role, are unknown), and a membership that does
+  not pass privileges on automatically (`WITH INHERIT FALSE`, a `NOINHERIT` member).
+
+**Role membership** counts: a role holds EXECUTE through any role it is a member of, followed
+transitively (`GRANT app_writer TO authenticated`, `CREATE ROLE x ... IN ROLE a, b`), and the
+finding cites the chain, e.g. `authenticated via app_writer (db/002.sql:4), granted at db/002.sql:3`.
 
 Table grants and row-level policies are not read here.
 

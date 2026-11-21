@@ -85,6 +85,24 @@ const (
 	ExecUnknown = "unknown"
 )
 
+// MemberAny stands for every role in a Membership: a statement the adapter
+// could not read to roles.
+const MemberAny = "*"
+
+// Membership is whether Member is a member of Role, with the statement that
+// decided it. State is ExecGranted (a member), ExecRevoked or ExecUnknown: a
+// membership that does not pass privileges on automatically (WITH INHERIT
+// FALSE, a NOINHERIT member), or one a statement the adapter could not read
+// may have changed. Member or Role is MemberAny for such a statement.
+type Membership struct {
+	Member string `json:"member"`
+	Role   string `json:"role"`
+	State  string `json:"state"`
+	File   string `json:"file,omitempty"`
+	Line   int    `json:"line,omitempty"`
+	Reason string `json:"reason,omitempty"`
+}
+
 // ExecPublic is the Role of the entry that holds PUBLIC's state.
 const ExecPublic = "public"
 
@@ -310,6 +328,12 @@ type Module struct {
 	Symbols           []Symbol     `json:"symbols,omitempty"`
 	Surfaces          []Surface    `json:"surfaces,omitempty"`
 	Diagnostics       []Diagnostic `json:"diagnostics,omitempty"`
+	// Memberships are the role memberships a change history leaves in
+	// force (GRANT role TO role, CREATE ROLE ... IN ROLE), folded across
+	// every migration in apply order. Membership belongs to no one
+	// function, so it sits on the module, not on Symbol.Execute; the SQL
+	// adapter writes the whole set on one module and the others carry none.
+	Memberships []Membership `json:"memberships,omitempty"`
 
 	// The fields below feed the call graph (docs/rnd/0009). An adapter
 	// that does not extract references leaves them empty and RefsKnown

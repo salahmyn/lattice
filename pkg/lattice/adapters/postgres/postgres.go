@@ -622,7 +622,7 @@ func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 				}
 				continue
 			}
-			if an.Kind == privKind || an.Kind == privUnknownKind {
+			if an.Kind == privKind || an.Kind == privUnknownKind || an.Kind == memberKind || an.Kind == memberUnknown || an.Kind == inheritKind {
 				a := m.ModuleAnnotations[ai]
 				events = append(events, event{line: an.Line, priv: &a, sym: -1})
 				continue
@@ -692,6 +692,9 @@ func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 				fold.create(s.FQN, strings.SplitN(s.Name, ".", 2)[0], s)
 			}
 		}
+	}
+	if ms := fold.memberships(); len(ms) > 0 && len(order) > 0 {
+		mods[order[0]].Memberships = ms
 	}
 	for fqn, d := range effective {
 		if sym := &mods[d.mod].Symbols[d.sym]; sym.Execute != nil {

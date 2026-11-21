@@ -29,6 +29,9 @@ import (
 const (
 	privKind        = "sql_priv"         // a GRANT, REVOKE or ALTER DEFAULT PRIVILEGES it understood
 	privUnknownKind = "sql_priv_unknown" // one it could not resolve to the functions it changes
+	memberKind      = "sql_member"       // GRANT role TO role, REVOKE role FROM role, CREATE ROLE ... IN ROLE
+	memberUnknown   = "sql_member_unknown"
+	inheritKind     = "sql_role_inherit" // a role created or altered INHERIT or NOINHERIT
 )
 
 // Targets of a privilege event.
@@ -39,8 +42,16 @@ const (
 )
 
 var (
-	reSecurity  = regexp.MustCompile(`(?i)\bsecurity\s+(definer|invoker)\b`)
-	reSetSchema = regexp.MustCompile(`(?i)\bset\s+schema\b`)
+	reCreateRole = regexp.MustCompile(`(?is)^create\s+(?:role|user|group)\s+(` + ident + `)\b`)
+	reAlterRole  = regexp.MustCompile(`(?is)^alter\s+(?:role|user|group)\s+(` + ident + `)\s`)
+	// reDynamicMember finds a role GRANT or REVOKE (one with no ON) inside a
+	// statement that is not one, and reDynamicRole a CREATE ROLE ... IN ROLE.
+	reDynamicMember = regexp.MustCompile(`(?is)\b(?:grant|revoke)\b([^;]{0,300})`)
+	reOn            = regexp.MustCompile(`(?i)\bon\b`)
+	reToFrom        = regexp.MustCompile(`(?is)\b(?:to|from)\s+(` + ident + `(?:\s*,\s*(?:` + ident + `))*)`)
+	reDynamicRole   = regexp.MustCompile(`(?is)\bcreate\s+(?:role|user|group)\s+(` + ident + `)[^;]{0,300}?\bin\s+(?:role|group)\b`)
+	reSecurity      = regexp.MustCompile(`(?i)\bsecurity\s+(definer|invoker)\b`)
+	reSetSchema     = regexp.MustCompile(`(?i)\bset\s+schema\b`)
 	// reDynamicPriv finds a GRANT or REVOKE on functions inside a statement
 	// that is not one itself (a DO block, a function body, an EXECUTE string).
 	reDynamicPriv = regexp.MustCompile(`(?is)\b(?:grant|revoke)\b[^;]{0,400}?\bon\s+(all\s+)?(function|procedure|routine)s?\b`)
@@ -209,15 +220,21 @@ type privStmt struct {
 	roles      []string
 	forRole    bool // ALTER DEFAULT PRIVILEGES FOR ROLE|USER
 	optionOnly bool // REVOKE GRANT OPTION FOR: takes no privilege away
+	// For privMember: roles, members (the grantees), the option a REVOKE
+	// ... OPTION FOR names, and whether WITH INHERIT FALSE was given.
+	members   []string
+	optionFor string
+	noInherit bool
 }
 
 type privResult int
 
 const (
-	privNone  privResult = iota // not a GRANT, REVOKE or ALTER DEFAULT PRIVILEGES
-	privOther                   // one on something other than functions
-	privOK                      // one on functions, read
-	privFail                    // one on functions the parser could not read
+	privNone   privResult = iota // not a GRANT, REVOKE or ALTER DEFAULT PRIVILEGES
+	privOther                    // one on something other than functions
+	privOK                       // one on functions, read
+	privFail                     // one on functions the parser could not read
+	privMember                   // GRANT or REVOKE of role membership
 )
 
 // readRoles reads a role list up to the end or a trailing clause.
@@ -275,9 +292,17 @@ func parsePriv(text string) (privStmt, privResult) {
 	if k.take("grant", "option", "for") {
 		p.optionOnly = p.verb == "revoke"
 	}
+	for _, o := range []string{"admin", "inherit", "set"} {
+		if k.take(o, "option", "for") {
+			p.optionFor = o
+		}
+	}
+	if !hasOn(k) {
+		return parseMembership(k, p)
+	}
 	execute, ok := readPrivs(k)
 	if !ok {
-		return p, privOther // GRANT role TO role: membership
+		return p, privOther
 	}
 	switch {
 	case k.is("function") || k.is("procedure") || k.is("routine"):
@@ -328,6 +353,99 @@ func parsePriv(text string) (privStmt, privResult) {
 	}
 	p.roles = roles
 	return p, privOK
+}
+
+func hasOn(k *tokens) bool {
+	for _, t := range k.t[k.i:] {
+		if strings.EqualFold(t, "on") {
+			return true
+		}
+	}
+	return false
+}
+
+// parseMembership reads what follows GRANT or REVOKE when no ON is there:
+// role [, ...] TO|FROM role [, ...] and its trailing options.
+func parseMembership(k *tokens, p privStmt) (privStmt, privResult) {
+	p.target = "member"
+	roles, ok := readRoles(k)
+	if !ok {
+		return p, privFail
+	}
+	if !k.take("to") && !k.take("from") {
+		return p, privFail
+	}
+	members, ok := readRoles(k)
+	if !ok {
+		return p, privFail
+	}
+	p.roles, p.members = roles, members
+	for i := k.i; i+1 < len(k.t); i++ {
+		if strings.EqualFold(k.t[i], "inherit") && strings.EqualFold(k.t[i+1], "false") {
+			p.noInherit = true
+		}
+	}
+	return p, privMember
+}
+
+// readCreateRole reads CREATE ROLE x ... IN ROLE a, b ROLE m, n: x is a
+// member of a and b, and m and n are members of x.
+func readCreateRole(mod *ir.Module, st statement, name string) {
+	k := &tokens{t: privTokens(st.text)}
+	k.i = 3
+	var in, members []string
+	list := func() []string {
+		var out []string
+		for {
+			t := k.peek()
+			if t == "" || t == "," || t == "." || t == "(" {
+				return out
+			}
+			k.i++
+			out = append(out, unquote(t))
+			if !k.take(",") {
+				return out
+			}
+		}
+	}
+	x := unquote(name)
+	for !k.done() {
+		switch {
+		case k.take("in", "role") || k.take("in", "group"):
+			in = append(in, list()...)
+		case k.take("role") || k.take("user") || k.take("admin"):
+			members = append(members, list()...)
+		case k.take("noinherit"):
+			roleInherit(mod, st, x, false)
+		default:
+			k.i++
+		}
+	}
+	if len(in) > 0 {
+		memberEvent(mod, st, privStmt{verb: "grant", roles: in, members: []string{x}})
+	}
+	if len(members) > 0 {
+		memberEvent(mod, st, privStmt{verb: "grant", roles: []string{x}, members: members})
+	}
+}
+
+func roleInherit(mod *ir.Module, st statement, role string, inherit bool) {
+	mod.ModuleAnnotations = append(mod.ModuleAnnotations, ir.Annotation{Kind: inheritKind, Line: st.line,
+		Kwargs: map[string]interface{}{"role": role, "inherit": inherit}})
+}
+
+func memberEvent(mod *ir.Module, st statement, p privStmt) {
+	mod.ModuleAnnotations = append(mod.ModuleAnnotations, ir.Annotation{Kind: memberKind, Line: st.line,
+		Kwargs: map[string]interface{}{"verb": p.verb, "roles": p.roles, "members": p.members,
+			"option_for": p.optionFor, "no_inherit": p.noInherit}})
+}
+
+// memberUnknownEvent records a membership statement the adapter could not
+// resolve: members it named (unknown for any role), or all=true when it named
+// none (every role is unknown).
+func memberUnknownEvent(mod *ir.Module, st statement, members []string, all bool, reason string) {
+	mod.ModuleAnnotations = append(mod.ModuleAnnotations, ir.Annotation{Kind: memberUnknown, Line: st.line,
+		Kwargs: map[string]interface{}{"members": members, "all": all, "reason": reason}})
 }
 
 // parseDefaultPriv reads what follows ALTER DEFAULT PRIVILEGES.
@@ -403,14 +521,36 @@ func readPrivileges(mod *ir.Module, st statement) bool {
 	p, res := parsePriv(st.text)
 	switch res {
 	case privNone:
+		if m := reCreateRole.FindStringSubmatch(st.text); m != nil {
+			readCreateRole(mod, st, m[1])
+			return false
+		}
+		if m := reAlterRole.FindStringSubmatch(st.text); m != nil {
+			for _, t := range privTokens(st.text[len(m[0]):]) {
+				switch strings.ToLower(t) {
+				case "noinherit":
+					roleInherit(mod, st, unquote(m[1]), false)
+				case "inherit":
+					roleInherit(mod, st, unquote(m[1]), true)
+				}
+			}
+			return false
+		}
 		scanDynamicPriv(mod, st)
 		return false
+	case privMember:
+		// REVOKE ADMIN|SET OPTION FOR leaves the membership as it is.
+		if p.optionFor != "admin" && p.optionFor != "set" {
+			memberEvent(mod, st, p)
+		}
 	case privOK:
 		if !p.optionOnly {
 			privEvent(mod, st, p)
 		}
 	case privFail:
 		privUnknown(mod, st, nil, nil, true,
+			fmt.Sprintf("the GRANT or REVOKE at %s:%d could not be read", mod.File, st.line))
+		memberUnknownEvent(mod, st, nil, true,
 			fmt.Sprintf("the GRANT or REVOKE at %s:%d could not be read", mod.File, st.line))
 	}
 	return true
@@ -441,6 +581,7 @@ func scanDynamicPriv(mod *ir.Module, st statement) {
 		}
 		all = true
 	}
+	scanDynamicMember(mod, st)
 	if len(names) == 0 && len(schemas) == 0 && !all {
 		return
 	}
@@ -521,10 +662,13 @@ type execFold struct {
 	rules      []defaultRule
 	overloaded map[string]string // FQN -> reason, kept when the function is dropped
 	tainted    map[string]string // FQN -> reason, named by a statement the adapter could not run
+	members    map[[2]string]ir.Membership
+	noInherit  map[string]string // role -> where it was made NOINHERIT
 }
 
 func newExecFold() *execFold {
-	return &execFold{state: map[string]*execState{}, overloaded: map[string]string{}, tainted: map[string]string{}}
+	return &execFold{state: map[string]*execState{}, overloaded: map[string]string{}, tainted: map[string]string{},
+		members: map[[2]string]ir.Membership{}, noInherit: map[string]string{}}
 }
 
 func grantState(verb string) string {
@@ -584,6 +728,11 @@ func contains(list []string, s string) bool {
 // apply folds a privilege event of the file at the line.
 func (f *execFold) apply(an ir.Annotation, file string) {
 	kw := an.Kwargs
+	switch an.Kind {
+	case memberKind, memberUnknown, inheritKind:
+		f.applyMember(an, file)
+		return
+	}
 	if an.Kind == privUnknownKind {
 		reason, _ := kw["reason"].(string)
 		for _, n := range stringsOf(kw["names"]) {
@@ -682,4 +831,100 @@ func (f *execFold) final(fqn string) *ir.Execute {
 func stringsOf(v interface{}) []string {
 	s, _ := v.([]string)
 	return s
+}
+
+// scanDynamicMember finds a role GRANT or REVOKE, or a CREATE ROLE ... IN
+// ROLE, inside a statement that is not one: a DO block, a function body, an
+// EXECUTE string. The members it names literally are unknown; with none
+// literal, every role is.
+func scanDynamicMember(mod *ir.Module, st statement) {
+	reason := fmt.Sprintf("a role membership statement inside the statement at %s:%d is not a plain statement the adapter reads", mod.File, st.line)
+	var members []string
+	all := false
+	for _, m := range reDynamicMember.FindAllStringSubmatch(st.text, -1) {
+		if reOn.MatchString(m[1]) {
+			continue // an object grant: scanDynamicPriv reads it
+		}
+		tf := reToFrom.FindStringSubmatch(m[1])
+		if tf == nil {
+			if strings.Contains(strings.ToLower(m[1]), "to") || strings.Contains(strings.ToLower(m[1]), "from") {
+				all = true
+			}
+			continue
+		}
+		for _, id := range strings.Split(tf[1], ",") {
+			members = append(members, unquote(strings.TrimSpace(id)))
+		}
+	}
+	for _, m := range reDynamicRole.FindAllStringSubmatch(st.text, -1) {
+		members = append(members, unquote(m[1]))
+	}
+	if len(members) > 0 || all {
+		memberUnknownEvent(mod, st, members, all, reason)
+	}
+}
+
+// applyMember folds a role membership event.
+func (f *execFold) applyMember(an ir.Annotation, file string) {
+	kw := an.Kwargs
+	set := func(member, role, state, reason string) {
+		f.members[[2]string{member, role}] = ir.Membership{Member: member, Role: role, State: state,
+			File: file, Line: an.Line, Reason: reason}
+	}
+	switch an.Kind {
+	case inheritKind:
+		role, _ := kw["role"].(string)
+		if inherit, _ := kw["inherit"].(bool); inherit {
+			delete(f.noInherit, role)
+		} else {
+			f.noInherit[role] = fmt.Sprintf("%s:%d", file, an.Line)
+		}
+	case memberUnknown:
+		reason, _ := kw["reason"].(string)
+		if all, _ := kw["all"].(bool); all {
+			set(ir.MemberAny, ir.MemberAny, ir.ExecUnknown, reason)
+		}
+		for _, m := range stringsOf(kw["members"]) {
+			set(m, ir.MemberAny, ir.ExecUnknown, reason)
+		}
+	default:
+		verb, _ := kw["verb"].(string)
+		optionFor, _ := kw["option_for"].(string)
+		noInherit, _ := kw["no_inherit"].(bool)
+		for _, m := range stringsOf(kw["members"]) {
+			for _, r := range stringsOf(kw["roles"]) {
+				switch {
+				case verb == "grant" && noInherit:
+					set(m, r, ir.ExecUnknown, fmt.Sprintf("WITH INHERIT FALSE at %s:%d: the member does not inherit privileges automatically, but SET ROLE reaches them", file, an.Line))
+				case verb == "grant":
+					set(m, r, ir.ExecGranted, "")
+				case optionFor == "inherit":
+					set(m, r, ir.ExecUnknown, fmt.Sprintf("REVOKE INHERIT OPTION FOR at %s:%d changes whether the member inherits", file, an.Line))
+				default:
+					set(m, r, ir.ExecRevoked, "")
+				}
+			}
+		}
+	}
+}
+
+// memberships is the membership set left in force, sorted. A member role
+// made NOINHERIT does not take its roles' privileges automatically, so its
+// memberships read unknown, never revoked.
+func (f *execFold) memberships() []ir.Membership {
+	var out []ir.Membership
+	for _, m := range f.members {
+		if where, ok := f.noInherit[m.Member]; ok && m.State == ir.ExecGranted {
+			m.State = ir.ExecUnknown
+			m.Reason = fmt.Sprintf("%s is NOINHERIT (%s): it does not take the privileges of %s automatically, but SET ROLE reaches them", m.Member, where, m.Role)
+		}
+		out = append(out, m)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Member != out[j].Member {
+			return out[i].Member < out[j].Member
+		}
+		return out[i].Role < out[j].Role
+	})
+	return out
 }

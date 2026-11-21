@@ -268,3 +268,30 @@ func TestSQLConfigBadRole(t *testing.T) {
 		t.Errorf("want a VALIDATE_POLICY error for sql.api_roles[0]; ok = %v, %+v", ok, v)
 	}
 }
+
+// A privilege reached through role membership: the signed-in role was
+// revoked, but it is a member of a role that holds EXECUTE.
+// @verifies adapters.postgres:INV-5
+func TestEnforcerExposureThroughMembership(t *testing.T) {
+	const viaRole = exposureFix +
+		"grant execute on function public.finish_submission(uuid, boolean, bigint) to app_writer;\n" +
+		"grant app_writer to authenticated;\n"
+	files := func(m string) map[string]string {
+		return map[string]string{"lattice/features/review/submissions.yaml": exposureFeature,
+			"supabase/migrations/20260201000000_fix.sql": m}
+	}
+	v, _ := exposureRun(t, apiRoles, "", files(viaRole))
+	got := exposureFindings(v)
+	if len(got) != 1 || got[0].Code != schema.CodeEnforcerExposed ||
+		!strings.Contains(got[0].Message, "authenticated via app_writer (supabase/migrations/20260201000000_fix.sql:3), granted at supabase/migrations/20260201000000_fix.sql:2") {
+		t.Fatalf("findings = %+v, want ENFORCER_EXPOSED through app_writer", got)
+	}
+	v, _ = exposureRun(t, apiRoles, "", files(viaRole+"revoke app_writer from authenticated;\n"))
+	if got := exposureFindings(v); len(got) != 0 {
+		t.Errorf("after the membership is revoked: %+v", got)
+	}
+	v, _ = exposureRun(t, apiRoles, "", files(viaRole+"do $$ begin execute 'revoke app_writer from authenticated'; end $$;\n"))
+	if got := exposureFindings(v); len(got) < 1 || got[0].Code != schema.CodeExposureUnknown {
+		t.Errorf("a membership change in a DO block: %+v", got)
+	}
+}
