@@ -275,8 +275,12 @@ an export whose audit could not run, reads unknown (hatched grey).
 `lattice serve` opens a dark-by-default, single-binary web UI (no build
 pipeline, no node_modules) styled with the **Crystal brand system**:
 cool slate (`#0F1218`) + mica violet (`#8C7DD6`), Geist + JetBrains Mono,
-and the hexagonal unit-cell mark. Live updates via SSE: a CLI edit to any
-manifest shows up on the next page render without a manual refresh.
+and the hexagonal unit-cell mark. It works offline: the stylesheet, the
+fonts and the Mermaid renderer for flow diagrams are served from the
+binary, and the pages load nothing from another origin
+([third-party notices](THIRD_PARTY_NOTICES.md)). Live updates via SSE: a
+CLI edit to any manifest shows up on the next page render without a manual
+refresh.
 
 Pages: **Overview**, **BRDs**, **Features**, **Entry points**,
 **Coverage**, **Validation**, **Import**, **Config**.
@@ -332,7 +336,8 @@ extraction pass.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE). Bundled third-party code is listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 <p align="center">
   <picture>

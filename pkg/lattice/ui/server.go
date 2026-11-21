@@ -196,6 +196,8 @@ func (s *Server) routes() *http.ServeMux {
 
 	// Static assets — CSS, vendored JS — served straight from embed.
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(s.static))))
+	// Vendored third-party code and fonts (vendor.go), so pages work offline.
+	mux.HandleFunc("GET "+vendorPrefix, s.serveVendor)
 
 	// Pages (server-rendered HTML). Use {$} so "GET /" matches exactly
 	// the root path — Go 1.22 rejects an unscoped "GET /" against the

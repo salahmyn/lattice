@@ -14,3 +14,5 @@ invariants:
     statement: The block map colours a block only by the weakest audit class, in the audit's own order, of the promises it holds; a promise the audit has no row for reads unknown, and only the audit's positive classes are drawn as a pass.
   - id: INV-3
     statement: serve reuses a computed knowledge graph and audit only while the fingerprint of every input they read is unchanged; any change, or any error computing the fingerprint, computes them again.
+  - id: INV-5
+    statement: The server-rendered pages load no script, stylesheet or font from another origin; serve serves every one of them from the binary, so the pages render offline.

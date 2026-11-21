@@ -5,49 +5,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}} — Lattice</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Serif:wght@400;500;600&display=swap" rel="stylesheet">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    // v0.5.0 Crystal brand — Tailwind class names stay; their colours
-    // and fonts come from the Lattice Brand System tokens.
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            // The slate ramp is re-pointed to Crystal's neutral ramp,
-            // so every existing bg-slate-50 / text-slate-700 reads as
-            // dark-by-default without any template rewrite.
-            slate: {
-              50:  '#0F1218', 100: '#171C25', 200: '#272F3D',
-              300: '#3A4356', 400: '#8189A0', 500: '#8189A0',
-              600: '#8189A0', 700: '#C7CDD9', 800: '#E2E6EE',
-              900: '#E2E6EE',
-            },
-            // Crystal accent — mica violet.
-            mica: {
-              50:  '#F1EEFB', 100: '#DAD2F4', 200: '#C7BEEC',
-              300: '#A899E0', 400: '#8C7DD6', 500: '#6E5FC2',
-              600: '#4E4196', 700: '#2E255E',
-            },
-            // Severity ramps from tokens.js — keep the names that
-            // existing templates use so badges flip without surgery.
-            emerald: { 50: '#0E2620', 600: '#6BC2A2', 700: '#6BC2A2' },
-            amber:   { 50: '#26201A', 600: '#E5B66C', 700: '#E5B66C' },
-            rose:    { 50: '#2A1418', 600: '#E07A75', 700: '#E07A75' },
-          },
-          fontFamily: {
-            sans: ['Geist', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-            mono: ['"JetBrains Mono"', 'ui-monospace', '"SF Mono"', 'Menlo', 'monospace'],
-            serif: ['"IBM Plex Serif"', 'ui-serif', 'Georgia', 'serif'],
-          },
-        },
-      },
-    };
-  </script>
+  {{/* Every asset is served by the binary, so the UI works offline.
+       styles.css holds the Crystal brand tokens, fonts and atoms;
+       tailwind.css holds the utility classes the templates use, generated
+       from scripts/tailwind/tailwind.config.js. It loads last so its rules
+       win ties, as the runtime Tailwind build it replaced did. */}}
   <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/tailwind.css">
 </head>
 <body class="bg-slate-50 text-slate-700 antialiased">
   <header class="bg-slate-100 border-b border-slate-200">
@@ -124,4 +88,13 @@
   </script>
 </body>
 </html>
+{{end}}
+
+{{/* mermaid renders the page's .mermaid blocks with the vendored mermaid
+     (vendor.go); the integrity hash is the file's SHA-384. */}}
+{{define "mermaid"}}
+<script src="/vendor/mermaid-10.9.8/mermaid.min.js" integrity="sha384-N3QqR/7q+xm3BGX+CBbNI8AUmRRqcsDzToy+0z1NLDI0QmTKW8zvwLvqulJgk3dP"></script>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", flowchart: { curve: "linear" } });
+</script>
 {{end}}

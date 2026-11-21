@@ -353,6 +353,9 @@ in the IR).
 
 `lattice serve` boots a local HTTP server that consumes the same
 KnowledgeGraph the CLI produces. Single binary, no Node, no build step.
+The pages work offline: their stylesheet, fonts and the Mermaid renderer are
+served from the binary, and no page requests another origin (see
+[third-party notices](../THIRD_PARTY_NOTICES.md)).
 
 ```sh
 lattice serve              # http://127.0.0.1:7070
