@@ -92,6 +92,9 @@ func Findings(kg schema.KnowledgeGraph, r *Result, ran Executed) []schema.Violat
 			if callers := r.Graph.Callers(s.FQN); len(callers) > 0 {
 				msg += fmt.Sprintf("; its caller(s) %s are unreached too", strings.Join(head(callers, 3), ", "))
 			}
+			if n := r.AsyncHops[s.FQN]; n > 0 {
+				msg += fmt.Sprintf("; a root reaches it only through %d channel(s), which synchronous reach does not follow", n)
+			}
 			v = append(v, schema.Violation{
 				Code: schema.CodeSymbolUnreached, Severity: schema.SeverityWarning,
 				Subject: s.FQN, FeatureID: s.Feature, Location: loc,
@@ -150,8 +153,8 @@ func Findings(kg schema.KnowledgeGraph, r *Result, ran Executed) []schema.Violat
 func (r *Result) dynamicRPC() []schema.Violation {
 	var v []schema.Violation
 	for _, u := range r.Graph.Unresolved {
-		if u.Why != "dynamic" || u.Kind == ir.RefHTTP {
-			continue // a computed request URL is HTTP_CALL_DYNAMIC (see HTTPFindings)
+		if u.Why != "dynamic" || u.Kind == ir.RefHTTP || isAsyncKind(u.Kind) {
+			continue // a computed request URL is HTTP_CALL_DYNAMIC (see HTTPFindings), a computed channel name CHANNEL_DYNAMIC
 		}
 		if u.Kind == ir.RefImport {
 			v = append(v, schema.Violation{

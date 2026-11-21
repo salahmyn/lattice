@@ -80,6 +80,12 @@ type GraphSymbol struct {
 	// interfaces and type aliases run nothing and have none. validate
 	// folds in runtime coverage on top.
 	Reach string `json:"reach,omitempty"`
+	// AsyncHops is how many channels (a queue, a NOTIFY channel, an event) a
+	// root's path to this symbol crosses at the fewest, set only when no root
+	// reaches it synchronously and one does through a channel: its Reach is
+	// never "entry" because of it. Absent means a synchronous path exists, or
+	// none of any kind.
+	AsyncHops int `json:"async_hops,omitempty"`
 	// HandlerReach says whether the call graph reaches the symbol from the
 	// handler of a declared entry point: reached, unreached or unknown (its
 	// language has no reference data, or only an unresolved reference leads

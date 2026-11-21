@@ -21,6 +21,12 @@ type Result struct {
 	Class map[string]string
 	// Classes counts symbols per class.
 	Classes map[string]int
+	// AsyncHops maps a runtime (non-test) symbol that no root reaches
+	// synchronously, and some root reaches through channels, to the fewest
+	// channels such a path crosses (see Graph.asyncDistances). It is reported
+	// apart from Class: a symbol listed here keeps the class its synchronous
+	// reach gives it, never entry because of a channel.
+	AsyncHops map[string]int
 	// Handler maps each runtime (non-test) symbol and interface to its
 	// handler reach: does the handler of a declared entry point reach it
 	// (see ClassifyHandlers)? Nil until ClassifyHandlers runs.
@@ -43,7 +49,7 @@ func (r *Result) HasRoots() bool { return r != nil && len(r.Roots) > 0 }
 //
 // @enforces reachability:INV-4
 func Classify(g *Graph, roots []Root) *Result {
-	r := &Result{Graph: g, Roots: roots, Class: map[string]string{}, Classes: map[string]int{}}
+	r := &Result{Graph: g, Roots: roots, Class: map[string]string{}, Classes: map[string]int{}, AsyncHops: map[string]int{}}
 	var rootFQNs, testFQNs []string
 	for _, rt := range roots {
 		rootFQNs = append(rootFQNs, rt.FQN)
@@ -56,6 +62,10 @@ func Classify(g *Graph, roots []Root) *Result {
 	sort.Strings(testFQNs)
 	fromRoots, mayRoots := g.walk(rootFQNs)
 	fromTests, mayTests := g.walk(testFQNs)
+	var async map[string]int
+	if len(g.cons) > 0 {
+		async = g.asyncDistances(rootFQNs)
+	}
 	for f, n := range g.nodes {
 		if !n.symbol || n.isTest || !runtimeKinds[n.kind] {
 			continue
@@ -74,6 +84,11 @@ func Classify(g *Graph, roots []Root) *Result {
 		}
 		r.Class[f] = c
 		r.Classes[c]++
+		// Reach through a channel is told apart from the class: it never
+		// makes a symbol entry, it only says how far through channels it is.
+		if d := async[f]; d > 0 && c != schema.ReachEntry {
+			r.AsyncHops[f] = d
+		}
 	}
 	return r
 }
@@ -207,6 +222,7 @@ func Annotate(kg *schema.KnowledgeGraph, r *Result) {
 	}
 	for i := range kg.Symbols {
 		kg.Symbols[i].Reach = r.Class[kg.Symbols[i].FQN]
+		kg.Symbols[i].AsyncHops = r.AsyncHops[kg.Symbols[i].FQN]
 		if r.Handler != nil {
 			kg.Symbols[i].HandlerReach = r.Handler[kg.Symbols[i].FQN]
 		}
