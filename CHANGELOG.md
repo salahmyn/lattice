@@ -2,6 +2,31 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.18.1] — 2026-11-21
+
+A CI-ready `lattice break`, and a block map that loads visibly and uses the screen.
+
+### Added
+
+- **`lattice break --fail-on survived,unknown`** exits 1 (`BREAK_OUTCOME`, with the counts) when
+  a run the invocation shows (the `--promise` / `--feature` selection) has a listed outcome. The
+  default exit code is unchanged: 0 once the report is written. With `--fails-on-base` only
+  `--fail-on unknown` applies. When no shown break ran, the output ends with a
+  `no break ran: …` line naming the top reasons, and `--json` adds a `summary` (counts by
+  outcome, `ran`).
+
+### Fixed
+
+- **The block map shows a live status while `lattice serve` builds the graph.** The first
+  `/api/graph` request builds the knowledge graph and audit and can take seconds on a large
+  workspace; the page shows the elapsed time and, after about 3 s, that later loads are cached.
+  A failed load names the HTTP status and the server's error, with a Retry button. An exported
+  map, whose graph is inline, never shows it.
+- **The block map's first view follows the pane's shape.** A wide, shallow graph (many blocks,
+  few links) is no longer drawn as one tall column: its connected groups are packed to the pane's
+  aspect ratio, so Fit draws it much larger (14% → 40% on a 276-block graph at 1600×1000). Graphs
+  that already fit are unchanged; one large connected group improves less.
+
 ## [0.18.0] — 2026-11-21
 
 Lattice now works offline and fails fast. The block map and `lattice serve` load nothing from
