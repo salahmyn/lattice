@@ -1560,11 +1560,46 @@ Each run in `breaks.json` records `ran_verifiers` (from the JUnit report, or Go'
 config left them out, or they did not run after the break) and `failed_tests`
 (the tests that failed after the break).
 
-**Cache.** An earlier killed or survived outcome is reused when the
-enforcer's source, the verifiers' source, the method, the script and the
-runner configuration (the resolved runner commands, the setup commands and the
-generator version) all match, so a config change runs again; `unknown` is never
-reused, so a timeout is always tried again.
+**Cache.** A break outcome is a measurement of one tree, so by default an
+earlier `killed` or `survived` outcome is reused only on the same tree (the
+same commit, or any commit with the same files): the enforcer's source, the
+verifiers' source, the method, the script, the runner configuration (the
+resolved runner commands, the setup commands and the generator version) and
+HEAD's tree must all match. A commit that changes any file, such as a
+migration a runner applies, runs the break again, because that file can stop
+the baseline from running at all. `unknown` is never reused, so a timeout is
+always tried again; a run on a dirty tree neither reuses nor leaves an outcome
+for reuse; an outcome written by an older version (no `inputs_hash` in
+`breaks.json`) is not reused. The default is always safe.
+
+To reuse outcomes across commits, declare what the runner reads with `inputs`,
+doublestar globs over repository files, relative to the directory that holds
+`lattice/`, as `match` is:
+
+```yaml
+break:
+  runners:
+    - name: pgtap
+      match: ["supabase/tests/**/*.sql"]
+      command: [sh, -c, '{ db/reset.sh || exit 125; } && pg_prove -d "$PGDATABASE" "$@"', sh, "{files}"]
+      inputs: ["supabase/migrations/**", "supabase/tests/**", "supabase/seed.sql"]
+```
+
+When every runner a promise's verifiers run under declares `inputs`, the
+outcome is keyed by the blob shas of the files of HEAD's tree that match, plus
+the enforcer's and the verifiers' own files (whole files, not just the spans
+hashed above, so a change elsewhere in them runs the break again). A commit
+that touches none of them reuses the outcome. If any of the promise's runners
+has no `inputs`, if it also runs under `break.commands` or Go's built-in
+runner (neither takes `inputs`), or if a glob is not valid, the promise uses
+the tree. **Inputs declared too narrow make reuse wrong**: a file the runner
+reads that no glob names can change the result without the cache noticing.
+When in doubt, leave `inputs` out.
+
+Whatever the inputs say, a cached outcome is not reused when a baseline
+invocation of the run is known to fail at this tree (it failed earlier in the
+run, or an earlier run at this tree kept it as failed in
+`break-baselines.json`): it runs again, which shows what the tree does now.
 
 A baseline runs once per distinct command: promises whose verifiers render the
 same invocation (a runner that takes whole `{files}`, such as `pg_prove`, given
@@ -1572,7 +1607,8 @@ two tests of one file) share it, and each promise still reads its own verifiers
 from its output. A passing baseline is also kept for the HEAD tree in
 `lattice/.cache/results/break-baselines.json` and reused by the next `lattice
 break` at that tree; a new commit, a dirty tree, a failure, a timeout or an
-error runs it again. The summary line says `baselines: 12 run, 40 reused`, and
+error runs it again (a failure is kept only to stop a cached outcome from being
+reused over it). The summary line says `baselines: 12 run, 40 reused`, and
 `--json` has `summary.baselines` (`run`, `reused`).
 
 `--promise` and `--feature` print only the runs they selected; `breaks.json`
