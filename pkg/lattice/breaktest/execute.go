@@ -24,7 +24,7 @@ type runner struct {
 	opts  Options
 	repo  Repo
 	wt    *Worktree
-	prior map[[7]string]Run
+	prior map[[8]string]Run
 	// shared are this run's baseline invocations by invocationKey, shared by
 	// the promises whose groups render the same command.
 	shared map[string]invocation
@@ -77,7 +77,7 @@ func Execute(ctx context.Context, kg schema.KnowledgeGraph, opts Options) (Repor
 
 	targets := plan(kg, opts)
 	prior := Read(opts.LatticeDir)
-	r := &runner{opts: opts, repo: repo, prior: map[[7]string]Run{}, shared: map[string]invocation{}}
+	r := &runner{opts: opts, repo: repo, prior: map[[8]string]Run{}, shared: map[string]invocation{}}
 	for _, p := range prior.Runs {
 		if p.cacheable() {
 			r.prior[p.cacheKey()] = p
