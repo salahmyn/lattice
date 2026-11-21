@@ -211,6 +211,10 @@ const (
 	CodeBRDCouncilUnreviewed = "BRD_COUNCIL_UNREVIEWED" // a council approval its human has not acknowledged (info)
 	CodeBRDCouncilInvalid    = "BRD_COUNCIL_INVALID"
 
+	// CodeCriterionTierUnset: a BRD has criteria whose tier is not 1, 2 or 3,
+	// which every tier rule reads as tier 1 (info, always on).
+	CodeCriterionTierUnset = "CRITERION_TIER_UNSET"
+
 	// CodeSQLTagDropped: a later migration redefines a function, policy or
 	// trigger without tags an earlier definition carried (warning).
 	CodeSQLTagDropped = "SQL_TAG_DROPPED" // a council approval no pinned mandate, floor or vote supports (error)

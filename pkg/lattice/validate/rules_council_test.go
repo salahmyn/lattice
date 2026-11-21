@@ -87,3 +87,25 @@ func TestCouncilApprovalSurvivesModeChange(t *testing.T) {
 		t.Error("a later mode change should not invalidate a council approval")
 	}
 }
+
+// An approval of a BRD with an unpinned tier stays valid while the mandate
+// leaves require_pinned_tiers unset; the owner setting it re-checks the
+// approval and voids it.
+// @verifies brds.council:INV-7
+func TestCouncilApprovalUnpinnedTiers(t *testing.T) {
+	kg, cfg := councilApprovedKG(schema.HumanReviewAcknowledged), councilCfg()
+	if kg.BRDs[0].SuccessCriteria[0].TierPinned() {
+		t.Fatal("fixture should have an unpinned tier")
+	}
+	if got := codes(Validate(kg, cfg, Options{})); got[schema.CodeBRDCouncilInvalid] {
+		t.Errorf("field unset: an existing approval stays valid, got %v", got)
+	}
+	cfg.Autonomy.Mandates[0].RequirePinnedTiers = true
+	if !codes(Validate(kg, cfg, Options{}))[schema.CodeBRDCouncilInvalid] {
+		t.Error("field set: the approval of an unpinned BRD must stop holding")
+	}
+	kg.BRDs[0].SuccessCriteria[0].Tier = 1
+	if codes(Validate(kg, cfg, Options{}))[schema.CodeBRDCouncilInvalid] {
+		t.Error("field set: a fully pinned BRD still holds")
+	}
+}

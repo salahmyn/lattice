@@ -194,6 +194,12 @@ type Mandate struct {
 	Classes []string `yaml:"classes,omitempty"`
 	// TierMax is the highest impact tier the mandate covers (default 1).
 	TierMax int `yaml:"tier_max,omitempty"`
+	// RequirePinnedTiers is an owner setting for a brd_approve mandate. When
+	// true, the council cannot approve a BRD with a criterion whose tier is
+	// not 1, 2 or 3 (absent or out of range), and an existing approval of such
+	// a BRD stops holding (BRD_COUNCIL_INVALID). Off by default: an unpinned
+	// tier then reads as tier 1, as it always has. Agents never set it.
+	RequirePinnedTiers bool `yaml:"require_pinned_tiers,omitempty"`
 	// Expires is an ISO date after which the mandate is void.
 	Expires string `yaml:"expires,omitempty"`
 	// DelegatedBy is the human the mandate acts for. A brd_approve mandate

@@ -252,6 +252,11 @@ func (c BRDCriterion) EffectiveTier() int {
 	return 1
 }
 
+// TierPinned reports whether the criterion carries a tier of 1, 2 or 3.
+// Anything else (an absent tier, or a value outside the range) is unpinned:
+// EffectiveTier reads it as tier 1, and no one has chosen that.
+func (c BRDCriterion) TierPinned() bool { return c.Tier >= 1 && c.Tier <= 3 }
+
 // BRDConstraintKind narrows the constraint taxonomy enough that the UI
 // can icon them and the validator can spot LLM-fabricated regulatory
 // claims (any non-human constraint is high-risk to invent).

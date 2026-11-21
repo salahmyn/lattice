@@ -210,6 +210,13 @@ The level can differ per criterion tier. A criterion takes its tier's level,
 else the default; scenarios have no tier and take the default.
 `--require-level` replaces the default and keeps the tier levels.
 
+A criterion whose `tier` is absent, or is not 1, 2 or 3, is read as tier 1.
+`validate` says so with `CRITERION_TIER_UNSET` (info, always on, allowlistable):
+one finding per BRD, listing each such criterion, quoting an out-of-range
+value, and noting whether the BRD holds a council approval. It suggests no
+tier, since choosing one is a human decision. It never fails a
+`fail_on: warning` run. Section 7b shows how a mandate can refuse such BRDs.
+
 ```yaml
 validate:
   require_level: {default: demonstrated, tier: {3: exercised}}
@@ -4656,6 +4663,27 @@ What a council can never do, whatever the mandate says:
   `brd from-code`), and no agent may hold two seats.
 - **Outlive the version.** A new version voids the approval (`BRD_DRIFT`),
   as for a human approval.
+
+**Unpinned tiers.** A criterion with no `tier`, or a tier outside 1 to 3, is
+read as tier 1, so a mandate with `tier_max: 2` can approve a BRD whose
+criteria no one ever tiered. Two things keep that visible:
+
+- `lattice brd decide` and the decision record always carry a line such as
+  `1 of 3 criteria have no pinned tier; treated as tier 1` (text only; it
+  changes no decision).
+- `validate` reports `CRITERION_TIER_UNSET` (info) for each such BRD, so the
+  owner can list them before deciding anything.
+
+`require_pinned_tiers: true` on a mandate is an **owner setting** that closes
+the gap: the council then refuses any BRD with an unpinned criterion tier,
+and `validate` re-checks existing approvals against it, so turning it on
+reports `BRD_COUNCIL_INVALID` for an approved BRD that still has one. It is
+off by default, and with it off every existing approval holds as before.
+Agents never set it.
+
+```yaml
+      require_pinned_tiers: true    # owner setting; off by default
+```
 
 `validate` reports `BRD_COUNCIL_UNREVIEWED` (info) for a decision the human
 has not acknowledged yet. It reports `BRD_COUNCIL_INVALID` (error) for a

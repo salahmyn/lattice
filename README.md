@@ -216,6 +216,7 @@ A complete, validating three-language example lives in
 | `lattice coverage` | Adoption report: discovery / docs / verification / BRD |
 | `lattice brd new\|list\|show\|link\|approve` | Manage Business Requirements Documents; `brd link --reconcile` completes one-sided links without voiding approval |
 | `lattice brd from-code <feature-id>` | LLM-regenerate a BRD from a feature (brownfield) |
+| `lattice brd decide <id>` | Council decision; its summary states criteria with no pinned tier (`CRITERION_TIER_UNSET` in `validate`); a mandate's `require_pinned_tiers` is an owner opt-in that refuses them |
 | `lattice feature show <id>` | Show one feature + reverse links, with each invariant's cases, their coverage and their confirmation |
 | `lattice feature spec <id>` | Emit the ≤500-word `.ai-spec.md` loading contract |
 | `lattice ep list\|show\|accept\|reject` | Manage entry points, including the proposals `extract` makes from `serve` handlers, cron jobs and detected routes |

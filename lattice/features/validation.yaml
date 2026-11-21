@@ -64,3 +64,5 @@ invariants:
     statement: FEATURE_UNREACHED also covers a proposal or accepted feature that has non-test code in the graph and is on no flow and reached by no root, states its status, and leaves the message for a production feature unchanged.
   - id: INV-21
     statement: INVARIANT_UNREQUIRED, STATUS_DRIFT and the findings of FEATURE_UNREACHED for unpromoted features are info and always on, so a run that fails on warnings stays green with all of them present.
+  - id: INV-22
+    statement: CRITERION_TIER_UNSET is an info finding, always on, one per BRD listing every criterion whose tier is not 1, 2 or 3; it never suggests a tier.

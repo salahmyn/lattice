@@ -187,6 +187,9 @@ sends the BRD back and the summary lists what to change.`,
 			for _, c := range verdict.Changes {
 				io.printf("  %s (%s): %s\n", c.Seat, c.Actor, c.Reason)
 			}
+			if n := len(brd.UnpinnedTiers(*b)); n > 0 {
+				io.printf("tiers: %s\n", brd.TierNote(*b))
+			}
 			io.printf("decision for %s: %s\n", m.DelegatedBy, path)
 			return nil
 		},
