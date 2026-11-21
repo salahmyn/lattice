@@ -12,6 +12,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"github.com/salahmyn/lattice/pkg/lattice/buildinfo"
 	"html/template"
 	"io/fs"
 	"net"
@@ -336,6 +337,8 @@ func (s *Server) graph(ctx context.Context) (schema.KnowledgeGraph, error) {
 
 // tplFuncs are template helpers used across pages.
 var tplFuncs = template.FuncMap{
+	// version is the running binary's version, for the page footer.
+	"version": func() string { return buildinfo.Version },
 	"dict": func(args ...interface{}) map[string]interface{} {
 		// dict turns ("Key" "Value" "Key2" "Value2") into a map so
 		// templates can pass keyword-style arguments to sub-templates.

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha512"
 	"encoding/base64"
+	"html/template"
 	"io"
 	"io/fs"
 	"net/http"
@@ -18,6 +19,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/salahmyn/lattice/pkg/lattice/buildinfo"
 
 	"github.com/salahmyn/lattice/pkg/lattice/importer"
 	"github.com/salahmyn/lattice/pkg/lattice/onboarding"
@@ -376,5 +379,26 @@ func TestPagesBrowserSmoke(t *testing.T) {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("smoke output lacks %q:\n%s", want, out)
 		}
+	}
+}
+
+// The page footer names the running binary's version, not a fixed one.
+func TestFooterShowsBuildVersion(t *testing.T) {
+	old := buildinfo.Version
+	buildinfo.Version = "9.8.7-test"
+	defer func() { buildinfo.Version = old }()
+	var b strings.Builder
+	if err := template.Must(template.New("v").Funcs(tplFuncs).Parse(`Lattice {{version}}`)).Execute(&b, nil); err != nil {
+		t.Fatal(err)
+	}
+	if b.String() != "Lattice 9.8.7-test" {
+		t.Errorf("footer version = %q", b.String())
+	}
+	layout, err := assetsFS.ReadFile("assets/templates/layout.html")
+	if err != nil {
+		t.Skipf("layout template not readable as assetsFS: %v", err)
+	}
+	if strings.Contains(string(layout), "Lattice 0.5.0") || !strings.Contains(string(layout), "Lattice {{version}}") {
+		t.Errorf("layout.html footer does not use the build version")
 	}
 }
