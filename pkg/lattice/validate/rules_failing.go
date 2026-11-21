@@ -17,11 +17,24 @@ import (
 const maxNamedFailures = 3
 
 // resultsCurrent reports whether the ingested results belong to the graph's
-// commit. It is the audit's matches_head rule: the stamps agree, or one of
-// them is unknown (no git, or a set ingested without a commit).
+// commit. It is the audit's matches_head rule: the stamps agree, one of them
+// is unknown (no git, or a set ingested without a commit), or git shows the
+// two commits differ only in Lattice's own ledger and cache.
+// @enforces validation:INV-17
 func (c *corpus) resultsCurrent() bool {
 	stamp, head := c.opts.ResultsCommit, c.kg.GeneratedFromCommit
-	return stamp == "" || head == "" || stamp == head
+	return stamp == "" || head == "" || stamp == head || c.opts.ResultsEquivalent
+}
+
+// resultsEvidence names where a VERIFIER_FAILING read its results: the
+// graph's own commit, or another with the same tree apart from Lattice's
+// ledger and cache.
+func (c *corpus) resultsEvidence() string {
+	stamp, head := c.opts.ResultsCommit, c.kg.GeneratedFromCommit
+	if stamp != "" && head != "" && stamp != head && c.opts.ResultsEquivalent {
+		return fmt.Sprintf("ingested results of commit %s, whose tree matches the graph's apart from Lattice's ledger and cache", shortCommit(stamp))
+	}
+	return "ingested results"
 }
 
 // failingVerifiers maps each declared invariant ref ("<feature>:INV-N") to
@@ -101,8 +114,8 @@ func (c *corpus) checkFailingVerifiers() []schema.Violation {
 		v = append(v, schema.Violation{
 			Code: schema.CodeVerifierFailing, Severity: schema.SeverityWarning,
 			FeatureID: feature, Subject: ref,
-			Message: fmt.Sprintf("invariant %s has a failing verifier: %s (evidence: ingested results)",
-				ref, nameFailures(failing[ref])),
+			Message: fmt.Sprintf("invariant %s has a failing verifier: %s (evidence: %s)",
+				ref, nameFailures(failing[ref]), c.resultsEvidence()),
 			Location: loc,
 			NextAction: &schema.NextAction{
 				Kind:   "fix_test",
@@ -119,7 +132,9 @@ func (c *corpus) checkFailingVerifiers() []schema.Violation {
 // still read DEMONSTRATED from such results, while the per-invariant
 // VERIFIER_FAILING and the audit ignore them; the finding says so. It only
 // reports: the RTM statuses and the require_level gate are unchanged. An
-// unknown stamp on either side is current, as resultsCurrent reads it.
+// unknown stamp on either side is current, as resultsCurrent reads it, and so
+// is a commit whose tree differs from the graph's only in Lattice's own
+// ledger and cache.
 // @enforces validation:INV-17
 func (c *corpus) checkResultsStale() []schema.Violation {
 	if c.opts.ResultOf == nil || c.resultsCurrent() {

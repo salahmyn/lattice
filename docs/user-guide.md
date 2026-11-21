@@ -193,7 +193,11 @@ results:
 The per-invariant finding reads only results for the graph's commit (or a
 set, or a graph, with no commit); results ingested at another commit raise
 nothing. `RESULTS_STALE` (info) names that case once: criteria and scenarios
-still read `demonstrated` from such results, and no level changes. A warning
+still read `demonstrated` from such results, and no level changes. Two
+commits that git shows differ only in Lattice's own ledger and cache
+(`.ledger/`, `.cache/`), such as an empty commit or one that records a gate,
+count as the same commit; if git cannot compare them (no git, a shallow clone)
+they do not. A warning
 fails the run only with `fail_on: warning` (or `--fail-on warning`); the
 default is `error`.
 
@@ -701,7 +705,7 @@ ingested, and states the evidence basis it rests on:
 | `VERIFIER_MISSES_ENFORCER` | warning | every verifier of an invariant has evidence (its own run, its file's run, or a suite that never ran the enforcer) and none executed an enforcer |
 | `VERIFIER_UNPROVEN` | info | per-test coverage was ingested, and a verifier has none; the finding names the tests |
 | `COVERAGE_STALE` | warning | the coverage was ingested at another commit than the graph's, or from a dirty tree |
-| `RESULTS_STALE` | info, always on | the test results were ingested at another commit than the graph's. Criteria and scenarios still read `demonstrated` from them; the per-invariant `VERIFIER_FAILING` and the audit ignore them. It changes no level; raise it with `validate.severity: {RESULTS_STALE: warning}` |
+| `RESULTS_STALE` | info, always on | the test results were ingested at another commit than the graph's (one that differs only in Lattice's ledger and cache counts as the same). Criteria and scenarios still read `demonstrated` from them; the per-invariant `VERIFIER_FAILING` and the audit ignore them. It changes no level; raise it with `validate.severity: {RESULTS_STALE: warning}` |
 | `COVERAGE_BELOW_FLOOR` | warning, per declared floor | a feature, invariant or criterion tier is under its floor; an invariant is measured over its verifiers' runs when each has per-test data, else over the suite, and the finding says which |
 
 `validate.severity` entries always win, for example
@@ -1586,6 +1590,11 @@ lattice audit --promise wallet:INV-1          # one promise (repeat, or a comma 
 `--promise`, `--feature` and `--class` only narrow what is printed; the audit
 is always computed over the whole workspace, so a row reads the same filtered
 or not. An unknown `--promise` id is a usage error (exit 2).
+
+`inputs.results.matches_head` and `inputs.coverage.matches_head` say whether
+the evidence is of the graph's commit, by the rule validate uses for
+`RESULTS_STALE`: commits that differ only in Lattice's ledger and cache count
+as the same (for coverage, only when it was ingested from a clean tree).
 
 The same rows are on the `/audit` page of `lattice serve`, filterable by class
 and feature (and `?promise=`); each fake opens to its verifiers, enforcers, the

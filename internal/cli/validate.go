@@ -3,8 +3,10 @@ package cli
 // @module-feature cli
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,6 +17,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm"
 	"github.com/salahmyn/lattice/pkg/lattice/flags"
+	"github.com/salahmyn/lattice/pkg/lattice/gitstate"
 	"github.com/salahmyn/lattice/pkg/lattice/lease"
 	"github.com/salahmyn/lattice/pkg/lattice/ledger"
 	"github.com/salahmyn/lattice/pkg/lattice/reach"
@@ -77,6 +80,8 @@ func newValidateCommand(io *IO) *cobra.Command {
 				ReviewMode:    ws.Review,
 				ResultOf:      resultOfFrom(set),
 				ResultsCommit: set.Commit,
+				ResultsEquivalent: resultsSameTree(cmd.Context(), ws.LatticeDir,
+					set.Commit, kg.GeneratedFromCommit),
 				Leases:        activeLeases,
 				LedgerEntries: entries,
 				FlagsOf:       flagReasons(flags.OpenByUnit(ws.LatticeDir)),
@@ -209,6 +214,18 @@ func describeNextAction(na *schema.NextAction) string {
 		s += " (" + na.Detail + ")"
 	}
 	return s
+}
+
+// resultsSameTree says whether results stamped with commit stamp are as good
+// as head's: git shows the two commits differ only in Lattice's own ledger and
+// cache (gitstate.SameTree). It runs git only when both stamps are known and
+// differ; unknown reads false.
+// @enforces validation:INV-17
+func resultsSameTree(ctx context.Context, latticeDir, stamp, head string) bool {
+	if stamp == "" || head == "" || stamp == head {
+		return false
+	}
+	return gitstate.SameTree(ctx, filepath.Dir(latticeDir), stamp, head, []string{latticeDir})
 }
 
 // ambiguousResults reports verifier tests whose ingested result cannot be

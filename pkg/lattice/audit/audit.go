@@ -256,6 +256,12 @@ type Sources struct {
 	// Stamps describe the evidence files; Collect sets them.
 	Stamps Inputs
 	Dirty  bool
+	// ResultsSameTree and CoverageSameTree say that git shows the results'
+	// or the coverage's commit to differ from head only in Lattice's own
+	// ledger and cache (gitstate.SameTree). Collect sets them; false is
+	// unknown, never the same tree.
+	ResultsSameTree  bool
+	CoverageSameTree bool
 }
 
 // Compute builds the report. It is a pure function of its sources.
@@ -264,8 +270,9 @@ func Compute(src Sources) Report {
 	head := kg.GeneratedFromCommit
 
 	rep := Report{Schema: Schema, Commit: head, Dirty: src.Dirty, Inputs: src.Stamps, Note: confirmedNote}
-	rep.Inputs.Results.MatchesHead = stampMatches(src.Stamps.Results.Commit, head)
-	rep.Inputs.Coverage.MatchesHead = stampMatches(src.Stamps.Coverage.Commit, head)
+	rep.Inputs.Results.MatchesHead = stampMatches(src.Stamps.Results.Commit, head) || src.ResultsSameTree
+	rep.Inputs.Coverage.MatchesHead = stampMatches(src.Stamps.Coverage.Commit, head) ||
+		(src.CoverageSameTree && !src.Stamps.Coverage.Dirty)
 	for _, s := range kg.Symbols {
 		if s.Reach != "" {
 			rep.Inputs.Reach.Present = true
@@ -322,6 +329,12 @@ func Compute(src Sources) Report {
 	return rep
 }
 
+// stampMatches is the matches_head rule on the stamps alone: they agree, or
+// one is unknown. Compute also counts a commit with head's tree apart from
+// Lattice's own ledger and cache (Sources.ResultsSameTree); for coverage only
+// when it was ingested from a clean tree, since a dirty run did not see its
+// commit's tree.
+// @enforces audit:INV-9
 func stampMatches(stamp, head string) bool {
 	return stamp == "" || head == "" || stamp == head
 }

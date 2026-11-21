@@ -95,3 +95,73 @@ func TestAbbrev(t *testing.T) {
 		t.Errorf("Abbrev changed its input: %v", in)
 	}
 }
+
+func head(t *testing.T, dir string) string {
+	t.Helper()
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// SameTree is true only when every path between the two commits is a
+// workspace's ledger or cache; an unknown commit or no git is never the same.
+// @verifies validation:INV-17
+// @verifies audit:INV-9
+func TestSameTree(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	git(t, dir, "init", "-q")
+	write(t, dir, "svc/fees.go", "package svc\n")
+	write(t, dir, "lattice/features/fees.yaml", "id: fees\n")
+	write(t, dir, "lattice/.ledger/ledger.jsonl", "")
+	write(t, dir, "specs/.ledger/ledger.jsonl", "")
+	git(t, dir, "add", "-A")
+	git(t, dir, "commit", "-q", "-m", "base")
+	base := head(t, dir)
+	ctx := context.Background()
+	ws := []string{filepath.Join(dir, "specs")}
+
+	commit := func(rel, body string) string {
+		t.Helper()
+		if rel == "" {
+			git(t, dir, "commit", "-q", "--allow-empty", "-m", "empty")
+		} else {
+			write(t, dir, rel, body)
+			git(t, dir, "add", "-A")
+			git(t, dir, "commit", "-q", "-m", "change "+rel)
+		}
+		return head(t, dir)
+	}
+	empty := commit("", "")
+	ledger := commit("lattice/.ledger/ledger.jsonl", "{}\n")
+	named := commit("specs/.ledger/ledger.jsonl", "{}\n")
+	source := commit("svc/fees.go", "package svc // edited\n")
+	feature := commit("lattice/features/fees.yaml", "id: fees\nversion: 2\n")
+
+	for _, tc := range []struct {
+		name string
+		a, b string
+		want bool
+	}{
+		{"empty commit", base, empty, true},
+		{"ledger only", base, ledger, true},
+		{"named workspace ledger", ledger, named, true},
+		{"source file", named, source, false},
+		{"feature yaml", source, feature, false},
+		{"ledger then source", base, source, false},
+		{"unknown commit", "0123456789abcdef0123456789abcdef01234567", empty, false},
+		{"empty stamp", "", empty, false},
+		{"option-like stamp", "--cached", empty, false},
+	} {
+		if got := SameTree(ctx, dir, tc.a, tc.b, ws); got != tc.want {
+			t.Errorf("%s: SameTree = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+	if SameTree(ctx, t.TempDir(), base, empty, nil) {
+		t.Errorf("outside a git checkout the trees are unknown, never the same")
+	}
+}
