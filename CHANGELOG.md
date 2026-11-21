@@ -2,6 +2,38 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.19.1] — 2026-11-21
+
+Faster, more truthful `lattice break` for database tests, results that stay current across
+bookkeeping commits, and a tidier block map.
+
+### Fixed
+
+- **A runner exit of 125 reads `unknown`, never `killed`.** A break runner whose setup fails (for
+  example, a database reset when a generated SQL break did not apply) exited non-zero and read
+  as a verifier catching the break. As in `git bisect`, 125 now means "this code could not be
+  set up": the run reads `unknown` ("did not apply (runner exit 125)"). The user guide's pgTAP
+  runner ends its reset with `|| exit 125`.
+- **Results of a commit with head's tree stay current.** `validate` and `audit` now treat test
+  results and coverage ingested at an earlier commit as current when git shows the commits in
+  between differ only in Lattice's own `.ledger/` and `.cache/` (an empty commit, or the
+  ledger-only commit at the end of a pull request): no `RESULTS_STALE`, `VERIFIER_FAILING` reads
+  them, and `matches_head` is true. If git cannot compare the commits, they still differ.
+- **`lattice break` names each missing runner once.** Runs that lack a runner count under one
+  reason, `no runner configured`; `--json` adds `missing_runners` (per language, the runs that
+  need it) and the "no break ran" line lists them.
+- **Block map edge labels no longer pile up where lines converge.** Each label is placed along its
+  own line where it overlaps no other label and no box.
+
+### Changed
+
+- **Each break baseline runs once per tree.** Promises whose verifiers render the same runner
+  invocation (a whole-file `pg_prove` over two tests of one file) share one baseline, and each
+  still checks its own verifiers ran. Passing baselines are kept per HEAD tree in
+  `lattice/.cache/results/break-baselines.json` and reused by the next run at that tree (never on
+  a dirty tree, never a failing, timed-out or errored one). The summary shows
+  `baselines: N run, M reused`; `--json` adds `summary.baselines`.
+
 ## [0.19.0] — 2026-11-21
 
 Break-testing for PostgreSQL, a workspace switch that requires hardware-key signatures, and a
