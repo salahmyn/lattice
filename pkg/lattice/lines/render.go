@@ -68,6 +68,9 @@ func WriteText(w io.Writer, r Report) {
 					fmt.Fprintf(w, "      %s: %s\n", rg.name, dash(rg.v))
 				}
 			}
+			if b.Whole != "" {
+				fmt.Fprintf(w, "      %s\n", b.Whole)
+			}
 			if b.Unknown != "" {
 				fmt.Fprintf(w, "      unknown: %s\n", b.Unknown)
 			}
@@ -105,6 +108,9 @@ func WriteMarkdown(w io.Writer, r Report) {
 				continue
 			}
 			lv := levelsText(b.Levels)
+			if b.Whole != "" {
+				lv += " (" + b.Whole + ")"
+			}
 			if b.Unknown != "" {
 				lv += " (" + b.Unknown + ")"
 			}

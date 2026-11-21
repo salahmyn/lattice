@@ -374,13 +374,19 @@ func unclaimedCases(set results.Set, verifiers []results.Selector) []string {
 }
 
 // editLines are the lines of the enforcer's file a generated break edits,
-// [start, end], or nil when they are not known. An early return at the top
-// of a body skips the rest of it, so it spans from its own line to the end
-// of the symbol; a SQL break spans the lines of its insertions. Only the
-// first file of the plan is described, the one the run reports.
-func editLines(plan breakPlan, enf schema.GraphSymbol) []int {
+// [start, end], and whether the break neutralised the enforcer as a whole.
+// Only an edit that targets those lines' own logic has lines, and they are
+// exactly the edited ones: a SQL break's insertions in a policy or trigger
+// expression. An early return skips the rest of a body, so it proves nothing
+// about any one line: it is whole, with no lines. Only the first file of the
+// plan is described, the one the run reports.
+func editLines(plan breakPlan, enf schema.GraphSymbol) (lns []int, whole bool) {
 	if len(plan.edits) == 0 {
-		return nil
+		return nil, false
+	}
+	sql := enf.Language == "postgres" || enf.Language == "sql"
+	if !sql || sqlFunctionAt(plan.edits[0], enf.Line) {
+		return nil, true
 	}
 	file := plan.edits[0].file
 	lo, hi := 0, 0
@@ -390,7 +396,7 @@ func editLines(plan breakPlan, enf schema.GraphSymbol) []int {
 		}
 		for _, b := range append([]Break{{Offset: e.brk.Offset, Text: e.brk.Text}}, e.brk.More...) {
 			if b.Offset < 0 || b.Offset > len(e.src) {
-				return nil
+				return nil, false
 			}
 			ln := 1 + strings.Count(string(e.src[:b.Offset]), "\n")
 			if lo == 0 || ln < lo {
@@ -402,12 +408,9 @@ func editLines(plan breakPlan, enf schema.GraphSymbol) []int {
 		}
 	}
 	if lo == 0 {
-		return nil
+		return nil, false
 	}
-	if enf.Language != "postgres" && enf.Language != "sql" && enf.File == file && enf.EndLine > hi {
-		hi = enf.EndLine
-	}
-	return []int{lo, hi}
+	return []int{lo, hi}, false
 }
 
 // keptLines returns the line data kept for an invocation key. A group that
@@ -446,4 +449,16 @@ func (r *runner) remember(key string, inv invocation) {
 		r.last = map[string]invocation{}
 	}
 	r.last[key] = inv
+}
+
+// sqlFunctionAt reports whether the statement that starts at line of the
+// edit's file creates a function or procedure, whose break is an early
+// return, not an edit of one expression.
+func sqlFunctionAt(e fileEdit, line int) bool {
+	ls := strings.Split(string(e.src), "\n")
+	if line < 1 || line > len(ls) {
+		return false
+	}
+	l := strings.ToLower(ls[line-1])
+	return strings.Contains(l, " function ") || strings.Contains(l, " procedure ")
 }

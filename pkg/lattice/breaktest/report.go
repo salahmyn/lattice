@@ -120,11 +120,17 @@ type Run struct {
 	// addition to the lattice.breaks/1 contract; readers ignore it.
 	InputsHash string `json:"inputs_hash,omitempty"`
 	// Lines are the first and last line of EnforcerFile that a generated
-	// break edits, when the generator knows them: an early return spans from
-	// its own line to the end of the enforcer, a SQL break the lines of its
-	// insertions. A scripted break and an edge break have none. An addition
-	// to the lattice.breaks/1 contract; runs written before it lack it.
+	// break edits, set only when the edit targets those lines' own logic (a
+	// SQL policy or trigger expression): exactly the edited lines. An early
+	// return, which skips a whole body, records none and sets Whole instead:
+	// killing it shows a verifier notices the function doing nothing, not that
+	// any one line is checked. A scripted break and an edge break have
+	// neither. Additions to the lattice.breaks/1 contract; runs written before
+	// them lack them.
 	Lines []int `json:"lines,omitempty"`
+	// Whole says the break neutralised the enforcer as a whole (an early
+	// return), so a kill is a fact about the block, not about a line.
+	Whole bool `json:"whole,omitempty"`
 }
 
 // GeneratorVersion stamps the generators, the runner logic and the outcome

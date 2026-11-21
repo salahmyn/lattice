@@ -210,9 +210,9 @@ func TestGoResolverMapsImportPaths(t *testing.T) {
 	}
 }
 
-// What a generated break edits is recorded as lines of the enforcer's file:
-// an early return spans from its own line to the end of the enforcer, a break
-// that cannot say records none, and Run carries them as an additive field.
+// A break that targets one expression records exactly the lines it edits; an
+// early return, which skips a whole body, records no line and is whole, so a
+// kill credits no single line. Run carries both as optional additions.
 // @verifies audit:INV-10
 func TestEditLines(t *testing.T) {
 	src := []byte("package p\n\nfunc F() int {\n\treturn 1\n}\n")
@@ -220,27 +220,33 @@ func TestEditLines(t *testing.T) {
 	must(t, err)
 	plan := breakPlan{edits: []fileEdit{{file: "p.go", src: src, brk: brk, line: 3}}}
 	enf := schema.GraphSymbol{File: "p.go", Line: 3, EndLine: 5, Language: "go"}
-	if got := editLines(plan, enf); !reflect.DeepEqual(got, []int{3, 5}) {
-		t.Errorf("early return lines = %v, want [3 5]", got)
+	if got, whole := editLines(plan, enf); got != nil || !whole {
+		t.Errorf("early return = %v whole %v, want no lines and whole", got, whole)
 	}
-	sqlEdit := breakPlan{edits: []fileEdit{{file: "m.sql", src: []byte("a\nb\nc\nd\n"),
-		brk: Break{Offset: 2, Text: "x", More: []Break{{Offset: 6, Text: "y"}}}}}}
-	if got := editLines(sqlEdit, schema.GraphSymbol{File: "m.sql", Language: "postgres", EndLine: 9}); !reflect.DeepEqual(got, []int{2, 4}) {
-		t.Errorf("SQL insertion lines = %v, want [2 4]", got)
+	policy := []byte("create policy p on t\n  using (a = 1\n  and b = 2);\n")
+	pe := breakPlan{edits: []fileEdit{{file: "m.sql", src: policy,
+		brk: Break{Offset: 28, Text: "x", More: []Break{{Offset: 44, Text: "y"}}}}}}
+	if got, whole := editLines(pe, schema.GraphSymbol{File: "m.sql", Line: 1, Language: "postgres"}); !reflect.DeepEqual(got, []int{2, 3}) || whole {
+		t.Errorf("SQL expression edit = %v whole %v, want exactly lines [2 3]", got, whole)
 	}
-	if editLines(breakPlan{}, enf) != nil {
+	fn := []byte("create or replace function f() returns int language sql as $$ select 1 $$;\n")
+	fe := breakPlan{edits: []fileEdit{{file: "m.sql", src: fn, brk: Break{Offset: 5, Text: "x"}}}}
+	if got, whole := editLines(fe, schema.GraphSymbol{File: "m.sql", Line: 1, Language: "postgres"}); got != nil || !whole {
+		t.Errorf("SQL function early return = %v whole %v", got, whole)
+	}
+	if got, whole := editLines(breakPlan{}, enf); got != nil || whole {
 		t.Errorf("no edit has no lines")
 	}
 
-	with, _ := json.Marshal(Run{Promise: "p", Lines: []int{3, 5}})
+	with, _ := json.Marshal(Run{Promise: "p", Lines: []int{3, 5}, Whole: true})
 	without, _ := json.Marshal(Run{Promise: "p"})
-	if !strings.Contains(string(with), `"lines":[3,5]`) || strings.Contains(string(without), `"lines"`) {
-		t.Errorf("lines must be an optional addition: %s / %s", with, without)
+	if !strings.Contains(string(with), `"lines":[3,5]`) || !strings.Contains(string(with), `"whole":true`) ||
+		strings.Contains(string(without), `"lines"`) || strings.Contains(string(without), `"whole"`) {
+		t.Errorf("lines and whole must be optional additions: %s / %s", with, without)
 	}
-	// A breaks.json written before the field existed still reads.
 	var old Report
 	must(t, json.Unmarshal([]byte(`{"schema":"lattice.breaks/1","runs":[{"promise":"p","enforcer":"e","outcome":"killed"}]}`), &old))
-	if len(old.Runs) != 1 || old.Runs[0].Lines != nil {
+	if len(old.Runs) != 1 || old.Runs[0].Lines != nil || old.Runs[0].Whole {
 		t.Errorf("old report: %+v", old)
 	}
 }

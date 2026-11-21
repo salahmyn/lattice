@@ -41,8 +41,12 @@ type BreakRun struct {
 	EnforcerFile string `json:"enforcer_file"`
 	Method       string `json:"method"`
 	Outcome      string `json:"outcome"`
-	// Lines are the first and last line of EnforcerFile the break edited.
+	// Lines are the first and last line of EnforcerFile the break edited,
+	// set only for an edit that targets those lines' own logic.
 	Lines []int `json:"lines"`
+	// Whole says the break neutralised the enforcer as a whole (an early
+	// return): a kill is a fact about the block, never about one line.
+	Whole bool `json:"whole"`
 }
 
 // Input is everything Compute joins.
@@ -130,6 +134,10 @@ type Block struct {
 	NotRun    string `json:"not_run_lines,omitempty"`
 	// Unknown says why the lines with no data have none.
 	Unknown string `json:"unknown,omitempty"`
+	// Whole is set when a killed early-return break of the block's intent
+	// neutralised the whole block: a fact about the block that credits no line
+	// and never changes the lines' levels or the verified count.
+	Whole string `json:"whole,omitempty"`
 	// Note is function-level evidence for a SQL block, whose lines stay
 	// unknown.
 	Note string `json:"note,omitempty"`
@@ -274,9 +282,16 @@ func Compute(in Input) Report {
 		}
 	}
 	killed := map[string][]BreakRun{} // promise -> killed runs with lines
+	wholes := map[string]bool{}       // promise \x00 enforcer -> killed whole
 	for _, r := range in.Breaks {
-		if r.Outcome == "killed" && len(r.Lines) == 2 && r.Method != "edge" {
+		if r.Outcome != "killed" || r.Method == "edge" {
+			continue
+		}
+		switch {
+		case len(r.Lines) == 2:
 			killed[r.Promise] = append(killed[r.Promise], r)
+		case r.Whole:
+			wholes[r.Promise+"\x00"+r.Enforcer] = true
 		}
 	}
 
@@ -295,7 +310,7 @@ func Compute(in Input) Report {
 	})
 
 	suiteFiles := in.Suite.Files
-	c := &ctx{in: in, byFile: byFile, verifiers: verifiers, killed: killed, cache: map[string]*fileData{}}
+	c := &ctx{in: in, byFile: byFile, verifiers: verifiers, killed: killed, wholes: wholes, cache: map[string]*fileData{}}
 	feat := map[string]*Feature{}
 	for _, s := range syms {
 		n := nodes[s.FQN]
@@ -310,6 +325,11 @@ func Compute(in Input) Report {
 		}
 		if s.Line > 0 {
 			c.level(&b, s, n)
+		}
+		for _, r := range n.refs() {
+			if c.wholes[r+"\x00"+s.FQN] {
+				b.Whole = "checked as a whole (early return killed)"
+			}
 		}
 		rep.Blocks = append(rep.Blocks, b)
 
@@ -348,6 +368,7 @@ type ctx struct {
 	byFile    map[string][]span
 	verifiers map[string][]string
 	killed    map[string][]BreakRun
+	wholes    map[string]bool
 	cache     map[string]*fileData
 }
 

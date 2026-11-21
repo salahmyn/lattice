@@ -262,8 +262,9 @@ func TestAuditLinesLevels(t *testing.T) {
 		t.Fatalf("break --lines: %v\n%s", err, out)
 	}
 	runs := byPromise(rep)
-	if r := runs["fees:INV-4"]; r.Outcome != breaktest.Killed || len(r.Lines) != 2 || r.Lines[0] != 4 || r.Lines[1] != 7 {
-		t.Fatalf("fees:INV-4 = %s lines %v, want killed [4 7]: %s", r.Outcome, r.Lines, r.Reason)
+	// An early return is whole: it records no line.
+	if r := runs["fees:INV-4"]; r.Outcome != breaktest.Killed || r.Lines != nil || !r.Whole {
+		t.Fatalf("fees:INV-4 = %s lines %v whole %v, want killed, whole, no lines: %s", r.Outcome, r.Lines, r.Whole, r.Reason)
 	}
 	if r := runs["fees:INV-1"]; r.Outcome != breaktest.Survived {
 		t.Fatalf("fees:INV-1 = %s, want survived: %s", r.Outcome, r.Reason)
@@ -285,8 +286,9 @@ func TestAuditLinesLevels(t *testing.T) {
 		"src.fees.negative": {intent: "serves", notRunN: 1, notRun: "17"},
 		// The verifier's invocation also ran an unrelated test.
 		"src.guard.guard": {intent: "enforces", runShared: 2, shared: "5-6"},
-		// A killed break edited these lines.
-		"src.cap.cap": {intent: "enforces", checked: 2},
+		// Its early-return break was killed: a fact about the block, so its
+		// lines keep their coverage level.
+		"src.cap.cap": {intent: "enforces", run: 2},
 		// No promise owns it: only an unrelated test ran it.
 		"src.util.logLine": {intent: "none", otherN: 2, other: "4-5"},
 	} {
@@ -301,6 +303,12 @@ func TestAuditLinesLevels(t *testing.T) {
 		if got != w {
 			t.Errorf("%s = %+v, want %+v", fqn, got, w)
 		}
+	}
+	if got := by["src.cap.cap"].Whole; got != "checked as a whole (early return killed)" {
+		t.Errorf("src.cap.cap whole = %q", got)
+	}
+	if got := by["src.fees.charge"].Whole; got != "" {
+		t.Errorf("a survived break is no fact: whole = %q", got)
 	}
 	// The SQL function has no line data: unknown, with the reason, and the
 	// lines it would have are not counted as run.
@@ -501,8 +509,8 @@ func TestBreakLinesGoEndToEnd(t *testing.T) {
 	}
 	_, by := linesOf(t, dir)
 	pos := by["guard.Positive"]
-	if pos.Intent.Kind != "enforces" || pos.Levels.Checked != 2 || pos.Levels.NotRun != 0 || pos.Levels.Unknown != 0 {
-		t.Errorf("guard.Positive = %+v %+v, want its two body lines checked by the killed break", pos.Intent, pos.Levels)
+	if pos.Intent.Kind != "enforces" || pos.Levels.Checked != 0 || pos.Levels.Run != 2 || pos.Levels.Unknown != 0 || pos.Whole == "" {
+		t.Errorf("guard.Positive = %+v %+v whole %q, want two run lines and the whole-block note", pos.Intent, pos.Levels, pos.Whole)
 	}
 	// TestNonEmptyCalledOnly runs NonEmpty, and the break of it survived.
 	if ne := by["guard.NonEmpty"]; ne.Levels.Run != 2 || ne.Levels.NotRun != 0 {
@@ -632,10 +640,57 @@ func TestBreakLinesGoSubmodule(t *testing.T) {
 	if !ok {
 		t.Fatalf("no block svc.guard.Positive in %v", keysOfBlocks(by))
 	}
-	if pos.File != "svc/guard/guard.go" || pos.Levels.Checked != 2 || pos.Levels.Unknown != 0 {
-		t.Errorf("svc.guard.Positive = %s %+v, want two checked lines", pos.File, pos.Levels)
+	if pos.File != "svc/guard/guard.go" || pos.Levels.Run != 2 || pos.Levels.Unknown != 0 {
+		t.Errorf("svc.guard.Positive = %s %+v, want two run lines", pos.File, pos.Levels)
 	}
 	if ne := by["svc.guard.NonEmpty"]; ne.Levels.Run != 2 {
 		t.Errorf("svc.guard.NonEmpty = %+v, want two run lines", ne.Levels)
+	}
+}
+
+// Only a killed break that targets a line's own logic checks that line. The
+// fixture's cap enforcer is killed by an early return (whole, its lines stay
+// run); a break that flipped the condition on line 5 and was killed, as
+// breaks.json records it with exactly that line, checks line 5 and no other.
+// @verifies audit:INV-10
+func TestAuditLinesCheckedOnlyByLineTargetedBreak(t *testing.T) {
+	dir := linesFixture(t)
+	if _, out, err := runBreak(t, dir, "--lines"); err != nil {
+		t.Fatalf("break --lines: %v\n%s", err, out)
+	}
+	_, by := linesOf(t, dir)
+	if c := by["src.cap.cap"]; c.Levels.Checked != 0 || c.Levels.Run != 2 {
+		t.Fatalf("early-return kill credited lines: %+v", c.Levels)
+	}
+	w := func() float64 { r, _ := linesOf(t, dir); return *r.Workspace.Verified }
+	before := w()
+
+	p := filepath.Join(dir, "lattice", ".cache", "results", "breaks.json")
+	data, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range doc["runs"].([]any) {
+		run := r.(map[string]any)
+		if run["promise"] == "fees:INV-4" {
+			delete(run, "whole")
+			run["method"], run["lines"] = "scripted", []int{5, 5}
+		}
+	}
+	out, _ := json.Marshal(doc)
+	if err := os.WriteFile(p, out, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, by = linesOf(t, dir)
+	c := by["src.cap.cap"]
+	if c.Levels.Checked != 1 || c.Levels.Run != 1 || c.Whole != "" {
+		t.Errorf("line-targeted kill: %+v whole %q, want only line 5 checked", c.Levels, c.Whole)
+	}
+	if after := w(); after != before {
+		t.Errorf("verified lines moved %v -> %v: checked and run both count", before, after)
 	}
 }

@@ -3615,9 +3615,10 @@ of its own when:
 
 A generated break also records, on its run in `breaks.json`, the first and last
 line of the enforcer's file it edits (`"lines": [start, end]`, an addition to
-`lattice.breaks/1`; runs written before it lack the field): an early return spans
-from its own line to the end of the enforcer, a SQL break the lines of its
-insertions. A scripted or an edge break records none.
+`lattice.breaks/1`; runs written before it lack the field) when the edit targets those
+lines' own logic: a SQL policy or trigger expression. An early return (and a SQL
+function's) records `"whole": true` instead, and no lines. A scripted or an edge break
+records neither.
 
 ### Show it: `lattice audit --lines`
 
@@ -3649,14 +3650,17 @@ lines and comments are not lines), strongest first:
 
 | Level | Meaning |
 |---|---|
-| `checked` | a killed break of the block's intent edited the line, and nothing shows no verifier ran it |
+| `checked` | a killed break that targets this line's own logic edited it (`lines` on the run is exactly the edited lines), and nothing shows no verifier ran it |
 | `run` | an unshared invocation of a verifier group of the intent ran it (or a verifier's own per-test run did) |
 | `run_shared` | only a shared invocation, one that also ran other tests, ran it |
 | `other` | the ingested suite coverage (`coverage.reports`), or another intent's verifiers, ran it, but no verifier of its intent did; for a block with intent `none`, any run is `other` |
 | `not_run` | instrumented, and nothing ran it |
 | `unknown` | no line data for the block: not instrumented, SQL, or not yet run with `--lines`; the reason is given |
 
-`checked` is the strongest, but a line the verifiers' own data shows none of them
+An early-return break skips a whole body, so killing it proves nothing about any one
+line: it records no `lines`, sets `whole: true` on its run, and the block shows
+`checked as a whole (early return killed)`. Its lines keep their coverage levels and
+the verified count does not rise. `checked` is the strongest, but a line the verifiers' own data shows none of them
 ran cannot be what a break was noticed by, so it keeps its other level. Line data
 that is of another tree than HEAD, or of a dirty working tree, is ignored and its
 lines read unknown.
@@ -3671,7 +3675,8 @@ feature fees  verified lines 60.0% (6 of 10 known lines, 6 unknown)
       checked 0, run 0, run_shared 0, other 0, not_run 0, unknown 6
       unknown: pgTAP reports calls per function, not lines
   src/cap.js:4  src.cap.cap  enforces fees:INV-4 (unrequired)
-      checked 2, run 0, run_shared 0, other 0, not_run 0, unknown 0
+      checked 0, run 2, run_shared 0, other 0, not_run 0, unknown 0
+      checked as a whole (early return killed)
   src/fees.js:4  src.fees.charge  enforces fees:INV-1 (unrequired)
       checked 0, run 3, run_shared 0, other 0, not_run 1, unknown 0
       not_run: 7

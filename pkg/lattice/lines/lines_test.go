@@ -212,7 +212,7 @@ func TestLevelsChecked(t *testing.T) {
 	_, in := oneBlock()
 	in.Verifier = verifierFile(Group{Name: "r"}, Invocation{Name: "r",
 		Files: map[string]FileLines{"a.go": {Instrumented: "11-14", Hit: "11-13"}}})
-	killed := BreakRun{Promise: "f:INV-1", Outcome: "killed", EnforcerFile: "a.go", Method: "early_return", Lines: []int{10, 20}}
+	killed := BreakRun{Promise: "f:INV-1", Outcome: "killed", EnforcerFile: "a.go", Method: "scripted", Lines: []int{11, 13}}
 	in.Breaks = []BreakRun{killed}
 	b := block(t, Compute(in), "Enf")
 	// 14 was never run by a verifier, so the break cannot have been noticed
@@ -419,5 +419,26 @@ func TestEnforcedByCountsAsGuarded(t *testing.T) {
 	got := kindsOf(kg, nil)
 	if got["Wired"] != IntentEnforces || got["Free"] != IntentNone {
 		t.Errorf("intents = %v", got)
+	}
+}
+
+// A killed early return is a fact about the whole block: it is noted on the
+// block and credits no line, so levels and the verified count are those of the
+// coverage alone; a survived one notes nothing.
+// @verifies audit:INV-10
+func TestWholeBlockKillCreditsNoLine(t *testing.T) {
+	_, in := oneBlock()
+	in.Verifier = verifierFile(Group{Name: "r"}, Invocation{Name: "r",
+		Files: map[string]FileLines{"a.go": {Instrumented: "11-14", Hit: "11-12"}}})
+	plain := block(t, Compute(in), "Enf")
+	in.Breaks = []BreakRun{{Promise: "f:INV-1", Enforcer: "Enf", Outcome: "killed", EnforcerFile: "a.go", Method: "early_return", Whole: true}}
+	r := Compute(in)
+	b := block(t, r, "Enf")
+	if b.Levels != plain.Levels || b.Levels.Checked != 0 || b.Whole != "checked as a whole (early return killed)" {
+		t.Errorf("whole kill: %+v whole %q, want levels %+v unchanged", b.Levels, b.Whole, plain.Levels)
+	}
+	in.Breaks[0].Outcome = "survived"
+	if b := block(t, Compute(in), "Enf"); b.Whole != "" {
+		t.Errorf("survived: whole %q", b.Whole)
 	}
 }

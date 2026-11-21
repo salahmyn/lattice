@@ -304,7 +304,7 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 		if t.script == "" {
 			if plan, err := r.planFor(enf); err == nil {
 				run.EnforcerFile = plan.edits[0].file
-				run.Lines = editLines(plan, enf)
+				run.Lines, run.Whole = editLines(plan, enf)
 			}
 		}
 		run.Baseline, run.Outcome, run.Reason, run.Cached = hit.Baseline, hit.Outcome, hit.Reason, true
@@ -332,7 +332,7 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 			return run, nil
 		}
 		run.EnforcerFile = plan.edits[0].file
-		run.Lines = editLines(plan, enf)
+		run.Lines, run.Whole = editLines(plan, enf)
 	}
 
 	if err := r.measure(ctx, &run, t, enf, plan, patch, groups, noRunner); err != nil {
