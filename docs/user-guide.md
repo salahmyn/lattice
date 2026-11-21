@@ -420,11 +420,21 @@ runtime root, so the root is not proposed, when any of these holds:
   `webhook`, and its handler symbol or handler file lies in the serve
   handler's module: a manifest names the function the handler calls, or the
   file, not the serve node, which has no name of its own;
+- the root is a serve handler, the entry point is an `http_route` or a
+  `webhook`, and its `trigger.path` equals the path the platform serves the
+  function at (`/functions/v1/<name>`), whatever its method: a proposal has no
+  method;
+- the root is a serve handler and the entry point's handler is a direct
+  callee of the serve call: `Deno.serve(createHandler(...))` calls
+  `createHandler`, and a manifest names that function;
 - the root is a cron job and the entry point is a `cron` with the same
-  `trigger.job`; or, when the entry point names no job, with the same
-  `trigger.schedule` and a handler the job's body calls directly. A different
-  job name always keeps two jobs apart, and two jobs on one schedule that
-  call different functions are never merged;
+  `trigger.job`; or, when either names no job, with the same
+  `trigger.schedule` and a handler the job's body reaches: by a direct call, or
+  by one `http` hop (`net.http_post` to `/functions/v1/<name>`, see
+  [HTTP edges](#4q-http-edges-and-edge-truth)) followed by direct calls of that
+  function's code, to a depth of 3 edges. A different schedule never covers, a
+  different job name always keeps two jobs apart, and two jobs on one schedule
+  that reach different functions are never merged;
 - the root is a detected route and the entry point has the same kind, method
   and path.
 
