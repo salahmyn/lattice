@@ -39,6 +39,15 @@ type Break struct {
 	// the path of the main checkout.
 	Setup []string `yaml:"setup,omitempty"`
 
+	// Restore lists shell commands run after every run whose command named
+	// {patched_sql} or {original_sql}, once its verifiers have finished, in
+	// the temporary worktree. {repo}, {patched_sql} and {original_sql} are
+	// replaced. A runner that applies the broken object and then runs the
+	// tests ends with the database in the broken state; put the command that
+	// applies {original_sql} here, so a failed test does not skip it. When a
+	// restore command exits non-zero, Setup runs again.
+	Restore []string `yaml:"restore,omitempty"`
+
 	// LinkNodeModules symlinks each node_modules directory of the main
 	// checkout into the same relative path of the worktree. On by default;
 	// set it to false to opt out.

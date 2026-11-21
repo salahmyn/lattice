@@ -78,6 +78,9 @@ type breakSummary struct {
 	// Baselines counts the baseline invocations this run started and the
 	// ones it reused (an identical command at the same tree).
 	Baselines breaktest.BaselineCounts `json:"baselines"`
+	// SetupRuns counts the times break.setup ran: once, plus each re-run
+	// after a failed break.restore or a baseline healed after a SQL swap.
+	SetupRuns int `json:"setup_runs"`
 }
 
 // noRunnerReason is the reason a summary groups runs with no runner under,

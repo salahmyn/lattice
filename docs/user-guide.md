@@ -1609,6 +1609,45 @@ break:
   db/migrations/005_roles.sql:1`. Use the full reset for those; it replays the
   migrations in order and never needs this rule.
 
+  **Restoring the original.** A one-line runner is easier to get right than the
+  script above: apply the broken object, run the tests, and let
+  `break.restore` put the original back. Its commands run after the verifiers
+  of every run whose command named `{patched_sql}` or `{original_sql}` (the
+  broken run, and a baseline that used them), with `{repo}`, `{patched_sql}` and
+  `{original_sql}` filled, whether or not the tests passed:
+
+  ```yaml
+  break:
+    setup:
+      - db/reset.sh
+    restore:
+      - psql -v ON_ERROR_STOP=1 -q -f {original_sql}
+    runners:
+      - name: pgtap-swap
+        match: ["db/tests/**/*.sql"]
+        command:
+          - sh
+          - -c
+          - psql -v ON_ERROR_STOP=1 -q -f "$1" && shift && pg_prove -d "$PGDATABASE" "$@"
+          - sh
+          - "{patched_sql}"
+          - "{files}"
+  ```
+
+  If a restore command exits non-zero, the database may be wrong for every
+  later run, so `break.setup` runs again at once. That run's outcome is not
+  changed: its verifiers had already run. If setup fails then, the runs after
+  it read `unknown` ("setup failed after a failed restore").
+
+  Without `break.restore`, or when a restore leaves the database wrong without
+  failing, there is a second safeguard. When a baseline fails and a run since
+  the last setup used the swap placeholders, `lattice break` runs `break.setup`
+  again and retries that baseline once. A pass proceeds as usual; a second
+  failure is a real one and reads `unknown` ("baseline fails") as before. The
+  retry is not a reused baseline, and only its result is kept for the tree. The
+  summary line says `setup: 1 + N after restore` when setup ran again, and the
+  JSON summary has `setup_runs`.
+
   The full reset stays the safe default. Swapping one object is not safe when
   other objects depend on its definition in a way that replacing it does not
   update (an index or generated column built on a function, a view that was
@@ -1640,7 +1679,7 @@ config left them out, or they did not run after the break) and `failed_tests`
 earlier `killed` or `survived` outcome is reused only on the same tree (the
 same commit, or any commit with the same files): the enforcer's source, the
 verifiers' source, the method, the script, the runner configuration (the
-resolved runner commands, the setup commands and the generator version) and
+resolved runner commands, the setup and restore commands and the generator version) and
 HEAD's tree must all match. A commit that changes any file, such as a
 migration a runner applies, runs the break again, because that file can stop
 the baseline from running at all. `unknown` is never reused, so a timeout is
