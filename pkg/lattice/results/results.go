@@ -595,6 +595,86 @@ func (s Set) FailedCases() []string {
 	return out
 }
 
+// Failure is one failed report case and the @verifies refs of the graph
+// tests whose result it is.
+type Failure struct {
+	Case     string   `json:"case"`
+	Verifies []string `json:"verifies,omitempty"`
+}
+
+// Failures lists the failed report cases, as FailedCases names them, each
+// with the @verifies refs of the graph tests it is the result of: a test
+// that matches the case and reads as failed in the set. A case no tagged
+// test matches has no refs. Bind the set to the graph (WithTests) first, so
+// a parameterized test's lookup is the one validation uses.
+func (s Set) Failures(tests []schema.GraphSymbol) []Failure {
+	cases := s.FailedCases()
+	out := make([]Failure, 0, len(cases))
+	red := map[string]bool{} // test FQN -> failed in s, looked up once
+	seen := map[string]bool{}
+	for _, id := range cases {
+		f := Failure{Case: id}
+		one := FailedSet([]string{id})
+		for _, t := range tests {
+			if len(t.Verifies) == 0 {
+				continue
+			}
+			if o, ok := one.Lookup(t.FQN); !ok || o != Fail {
+				continue
+			}
+			if !seen[t.FQN] {
+				seen[t.FQN] = true
+				o, ok := s.Lookup(t.FQN)
+				red[t.FQN] = ok && o == Fail
+			}
+			if !red[t.FQN] {
+				continue
+			}
+			for _, ref := range verifierRefs(t) {
+				f.Verifies = appendRef(f.Verifies, ref)
+			}
+		}
+		sort.Strings(f.Verifies)
+		out = append(out, f)
+	}
+	return out
+}
+
+// verifierRefs are a test's @verifies refs as written, qualified by the
+// test's feature when bare: a case ref ("f:INV-1#a") stands in for the
+// invariant ref it adds to Verifies.
+func verifierRefs(t schema.GraphSymbol) []string {
+	qualify := func(ref string) string {
+		if !strings.Contains(ref, ":") && t.Feature != "" {
+			return t.Feature + ":" + ref
+		}
+		return ref
+	}
+	var out []string
+	byCase := map[string]bool{}
+	for _, ref := range t.VerifiesCases {
+		ref = qualify(ref)
+		base, _, _ := schema.SplitCaseRef(ref)
+		byCase[base] = true
+		out = append(out, ref)
+	}
+	for _, ref := range t.Verifies {
+		if ref = qualify(ref); !byCase[ref] {
+			out = append(out, ref)
+		}
+	}
+	return out
+}
+
+func appendRef(list []string, ref string) []string {
+	for _, x := range list {
+		if x == ref {
+			return list
+		}
+	}
+	return append(list, ref)
+}
+
 // FailedSet is a set in which every named test failed, for names as
 // FailedCases or `go test -v` report them ("<classname>::<name>", or a bare
 // name). Its Lookup says whether a test is among them, with the matching

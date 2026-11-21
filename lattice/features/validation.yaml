@@ -52,3 +52,5 @@ invariants:
         statement: A case enforcer that is not a symbol enforcing the case's invariant is CASE_ENFORCER_UNKNOWN.
   - id: INV-15
     statement: INVARIANT_BROAD is an info finding, raised only on an invariant with no cases whose statement reads as several claims.
+  - id: INV-16
+    statement: An invariant with a red verifier in the results of the graph's commit is VERIFIER_FAILING whether or not a BRD criterion maps it, and a criterion that reports the same invariant names its failing tests instead.

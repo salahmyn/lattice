@@ -109,10 +109,13 @@ func newResultsIngestCommand(io *IO) *cobra.Command {
 					return io.fail("INGEST_FAILED", err.Error(), nil)
 				}
 				total, pass, fail, skip := set.Tally()
+				failed := set.WithTests(kg.Tests).Failures(kg.Tests)
 				out["total"], out["pass"], out["fail"], out["skip"] = total, pass, fail, skip
+				out["failed"] = failed
 				evidence = append(evidence, fmt.Sprintf("%d pass, %d fail, %d skip", pass, fail, skip))
 				if !io.JSON {
 					io.printf("ingested %d test results (%d pass, %d fail, %d skip)\n", total, pass, fail, skip)
+					printFailures(io, failed)
 				}
 			}
 			if len(inputs) > 0 {
@@ -158,6 +161,30 @@ func newResultsIngestCommand(io *IO) *cobra.Command {
 	cmd.Flags().StringArrayVar(&perTest, "per-test", nil, "directory of per-test coverage reports, each named by its test's slug (repeatable)")
 	cmd.Flags().StringArrayVar(&perFile, "per-file", nil, "directory of per-test-file coverage reports, each named by the file's slug (repeatable)")
 	return cmd
+}
+
+// maxListedFailures is how many failed tests the ingest prints before it
+// says "and N more"; --json lists them all.
+const maxListedFailures = 10
+
+// printFailures lists the failed tests of an ingest, each with the
+// @verifies refs of the graph tests it is the result of, when there are any.
+func printFailures(io *IO, failed []results.Failure) {
+	if len(failed) == 0 {
+		return
+	}
+	io.printf("failed:\n")
+	for i, f := range failed {
+		if i == maxListedFailures {
+			io.printf("  and %d more\n", len(failed)-maxListedFailures)
+			break
+		}
+		if len(f.Verifies) > 0 {
+			io.printf("  %s  (@verifies %s)\n", f.Case, strings.Join(f.Verifies, ", "))
+		} else {
+			io.printf("  %s\n", f.Case)
+		}
+	}
 }
 
 func printNotes(io *IO, n coverage.Notes) {

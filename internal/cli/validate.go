@@ -76,6 +76,7 @@ func newValidateCommand(io *IO) *cobra.Command {
 			violations := validate.Validate(kg, cfg, validate.Options{
 				ReviewMode:    ws.Review,
 				ResultOf:      resultOfFrom(set),
+				ResultsCommit: set.Commit,
 				Leases:        activeLeases,
 				LedgerEntries: entries,
 				FlagsOf:       flagReasons(flags.OpenByUnit(ws.LatticeDir)),

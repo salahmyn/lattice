@@ -238,7 +238,7 @@ A complete, validating three-language example lives in
 | `lattice mutation run` | Mutation-test invariant-enforcing code |
 | `lattice structural-checks run` | Run structural invariant checks |
 | `lattice next` | Rank the highest-value next actions by weakest link |
-| `lattice results ingest <junit.xml>...` | Ingest test results (unit and e2e reports of one run, together) so the RTM can say *demonstrated* |
+| `lattice results ingest <junit.xml>...` | Ingest test results (unit and e2e reports of one run, together) so the RTM can say *demonstrated*; lists the failed tests with their `@verifies` refs |
 | `lattice lease acquire\|release\|list` | Claim work units in a multi-agent fleet |
 | `lattice ledger [rebuild\|runs]` | Append-only ledger of decisions and state changes (gates, CRs, flags, sign-offs, transitions); `runs` shows the latest check runs from the untracked cache |
 | `lattice runs-clean` (alias `v0`) | Gate zero: clean install → build → boot → smoke probes. Preflight first |

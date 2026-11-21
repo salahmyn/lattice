@@ -181,6 +181,20 @@ raises `BRD_BELOW_LEVEL` (error), with the subject `brd.<id>:SC-N` or
 met); an accepted finding in `--json` `allowlisted[]` keeps its live
 message, next to the entry's `reason`.
 
+`VERIFIER_FAILING` (warning) fires once per red unit, from the ingested
+results:
+
+| Subject | Fires when |
+|---|---|
+| `brd.<id>:SC-N` | the criterion reads `failing` in `lattice rtm`; the message names the red tests of its invariant |
+| `brd.<id>:US-N` | a verifier of the user scenario is red |
+| `<feature>:INV-N` | a verifier of the invariant is red, and no criterion already reports that invariant as failing. It fires whether or not a BRD maps the invariant; a test tagged on a case (`@verifies f:INV-N#c`) counts for its invariant. It names up to three tests, then "and N more" |
+
+The per-invariant finding reads only results for the graph's commit (or a
+set, or a graph, with no commit); results ingested at another commit raise
+nothing. A warning fails the run only with `fail_on: warning` (or
+`--fail-on warning`); the default is `error`.
+
 ```yaml
 validate:
   require_level: demonstrated   # or verified, or exercised (section 4f)
@@ -533,6 +547,18 @@ lattice results ingest junit.xml coverage/lcov.info --per-test coverage/per-test
   dirty flag. The flag is set when tracked files under the workspace have
   uncommitted changes; untracked files and Lattice's own `.ledger/` and
   `.cache/` do not count.
+- After the totals, the ingest lists the failed tests (up to ten, then
+  "and N more"), each with the `@verifies` refs of the tests it is the
+  result of. `--json` carries all of them in `failed`, as
+  `{"case", "verifies"}`:
+
+  ```
+  ingested 11881 test results (11878 pass, 3 fail, 0 skip)
+  failed:
+    e2e/orders.spec.ts::orders › cancels a paid order  (@verifies orders:INV-9)
+    tests/fees.test.ts::fees › rounds to the cent  (@verifies fees:INV-1#a)
+    tests/statement.test.ts::statement › prints a header
+  ```
 - An ingest with only coverage reports leaves the test results in place.
   An ingest with no paths reads the reports listed in `config.yaml`.
 - Reports and contexts that name no test, or fit several, are listed as
