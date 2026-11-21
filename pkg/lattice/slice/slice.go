@@ -145,7 +145,11 @@ func NewGraph(rr *reach.Result, kg schema.KnowledgeGraph, rules []schema.LayerRu
 			layers[s.FQN] = s.Layer
 		}
 	}
-	return newGraph(rr.Roots, rr.Graph.Edges, rr.Graph.Unresolved, layers, rules, rr.Graph.NodeInfo)
+	// A direct call, not the method value: the call graph follows calls, and
+	// a method passed as a value reaches no entry point.
+	g := rr.Graph
+	info := func(fqn string) (reach.NodeInfo, bool) { return g.NodeInfo(fqn) }
+	return newGraph(rr.Roots, g.Edges, g.Unresolved, layers, rules, info)
 }
 
 func newGraph(roots []reach.Root, edges []reach.Edge, unresolved []reach.Unresolved, layers map[string]string,
