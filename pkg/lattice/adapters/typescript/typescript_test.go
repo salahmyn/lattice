@@ -867,3 +867,65 @@ func TestTypeArgumentsDoNotHideCalls(t *testing.T) {
 		}
 	}
 }
+
+// A URL that is exactly one declared env origin and a literal path is
+// path-only; any other computed part, and an env variable nothing declares,
+// stays computed.
+// @verifies reachability:INV-11
+func TestEnvOriginURLs(t *testing.T) {
+	src := "export async function calls(id: string) {\n" +
+		"  fetch(`${import.meta.env.VITE_API}/functions/v1/a`, { method: 'POST' });\n" +
+		"  fetch(import.meta.env.VITE_API + '/functions/v1/b');\n" +
+		"  fetch(`${process.env.API_URL}/api/${id}`);\n" +
+		"  fetch(`${import.meta.env.OTHER}/functions/v1/c`);\n" +
+		"  fetch(`${import.meta.env.VITE_API}/x/${id}/y`);\n" +
+		"  fetch(import.meta.env.VITE_API + '/a' + id);\n" +
+		"  axios.get(Deno.env.get('API_URL')! + '/api/d');\n" +
+		"  axios({ url: `${process.env.API_URL}/api/e`, method: 'put' });\n" +
+		"  fetch(`/${import.meta.env.VITE_API}/f`);\n" +
+		"  fetch(`${import.meta.env.VITE_API}`);\n" +
+		"}\n"
+	run := func(origins []string) []string {
+		a := New()
+		a.SetHTTPOrigins(origins)
+		mod, err := a.Parse(context.Background(), "web/calls.ts", []byte(src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, s := range mod.Symbols {
+			for _, r := range s.Refs {
+				if r.Kind == "http" {
+					got = append(got, r.Name+"|"+r.Qualifier)
+				}
+			}
+		}
+		return got
+	}
+	want := []string{
+		"POST /functions/v1/a|",
+		"GET /functions/v1/b|",
+		"|", // a second substitution in the path
+		"|", // an env variable nothing declares
+		"|", // a second substitution in the path
+		"|", // a computed operand after the path
+		"GET /api/d|",
+		"PUT /api/e|",
+		"|", // the variable is not the whole origin
+		"|", // no path at all
+	}
+	got := run([]string{"https://app.example.com", "env:VITE_API", "env:API_URL"})
+	if len(got) != len(want) {
+		t.Fatalf("refs %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("ref %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+	for i, r := range run(nil) {
+		if r != "|" {
+			t.Errorf("undeclared: ref %d = %q, want computed", i, r)
+		}
+	}
+}

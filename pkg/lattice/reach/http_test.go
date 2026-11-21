@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/salahmyn/lattice/pkg/lattice/adapters/postgres"
 	"github.com/salahmyn/lattice/pkg/lattice/adapters/typescript"
 	"github.com/salahmyn/lattice/pkg/lattice/reach"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
@@ -287,5 +288,41 @@ func TestHTTPAbsoluteURLNeedsADeclaredOrigin(t *testing.T) {
 	}
 	if got := reach.HTTPFindings(reach.Classify(g, nil)); len(got) != 1 || got[0].Code != schema.CodeHTTPCallUnserved {
 		t.Errorf("a declared origin's unserved call is HTTP_CALL_UNSERVED: %+v", got)
+	}
+}
+
+// A request built from a declared env or setting origin and a literal path
+// joins the edge function that path names, from TypeScript and from a cron
+// job's SQL body alike; an undeclared origin stays dynamic.
+// @verifies reachability:INV-11
+func TestDeclaredOriginsJoinEdgeFunctions(t *testing.T) {
+	files := map[string]string{
+		"supabase/functions/add/index.ts": "export function handler(req: Request) { return new Response('ok'); }\nDeno.serve(handler);\n",
+	}
+	mods := parse(t, typescript.New(), files)
+	ts := typescript.New()
+	ts.SetHTTPOrigins([]string{"env:VITE_API"})
+	mods = append(mods, parse(t, ts, map[string]string{
+		"web/add.ts": "export function add() { return fetch(`${import.meta.env.VITE_API}/functions/v1/add`, { method: 'POST' }); }\n" +
+			"export function other() { return fetch(`${import.meta.env.UNDECLARED}/functions/v1/add`); }\n",
+	})...)
+	pg := postgres.New(nil, nil)
+	pg.SetHTTPOrigins([]string{"setting:app.api_url"})
+	mods = append(mods, parse(t, pg, map[string]string{
+		"db/migrations/001_cron.sql": "select cron.schedule('add-nightly', '0 3 * * *', $$\n" +
+			"  select net.http_post(url := current_setting('app.api_url') || '/functions/v1/add');\n$$);\n" +
+			"select cron.schedule('other-nightly', '0 4 * * *', $$ select net.http_post(url := current_setting('app.hidden') || '/functions/v1/add') $$);\n",
+	})...)
+	g := reach.Build(mods, reach.Options{})
+	got := edges(g, "http")
+	want := []string{
+		"sql.cron.add_nightly -> supabase.functions.add.index.<serve>",
+		"web.add.add -> supabase.functions.add.index.<serve>",
+	}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("http edges:%s\nwant:%s", joined(got), joined(want))
+	}
+	if h := httpUnresolved(g); len(h) != 2 {
+		t.Errorf("the two undeclared origins stay dynamic:%s", joined(h))
 	}
 }

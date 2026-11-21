@@ -17,6 +17,8 @@ import (
 type Adapter struct {
 	// wrappers are the declared queue and event wrappers (SetChannelWrappers).
 	wrappers []ir.ChannelWrapper
+	// envOrigins are the declared env:<NAME> origins (SetHTTPOrigins).
+	envOrigins map[string]bool
 }
 
 // New returns a TypeScript adapter.

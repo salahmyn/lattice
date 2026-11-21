@@ -186,6 +186,11 @@ func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOpt
 		if c, ok := a.(ir.ChannelConfigurable); ok {
 			c.SetChannelWrappers(wrappers)
 		}
+		// Declared env:NAME and setting:name origins: an adapter reads a URL
+		// that is exactly one of them and a literal path as path-only.
+		if c, ok := a.(ir.HTTPOriginConfigurable); ok {
+			c.SetHTTPOrigins(ws.HTTP.Origins)
+		}
 	}
 
 	if withCodeGraph && !ws.Review {

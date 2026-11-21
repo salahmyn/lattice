@@ -182,11 +182,12 @@ var namesOnly = regexp.MustCompile(`(?is)^(grant|revoke|comment|drop|security\s+
 // block, a check constraint, a column default or a view that calls a
 // function. Statements that only name functions (grant, revoke, comment,
 // drop, alter function) give none.
-func appliedRefs(st statement) []ir.Ref {
+func appliedRefs(st statement, o refOpts) []ir.Ref {
 	if namesOnly.MatchString(st.text) {
 		return nil
 	}
-	return append(callRefs(st, false), channelRefs(st.text, st.line, false)...)
+	refs := append(callRefs(st, false), channelRefs(st.text, st.line, false)...)
+	return append(refs, o.httpRefs(st.text, st.line, false)...)
 }
 
 // appliedNode is the root holding a migration's (or schema file's)
@@ -203,7 +204,7 @@ const cronUnscheduleKind = "sql_cron_unschedule"
 // cronNode reads cron.schedule('job', '<cron>', $$ ... $$) (or the
 // two-argument form without a name) into a root node holding the calls of
 // its command. ok is false for any other statement.
-func cronNode(mod *ir.Module, st statement) (ir.Node, bool) {
+func cronNode(mod *ir.Module, st statement, o refOpts) (ir.Node, bool) {
 	if loc := reCronUnschedule.FindStringIndex(st.text); loc != nil {
 		if args := callArgs(st.text[loc[0]:]); len(args) > 0 {
 			if name, ok := stringLiteral(args[0]); ok {
@@ -245,6 +246,7 @@ func cronNode(mod *ir.Module, st statement) (ir.Node, bool) {
 		Job: name, Schedule: schedule, KeyComputed: computed}
 	n.Refs = callRefs(statement{text: body, line: st.line}, true)
 	n.Refs = append(n.Refs, channelRefs(body, st.line, true)...)
+	n.Refs = append(n.Refs, o.httpRefs(body, st.line, true)...)
 	return n, true
 }
 
@@ -276,13 +278,14 @@ func tableFQN(schemaName, table string) string {
 // the functions its expressions call, table -> its policies and triggers.
 // Triggers and policies are roots: the database runs them.
 // @enforces reachability:INV-1
-func linkRefs(mod *ir.Module, sym *ir.Symbol, st statement, kind string, schemaName, table string) {
+func linkRefs(mod *ir.Module, sym *ir.Symbol, st statement, kind string, schemaName, table string, o refOpts) {
 	for _, r := range callRefs(st, false) {
 		if r.Target != sym.FQN { // the definition's own header
 			sym.Refs = append(sym.Refs, r)
 		}
 	}
 	sym.Refs = append(sym.Refs, channelRefs(st.text, st.line, false)...)
+	sym.Refs = append(sym.Refs, o.httpRefs(st.text, st.line, false)...)
 	switch kind {
 	case "trigger", "policy":
 		sym.Root = kind
