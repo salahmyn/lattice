@@ -59,9 +59,12 @@ invariants:
         statement: A case whose kind, statement or enforcer changed, or that was retired, since the decision recorded it reads unconfirmed and names the change.
       - id: c
         kind: happy
-        statement: A case as the decision recorded it reads confirmed.
+        statement: A case as a current, confirmed decision for the BRD's current version recorded it reads confirmed.
       - id: d
         kind: error
         statement: A decision that recorded no cases, or no confirmation at all, leaves every case unconfirmed with the reason.
+      - id: e
+        kind: edge
+        statement: An unchanged case under a stale decision, or one for an earlier version, reads unconfirmed, decision stale, never confirmed.
   - id: INV-21
     statement: The review packet's structural diff names every acceptance case added, edited, retired or removed since the last confirmation recorded it, and any such line makes the review take full friction, while the packet hash stays the one a decision pins.

@@ -55,7 +55,8 @@ const (
 
 // Case confirmation codes: why a case reads as it does.
 const (
-	// CaseCodeConfirmed: the case is as the confirming decision recorded it.
+	// CaseCodeConfirmed: the case is as a current, confirmed decision for the
+	// BRD's current version recorded it.
 	CaseCodeConfirmed = "CASE_CONFIRMED"
 	// CaseCodeAdded: the confirming decision did not hold the case.
 	CaseCodeAdded = "CASE_ADDED_AFTER_CONFIRMATION"
@@ -64,6 +65,10 @@ const (
 	CaseCodeEdited = "CASE_EDITED_AFTER_CONFIRMATION"
 	// CaseCodeRetired: it was retired since the decision recorded it.
 	CaseCodeRetired = "CASE_RETIRED_AFTER_CONFIRMATION"
+	// CaseCodeDecisionStale: the case is as the last confirming decision
+	// recorded it, but that decision is stale (its packet changed) or for an
+	// earlier version of the BRD, so it confirms nothing now.
+	CaseCodeDecisionStale = "CASE_DECISION_STALE"
 	// CaseCodeNotRecorded: the confirming decision was prepared before
 	// decisions recorded their cases.
 	CaseCodeNotRecorded = "CASE_NOT_RECORDED"

@@ -1486,7 +1486,8 @@ else the latest earlier version's):
 
 | Confirmation | Code | Means |
 |---|---|---|
-| `confirmed` | `CASE_CONFIRMED` | the case is as the decision recorded it |
+| `confirmed` | `CASE_CONFIRMED` | the case is as a current, confirmed decision for the BRD's current version recorded it |
+| `unconfirmed` | `CASE_DECISION_STALE` | the case is unchanged since the last confirmation, but that decision is stale (its packet changed) or for an earlier version: the promise needs confirming again |
 | `unconfirmed` | `CASE_ADDED_AFTER_CONFIRMATION` | the decision did not hold the case |
 | `unconfirmed` | `CASE_EDITED_AFTER_CONFIRMATION` | its kind, statement or enforcer changed, or it was restored; the reason names what, e.g. `kind edge->error` |
 | `unconfirmed` | `CASE_RETIRED_AFTER_CONFIRMATION` | it was retired since |
@@ -1495,12 +1496,13 @@ else the latest earlier version's):
 
 The state is on each case of the audit row (`confirmation: {state, code, reason}`), under
 each case in `lattice feature show`, and in `/api/v2` `case_rows` (`confirmation`: `pass`
-only for a confirmed case, `drifted` for an edited or retired one, `unknown` otherwise).
+only for a confirmed case, `drifted` for an edited or retired one or one under a stale
+decision, `unknown` otherwise).
 The `/audit` page of `lattice serve` lists each row's cases with their kind, coverage and
 confirmation; only `covered` and `confirmed` are drawn in the positive colour. It
 never changes the promise's `confirmed` signal: any case change still makes the decision
-stale, as above. A case unchanged under a stale decision reads `confirmed` and says the
-promise needs confirming again as a whole.
+stale, as above. Only a current decision confirms a case; under a stale one, the cases
+that changed name their change and the others read `CASE_DECISION_STALE`.
 
 ### Second readers
 

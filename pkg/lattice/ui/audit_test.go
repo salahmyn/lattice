@@ -124,14 +124,14 @@ func TestAuditPageCases(t *testing.T) {
 		{ID: "a", Coverage: audit.CaseCovered, Confirmation: audit.CaseConfirmation{State: audit.CaseConfirmed, Code: audit.CaseCodeConfirmed}},
 		{ID: "b", Coverage: audit.CasePartial, Confirmation: audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeEdited}},
 		{ID: "c", Coverage: audit.CaseFailing, Confirmation: audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeAdded}},
-		{ID: "d", Coverage: audit.CaseUncovered},
+		{ID: "d", Coverage: audit.CaseUncovered, Confirmation: audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeDecisionStale}},
 		{ID: "e", Coverage: "", Confirmation: audit.CaseConfirmation{State: audit.CaseConfirmed}},
 	})
 	got := []string{}
 	for _, v := range views {
 		got = append(got, v.ID+":"+v.CoverageBadge+","+v.ConfirmBadge)
 	}
-	want := "a:is-ok,is-ok b:is-warn,is-warn c:is-error,is-info d:is-warn,is-info e:is-info,is-info"
+	want := "a:is-ok,is-ok b:is-warn,is-warn c:is-error,is-info d:is-warn,is-warn e:is-info,is-info"
 	if strings.Join(got, " ") != want {
 		t.Errorf("badges = %s, want %s", strings.Join(got, " "), want)
 	}

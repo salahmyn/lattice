@@ -10,16 +10,17 @@ import (
 )
 
 // caseBasis is the decision a promise's cases are compared with under one
-// BRD: the current version's confirmed decision, else its stale one (a
-// human confirmed it, and the packet changed since), else the confirmed
-// decision of the latest earlier version. why says why there is none. A
-// return or overturn of the current version leaves none.
-func caseBasis(b schema.BRD, promise string, cd *ConfirmData) (rec *ConfirmRecord, why string) {
+// BRD: the current version's confirmed decision (current is true), else its
+// stale one (a human confirmed it, and the packet changed since), else the
+// confirmed decision of the latest earlier version. Only a current one can
+// confirm a case; the others only say what changed since. why says why
+// there is none. A return or overturn of the current version leaves none.
+func caseBasis(b schema.BRD, promise string, cd *ConfirmData) (rec *ConfirmRecord, isCurrent bool, why string) {
 	switch {
 	case cd == nil:
-		return nil, "no confirm data (run `lattice confirm` in CI)"
+		return nil, false, "no confirm data (run `lattice confirm` in CI)"
 	case cd.SetAside != "":
-		return nil, "confirm.json set aside (" + cd.SetAside + ")"
+		return nil, false, "confirm.json set aside (" + cd.SetAside + ")"
 	}
 	var current, stale, older *ConfirmRecord
 	for i := range cd.Records {
@@ -28,7 +29,7 @@ func caseBasis(b schema.BRD, promise string, cd *ConfirmData) (rec *ConfirmRecor
 			continue
 		}
 		if r.Version == b.Version && r.State == "confirmed" && (r.Action == "brd.return" || r.Action == "brd.overturn") {
-			return nil, "v" + strconv.Itoa(b.Version) + " was " + strings.TrimPrefix(r.Action, "brd.") + "ed"
+			return nil, false, "v" + strconv.Itoa(b.Version) + " was " + strings.TrimPrefix(r.Action, "brd.") + "ed"
 		}
 		covers := r.Action == "brd.approve" || r.Action == "brd.ack" || (r.Action == "promise.confirm" && hasString(r.Rows, promise))
 		switch {
@@ -43,19 +44,21 @@ func caseBasis(b schema.BRD, promise string, cd *ConfirmData) (rec *ConfirmRecor
 	}
 	switch {
 	case current != nil:
-		return current, ""
+		return current, true, ""
 	case stale != nil:
-		return stale, ""
+		return stale, false, ""
 	case older != nil:
-		return older, ""
+		return older, false, ""
 	}
-	return nil, "no human confirmation of " + b.ID + " covers this promise"
+	return nil, false, "no human confirmation of " + b.ID + " covers this promise"
 }
 
 // caseConfirmations gives each case of a promise its own confirmation state
 // (rnd/0010 §B5). Under every BRD behind the promise it compares the case
 // with the one the confirming decision recorded: the same id and hash read
-// confirmed; a case the decision did not hold reads unconfirmed, added after
+// confirmed only under a current, confirmed decision for the BRD's current
+// version, and unconfirmed (decision stale) under a stale one or one of an
+// earlier version; a case the decision did not hold reads unconfirmed, added after
 // confirmation; a changed kind, statement or enforcer reads edited after
 // confirmation; a newly retired case reads retired after confirmation; a
 // decision prepared before decisions recorded their cases leaves every case
@@ -63,7 +66,7 @@ func caseBasis(b schema.BRD, promise string, cd *ConfirmData) (rec *ConfirmRecor
 // unconfirmed. The least confirmed BRD decides. The promise's own confirmed
 // signal is untouched: it still reads the packet as a whole.
 // @enforces confirm:INV-20
-func caseConfirmations(rows []CaseRow, crit []criterionRef, promise string, cd *ConfirmData, promiseSignal Signal) {
+func caseConfirmations(rows []CaseRow, crit []criterionRef, promise string, cd *ConfirmData) {
 	for i := range rows {
 		rows[i].Confirmation = CaseConfirmation{}
 	}
@@ -79,7 +82,7 @@ func caseConfirmations(rows []CaseRow, crit []criterionRef, promise string, cd *
 		local = " (local, not CI)"
 	}
 	for _, c := range crit {
-		rec, why := caseBasis(c.brd, promise, cd)
+		rec, current, why := caseBasis(c.brd, promise, cd)
 		var stamps []schema.CaseStamp
 		recorded := false
 		if rec != nil {
@@ -97,7 +100,7 @@ func caseConfirmations(rows []CaseRow, crit []criterionRef, promise string, cd *
 				cc = CaseConfirmation{State: CaseUnconfirmed, Code: CaseCodeNotRecorded,
 					Reason: c.brd.ID + " v" + strconv.Itoa(rec.Version) + " was confirmed (" + rec.Method() + ") before decisions recorded their cases: prepare and confirm it again to record them"}
 			default:
-				cc = caseAgainst(rows[i], stamps, c.brd.ID, rec, local, promiseSignal)
+				cc = caseAgainst(rows[i], stamps, c.brd, rec, current, local)
 			}
 			if rows[i].Confirmation.State == "" || cc.State == CaseUnconfirmed {
 				rows[i].Confirmation = cc
@@ -107,8 +110,9 @@ func caseConfirmations(rows []CaseRow, crit []criterionRef, promise string, cd *
 }
 
 // caseAgainst compares one case with the stamps a decision recorded.
-func caseAgainst(row CaseRow, stamps []schema.CaseStamp, brdID string, rec *ConfirmRecord, local string, promiseSignal Signal) CaseConfirmation {
-	at := brdID + " v" + strconv.Itoa(rec.Version) + ", " + rec.Method() + local
+// Only a current decision confirms an unchanged case.
+func caseAgainst(row CaseRow, stamps []schema.CaseStamp, b schema.BRD, rec *ConfirmRecord, current bool, local string) CaseConfirmation {
+	at := b.ID + " v" + strconv.Itoa(rec.Version) + ", " + rec.Method() + local
 	cur := schema.NewCaseStamp(row.ID, schema.CaseKind(row.Kind), row.Statement, row.Enforcer, row.Retired)
 	for _, s := range stamps {
 		if s.ID != row.ID {
@@ -116,12 +120,15 @@ func caseAgainst(row CaseRow, stamps []schema.CaseStamp, brdID string, rec *Conf
 		}
 		delta := s.Delta(cur)
 		switch {
-		case len(delta) == 0:
-			reason := "as confirmed at " + at
-			if promiseSignal.Value != ConfirmedHuman {
-				reason += "; the promise reads " + promiseSignal.Value + ", so it needs confirming again as a whole"
+		case len(delta) == 0 && !current:
+			why := "that decision is stale"
+			if rec.Version < b.Version {
+				why = "that decision is for v" + strconv.Itoa(rec.Version) + ", and " + b.ID + " is at v" + strconv.Itoa(b.Version)
 			}
-			return CaseConfirmation{State: CaseConfirmed, Code: CaseCodeConfirmed, Reason: reason}
+			return CaseConfirmation{State: CaseUnconfirmed, Code: CaseCodeDecisionStale,
+				Reason: "unchanged since the last confirmation (" + at + "), but " + why + ": the promise needs confirming again"}
+		case len(delta) == 0:
+			return CaseConfirmation{State: CaseConfirmed, Code: CaseCodeConfirmed, Reason: "as confirmed at " + at}
 		case len(delta) == 1 && delta[0] == "retired":
 			return CaseConfirmation{State: CaseUnconfirmed, Code: CaseCodeRetired, Reason: "retired after confirmation (" + at + ")"}
 		}

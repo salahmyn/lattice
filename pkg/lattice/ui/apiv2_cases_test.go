@@ -55,7 +55,8 @@ func TestPromiseCases(t *testing.T) {
 }
 
 // Each case row carries the audit's confirmation state: pass only for a
-// confirmed case, drifted for one edited or retired since, unknown for one
+// confirmed case, drifted for one edited or retired since or resting on a
+// stale decision (never pass), unknown for one
 // added since, not recorded or never confirmed, and unknown for a row the
 // audit gave no state. Every one passes the contract lint.
 // @verifies api:INV-2
@@ -69,6 +70,7 @@ func TestPromiseCaseConfirmation(t *testing.T) {
 		{audit.CaseConfirmation{State: audit.CaseConfirmed, Code: audit.CaseCodeConfirmed, Reason: "as confirmed"}, contract.StatePass},
 		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeEdited, Reason: "edited"}, contract.StateDrifted},
 		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeRetired, Reason: "retired"}, contract.StateDrifted},
+		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeDecisionStale, Reason: "stale"}, contract.StateDrifted},
 		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeAdded, Reason: "added"}, contract.StateUnknown},
 		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeNotRecorded, Reason: "old"}, contract.StateUnknown},
 		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeNeverConfirmed, Reason: "none"}, contract.StateUnknown},

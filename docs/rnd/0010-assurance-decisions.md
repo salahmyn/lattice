@@ -96,8 +96,9 @@ names a paragraph, not a claim.
   case added or edited after confirmation reads unconfirmed. Editing a case is a
   structural change. *Built:* a decision records its promises' cases (id, kind,
   statement, enforcer, retired, hash); the audit compares them with the cases now
-  and gives each `confirmed` or `unconfirmed` with a code (added, edited, retired
-  after confirmation; not recorded; never confirmed). The promise's own signal is
+  and gives each `confirmed` (only under a current decision for the current
+  version) or `unconfirmed` with a code (added, edited, retired after
+  confirmation; decision stale; not recorded; never confirmed). The promise's own signal is
   unchanged (confirm:INV-20).
 - Coverage per case is computed by the kernel, never typed:
   - `covered`: a tagged verifier passed, and breaking the enforcer killed it;

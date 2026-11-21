@@ -36,9 +36,9 @@ func approvedWith(cases []schema.PromiseCases, state string) *ConfirmData {
 		ApproverLogin: "ana", PR: 7, Cases: cases}}}
 }
 
-// Unchanged cases stay confirmed, with the decision behind them named, and
-// the promise reads human as before: per-case state changes nothing about
-// the promise's signal.
+// Unchanged cases under a current, confirmed decision stay confirmed, with
+// the decision behind them named, and the promise reads human as before:
+// per-case state changes nothing about the promise's signal.
 // @verifies confirm:INV-20#c
 func TestCaseUnchangedStaysConfirmed(t *testing.T) {
 	r := caseRowsWith(t, approvedWith(stampsOf(nil), "confirmed"), nil)
@@ -51,15 +51,32 @@ func TestCaseUnchangedStaysConfirmed(t *testing.T) {
 			t.Errorf("%s = %+v", c.Label, c.Confirmation)
 		}
 	}
+}
 
-	// When the packet changed since (a stale record), an unchanged case
-	// still reads as it was confirmed, and says the promise needs confirming
-	// again; the promise itself reads drifted, as before.
-	r = caseRowsWith(t, approvedWith(stampsOf(nil), "stale"), nil)
-	a := caseOf(t, r, "a")
-	if r.Signals.Confirmed.Value != ConfirmedDrifted || a.Confirmation.State != CaseConfirmed ||
-		!strings.Contains(a.Confirmation.Reason, "the promise reads drifted") {
-		t.Errorf("stale: promise %s, a = %+v", r.Signals.Confirmed.Value, a.Confirmation)
+// An unchanged case is confirmed only under a current, confirmed decision
+// for the BRD's current version. Under a stale decision (its packet changed)
+// or one of an earlier version it reads unconfirmed, CASE_DECISION_STALE,
+// while a case changed since still names its change.
+// @verifies confirm:INV-20#e
+func TestCaseUnderStaleDecisionIsUnconfirmed(t *testing.T) {
+	older := approvedWith(stampsOf(nil), "confirmed")
+	older.Records[0].Version = 1
+	for name, cd := range map[string]*ConfirmData{"stale": approvedWith(stampsOf(nil), "stale"), "earlier version": older} {
+		r := caseRowsWith(t, cd, nil)
+		if r.Signals.Confirmed.Value != ConfirmedDrifted {
+			t.Errorf("%s: promise = %s", name, r.Signals.Confirmed.Value)
+		}
+		for _, c := range r.Cases {
+			if c.Confirmation.State != CaseUnconfirmed || c.Confirmation.Code != CaseCodeDecisionStale ||
+				!strings.Contains(c.Confirmation.Reason, "unchanged since the last confirmation") ||
+				!strings.Contains(c.Confirmation.Reason, "the promise needs confirming again") {
+				t.Errorf("%s: %s = %+v", name, c.Label, c.Confirmation)
+			}
+		}
+	}
+	held := stampsOf(func(cs []schema.CaseStamp) []schema.CaseStamp { return cs[:2] })
+	if c := caseOf(t, caseRowsWith(t, approvedWith(held, "stale"), nil), "c"); c.Confirmation.Code != CaseCodeAdded {
+		t.Errorf("a case added since still says so: %+v", c.Confirmation)
 	}
 }
 

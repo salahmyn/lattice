@@ -50,7 +50,8 @@ func caseViews(cases []audit.CaseRow) []auditCaseView {
 		switch {
 		case c.Confirmation.State == audit.CaseConfirmed && c.Confirmation.Code == audit.CaseCodeConfirmed:
 			v.ConfirmBadge = "is-ok"
-		case c.Confirmation.Code == audit.CaseCodeEdited || c.Confirmation.Code == audit.CaseCodeRetired:
+		case c.Confirmation.Code == audit.CaseCodeEdited || c.Confirmation.Code == audit.CaseCodeRetired ||
+			c.Confirmation.Code == audit.CaseCodeDecisionStale:
 			v.ConfirmBadge = "is-warn"
 		}
 		out = append(out, v)
