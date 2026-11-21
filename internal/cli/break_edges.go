@@ -62,7 +62,8 @@ func edgeHopsOf(kg schema.KnowledgeGraph, rr *reach.Result, layers []schema.Laye
 					eh.Sites = append(eh.Sites, breaktest.EdgeSite{File: s.File, Line: s.Line, Start: s.Start, End: s.End, Key: s.Key})
 				}
 				if h.Kind == "http" {
-					eh.Served = rr.Graph.HTTPServes
+					// A function literal, not the method value: the call graph follows calls.
+					eh.Served = func(key string) bool { return rr.Graph.HTTPServes(key) }
 				}
 				out[promise] = append(out[promise], eh)
 			}
