@@ -169,8 +169,8 @@ func RunFailsOnBase(ctx context.Context, kg schema.KnowledgeGraph, opts Options,
 		if err := base.CopyIn(rep.Overlay); err != nil {
 			return rep, err
 		}
-		rh := &runner{opts: opts, repo: repo, wt: head, baselines: map[string]baseline{}}
-		rb := &runner{opts: opts, repo: repo, wt: base, baselines: map[string]baseline{}}
+		rh := &runner{opts: opts, repo: repo, wt: head}
+		rb := &runner{opts: opts, repo: repo, wt: base}
 		for _, t := range targets {
 			if err := ctx.Err(); err != nil {
 				return rep, err

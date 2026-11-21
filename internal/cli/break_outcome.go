@@ -60,6 +60,9 @@ type breakSummary struct {
 	// runner, most first: a run whose verifiers need two runners counts
 	// under both.
 	MissingRunners []reasonCount `json:"missing_runners,omitempty"`
+	// Baselines counts the baseline invocations this run started and the
+	// ones it reused (an identical command at the same tree).
+	Baselines breaktest.BaselineCounts `json:"baselines"`
 }
 
 // noRunnerReason is the reason a summary groups runs with no runner under.

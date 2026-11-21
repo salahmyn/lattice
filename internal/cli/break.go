@@ -146,6 +146,7 @@ func newBreakCommand(io *IO) *cobra.Command {
 				}
 			}
 			sum := summarize(shown)
+			sum.Baselines = rep.Baselines
 			failMsg := failOnMessage(want, map[string]int{breaktest.Survived: sum.Survived, breaktest.Unknown: sum.Unknown})
 			if io.JSON {
 				out := breakOutput{Report: rep, Summary: sum}
@@ -200,6 +201,9 @@ func printBreakTable(io *IO, rep breaktest.Report, sum breakSummary) {
 			truncate(r.Promise, 26), truncate(r.Enforcer, 34), r.Method, r.Outcome, reason)
 	}
 	io.printf("\n%d killed, %d survived, %d unknown", sum.Killed, sum.Survived, sum.Unknown)
+	if b := sum.Baselines; b.Run+b.Reused > 0 {
+		io.printf("; baselines: %d run, %d reused", b.Run, b.Reused)
+	}
 	if rep.Dirty {
 		io.printf("  (dirty tree)")
 	}

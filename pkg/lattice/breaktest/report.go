@@ -47,6 +47,13 @@ type Report struct {
 	Dirty       bool   `json:"dirty"`
 	GeneratedAt string `json:"generated_at"`
 	Runs        []Run  `json:"runs"`
+
+	// Baselines counts the baseline invocations the run that made this
+	// report started and reused. It is not part of breaks.json.
+	Baselines BaselineCounts `json:"-"`
+	// baselines are the passing baselines Write keeps for the tree, nil
+	// when none are kept (a dirty tree).
+	baselines *baselineFile
 }
 
 // Run is one enforcer of one promise, broken and checked against the
@@ -123,8 +130,14 @@ func Read(latticeDir string) Report {
 	return r
 }
 
-// Write saves the report, runs sorted by promise then enforcer.
+// Write saves the report, runs sorted by promise then enforcer, and the
+// passing baselines of a clean tree to break-baselines.json beside it.
 func Write(latticeDir string, r Report) error {
+	if r.baselines != nil {
+		if err := r.baselines.write(latticeDir); err != nil {
+			return err
+		}
+	}
 	r.Schema = Schema
 	if r.CIRun == "" {
 		r.CIRun = results.CIRunID()

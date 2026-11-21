@@ -26,10 +26,12 @@ invariants:
   - id: INV-8
     statement: The worktree is prepared before the first baseline (node_modules linked, break.setup run), and a setup that fails reads unknown for every run.
   - id: INV-9
-    statement: A break report records dirty true whenever the working tree differs from HEAD (tracked changes or untracked files that are not ignored) outside the workspace's own .ledger/ and .cache/, with or without --allow-dirty; those Lattice-owned paths, wherever the workspace sits in the checkout, never make it dirty.
+    statement: A break report records dirty true whenever the working tree differs from HEAD (tracked changes or untracked files not ignored), with or without --allow-dirty; the workspace's own .ledger/ and .cache/, wherever it sits, never make it dirty.
   - id: INV-10
-    statement: A fails-on-base run reads fails_on_base only for a new or changed verifier that passes at head and fails on the base commit's code with the head's test files on top, and passes_on_base only for one that runs and passes there; a verifier that does not pass at head, does not compile on base, has no runner, times out or does not run reads unknown, never a pass.
+    statement: A fails-on-base run reads fails_on_base only for a new or changed verifier that passes at head and fails on the base commit's code with the head's test files on top, and passes_on_base only for one that runs and passes there; any other verifier reads unknown, never a pass.
   - id: INV-11
     statement: A case break (--promise <promise>#<case>) breaks the case's own enforcer, else each of the invariant's, against only the tests tagged with the case, and records its runs under the case ref so they count for the case's coverage and never for the promise's break signal.
   - id: INV-12
     statement: lattice break exits 1 with --fail-on when a shown run has a listed outcome, and its output says so when no shown break ran; without --fail-on the exit code does not depend on the outcomes.
+  - id: INV-13
+    statement: A baseline is reused only for an identical invocation on an identical tree, and never when it timed out or errored.
