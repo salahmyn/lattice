@@ -1317,7 +1317,8 @@ names the failing tests, else the first error line.
 code under test could not be prepared, for example because a database reset
 failed when a generated SQL break did not apply. As in `git bisect`, where 125
 means "this revision cannot be tested", the run reads `unknown` ("did not
-apply (runner exit 125)", with the runner's last output line), never `killed`,
+apply (runner exit 125)", quoting the first line that contains `ERROR:` or
+`error:`, else the last non-empty line, cut at 120 characters), never `killed`,
 whatever else the output says. A setup step that fails must not count as a
 verifier noticing the break, so end such a step with `|| exit 125`.
 
