@@ -226,6 +226,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /config", s.pageConfig)
 	mux.HandleFunc("GET /onboarding", s.pageOnboarding)
 	mux.HandleFunc("GET /map", s.pageMap)
+	mux.HandleFunc("GET "+layoutLibPath, s.serveLayoutLib)
 	mux.HandleFunc("GET /views", s.pageViews)
 	mux.HandleFunc("GET /api/business", s.apiBusiness)
 	mux.HandleFunc("POST /api/brds", s.apiSaveDraft)

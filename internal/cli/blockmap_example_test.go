@@ -66,9 +66,10 @@ func TestBlockMapExample(t *testing.T) {
 
 // TestBlockMapBrowserSmoke drives the exported demo map in Chromium with
 // scripts/blockmap-smoke.js. It skips in -short mode and when node or the
-// playwright package is missing; it never installs browsers. LATTICE_ELK_JS,
-// a local copy of elkjs 0.9.3, lets the page lay out with ELK instead of its
-// offline grid.
+// playwright package is missing; it never installs browsers. The script blocks
+// every request that is not file://, so the map must lay out with the layout
+// library it carries.
+// @verifies ui:INV-4
 func TestBlockMapBrowserSmoke(t *testing.T) {
 	if testing.Short() {
 		t.Skip("-short: no browser")
@@ -81,11 +82,7 @@ func TestBlockMapBrowserSmoke(t *testing.T) {
 		t.Skip("the playwright package is not installed")
 	}
 	_, page := exampleMap(t)
-	args := []string{filepath.Join("..", "..", "scripts", "blockmap-smoke.js"), page}
-	if elk := os.Getenv("LATTICE_ELK_JS"); elk != "" {
-		args = append(args, "--elk", elk)
-	}
-	out, err := exec.Command(node, args...).CombinedOutput()
+	out, err := exec.Command(node, filepath.Join("..", "..", "scripts", "blockmap-smoke.js"), page).CombinedOutput()
 	if err != nil {
 		if strings.Contains(string(out), "Executable doesn't exist") {
 			t.Skip("playwright has no browser installed")
@@ -94,6 +91,9 @@ func TestBlockMapBrowserSmoke(t *testing.T) {
 	}
 	// the demo must exercise these checks, not skip them
 	for _, want := range []string{
+		"ok   the layout library starts from the file itself",
+		"ok   the diagram has the layered layout (spline edges), not the grid fallback",
+		"ok   without the layout library the grid fallback draws",
 		"ok   Diagram: after Fit with the minimap on, no box is under the minimap",
 		"ok   Focus: after Fit with the minimap on, no card is under the minimap",
 		"ok   system context at 2 hop(s): each block once",

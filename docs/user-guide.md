@@ -999,8 +999,10 @@ run it in a copy to keep the example as committed.
 judgments, its feature manifests (nested directories included, as extract
 reads them) and its entry points. `lattice serve` shows it at `/map`, and
 `lattice export map out.html` writes the same page as one file that works
-offline. The page lays out with ELK from a pinned, SRI-checked CDN copy;
-without the network it falls back to a simple grid.
+offline. The page lays out with ELK (elkjs 0.9.3, shipped in the binary):
+the export inlines it, and `serve` serves it itself, so neither makes a
+network request. If the library cannot start, the page falls back to a
+simple grid.
 
 Every feature and invariant is a block. A dotted feature sits inside the
 feature its id extends: `orders.refunds` inside `orders`, and
@@ -1209,7 +1211,8 @@ also `[` `]` back and forward, `1` `2` `3` hops and `c` system context.
 ### Checking it in a browser
 
 `scripts/blockmap-smoke.js` drives an exported map in Chromium with
-Playwright and fails on any console error. `go test ./internal/cli -run
+Playwright, with every request that is not `file://` blocked, and fails on
+any console error, any network request, or a grid layout. `go test ./internal/cli -run
 BlockMapBrowserSmoke` runs it on the demo; the test skips when node or the
 `playwright` package is missing. The script can also take screenshots
 (`--shots dir`) and time a generated graph (`--perf 2000`).

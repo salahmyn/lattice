@@ -35,14 +35,18 @@ func MapHTML(g store.Graph, title string) ([]byte, error) {
 	return MapPage(MapData{Graph: g, Assurance: Assurance(g, nil, "no audit was computed for this page")}, title)
 }
 
-// MapPage returns the map page with d inlined, so it works as a single file
-// without a server (lattice export map). A non-empty title replaces "Block map".
+// MapPage returns the map page with d and the layout library inlined, so it
+// works as a single file without a server or a network (lattice export map).
+// A non-empty title replaces "Block map".
 func MapPage(d MapData, title string) ([]byte, error) {
 	data, err := json.Marshal(d) // escapes < and >, so the data cannot close its <script>
 	if err != nil {
 		return nil, err
 	}
-	page := bytes.Replace(mapHTML, []byte(graphSlot), data, 1)
+	page, err := inlineLayoutLib(bytes.Replace(mapHTML, []byte(graphSlot), data, 1))
+	if err != nil {
+		return nil, err
+	}
 	if title != "" {
 		t := []byte(html.EscapeString(title))
 		page = bytes.Replace(page, []byte("<title>Block map</title>"), append(append([]byte("<title>"), t...), "</title>"...), 1)
@@ -70,7 +74,8 @@ func (s *Server) withStore(w http.ResponseWriter, fn func(store.Store) (any, err
 
 func (s *Server) pageMap(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write(bytes.Replace(mapHTML, []byte(graphSlot), nil, 1))
+	page := bytes.Replace(mapHTML, []byte(graphSlot), nil, 1)
+	_, _ = w.Write(bytes.Replace(page, []byte(layoutSlot), nil, 1)) // the page loads the layout library from layoutLibPath
 }
 
 // apiGraph serves the block graph with the assurance lens beside it: the

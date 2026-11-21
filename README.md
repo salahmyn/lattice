@@ -274,11 +274,13 @@ catalogues cannot say, and run `lattice refresh`. The result is one graph
 of blocks and edges, stamped with the commit and release each source
 reflects. Every feature and invariant is a block, a dotted feature nested
 in the one its id extends (`orders.refunds` in `orders`). `lattice serve`
-shows it at `/map`; `lattice export map` writes the same page as one file.
-Both rebuild the graph first, as `refresh` does, and save it when it
-changed; when it cannot be rebuilt they draw the stored one and say why
-(`export map --no-refresh` skips the rebuild). Storage is files by default,
-or PostgreSQL (`storage: {backend: postgres}`) for search and relation queries.
+shows it at `/map`; `lattice export map` writes the same page as one file
+that needs no network (its layout library, elkjs, is inlined; see
+[third-party notices](THIRD_PARTY_NOTICES.md)). Both rebuild the graph
+first, as `refresh` does, and save it when it changed; when it cannot be
+rebuilt they draw the stored one and say why (`export map --no-refresh`
+skips the rebuild). Storage is files by default, or PostgreSQL
+(`storage: {backend: postgres}`) for search and relation queries.
 
 The map's **Assurance** toggle (`a`) colours each block by the audit
 class of the promises it holds, the weakest by the audit's own order:
@@ -350,7 +352,8 @@ extraction pass.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE). Bundled third-party code is listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 <p align="center">
   <picture>
