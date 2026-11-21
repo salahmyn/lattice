@@ -63,3 +63,11 @@ type ChannelWrapper struct {
 type ChannelConfigurable interface {
 	SetChannelWrappers(w []ChannelWrapper)
 }
+
+// HTTPOriginConfigurable is implemented by an adapter that reads the declared
+// origins (workspace.yaml http.origins): it takes every entry and keeps the
+// env:<NAME> and setting:<name> forms it can read in source. Extraction calls
+// it once, before any file is parsed.
+type HTTPOriginConfigurable interface {
+	SetHTTPOrigins(origins []string)
+}

@@ -3,6 +3,8 @@ package typescript
 import (
 	"context"
 	"testing"
+
+	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 )
 
 const tsSample = `/**
@@ -793,6 +795,137 @@ func TestRecordsLiteralSpans(t *testing.T) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Errorf("ref %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// A call with type arguments records the same refs as one without, awaited or
+// not: the grammar reads await f<T>(x) as a call whose function is the await
+// expression, and a first argument past the type arguments that is not a
+// literal reads as dynamic rather than vanishing.
+// @verifies reachability:INV-11
+func TestTypeArgumentsDoNotHideCalls(t *testing.T) {
+	src := "export async function calls(db: any, name: string) {\n" +
+		"  await supabase.functions.invoke<AddResult>('add-source', { body });\n" +
+		"  const r = await supabase.functions.invoke<Result<A, B>>('nested');\n" +
+		"  supabase.functions.invoke<unknown>('plain');\n" +
+		"  await supabase.functions.invoke<T>(name);\n" +
+		"  await fetch<Res>('/api/a');\n" +
+		"  await axios.get<Res>('/api/b');\n" +
+		"  await axios.post<Res, Req>(name);\n" +
+		"  await axios<Res>({ url: '/api/c', method: 'put' });\n" +
+		"  await window.fetch<Res>('/api/d');\n" +
+		"  await db.rpc<Row>('do_it', {});\n" +
+		"  await db.rpc<Row>(name);\n" +
+		"  await db.from<Row>('orders').select();\n" +
+		"  await db.rpc<Row>('pgmq_send', { queue_name: 'jobs' });\n" +
+		"  await jobs.enqueue<Payload>('emails');\n" +
+		"  await jobs.register<Payload>('emails', handler);\n" +
+		"}\n"
+	a := New()
+	a.SetChannelWrappers([]ir.ChannelWrapper{
+		{Call: "jobs.enqueue", Arg: 0, Kind: ir.ChannelQueue, HandlerArg: -1},
+		{Call: "jobs.register", Arg: 0, Kind: ir.ChannelQueue, Consume: true, HandlerArg: 1},
+	})
+	mod, err := a.Parse(context.Background(), "web/calls.ts", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, s := range mod.Symbols {
+		for _, r := range s.Refs {
+			switch r.Kind {
+			case "http", "rpc", "table", "publish", "consume":
+				got = append(got, r.Kind+"|"+r.Name)
+			}
+		}
+	}
+	want := []string{
+		"http|POST /functions/v1/add-source",
+		"http|POST /functions/v1/nested",
+		"http|POST /functions/v1/plain",
+		"http|", // computed name: dynamic, not dropped
+		"http|GET /api/a",
+		"http|GET /api/b",
+		"http|", // computed URL
+		"http|PUT /api/c",
+		"http|GET /api/d",
+		"rpc|do_it",
+		"rpc|", // computed name
+		"table|orders",
+		"publish|queue:jobs",
+		"rpc|pgmq_send",
+		"publish|queue:emails",
+		"consume|queue:emails",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("refs %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("ref %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// A URL that is exactly one declared env origin and a literal path is
+// path-only; any other computed part, and an env variable nothing declares,
+// stays computed.
+// @verifies reachability:INV-11
+func TestEnvOriginURLs(t *testing.T) {
+	src := "export async function calls(id: string) {\n" +
+		"  fetch(`${import.meta.env.VITE_API}/functions/v1/a`, { method: 'POST' });\n" +
+		"  fetch(import.meta.env.VITE_API + '/functions/v1/b');\n" +
+		"  fetch(`${process.env.API_URL}/api/${id}`);\n" +
+		"  fetch(`${import.meta.env.OTHER}/functions/v1/c`);\n" +
+		"  fetch(`${import.meta.env.VITE_API}/x/${id}/y`);\n" +
+		"  fetch(import.meta.env.VITE_API + '/a' + id);\n" +
+		"  axios.get(Deno.env.get('API_URL')! + '/api/d');\n" +
+		"  axios({ url: `${process.env.API_URL}/api/e`, method: 'put' });\n" +
+		"  fetch(`/${import.meta.env.VITE_API}/f`);\n" +
+		"  fetch(`${import.meta.env.VITE_API}`);\n" +
+		"}\n"
+	run := func(origins []string) []string {
+		a := New()
+		a.SetHTTPOrigins(origins)
+		mod, err := a.Parse(context.Background(), "web/calls.ts", []byte(src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, s := range mod.Symbols {
+			for _, r := range s.Refs {
+				if r.Kind == "http" {
+					got = append(got, r.Name+"|"+r.Qualifier)
+				}
+			}
+		}
+		return got
+	}
+	want := []string{
+		"POST /functions/v1/a|",
+		"GET /functions/v1/b|",
+		"|", // a second substitution in the path
+		"|", // an env variable nothing declares
+		"|", // a second substitution in the path
+		"|", // a computed operand after the path
+		"GET /api/d|",
+		"PUT /api/e|",
+		"|", // the variable is not the whole origin
+		"|", // no path at all
+	}
+	got := run([]string{"https://app.example.com", "env:VITE_API", "env:API_URL"})
+	if len(got) != len(want) {
+		t.Fatalf("refs %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("ref %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+	for i, r := range run(nil) {
+		if r != "|" {
+			t.Errorf("undeclared: ref %d = %q, want computed", i, r)
 		}
 	}
 }

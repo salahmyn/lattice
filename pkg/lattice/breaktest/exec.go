@@ -192,8 +192,9 @@ const applyLineMax = 120
 // "error:" (Postgres and most command-line tools), from that token on, so a
 // line that is a JSON blob with the token in the middle quotes the message
 // and not the blob's opening; else the last non-empty line. Either way it is
-// capped at applyLineMax runes with a trailing "…", so a tool that prints its
-// whole error as one line stays readable in a results table.
+// cut at a literal backslash-n, which JSON uses for a newline, and capped at
+// applyLineMax runes with a trailing "…", so a tool that prints its whole
+// error as one line stays readable in a results table.
 func applyLine(out string) string {
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	pick := ""
@@ -214,6 +215,11 @@ func applyLine(out string) string {
 				break
 			}
 		}
+	}
+	// A runner that prints a CLI's JSON error carries the message's own
+	// newlines as the two characters backslash and n; the quote ends there.
+	if i := strings.Index(pick, `\n`); i >= 0 {
+		pick = pick[:i]
 	}
 	pick = strings.TrimSpace(pick)
 	if r := []rune(pick); len(r) > applyLineMax {

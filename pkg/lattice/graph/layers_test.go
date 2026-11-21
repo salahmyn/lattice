@@ -156,11 +156,13 @@ func TestDeriveBlockLayersIsTheSet(t *testing.T) {
 // no path; a bad one is a VALIDATE_POLICY error naming its index.
 // @verifies reachability:INV-11
 func TestCheckHTTPOrigins(t *testing.T) {
-	good := []string{"https://app.example.com", "http://localhost:3000", "https://10.0.0.1:8443"}
+	good := []string{"https://app.example.com", "http://localhost:3000", "https://10.0.0.1:8443",
+		"env:VITE_API_URL", "env:_X1", "setting:app.api_url", "setting:app.settings-url"}
 	if v := CheckHTTPOrigins(good); len(v) != 0 {
 		t.Errorf("valid origins: %+v", v)
 	}
-	bad := []string{"https://app.example.com/", "https://app.example.com/app", "app.example.com", "https://", "https://a.com?x=1", ""}
+	bad := []string{"https://app.example.com/", "https://app.example.com/app", "app.example.com", "https://", "https://a.com?x=1", "",
+		"env:", "env:1BAD", "env:HAS SPACE", "env:a.b", "setting:", "setting:has space", "setting:.", "ENV:X", "env:X=1"}
 	v := CheckHTTPOrigins(append([]string{"https://ok.example.com"}, bad...))
 	if len(v) != len(bad) {
 		t.Fatalf("want %d errors, got %d: %+v", len(bad), len(v), v)

@@ -39,9 +39,14 @@ type RuntimeRoot struct {
 	// Job and Schedule are a cron job's literals; Method and Path a route's.
 	Job, Schedule string
 	Method, Path  string
-	// Calls are the nodes a cron job's body calls directly (resolved
-	// edges), the SQL functions it runs.
+	// Calls are the nodes a cron job's body or a serve root calls directly
+	// (resolved edges): the SQL functions a job runs, the handler a serve
+	// call builds.
 	Calls []string
+	// Reaches are the nodes a cron job's body reaches by a direct call, or
+	// by one http hop to an edge function and then direct calls, to
+	// reachDepth edges in all. Calls are among them.
+	Reaches []string
 	// Blocked is empty for a root that can become an entry point; otherwise
 	// the reason it cannot (Blocked*).
 	Blocked string
@@ -63,6 +68,10 @@ var surfaceKinds = map[string]string{
 // @enforces entrypoints:INV-5
 func (g *Graph) RuntimeRoots() []RuntimeRoot {
 	var out []RuntimeRoot
+	edgesFrom := map[string][]Edge{}
+	for _, e := range g.Edges {
+		edgesFrom[e.From] = append(edgesFrom[e.From], e)
+	}
 	for mi := range g.modules {
 		m := &g.modules[mi]
 		for _, n := range m.Nodes {
@@ -72,11 +81,12 @@ func (g *Graph) RuntimeRoots() []RuntimeRoot {
 			switch {
 			case n.Kind == ir.NodeServe && n.Root == "serve":
 				out = append(out, RuntimeRoot{FQN: n.FQN, Source: RootServe, Kind: schema.EntryPointKindHTTP,
-					File: m.File, Line: n.Line, Path: EdgeFunctionPath(m.File)})
+					File: m.File, Line: n.Line, Path: EdgeFunctionPath(m.File),
+					Calls: append([]string(nil), g.out[n.FQN]...)})
 			case n.Kind == ir.NodeCron:
 				r := RuntimeRoot{FQN: n.FQN, Source: RootCron, Kind: schema.EntryPointKindCron,
 					File: m.File, Line: n.Line, Job: n.Job, Schedule: n.Schedule,
-					Calls: append([]string(nil), g.out[n.FQN]...)}
+					Calls: append([]string(nil), g.out[n.FQN]...), Reaches: cronReach(n.FQN, edgesFrom)}
 				if n.KeyComputed {
 					r.Blocked = BlockedKeyComputed
 				}
@@ -112,6 +122,54 @@ func (g *Graph) RuntimeRoots() []RuntimeRoot {
 	return out
 }
 
+// reachDepth is the most edges a cron job's reach follows: the job's call to
+// the edge function, the function's serve call to its handler, and one call
+// beyond.
+const reachDepth = 3
+
+// cronReach lists what a cron job's body reaches: the nodes it calls directly
+// and, through an http edge (a net.http_post to an edge function), the nodes
+// that function's code calls, up to reachDepth edges from the job. A path
+// that does not start with an http edge stops at its first node, so a job
+// that calls a SQL function does not cover everything that function calls.
+// Only an edge of the synchronous call graph is followed: a member, publish
+// or consume edge is not.
+func cronReach(from string, edgesFrom map[string][]Edge) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(fqn string) {
+		if !seen[fqn] {
+			seen[fqn] = true
+			out = append(out, fqn)
+		}
+	}
+	for _, e := range edgesFrom[from] {
+		if e.Kind == "member" {
+			continue
+		}
+		add(e.To)
+		if e.Kind != ir.RefHTTP {
+			continue
+		}
+		frontier := []string{e.To}
+		for depth := 2; depth <= reachDepth; depth++ {
+			var next []string
+			for _, f := range frontier {
+				for _, e2 := range edgesFrom[f] {
+					if e2.Kind == "member" || isAsyncKind(e2.Kind) || seen[e2.To] {
+						continue
+					}
+					add(e2.To)
+					next = append(next, e2.To)
+				}
+			}
+			frontier = next
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // EdgeFunctionPath is the path the platform serves the edge function in file
 // at: /functions/v1/<name>. Empty when file is not an edge function's entry
 // file. A Deno.serve handler answers every method, so no method goes with it.
@@ -135,11 +193,18 @@ func EdgeFunctionPath(file string) string {
 //     webhook whose handler symbol or handler file is in the serve handler's
 //     module: a manifest names the function the handler calls (or the file),
 //     not the serve node, which has no name of its own;
+//   - the root is a serve handler and the entry point is an http_route or a
+//     webhook whose trigger path equals the path the platform serves the
+//     function at, whatever its method (a proposal has none); or whose handler
+//     is a direct callee of the serve node (Deno.serve(createHandler(...))
+//     calls createHandler, which a manifest names);
 //   - the root is a cron job and the entry point is a cron with the same job
-//     name; or, when the entry point names no job, with the same schedule and
-//     a handler the job's body calls directly. A different job name always
-//     keeps two jobs apart, and two jobs on one schedule that call different
-//     functions are not merged.
+//     name; or, when either names no job, with the same schedule and a handler
+//     the job's body reaches: by a direct call, or by one http hop to an edge
+//     function followed by direct calls, to depth 3 (a net.http_post to
+//     /functions/v1/<fn> reaches <fn>'s handler). A different schedule never
+//     covers, a different job name always keeps two jobs apart, and two jobs
+//     on one schedule that reach different functions are not merged.
 func (r RuntimeRoot) CoveredBy(eps []schema.EntryPoint) bool {
 	for _, ep := range eps {
 		if ep.DetectedBy != "" {
@@ -151,13 +216,13 @@ func (r RuntimeRoot) CoveredBy(eps []schema.EntryPoint) bool {
 		case r.Source == RootSurface && ep.Kind == r.Kind && r.Path != "" &&
 			ep.Trigger.Path == r.Path && strings.EqualFold(ep.Trigger.Method, r.Method):
 			return true
-		case r.Source == RootServe && r.inServeModule(ep):
+		case r.Source == RootServe && (r.inServeModule(ep) || r.servedAt(ep) || r.callsHandler(ep)):
 			return true
 		case r.Source != RootServe && ep.Kind == schema.EntryPointKindCron && r.Kind == ep.Kind &&
 			r.Job != "" && ep.Trigger.Job == r.Job:
 			return true
-		case r.Source == RootCron && ep.Kind == schema.EntryPointKindCron && ep.Trigger.Job == "" &&
-			r.Schedule != "" && ep.Trigger.Schedule == r.Schedule && r.calls(ep.Handler.Symbol):
+		case r.Source == RootCron && ep.Kind == schema.EntryPointKindCron && (ep.Trigger.Job == "" || r.Job == "") &&
+			r.Schedule != "" && ep.Trigger.Schedule == r.Schedule && r.reaches(ep.Handler.Symbol):
 			return true
 		}
 	}
@@ -178,12 +243,31 @@ func (r RuntimeRoot) inServeModule(ep schema.EntryPoint) bool {
 	return mod != "" && mod != "." && sym != "" && strings.HasPrefix(sym, mod)
 }
 
-// calls reports that the root's body calls the node fqn directly.
-func (r RuntimeRoot) calls(fqn string) bool {
+// servedAt reports an http_route or webhook entry point declared at the path
+// the serve root r is served at, with any method.
+func (r RuntimeRoot) servedAt(ep schema.EntryPoint) bool {
+	if ep.Kind != schema.EntryPointKindHTTP && ep.Kind != schema.EntryPointKindWebhook {
+		return false
+	}
+	trim := func(p string) string { return strings.TrimRight(p, "/") }
+	return r.Path != "" && trim(ep.Trigger.Path) == trim(r.Path)
+}
+
+// callsHandler reports an http_route or webhook entry point whose handler the
+// serve root r calls directly.
+func (r RuntimeRoot) callsHandler(ep schema.EntryPoint) bool {
+	return (ep.Kind == schema.EntryPointKindHTTP || ep.Kind == schema.EntryPointKindWebhook) &&
+		containsFQN(r.Calls, ep.Handler.Symbol)
+}
+
+// reaches reports that the root's body reaches the node fqn (see Reaches).
+func (r RuntimeRoot) reaches(fqn string) bool { return containsFQN(r.Reaches, fqn) }
+
+func containsFQN(list []string, fqn string) bool {
 	if fqn == "" {
 		return false
 	}
-	for _, c := range r.Calls {
+	for _, c := range list {
 		if c == fqn {
 			return true
 		}

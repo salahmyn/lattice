@@ -49,6 +49,8 @@ const CodeTagDropped = schema.CodeSQLTagDropped
 type Adapter struct {
 	migrations []string
 	tests      []string
+	// opts are the declared facts references are read with (SetHTTPOrigins).
+	opts refOpts
 }
 
 // New builds the adapter. migrations and tests are slash-path globs relative
@@ -160,9 +162,9 @@ func (a *Adapter) Parse(_ context.Context, p string, source []byte) (ir.Module, 
 		parseTests(&mod, stmts)
 	case kindMigration:
 		mod.ChangeHistory = true
-		parseDefinitions(&mod, stmts)
+		parseDefinitions(&mod, stmts, a.opts)
 	default:
-		parseDefinitions(&mod, stmts)
+		parseDefinitions(&mod, stmts, a.opts)
 	}
 	return mod, nil
 }
@@ -293,7 +295,7 @@ func triggerFQN(schemaName, table, name string) string {
 }
 
 // parseDefinitions records functions, policies and triggers, and marks drops.
-func parseDefinitions(mod *ir.Module, stmts []statement) {
+func parseDefinitions(mod *ir.Module, stmts []statement, o refOpts) {
 	var applied []ir.Ref
 	appliedLine := 0
 	defer func() {
@@ -356,9 +358,9 @@ func parseDefinitions(mod *ir.Module, stmts []statement) {
 		}
 		if sym == nil {
 			used := parseConstraints(mod, st, anns)
-			if n, ok := cronNode(mod, st); ok {
+			if n, ok := cronNode(mod, st, o); ok {
 				mod.Nodes = append(mod.Nodes, n)
-			} else if refs := appliedRefs(st); len(refs) > 0 {
+			} else if refs := appliedRefs(st, o); len(refs) > 0 {
 				if appliedLine == 0 {
 					appliedLine = st.line
 				}
@@ -373,7 +375,7 @@ func parseDefinitions(mod *ir.Module, stmts []statement) {
 		// rewrites the violating case, so they share the function kind.
 		sym.Kind, sym.File, sym.Line, sym.EndLine = ir.KindFunction, mod.File, st.line, st.endLine
 		sym.Exported, sym.Annotations = true, withImpliedFeature(anns)
-		linkRefs(mod, sym, st, kind, tSchema, table)
+		linkRefs(mod, sym, st, kind, tSchema, table, o)
 		mod.Symbols = append(mod.Symbols, *sym)
 	}
 }

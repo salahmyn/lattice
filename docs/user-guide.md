@@ -420,11 +420,21 @@ runtime root, so the root is not proposed, when any of these holds:
   `webhook`, and its handler symbol or handler file lies in the serve
   handler's module: a manifest names the function the handler calls, or the
   file, not the serve node, which has no name of its own;
+- the root is a serve handler, the entry point is an `http_route` or a
+  `webhook`, and its `trigger.path` equals the path the platform serves the
+  function at (`/functions/v1/<name>`), whatever its method: a proposal has no
+  method;
+- the root is a serve handler and the entry point's handler is a direct
+  callee of the serve call: `Deno.serve(createHandler(...))` calls
+  `createHandler`, and a manifest names that function;
 - the root is a cron job and the entry point is a `cron` with the same
-  `trigger.job`; or, when the entry point names no job, with the same
-  `trigger.schedule` and a handler the job's body calls directly. A different
-  job name always keeps two jobs apart, and two jobs on one schedule that
-  call different functions are never merged;
+  `trigger.job`; or, when either names no job, with the same
+  `trigger.schedule` and a handler the job's body reaches: by a direct call, or
+  by one `http` hop (`net.http_post` to `/functions/v1/<name>`, see
+  [HTTP edges](#4q-http-edges-and-edge-truth)) followed by direct calls of that
+  function's code, to a depth of 3 edges. A different schedule never covers, a
+  different job name always keeps two jobs apart, and two jobs on one schedule
+  that reach different functions are never merged;
 - the root is a detected route and the entry point has the same kind, method
   and path.
 
@@ -3125,6 +3135,10 @@ match, no fuzzy match, no join through a computed URL.
 | `axios.get/post/put/patch/delete/head(url)` | the method of the call |
 | `axios({ url, method })` | `GET`, or the literal method |
 | `supabase.functions.invoke('name')` | `POST /functions/v1/name` (`{ method }` overrides) |
+| `net.http_post(url := ...)`, `net.http_get(url := ...)`, `net.http_request(method := ..., url := ...)` in SQL | `POST`, `GET`, or the literal method |
+
+A call with type arguments (`invoke<Result<A, B>>('x')`), awaited or not, is read like
+the same call without them. A first argument that is not a literal reads as `dynamic`.
 
 A literal URL is a string, or a template with no `${}`. The key drops the query
 string, the fragment and a trailing slash (and the origin, see below), so
@@ -3149,8 +3163,27 @@ http:
 
 An absolute URL whose origin is on the list (scheme and host compared without regard
 to case) is treated as path-only. That is a declaration, not a guess. Each entry must
-be a scheme plus host with an optional port and no path; a bad one is a
-`VALIDATE_POLICY` error, like a bad `layers:` rule, and the join ignores it.
+be a scheme plus host with an optional port and no path, or one of the two forms below;
+a bad one is a `VALIDATE_POLICY` error, like a bad `layers:` rule, and the join ignores
+it.
+
+An origin the code reads from configuration rather than writes as a literal is declared
+by where it is read:
+
+```yaml
+http:
+  origins:
+    - env:VITE_API_URL        # import.meta.env.VITE_API_URL, process.env.VITE_API_URL, Deno.env.get('VITE_API_URL')
+    - setting:app.api_url     # current_setting('app.api_url'), with or without the second argument
+```
+
+A URL that is exactly one such origin followed by literal text is path-only:
+`` `${import.meta.env.VITE_API_URL}/functions/v1/a` ``,
+`import.meta.env.VITE_API_URL + '/functions/v1/a'`, and in SQL
+`current_setting('app.api_url') || '/functions/v1/a'`. Any other computed part (a second
+`${}`, a variable in the path) keeps the URL `dynamic`, and so does a variable or setting
+nothing declares. `name` is letters, digits and `_` for `env:`, and also `.` and `-`
+for `setting:`; an empty or malformed name is a `VALIDATE_POLICY` error.
 
 **In ends** are the routes the code serves: routes the adapters detected
 (`app.get('/api/orders', listOrders)`), declared `http_route` entry points
@@ -3187,7 +3220,8 @@ info  HTTP_CALL_DYNAMIC   web/orders.ts sends 5 request(s) whose URL or method i
 `HTTP_CALL_UNSERVED` names a literal request that no route serves: a typo, a route the
 adapters do not detect (declare its entry point in `lattice/entry-points/`), or a
 server that is not in the workspace. A request to an absolute URL on an origin not
-declared in `http.origins` is external and never raised. `HTTP_CALL_DYNAMIC` is one per file, with the count and the
+declared in `http.origins` is external and never raised. A request built from a declared
+`env:` or `setting:` origin is own, and is raised like any path-only call. `HTTP_CALL_DYNAMIC` is one per file, with the count and the
 first lines. Test code raises neither. A route nothing calls raises nothing: it may be
 public API.
 

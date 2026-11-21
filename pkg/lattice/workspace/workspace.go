@@ -148,8 +148,12 @@ type HTTP struct {
 	// Origins are the origins (scheme and host, optional port, no path) that
 	// are this system's own, such as "https://app.example.com". A client
 	// request to an absolute URL on one of them joins the routes the code
-	// serves as a path; a request to any other origin is external. Checked by
-	// validate, not here.
+	// serves as a path; a request to any other origin is external. An entry
+	// may also be env:<NAME>, an origin the code reads from that environment
+	// variable (import.meta.env.NAME, process.env.NAME, Deno.env.get('NAME')),
+	// or setting:<name>, one a SQL body reads with current_setting('<name>'):
+	// a URL that is exactly that origin and a literal path is a path-only
+	// request. Checked by validate, not here.
 	Origins []string `yaml:"origins,omitempty"`
 }
 

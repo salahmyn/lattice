@@ -380,3 +380,105 @@ func TestEdgeFunctionProposalPath(t *testing.T) {
 		}
 	}
 }
+
+// layoutRoots parses an edge-function layout: each function's index.ts calls
+// Deno.serve(createHandler(...)) from its handler.ts, and a cron job posts to
+// one function through a declared setting origin.
+func layoutRoots(t *testing.T, jobSchedule string) (schema.KnowledgeGraph, *reach.Graph) {
+	t.Helper()
+	parseAll := func(a adapters.LanguageAdapter, files map[string]string) []ir.Module {
+		var mods []ir.Module
+		var names []string
+		for p := range files {
+			names = append(names, p)
+		}
+		sort.Strings(names)
+		for _, p := range names {
+			m, err := a.Parse(context.Background(), p, []byte(files[p]))
+			if err != nil {
+				t.Fatal(err)
+			}
+			mods = append(mods, m)
+		}
+		if r, ok := a.(adapters.Resolver); ok {
+			mods = r.Resolve(mods)
+		}
+		return mods
+	}
+	ts := parseAll(typescript.New(), map[string]string{
+		"supabase/functions/add-source/index.ts":   "import { createHandler } from './handler.ts';\nDeno.serve(createHandler({}));\n",
+		"supabase/functions/add-source/handler.ts": "export function createHandler(deps: unknown) { return async (req: Request) => new Response('ok'); }\n",
+		"supabase/functions/digest/index.ts":       "import { createHandler } from './handler.ts';\nDeno.serve(createHandler({}));\n",
+		"supabase/functions/digest/handler.ts":     "export function createHandler(deps: unknown) { return helper(); }\nfunction helper() { return 1; }\n",
+	})
+	pg := postgres.New(nil, nil)
+	pg.SetHTTPOrigins([]string{"setting:app.api_url"})
+	sql := parseAll(pg, map[string]string{
+		"db/migrations/001_cron.sql": "select cron.schedule('digest-job', '" + jobSchedule + "', $$\n" +
+			"  select net.http_post(url := current_setting('app.api_url') || '/functions/v1/digest');\n$$);\n",
+	})
+	mods := append(ts, sql...)
+	return schema.KnowledgeGraph{}, reach.Build(mods, reach.Options{})
+}
+
+// The roots of an edge-function layout are covered by the entry points a
+// person declared for them, however they were declared: by the function's
+// path (any method), by a handler the serve call builds, and, for a cron job,
+// by the same schedule and a handler the job reaches through its http hop.
+// @verifies entrypoints:INV-5
+func TestDeclaredEntryPointsCoverServeAndCronRoots(t *testing.T) {
+	_, g := layoutRoots(t, "0 3 * * *")
+	declared := []schema.EntryPoint{
+		{ID: "ep.add", Kind: schema.EntryPointKindHTTP, Status: schema.StatusProduction,
+			Trigger: schema.Trigger{Method: "POST", Path: "/functions/v1/add-source"},
+			Handler: schema.Handler{Symbol: "somewhere.else"}},
+		{ID: "ep.digest", Kind: schema.EntryPointKindWebhook, Status: schema.StatusProduction,
+			Handler: schema.Handler{Symbol: "supabase.functions.digest.handler.createHandler"}},
+		{ID: "ep.cron", Kind: schema.EntryPointKindCron, Status: schema.StatusProduction,
+			Trigger: schema.Trigger{Schedule: "0 3 * * *"},
+			Handler: schema.Handler{Symbol: "supabase.functions.digest.handler.createHandler"}},
+	}
+	in := entrypoints.RuntimeInput{Roots: g.RuntimeRoots(), Known: declared, Reach: g}
+	if got := entrypoints.ProposeFromRuntime(in); len(got) != 0 {
+		t.Errorf("every root is declared, want 0 proposals, got %+v", got)
+	}
+	if len(in.Roots) != 3 {
+		t.Errorf("want 3 roots (2 serve, 1 cron), got %d", len(in.Roots))
+	}
+}
+
+// A different schedule, a different function path, and a handler the job
+// does not reach each leave the root proposed.
+// @verifies entrypoints:INV-5
+func TestCoverageNeedsTheSameScheduleAndPath(t *testing.T) {
+	_, g := layoutRoots(t, "0 3 * * *")
+	handler := schema.Handler{Symbol: "supabase.functions.digest.handler.createHandler"}
+	cases := []struct {
+		name     string
+		ep       schema.EntryPoint
+		proposed []string // the kinds still proposed
+	}{
+		{"different schedule", schema.EntryPoint{ID: "a", Kind: schema.EntryPointKindCron, Trigger: schema.Trigger{Schedule: "0 4 * * *"}, Handler: handler},
+			[]string{"cron", "http_route", "http_route"}},
+		{"different function path", schema.EntryPoint{ID: "b", Kind: schema.EntryPointKindHTTP, Trigger: schema.Trigger{Path: "/functions/v1/other"}, Handler: schema.Handler{Symbol: "x.y"}},
+			[]string{"cron", "http_route", "http_route"}},
+		{"cron handler the job does not reach", schema.EntryPoint{ID: "c", Kind: schema.EntryPointKindCron, Trigger: schema.Trigger{Schedule: "0 3 * * *"},
+			Handler: schema.Handler{Symbol: "supabase.functions.add-source.handler.createHandler"}},
+			[]string{"cron", "http_route", "http_route"}},
+		{"a job of another name", schema.EntryPoint{ID: "d", Kind: schema.EntryPointKindCron, Trigger: schema.Trigger{Schedule: "0 3 * * *", Job: "other-job"}, Handler: handler},
+			[]string{"cron", "http_route", "http_route"}},
+	}
+	for _, c := range cases {
+		got := entrypoints.ProposeFromRuntime(entrypoints.RuntimeInput{Roots: g.RuntimeRoots(), Known: []schema.EntryPoint{c.ep}, Reach: g})
+		var kinds []string
+		for _, ep := range got {
+			kinds = append(kinds, ep.Kind)
+		}
+		sort.Strings(kinds)
+		want := append([]string(nil), c.proposed...)
+		sort.Strings(want)
+		if !reflect.DeepEqual(kinds, want) {
+			t.Errorf("%s: proposed %v, want %v", c.name, kinds, want)
+		}
+	}
+}

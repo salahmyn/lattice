@@ -81,6 +81,8 @@ func TestApplyReasonTrim(t *testing.T) {
 		{"a quoted JSON key is no marker", blob + "\n", blob[:119] + "…"},
 		{"first marker, not the last", "ERROR: first\nERROR: second\n", "ERROR: first"},
 		{"last non-empty line otherwise", "one\ntwo\n\n", "two"},
+		{"ends at a literal backslash-n", `{"msg":"ERROR: bad thing\nHINT: try again"}` + "\n", `ERROR: bad thing`},
+		{"a real newline still ends it", "ERROR: bad thing\nHINT: try again\n", `ERROR: bad thing`},
 		{"no output", "  \n", ""},
 		{"capped at 120 runes", "ERROR: " + long, "ERROR: " + strings.Repeat("é", 112) + "…"},
 		{"last line capped too", "start\n" + blob, blob[:119] + "…"},
