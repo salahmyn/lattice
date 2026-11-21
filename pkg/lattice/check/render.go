@@ -101,6 +101,16 @@ func WriteText(w io.Writer, r Report) {
 		}
 	}
 
+	if r.Preflight != nil {
+		fmt.Fprintf(w, "\nPREFLIGHT (informational: %s)\n", r.Preflight.Text)
+		for _, p := range r.Preflight.Problems {
+			fmt.Fprintf(w, "  %-20s %s: %s\n", p.Code, p.Key, p.Detail)
+			if p.Next != "" {
+				fmt.Fprintf(w, "  %-20s next: %s\n", "", p.Next)
+			}
+		}
+	}
+
 	fmt.Fprintf(w, "\nBLIND SPOT  %s\n", r.BlindSpot.Text)
 	for _, u := range r.BlindSpot.Untraced {
 		n := ""
@@ -250,6 +260,21 @@ func WriteMarkdown(w io.Writer, r Report) {
 			fmt.Fprintf(w, "- `%s` %s.", n.Code, n.Text)
 			if n.Next != "" {
 				fmt.Fprintf(w, " Next: %s.", strings.TrimSuffix(n.Next, "."))
+			}
+			fmt.Fprintln(w)
+		}
+		fmt.Fprintln(w)
+	}
+
+	if r.Preflight != nil {
+		fmt.Fprintln(w, "### Preflight")
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "_Informational: %s._\n", r.Preflight.Text)
+		fmt.Fprintln(w)
+		for _, p := range r.Preflight.Problems {
+			fmt.Fprintf(w, "- `%s` `%s`: %s.", p.Code, p.Key, strings.TrimSuffix(p.Detail, "."))
+			if p.Next != "" {
+				fmt.Fprintf(w, " Next: %s.", strings.TrimSuffix(p.Next, "."))
 			}
 			fmt.Fprintln(w)
 		}

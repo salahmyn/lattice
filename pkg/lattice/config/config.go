@@ -106,6 +106,18 @@ type Runtime struct {
 	// Probes are smoke checks against the booted app: a health endpoint
 	// plus one probe per shipped entry point.
 	Probes []Probe `yaml:"probes,omitempty"`
+	// Services are what the app needs running before install, build or
+	// boot (a local database, a cache). The preflight checks each answers
+	// on TCP; Lattice never starts them.
+	Services []Service `yaml:"services,omitempty"`
+}
+
+// Service is a TCP service a gate needs running before it starts.
+type Service struct {
+	// Name labels the service in a report, e.g. "postgres".
+	Name string `yaml:"name,omitempty"`
+	// Address is host:port, e.g. "localhost:5432".
+	Address string `yaml:"address"`
 }
 
 // Probe is one HTTP smoke check run against the booted application.

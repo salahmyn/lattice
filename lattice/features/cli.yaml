@@ -15,3 +15,5 @@ invariants:
     statement: init leaves .gitignore ignoring the workspace's cache and derived graph, appending only the missing lines and never rewriting the user's.
   - id: INV-3
     statement: A build without link-time version flags reports the module version and the commit, time and modified state the Go toolchain embedded; values set at link time are never replaced.
+  - id: INV-4
+    statement: A preflight refuses break, runs-clean or demonstrate before any step runs, exiting 2 with every problem found (code, config key, fix) when a declared executable, runner dir, Node minimum, Docker daemon or service is missing or unmet, or break's tree is dirty; check only notes its break.runners problems; --no-preflight skips it.

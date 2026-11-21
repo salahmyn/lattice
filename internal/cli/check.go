@@ -29,7 +29,7 @@ func usageError(io *IO, code, msg string) error {
 // newCheckCommand is `lattice check --base <rev>`: one verdict for a change.
 func newCheckCommand(io *IO) *cobra.Command {
 	var base string
-	var markdown, ci, snapshot bool
+	var markdown, ci, snapshot, noPreflight bool
 	cmd := &cobra.Command{
 		Use:   "check --base <rev>",
 		Short: "One verdict for a change: BROKEN, UNPROVEN or ASSURED",
@@ -76,6 +76,14 @@ GITHUB_RUN_ID or CI_PIPELINE_ID that 'results ingest' and 'break' record);
 anything else reads unknown (EVIDENCE_NOT_CI). That includes confirm.json:
 under --ci a confirm file of a local run or of another commit confirms
 nothing. Only CI's verdict counts.
+
+When break.runners is declared, check runs its preflight: each runner's
+executable is on PATH, its dir exists, a Node minimum declared in
+package.json engines.node is met, and the Docker daemon answers for a runner
+that runs docker. check runs no test, so a problem is a note, never a
+refusal: the report carries it as preflight (code, config key, fix) and the
+verdict, merge_allowed and the exit code stay as they are. --no-preflight
+skips it.
 
 Exit codes: 0 for ASSURED or an allowed UNPROVEN; 1 for BROKEN or a
 disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
@@ -128,7 +136,7 @@ disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
 				return nil
 			}
 
-			rep, err := check.Run(cmd.Context(), ws, kg, check.RunOptions{Base: base, CI: ci, SaveSnapshot: true, Calls: calls})
+			rep, err := check.Run(cmd.Context(), ws, kg, check.RunOptions{Base: base, CI: ci, SaveSnapshot: true, Calls: calls, NoPreflight: noPreflight})
 			if err != nil {
 				var re *check.RunError
 				if errors.As(err, &re) {
@@ -160,6 +168,7 @@ disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
 	cmd.Flags().StringVar(&base, "base", "", "git ref to compare with; the base is merge-base(<rev>, HEAD) (required)")
 	cmd.Flags().BoolVar(&markdown, "markdown", false, "print Markdown for a PR comment")
 	cmd.Flags().BoolVar(&ci, "ci", false, "count only evidence stamped with the head commit and a CI run")
+	cmd.Flags().BoolVar(&noPreflight, "no-preflight", false, noPreflightUsage)
 	cmd.Flags().BoolVar(&snapshot, "snapshot", false, "only save the audit of HEAD as lattice/.cache/audit/<sha>.json (for a base branch job)")
 	return cmd
 }

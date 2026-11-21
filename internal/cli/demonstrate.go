@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/salahmyn/lattice/internal/preflight"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/flags"
 	"github.com/salahmyn/lattice/pkg/lattice/ledger"
@@ -42,12 +43,21 @@ type demonstrateCheck struct {
 // sign-off does not clear it.
 func newDemonstrateCommand(io *IO) *cobra.Command {
 	var brdFilter string
-	var skipV0 bool
+	var skipV0, noPreflight bool
 	cmd := &cobra.Command{
 		Use:   "demonstrate",
 		Short: "QAE sign-off: V0 + V4 + V5 + V10 + sweep, executed now, ledgered",
+		Long: `Runs the sign-off checks in gate order: V0 runs-clean, V4 verifiers passed,
+V5 journeys covered, V10 mutation evidence (tier 2+) and the forbidden-move
+sweep, and ledgers the sign-off only when every check is green.
+
+When V0 will run, the runs-clean preflight runs first, before the graph is
+built: the runtime commands' executables, a Node minimum declared in
+package.json engines.node, the Docker daemon for a command that runs docker,
+and runtime.services. It lists every problem at
+once and exits 2. --no-preflight skips it.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			kg, ws, err := graphFor(io, cmd, false)
+			ws, err := openWorkspace(io)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
@@ -55,6 +65,15 @@ func newDemonstrateCommand(io *IO) *cobra.Command {
 			if cfg.IsLite() {
 				return io.fail("PROFILE_LITE",
 					"the lite profile's ceiling is wired — it cannot sign off a demonstration; adopt the full profile first", nil)
+			}
+			if !noPreflight && !skipV0 && cfg.Runtime.Configured() {
+				if err := runPreflight(cmd.Context(), io, "demonstrate", preflight.Runtime(cfg.Runtime, io.Repo)); err != nil {
+					return err
+				}
+			}
+			kg, err := buildGraph(cmd.Context(), ws, false)
+			if err != nil {
+				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
 
 			set := results.Load(ws.LatticeDir).WithTests(kg.Tests)
@@ -165,6 +184,7 @@ func newDemonstrateCommand(io *IO) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&brdFilter, "brd", "", "limit the sign-off scope to one BRD")
 	cmd.Flags().BoolVar(&skipV0, "skip-v0", false, "skip the runs-clean gate (weakens the sign-off; says so)")
+	cmd.Flags().BoolVar(&noPreflight, "no-preflight", false, noPreflightUsage)
 	return cmd
 }
 
