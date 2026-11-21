@@ -37,7 +37,9 @@ func MapHTML(g store.Graph, title string) ([]byte, error) {
 
 // MapPage returns the map page with d and the layout library inlined, so it
 // works as a single file without a server or a network (lattice export map).
-// A non-empty title replaces "Block map".
+// A non-empty title replaces "Block map". The page lays its first view out to
+// the shape of the pane it opens in.
+// @enforces ui:INV-7
 func MapPage(d MapData, title string) ([]byte, error) {
 	data, err := json.Marshal(d) // escapes < and >, so the data cannot close its <script>
 	if err != nil {
@@ -75,8 +77,10 @@ func (s *Server) withStore(w http.ResponseWriter, fn func(store.Store) (any, err
 // pageMap serves the map without its graph: the page fetches /api/graph,
 // whose first answer can take seconds while the knowledge graph and the
 // audit are built, behind a live load status that turns into an error with a
-// retry when the fetch fails.
+// retry when the fetch fails. Like the exported page, it lays its first view
+// out to the shape of the pane.
 // @enforces ui:INV-6
+// @enforces ui:INV-7
 func (s *Server) pageMap(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	page := bytes.Replace(mapHTML, []byte(graphSlot), nil, 1)
