@@ -173,3 +173,28 @@ func TestCheckHTTPOrigins(t *testing.T) {
 		}
 	}
 }
+
+// Each http.secrets entry must map a non-empty secret name to a path that
+// starts with a slash; a bad one is a VALIDATE_POLICY error naming its key.
+// @verifies reachability:INV-11
+func TestCheckHTTPSecrets(t *testing.T) {
+	if v := CheckHTTPSecrets(map[string]string{"ai_enrich_url": "/functions/v1/ai-enrich", "hook": "/api/hook/:id"}); len(v) != 0 {
+		t.Errorf("valid secrets: %+v", v)
+	}
+	v := CheckHTTPSecrets(map[string]string{"ok": "/x", "no_slash": "functions/v1/x", "url": "https://app.example.com/x", "empty_path": "", "": "/x", " ": "/y"})
+	subjects := map[string]bool{}
+	for _, x := range v {
+		if x.Code != schema.CodeValidatePolicy || x.Severity != schema.SeverityError {
+			t.Errorf("violation = %+v", x)
+		}
+		subjects[x.Subject] = true
+	}
+	for _, want := range []string{`http.secrets["no_slash"]`, `http.secrets["url"]`, `http.secrets["empty_path"]`, `http.secrets[""]`, `http.secrets[" "]`} {
+		if !subjects[want] {
+			t.Errorf("no violation for %s: %+v", want, v)
+		}
+	}
+	if len(v) != 5 {
+		t.Errorf("want 5 violations, got %d: %+v", len(v), v)
+	}
+}

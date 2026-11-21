@@ -227,6 +227,21 @@ func (b *builder) ownOrigin(origin string) bool {
 // firstLines is how many call sites an aggregated finding lists.
 const firstLines = 3
 
+// undeclaredSecrets lists, sorted and once each, the Vault secrets the
+// requests read their URL whole from without a declared route.
+func undeclaredSecrets(us []Unresolved) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, u := range us {
+		if u.Secret != "" && !seen[u.Secret] {
+			seen[u.Secret] = true
+			out = append(out, u.Secret)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // HTTPFindings raises the findings of the http join, at info:
 //
 //   - HTTP_CALL_UNSERVED, one per literal request that no extracted route
@@ -283,13 +298,20 @@ func HTTPFindings(r *Result) []schema.Violation {
 		if len(us) > len(lines) {
 			more = fmt.Sprintf(" and %d more", len(us)-len(lines))
 		}
+		detail := "write the path and the method as literals where the call is fixed; a computed URL never makes an edge"
+		secrets := undeclaredSecrets(us)
+		note := ""
+		if len(secrets) > 0 {
+			list := strings.Join(secrets, ", ")
+			note = fmt.Sprintf("; the URL is read whole from the Vault secret(s) %s, which no http.secrets entry declares", list)
+			detail = fmt.Sprintf("declare the route each secret holds in lattice/workspace.yaml under http.secrets (%s: /functions/v1/<name>), or write the path as a literal", secrets[0])
+		}
 		out = append(out, schema.Violation{
 			Code: schema.CodeHTTPCallDynamic, Severity: schema.SeverityInfo,
-			Subject:  f,
-			Message:  fmt.Sprintf("%s sends %d request(s) whose URL or method is computed, so which route they call is unknown (lines %s%s; evidence: static call graph)", f, len(us), strings.Join(lines, ", "), more),
-			Location: &schema.Location{File: f, Line: us[0].Line},
-			NextAction: &schema.NextAction{Kind: "edit_code",
-				Detail: "write the path and the method as literals where the call is fixed; a computed URL never makes an edge"},
+			Subject:    f,
+			Message:    fmt.Sprintf("%s sends %d request(s) whose URL or method is computed, so which route they call is unknown (lines %s%s%s; evidence: static call graph)", f, len(us), strings.Join(lines, ", "), more, note),
+			Location:   &schema.Location{File: f, Line: us[0].Line},
+			NextAction: &schema.NextAction{Kind: "edit_code", Detail: detail},
 		})
 	}
 	return out

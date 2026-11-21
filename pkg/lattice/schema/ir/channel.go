@@ -71,3 +71,11 @@ type ChannelConfigurable interface {
 type HTTPOriginConfigurable interface {
 	SetHTTPOrigins(origins []string)
 }
+
+// HTTPSecretConfigurable is implemented by an adapter that reads the declared
+// secrets (workspace.yaml http.secrets): a secret name mapped to the route
+// path the URL it holds points at. Extraction calls it once, before any file
+// is parsed.
+type HTTPSecretConfigurable interface {
+	SetHTTPSecrets(secrets map[string]string)
+}

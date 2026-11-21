@@ -13,6 +13,9 @@ import (
 type refOpts struct {
 	// settings are the declared setting:<name> origins, lower-cased.
 	settings map[string]bool
+	// secrets maps a Vault secret name to the route path its URL points at
+	// (SetHTTPSecrets).
+	secrets map[string]string
 }
 
 // SetHTTPOrigins declares the origins of workspace.yaml http.origins. The
@@ -20,7 +23,7 @@ type refOpts struct {
 // URL that is exactly current_setting('<name>') and a literal path is
 // path-only (see originPath). Call it before parsing.
 func (a *Adapter) SetHTTPOrigins(origins []string) {
-	a.opts = refOpts{}
+	a.opts.settings = nil
 	for _, n := range ir.OriginNames(origins, "setting") {
 		if a.opts.settings == nil {
 			a.opts.settings = map[string]bool{}
@@ -41,7 +44,9 @@ var (
 //   - net.http_post(url := ...) is a POST and net.http_get(url := ...) a GET;
 //     net.http_request takes its method from a literal method argument;
 //   - the URL is a literal, or a concatenation that is one declared
-//     current_setting origin followed by literals (see originPath).
+//     current_setting origin followed by literals (see originPath), or a
+//     variable set once from a declared Vault secret, alone or followed by
+//     literals (see vaultURL).
 //
 // Any other URL, and a method that is not a literal, gives a ref with no name,
 // which the core counts as dynamic. Comments, and string literals unless
@@ -49,6 +54,7 @@ var (
 // @enforces reachability:INV-11
 func (o refOpts) httpRefs(text string, line int, withStrings bool) []ir.Ref {
 	code := maskSQL(text, withStrings)
+	reads := vaultReads(text)
 	var out []ir.Ref
 	for _, m := range reNetHTTP.FindAllStringSubmatchIndex(code, -1) {
 		fn := strings.ToLower(code[m[2]:m[3]])
@@ -90,6 +96,12 @@ func (o refOpts) httpRefs(text string, line int, withStrings bool) []ir.Ref {
 		if path, ok := o.originPath(urlExpr); ok && mok {
 			ref.Name = ir.HTTPKey(method, path)
 			ref.Qualifier = ir.HTTPOrigin(path)
+		} else if path, secret, ok := o.vaultURL(urlExpr, m[0], reads); ok {
+			if path != "" && mok {
+				ref.Name = ir.HTTPKey(method, path)
+			} else if path == "" {
+				ref.Secret = secret // read whole from Vault and not declared: the finding names it
+			}
 		}
 		out = append(out, ref)
 	}

@@ -392,3 +392,41 @@ func TestHTTPDistinctHandlersOnOnePathStayAmbiguous(t *testing.T) {
 		t.Errorf("two declared handlers on one key stay ambiguous:%s", joined(edges(g, "http")))
 	}
 }
+
+const vaultFunction = "create function public.call_x() returns void language plpgsql as $$\ndeclare v_url text;\nbegin\n" +
+	"  select decrypted_secret into v_url from vault.decrypted_secrets where name = 'x_url';\n" +
+	"  perform net.http_post(url := v_url);\nend $$;\n"
+
+// A function that reads an edge function's URL whole from a declared Vault
+// secret joins the function: one resolved http edge to its serve node. The
+// same read with no declaration stays dynamic, and the finding names the
+// secret to declare.
+// @verifies reachability:INV-11
+func TestHTTPVaultSecretJoinsEdgeFunction(t *testing.T) {
+	build := func(secrets map[string]string) *reach.Graph {
+		mods := parse(t, typescript.New(), edgeFunctionLayout("x"))
+		pg := postgres.New(nil, nil)
+		pg.SetHTTPSecrets(secrets)
+		mods = append(mods, parse(t, pg, map[string]string{"db/migrations/001_fn.sql": vaultFunction})...)
+		return reach.Build(mods, reach.Options{})
+	}
+	g := build(map[string]string{"x_url": "/functions/v1/x"})
+	want := []string{"sql.public.call_x -> supabase.functions.x.index.<serve>"}
+	if got := edges(g, "http"); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("http edges:%s\nwant:%s", joined(got), joined(want))
+	}
+
+	g = build(nil)
+	if got := edges(g, "http"); len(got) != 0 {
+		t.Errorf("an undeclared secret makes no edge:%s", joined(got))
+	}
+	var msg, detail string
+	for _, v := range reach.HTTPFindings(reach.Classify(g, nil)) {
+		if v.Code == schema.CodeHTTPCallDynamic {
+			msg, detail = v.Message, v.NextAction.Detail
+		}
+	}
+	if !strings.Contains(msg, "x_url") || !strings.Contains(detail, "http.secrets") {
+		t.Errorf("the finding must name the secret to declare:\n  %s\n  %s", msg, detail)
+	}
+}

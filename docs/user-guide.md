@@ -433,8 +433,8 @@ runtime root, so the root is not proposed, when any of these holds:
   `trigger.job`; or, when either names no job, with the same
   `trigger.schedule` and a handler the job's body reaches: by a direct call, or
   by one `http` hop (`net.http_post` to `/functions/v1/<name>`, see
-  [HTTP edges](#4q-http-edges-and-edge-truth)) followed by direct calls of that
-  function's code, to a depth of 3 edges. A different schedule never covers, a
+  [HTTP edges](#4q-http-edges-and-edge-truth)), the job's own or that of a function
+  it calls, followed by direct calls of that function's code, to a depth of 3 edges. A different schedule never covers, a
   different job name always keeps two jobs apart, and two jobs on one schedule
   that reach different functions are never merged;
 - the root is a detected route and the entry point has the same kind, method
@@ -3186,6 +3186,33 @@ A URL that is exactly one such origin followed by literal text is path-only:
 `${}`, a variable in the path) keeps the URL `dynamic`, and so does a variable or setting
 nothing declares. `name` is letters, digits and `_` for `env:`, and also `.` and `-`
 for `setting:`; an empty or malformed name is a `VALIDATE_POLICY` error.
+
+A URL read whole from Supabase Vault has no literal path anywhere in the code, so no
+origin rule can join it. Declare which route each secret holds, in `lattice/workspace.yaml`:
+
+```yaml
+http:
+  secrets:
+    ai_enrich_url: /functions/v1/ai-enrich   # the secret holds the full URL of this route
+```
+
+The SQL adapter then reads, inside one function body, a variable set from that secret by
+`select decrypted_secret into v from vault.decrypted_secrets where name = 'ai_enrich_url'`
+or by `v := (select decrypted_secret from vault.decrypted_secrets where name = '...')`
+(`name = '<literal>'` may sit anywhere in the `where`, and the view may carry an alias). A
+`net.http_*` call whose `url` is exactly that variable, or the variable `|| '/literal'`,
+gets the key of the declared path plus the literal (a scalar subquery of the same read
+works as the URL too). The read is function-local and straight-line: a variable that is
+assigned twice or after the request, a secret name that is computed or is one of several
+(`or`), or any other computed part keeps the URL `dynamic`. A secret nothing declares stays
+`dynamic` too, and `HTTP_CALL_DYNAMIC` names it and says to declare it under `http.secrets`.
+Each key is a non-empty secret name and each value a path that starts with `/`; a bad entry
+is a `VALIDATE_POLICY` error, and the join ignores it.
+
+A cron job that runs such a function reaches the edge function's handler (the job's call to
+the function, the function's http hop, the serve call, the handler: three edges), so a
+declared `cron` entry point for the handler on the job's schedule covers the job and it is
+not proposed again.
 
 **In ends** are the routes the code serves: routes the adapters detected
 (`app.get('/api/orders', listOrders)`), declared `http_route` entry points

@@ -31,7 +31,7 @@ invariants:
   - id: INV-10
     statement: A slice with an unknown hop is never complete.
   - id: INV-11
-    statement: An HTTP edge exists only when a literal client call and a served route were both extracted and their normalised keys are equal; a computed URL never makes an edge, an edge function and the declared route that covers it are one end (different handlers on one key stay ambiguous), and an origin counts as own only when http.origins lists it.
+    statement: An HTTP edge exists only when a literal client call and a served route were both extracted and their normalised keys are equal; a computed URL never makes an edge, an edge function and the declared route covering it are one end, and an origin or a Vault secret counts as own only when http.origins or http.secrets declares it.
   - id: INV-12
     statement: A slice hop is exercised only when one verifier's own run executed symbols on both sides of it; without per-test coverage no hop reads exercised.
   - id: INV-13

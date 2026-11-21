@@ -65,6 +65,9 @@ type Unresolved struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name,omitempty"`
 	Qualifier string `json:"qualifier,omitempty"`
+	// Secret is the Vault secret a computed request read its URL whole from,
+	// when no http.secrets entry declares its route.
+	Secret string `json:"secret,omitempty"`
 	// Why: ambiguous (several members share the name, or several routes
 	// serve the request), missing (it names a module of the workspace, or a
 	// database function, that has no such symbol, or a handler that is no
@@ -538,7 +541,7 @@ func (b *builder) resolve(mc *modCtx, owner *node, from string, r ir.Ref) {
 			g.Stats.NoRoute++
 		}
 		g.Unresolved = append(g.Unresolved, Unresolved{From: from, File: m.File, Line: r.Line, Kind: r.Kind,
-			Name: r.Name, Qualifier: r.Qualifier, Why: why, Candidates: cands})
+			Name: r.Name, Qualifier: r.Qualifier, Secret: r.Secret, Why: why, Candidates: cands})
 	}
 	external := func() { g.Stats.External++ }
 
