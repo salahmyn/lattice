@@ -2,6 +2,75 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.21.0] — 2026-11-21
+
+Two `lattice break` results that could read as a pass without one are fixed: a cached outcome
+reused on another tree, and a SQL policy broken where a later migration overwrote the break. A
+client's HTTP call now joins the route that serves it, and a slice shows which hops a test really
+ran.
+
+### Fixed
+
+- **A cached break outcome is reused only on the tree it was measured on.**
+  - **What went wrong.** A commit that changed a file the runner reads, such as a SQL migration
+    outside the enforcer, used to print `killed (cached)` even though every baseline then failed.
+  - **Default.** An outcome is now reused only on the same tree.
+  - **Opt-in across commits.** A runner can declare `break.runners[].inputs` (globs of the files it
+    reads) to reuse across commits that leave those files unchanged.
+  - **Failed baselines.** A cached outcome is never reused over a baseline that failed at this tree.
+  - **Contract.** `breaks.json` gains an optional `inputs_hash`.
+- **A SQL break edits the statement that sets the object's effective definition.**
+  - **What went wrong.** A policy changed by a later `ALTER POLICY … USING (…)` was broken at its
+    `CREATE`. A full reset then overwrote the break, which read a false `survived`.
+  - **Now.** The postgres adapter records `ALTER POLICY/FUNCTION/TRIGGER` (and renames) on the
+    effective symbol. The break goes on the last statement that sets `USING` or `WITH CHECK`, in
+    whichever migration it is.
+  - **The object swap.** For an ALTER target, `{patched_sql}` and `{original_sql}` are that ALTER
+    alone. When a later statement touches the object, the run reads `unknown` with a reason.
+  - **Generator version.** It is 4, so cached SQL outcomes are recomputed once.
+- **Runtime-root proposals no longer duplicate declared entry points.**
+  - **Serve handlers.** A serve handler is covered by an `http_route` or `webhook` entry point whose
+    handler is in its module or file.
+  - **Cron jobs.** A cron job is covered by a `cron` entry point with the same job name, or with the
+    same schedule and a handler the job's body calls.
+  - **Edge function path.** A serve proposal for `supabase/functions/<name>/index.ts` carries
+    `trigger.path: /functions/v1/<name>`.
+- **A proposal never raises a warning.** `UNCLASSIFIED_ENTRY_POINT`, `DUPLICATE_TRIGGER` and
+  `HANDLER_MISSING` report a `status: proposal` entry point as info, so proposals cannot turn a
+  `fail_on: warning` gate red.
+- **"Did not apply (runner exit 125)" quotes from the `ERROR:` token**, so a JSON log line reads as
+  its message.
+- **A held break lock prints `BREAK_LOCKED:`** in text mode.
+
+### Added
+
+- **HTTP edges.** A literal `fetch`, `axios` or `supabase.functions.invoke` call is a reference of
+  kind `http`, keyed by method and normalised path.
+  - **When it joins.** The reach graph joins it to a detected route, a declared `http_route` entry
+    point or an edge function only when both ends were extracted and the keys are equal. `:id`,
+    `{id}` and `[id]` match each other.
+  - **When it does not.** Several matches are ambiguous. A computed URL never makes an edge. An
+    absolute URL joins only when its origin is listed in `http.origins` in `lattice/workspace.yaml`.
+  - **Findings.** `validate` adds `HTTP_CALL_UNSERVED` and `HTTP_CALL_DYNAMIC` (info).
+  - **Edge truth.** `BlockEdge` gains `truth`.
+- **Exercised hops in `lattice slice`.** A hop is exercised only when one verifier's own per-test
+  run executed symbols on both sides of it, marked `=kind=>`. A browser test with a faked backend no
+  longer shows the API or the database as run.
+  - **Layer spans.** Each verifier is listed with the layers its run covered, or `unknown` without
+    per-test coverage.
+  - **Contract.** `lattice.slice/1` gains `exercised`, `exercised_by`, `exercised_hops` and
+    `verifiers`.
+- **`layer` on audit enforcer outcomes.** `lattice audit --json` rows carry `layer` on their
+  `enforcers[]` entries too.
+
+### Behaviour changes to plan for
+
+- **Break runs are slower at first.** Cached break outcomes from earlier versions are not reused,
+  and outcomes are reused only on the same tree unless runners declare `inputs`. The first
+  `lattice break` after upgrading re-runs everything, and so does the first run on each new commit.
+- **Fewer SQL survivals on altered policies.** Breaks of policies with a later `ALTER POLICY` change
+  outcome: survivals there were false.
+
 ## [0.20.0] — 2026-11-21
 
 Lattice now says what kind of runtime each piece of code lives in. Code the runtime invokes becomes
