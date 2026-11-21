@@ -401,12 +401,43 @@ detected_by: runtime_root:cron
 ```
 
 A `serve` handler takes kind `http_route`; a cron job takes kind `cron`
-with its schedule and job name when they are string literals. Proposals are
+with its schedule and job name when they are string literals. A serve
+handler in `supabase/functions/<name>/index.ts` gets `trigger.path:
+/functions/v1/<name>` and no method, since a `Deno.serve` handler answers
+every method (a directory whose name starts with an underscore, such as
+`_shared`, is not a function and gets no path). Proposals are
 never promoted by themselves: `lattice ep accept <id>` writes its manifest
 with `status: production` (the flow stays derived), and `lattice ep reject
 <id>` writes it straight into `.rejected/` so extract does not propose it
 again. Nothing is written until you accept or reject; a manifest that
 already exists is never rewritten.
+
+**What counts as covered.** A declared or detected entry point stands for a
+runtime root, so the root is not proposed, when any of these holds:
+
+- its handler symbol is the root's handler;
+- the root is a serve handler, the entry point is an `http_route` or a
+  `webhook`, and its handler symbol or handler file lies in the serve
+  handler's module: a manifest names the function the handler calls, or the
+  file, not the serve node, which has no name of its own;
+- the root is a cron job and the entry point is a `cron` with the same
+  `trigger.job`; or, when the entry point names no job, with the same
+  `trigger.schedule` and a handler the job's body calls directly. A different
+  job name always keeps two jobs apart, and two jobs on one schedule that
+  call different functions are never merged;
+- the root is a detected route and the entry point has the same kind, method
+  and path.
+
+Proposals that were derived from roots never cover anything themselves.
+
+**Proposals never warn.** `UNCLASSIFIED_ENTRY_POINT`, `DUPLICATE_TRIGGER` and
+`HANDLER_MISSING` report an entry point with `status: proposal` as `info`
+instead of `warning`: a proposal is a suggestion, and a job that only calls
+an edge function over HTTP legitimately reaches no feature, so it must not
+turn a `fail_on: warning` gate red by itself. A collision between a proposal
+and a declared entry point is info too. `PHANTOM_FLOW` stays an error, and
+accepting a proposal (`status: production`) puts the three rules back at
+their normal severity.
 
 The flow of a proposal comes from the call graph, not from file proximity:
 one step per feature with a symbol the handler reaches through resolved

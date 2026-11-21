@@ -21,3 +21,5 @@ invariants:
     statement: Every root the runtime invokes is an entry point or a named finding.
   - id: INV-6
     statement: A flow step exists only when the handler reaches a symbol of that feature, or it is labelled proximity.
+  - id: INV-7
+    statement: A proposed entry point raises no warning; the entry-point rules that would warn on it report info.

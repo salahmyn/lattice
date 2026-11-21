@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/salahmyn/lattice/pkg/lattice/adapters/postgres"
@@ -65,5 +66,55 @@ func TestRuntimeRootProposalsValidate(t *testing.T) {
 	}
 	if count[schema.CodeRuntimeRootUnproposed] != 1 {
 		t.Errorf("want one RUNTIME_ROOT_UNPROPOSED (the route with no handler), got %d", count[schema.CodeRuntimeRootUnproposed])
+	}
+}
+
+// A proposed entry point never raises a warning: one with an empty flow (a
+// job that only calls out over HTTP), a handler the symbol index lacks, or a
+// trigger another entry point holds reports info. A declared one still warns,
+// and so does a proposal's flow that names a missing feature (an error).
+// @verifies entrypoints:INV-7
+func TestProposalsRaiseNoWarnings(t *testing.T) {
+	kg := schema.KnowledgeGraph{
+		Features: []schema.Manifest{{ID: "a", Version: 1, Status: schema.StatusProduction, Purpose: "a"}},
+		Symbols:  []schema.GraphSymbol{{FQN: "x.real"}},
+		EntryPoints: []schema.EntryPoint{
+			{ID: "ep.cron.one", Kind: schema.EntryPointKindCron, Status: schema.StatusProposal,
+				Trigger: schema.Trigger{Schedule: "0 3 * * *"}, Handler: schema.Handler{Symbol: "x.real"}},
+			{ID: "ep.cron.two", Kind: schema.EntryPointKindCron, Status: schema.StatusProposal,
+				Trigger: schema.Trigger{Schedule: "0 3 * * *"}, Handler: schema.Handler{Symbol: "x.gone"}},
+			{ID: "ep.cron.declared", Kind: schema.EntryPointKindCron, Status: schema.StatusProduction,
+				Trigger: schema.Trigger{Schedule: "0 3 * * *"}, Handler: schema.Handler{Symbol: "x.real"}},
+			{ID: "ep.cron.bad", Kind: schema.EntryPointKindCron, Status: schema.StatusProposal,
+				Trigger: schema.Trigger{Job: "j"}, Handler: schema.Handler{Symbol: "x.real"},
+				Flow: []schema.FlowStep{{Feature: "ghost"}}},
+		},
+	}
+	sev := map[string]string{} // code|subject-id -> severity
+	for _, v := range checkEntryPoints(kg, nil) {
+		for _, id := range []string{"ep.cron.one", "ep.cron.two", "ep.cron.declared", "ep.cron.bad"} {
+			if strings.Contains(v.Message, `"`+id+`"`) {
+				sev[v.Code+"|"+id] = string(v.Severity)
+			}
+		}
+	}
+	want := map[string]string{
+		schema.CodeUnclassifiedEntryPoint + "|ep.cron.one":      "info",
+		schema.CodeUnclassifiedEntryPoint + "|ep.cron.two":      "info",
+		schema.CodeHandlerMissing + "|ep.cron.two":              "info",
+		schema.CodeDuplicateTrigger + "|ep.cron.two":            "info", // collides with a proposal
+		schema.CodeUnclassifiedEntryPoint + "|ep.cron.declared": "warning",
+		schema.CodeDuplicateTrigger + "|ep.cron.declared":       "info", // the first claimant is a proposal
+		schema.CodePhantomFlow + "|ep.cron.bad":                 "error",
+	}
+	for k, w := range want {
+		if sev[k] != w {
+			t.Errorf("%s: severity %q, want %q", k, sev[k], w)
+		}
+	}
+	for k, s := range sev {
+		if _, ok := want[k]; !ok && s == "warning" {
+			t.Errorf("%s: unexpected warning", k)
+		}
 	}
 }
