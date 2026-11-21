@@ -75,6 +75,11 @@ func Execute(ctx context.Context, kg schema.KnowledgeGraph, opts Options) (Repor
 		}
 	}
 	if len(targets) > 0 {
+		release, err := acquireLock(opts.LatticeDir, opts.warn())
+		if err != nil {
+			return rep, err
+		}
+		defer release()
 		if r.wt, err = NewWorktree(ctx, repo, repo.Dirty); err != nil {
 			return rep, err
 		}

@@ -4,6 +4,7 @@ package breaktest
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -31,6 +32,16 @@ type Options struct {
 	Config     config.Config
 	LatticeDir string // absolute path of lattice/
 	CodeRoot   string // absolute path of the primary code root
+	// Warn receives notes such as a reclaimed stale lock; nil is os.Stderr.
+	Warn io.Writer
+}
+
+// warn is where notes go.
+func (o Options) warn() io.Writer {
+	if o.Warn != nil {
+		return o.Warn
+	}
+	return os.Stderr
 }
 
 // Selects reports whether a promise is one the options ask for: every

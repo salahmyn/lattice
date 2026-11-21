@@ -1321,6 +1321,18 @@ apply (runner exit 125)", with the runner's last output line), never `killed`,
 whatever else the output says. A setup step that fails must not count as a
 verifier noticing the break, so end such a step with `|| exit 125`.
 
+**One break run per repository.** A run that executes runners (`lattice break`,
+`lattice break --fails-on-base`) takes an exclusive lock, the file
+`lattice/.cache/results/break.lock`, which holds its pid and start time and is
+removed when the run ends, including on an error, Ctrl-C or SIGTERM. A second
+run fails at once with `BREAK_LOCKED`: "another lattice break is running (pid
+N, started <time>); wait for it or remove lattice/.cache/results/break.lock if
+it is gone". Runners that share a resource, such as one database, would corrupt
+each other's results. If the pid no longer exists on this machine the lock is
+reclaimed, with a note on stderr. On Windows the pid is not checked, so a lock
+left by a killed run is removed by hand. A run that has nothing to execute takes
+no lock.
+
 **The generated break** is an early return at the top of the enforcer's
 body, with the rest left in place so imports and variables stay used. Go
 returns zero values (`if true { return }` for named or no results);

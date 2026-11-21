@@ -35,3 +35,5 @@ invariants:
     statement: lattice break exits 1 with --fail-on when a shown run has a listed outcome, and its output says so when no shown break ran; without --fail-on the exit code does not depend on the outcomes.
   - id: INV-13
     statement: A baseline is reused only for an identical invocation on an identical tree, and never when it timed out or errored.
+  - id: INV-14
+    statement: A break run that executes runners holds an exclusive lock on the repository (lattice/.cache/results/break.lock, created with O_EXCL, holding its pid and start time) until it ends, a second run fails fast naming the holder, and a lock whose process is gone is reclaimed; a run that executes nothing takes no lock.
