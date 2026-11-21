@@ -4271,6 +4271,34 @@ This is a fact, never a pass: the finding fires either way, and a function that 
 caller's identity can still let a parameter decide. Findings whose body reads none are listed
 first. The finding stays info and always on, so `fail_on: warning` stays green.
 
+**Three more facts on `ENFORCER_EXPOSED`.** Each is read from the migrations and stated only
+when it holds:
+
+- *Identity through a helper.* A function whose body reads no identity itself but calls a SQL
+  function of the workspace that does (a bare name resolves to `public`, as PostgreSQL's default
+  search path does) reads it through that helper, one level: the helper's own read, not what its
+  helpers read. The finding cites both: `reads the caller's identity (via public.is_admin() →
+  auth.uid() at supabase/migrations/20260102000000_access.sql:5)`. A builtin, a function no
+  migration creates and a name created with more than one argument list are not followed.
+- *Authentication by a hash.* A hash function (`digest`, `crypt`, `md5`, `sha224` to `sha512`,
+  `hmac`, also inside `encode(...)` or a cast) applied to an expression that names one of the
+  function's parameters, by name or `$n`, and compared with `=` to a name in a `WHERE` or an
+  `IF`, reads as `authenticates by a hash of parameter p_token (file:line)`. It is a different
+  kind of identity from `auth.uid()`: the finding says which. A hash of a column or a literal, a
+  hash that is only assigned or returned, and one inside a comment or a string are not read.
+- *Boolean parameters.* Each parameter declared `boolean` or `bool` is listed:
+  `It takes boolean parameter(s): p_ok.` Only the declared type counts; no name is read for a
+  meaning, and an output parameter or an array is not listed.
+
+```
+info  ENFORCER_EXPOSED  sql.public.device_ping enforces review.access:INV-2 and is executable by authenticated (...:29); it is SECURITY DEFINER (...:18): a client can call it directly, so its inputs are the client's. Its body reads no caller identity (auth.uid(), auth.jwt(), a request.jwt claim, current_user or session_user); it authenticates by a hash of parameter p_token (supabase/migrations/20260102000000_access.sql:20).
+```
+
+Findings are listed in four groups: reads no identity and takes a boolean parameter; reads no
+identity; takes a boolean parameter; the rest. A function that authenticates by a hash counts as
+reading an identity. The facts are about the body, never a pass: a function that reads an identity
+or hashes a token still fires, and the finding stays info and always on.
+
 ## 5. Day-to-day commands
 
 ```sh

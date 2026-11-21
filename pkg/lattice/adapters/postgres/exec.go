@@ -607,6 +607,9 @@ func headerExecute(file string, st statement, routine string) *ir.Execute {
 		ex.DefinerFile, ex.DefinerLine = file, st.line+strings.Count(mask[:loc[0]], "\n")
 	}
 	ex.Identity = callerIdentity(file, st)
+	params := functionParams(callArgs(maskSQL(st.text, false)))
+	ex.BoolParams = boolParams(params)
+	ex.HashAuth = hashAuth(file, st, params)
 	return ex
 }
 
@@ -702,6 +705,8 @@ type execState struct {
 	defFile   string
 	defLine   int
 	identity  *ir.CallerIdentity
+	hashAuth  *ir.HashAuth
+	boolArgs  []string
 	roles     map[string]ir.ExecuteGrant
 	unknown   string
 }
@@ -734,7 +739,8 @@ func grantState(verb string) string {
 func (f *execFold) create(fqn, schemaName string, sym ir.Symbol) {
 	raw := sym.Execute
 	st := &execState{schema: schemaName, procedure: raw.Procedure, sig: raw.Signature,
-		definer: raw.SecurityDefiner, defFile: raw.DefinerFile, defLine: raw.DefinerLine, identity: raw.Identity}
+		definer: raw.SecurityDefiner, defFile: raw.DefinerFile, defLine: raw.DefinerLine, identity: raw.Identity,
+		hashAuth: raw.HashAuth, boolArgs: raw.BoolParams}
 	if prev := f.state[fqn]; prev != nil {
 		st.roles, st.unknown = prev.roles, prev.unknown
 		if prev.sig != st.sig {
@@ -864,7 +870,8 @@ func (f *execFold) final(fqn string) *ir.Execute {
 	if st == nil {
 		return nil
 	}
-	ex := &ir.Execute{SecurityDefiner: st.definer, Signature: st.sig, Procedure: st.procedure, Unknown: st.unknown, Identity: st.identity}
+	ex := &ir.Execute{SecurityDefiner: st.definer, Signature: st.sig, Procedure: st.procedure, Unknown: st.unknown, Identity: st.identity,
+		HashAuth: st.hashAuth, BoolParams: st.boolArgs}
 	if st.definer {
 		ex.DefinerFile, ex.DefinerLine = st.defFile, st.defLine
 	}

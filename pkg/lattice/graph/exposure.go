@@ -251,13 +251,16 @@ func containsRole(list []string, role string) bool {
 //
 // Each ENFORCER_EXPOSED states whether the function's body reads the caller's
 // identity (auth.uid(), auth.jwt(), a request.jwt claim, current_user or
-// session_user), citing the first read, or that it reads none; the findings
-// that read none come first. It is a fact about the body, never a pass: the
+// session_user, directly or through a SQL function it calls), citing the first
+// read; whether it authenticates by a hash of one of its parameters; and which
+// parameters are declared boolean. The findings order: reads no identity and
+// takes a boolean parameter, then reads no identity, then takes a boolean
+// parameter, then the rest. Each is a fact about the body, never a pass: the
 // finding fires either way, because a caller-supplied parameter can still
 // decide the outcome.
 //
 // Both are info and stay on: a code that were off would hide an unknown.
-// @enforces adapters.postgres:INV-6, graph:INV-9
+// @enforces adapters.postgres:INV-6, graph:INV-9, graph:INV-10
 func CheckExposure(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string, defaultExecute *[]string) []schema.Violation {
 	var mem []ir.Membership
 	for _, m := range mods {
@@ -310,9 +313,10 @@ func CheckExposure(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string
 
 	verified := verifiedCases(kg)
 	var out []schema.Violation
-	// readsNone marks the ENFORCER_EXPOSED findings whose body reads no
-	// caller identity, which sort first.
-	readsNone := map[int]bool{}
+	// rankOf is the sort rank of each ENFORCER_EXPOSED finding: 0 reads no
+	// identity and takes a boolean parameter, 1 reads no identity, 2 takes a
+	// boolean parameter, 3 the rest.
+	rankOf := map[int]int{}
 	for _, fqn := range fqns {
 		sym := fns[fqn]
 		loc := &schema.Location{File: sym.File, Line: sym.Line}
@@ -346,15 +350,24 @@ func CheckExposure(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string
 		if sym.Execute.SecurityDefiner {
 			definer = fmt.Sprintf("; it is SECURITY DEFINER (%s:%d)", sym.Execute.DefinerFile, sym.Execute.DefinerLine)
 		}
-		identity := identityFact(sym.Execute.Identity)
+		identity := identityFact(sym.Execute)
+		reads := sym.Execute.Identity != nil || sym.Execute.HashAuth != nil
+		bools := len(sym.Execute.BoolParams) > 0
+		rank := 3
+		switch {
+		case !reads && bools:
+			rank = 0
+		case !reads:
+			rank = 1
+		case bools:
+			rank = 2
+		}
 		for _, ref := range enforces[fqn] {
 			if secured(kg, verified, fqn, ref) {
 				continue
 			}
 			f, inv, _ := strings.Cut(ref, ":")
-			if sym.Execute.Identity == nil {
-				readsNone[len(out)] = true
-			}
+			rankOf[len(out)] = rank
 			out = append(out, schema.Violation{
 				Code: schema.CodeEnforcerExposed, Severity: schema.SeverityInfo,
 				FeatureID: f, InvariantID: inv, Subject: fqn, Location: loc,
@@ -366,10 +379,10 @@ func CheckExposure(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string
 		}
 	}
 	rank := func(i int) int {
-		if readsNone[i] {
-			return 0
+		if r, ok := rankOf[i]; ok {
+			return r
 		}
-		return 1
+		return 3 // EXPOSURE_UNKNOWN keeps its place among the rest
 	}
 	idx := make([]int, len(out))
 	for i := range idx {
@@ -383,13 +396,33 @@ func CheckExposure(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string
 	return sorted
 }
 
-// identityFact states whether a function body reads the caller's identity.
-// It is a fact, not a verdict: neither answer says the function is safe.
-func identityFact(id *ir.CallerIdentity) string {
-	if id == nil {
-		return "Its body reads no caller identity (auth.uid(), auth.jwt(), a request.jwt claim, current_user or session_user)."
+// identityFact states what a function's body does about the caller's
+// identity, and which parameters it takes that are boolean. It is a fact, not
+// a verdict: no answer says the function is safe.
+func identityFact(ex *ir.Execute) string {
+	var b strings.Builder
+	if id := ex.Identity; id != nil {
+		fmt.Fprintf(&b, "Its body reads the caller's identity (%s at %s:%d); a caller-supplied parameter can still decide the outcome.", id.Via, id.File, id.Line)
+	} else {
+		b.WriteString("Its body reads no caller identity (auth.uid(), auth.jwt(), a request.jwt claim, current_user or session_user)")
+		if ex.HashAuth != nil {
+			b.WriteString(";")
+		} else {
+			b.WriteString(".")
+		}
 	}
-	return fmt.Sprintf("Its body reads the caller's identity (%s at %s:%d); a caller-supplied parameter can still decide the outcome.", id.Via, id.File, id.Line)
+	if h := ex.HashAuth; h != nil {
+		if ex.Identity != nil {
+			b.WriteString(" It")
+		} else {
+			b.WriteString(" it")
+		}
+		fmt.Fprintf(&b, " authenticates by a hash of parameter %s (%s:%d).", h.Param, h.File, h.Line)
+	}
+	if len(ex.BoolParams) > 0 {
+		fmt.Fprintf(&b, " It takes boolean parameter(s): %s.", strings.Join(ex.BoolParams, ", "))
+	}
+	return b.String()
 }
 
 // cite says which statement decides a privilege.

@@ -327,3 +327,123 @@ func TestEnforcerExposureStatesCallerIdentity(t *testing.T) {
 		t.Errorf("fail_on: warning failed on an info finding")
 	}
 }
+
+const exposureAccess = `create table public.devices (id uuid primary key, token_hash text not null, pinged_at timestamptz);
+create table public.admins (user_id uuid primary key);
+
+create function public.is_admin() returns boolean language sql stable as $$
+  select exists (select 1 from public.admins a where a.user_id = auth.uid())
+$$;
+
+-- @enforces review.access:INV-1
+create function public.admin_list(p_limit int) returns setof public.submissions
+language plpgsql security definer set search_path = '' as $$
+begin
+  if not public.is_admin() then raise exception 'forbidden'; end if;
+  return query select * from public.submissions limit p_limit;
+end $$;
+
+-- @enforces review.access:INV-2
+create function public.device_ping(p_token text) returns void
+language sql security definer set search_path = '' as $$
+  update public.devices d set pinged_at = now()
+  where d.token_hash = encode(digest(p_token, 'sha256'), 'hex')
+$$;
+
+-- @enforces review.access:INV-3
+create function public.a_count() returns bigint
+language sql security definer set search_path = '' as $$ select count(*) from public.submissions $$;
+
+grant execute on function public.is_admin() to authenticated;
+grant execute on function public.admin_list(int) to authenticated;
+grant execute on function public.device_ping(text) to authenticated;
+grant execute on function public.a_count() to authenticated;
+`
+
+const exposureAccessFeature = `id: review.access
+version: 1
+status: production
+purpose: |
+  Who may read and ping.
+owners:
+  business: product
+  engineering: backend
+invariants:
+  - id: INV-1
+    statement: Only an administrator lists submissions.
+    verifiable_by:
+      - test
+  - id: INV-2
+    statement: Only the holder of a device token pings that device.
+    verifiable_by:
+      - test
+  - id: INV-3
+    statement: The count covers every submission.
+    verifiable_by:
+      - test
+`
+
+const exposureAccessTests = `begin;
+select plan(3);
+-- @verifies review.access:INV-1
+select lives_ok($$ select * from public.admin_list(1) $$, 'an administrator lists');
+-- @verifies review.access:INV-2
+select lives_ok($$ select public.device_ping('t') $$, 'a device pings');
+-- @verifies review.access:INV-3
+select is((select public.a_count()), 0::bigint, 'the count is empty');
+select * from finish();
+rollback;
+`
+
+// An exposed enforcer states the identity it reads through a helper, the
+// parameter it hashes to authenticate, and the boolean parameters it takes. The
+// function that takes a verdict and reads no identity is listed first; every
+// finding stays info.
+// @verifies graph:INV-10
+// @verifies adapters.postgres:INV-9
+// @verifies adapters.postgres:INV-10
+// @verifies adapters.postgres:INV-11
+func TestEnforcerExposureIdentityFacts(t *testing.T) {
+	files := map[string]string{
+		"lattice/features/review/submissions.yaml":      exposureFeature,
+		"lattice/features/review/access.yaml":           exposureAccessFeature,
+		"supabase/migrations/20260102000000_access.sql": exposureAccess,
+		"supabase/tests/02_access.sql":                  exposureAccessTests,
+	}
+	const failOnWarning = "validate:\n  fail_on: warning\n  severity:\n    FEATURE_NO_BRD: off\n"
+	v, ok := exposureRun(t, apiRoles, failOnWarning, files)
+	var got []schema.Violation
+	for _, f := range exposureFindings(v) {
+		if f.Code == schema.CodeEnforcerExposed {
+			got = append(got, f)
+		}
+	}
+	var order []string
+	for _, f := range got {
+		order = append(order, strings.TrimPrefix(f.Subject, "sql.public."))
+	}
+	if want := "finish_submission,a_count,admin_list,device_ping"; strings.Join(order, ",") != want {
+		t.Fatalf("order = %v, want %s", order, want)
+	}
+	for i, wants := range [][]string{
+		{"reads no caller identity", "It takes boolean parameter(s): p_ok."},
+		{"reads no caller identity"},
+		{"reads the caller's identity (via public.is_admin() → auth.uid() at supabase/migrations/20260102000000_access.sql:5)"},
+		{"authenticates by a hash of parameter p_token (supabase/migrations/20260102000000_access.sql:20)"},
+	} {
+		for _, w := range wants {
+			if !strings.Contains(got[i].Message, w) {
+				t.Errorf("%s: %q lacks %q", order[i], got[i].Message, w)
+			}
+		}
+		if got[i].Severity != schema.SeverityInfo {
+			t.Errorf("%s is not info", order[i])
+		}
+	}
+	if strings.Contains(got[1].Message, "boolean") || strings.Contains(got[1].Message, "hash") {
+		t.Errorf("a_count states a fact that does not hold: %q", got[1].Message)
+	}
+	if !ok {
+		t.Errorf("fail_on: warning failed on an info finding")
+	}
+}

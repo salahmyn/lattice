@@ -242,13 +242,30 @@ type Execute struct {
 	// nil when it reads none. A function that reads it can still let a
 	// caller-supplied parameter decide the outcome.
 	Identity *CallerIdentity `json:"caller_identity,omitempty"`
+	// HashAuth is the first place the body compares a hash of one of its own
+	// parameters with a stored value, or nil. It is a distinct kind of
+	// identity from the one the database session carries.
+	HashAuth *HashAuth `json:"hash_auth,omitempty"`
+	// BoolParams names the parameters the caller supplies that are declared
+	// boolean, in order; an unnamed one is "$n".
+	BoolParams []string `json:"bool_params,omitempty"`
+}
+
+// HashAuth is a hash of a parameter compared with a stored value in a
+// function body: digest(p_token, ...) = token_hash.
+type HashAuth struct {
+	// Param is the parameter hashed: its name, or "$n".
+	Param string `json:"param"`
+	File  string `json:"file"`
+	Line  int    `json:"line"`
 }
 
 // CallerIdentity is a read of the caller's identity in a function body:
 // auth.uid(), auth.jwt(), current_setting('request.jwt...'), current_user or
-// session_user.
+// session_user, directly or one SQL function away.
 type CallerIdentity struct {
-	// Via is the expression read, such as "auth.uid()".
+	// Via is the expression read, such as "auth.uid()", or for a read one
+	// function away "via public.is_admin() → auth.uid()".
 	Via  string `json:"via"`
 	File string `json:"file"`
 	Line int    `json:"line"`

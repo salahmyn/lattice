@@ -1,0 +1,241 @@
+package postgres
+
+// @module-feature adapters.postgres
+
+import (
+	"regexp"
+	"strconv"
+	"strings"
+
+	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
+)
+
+// param is one input parameter of a function, as its CREATE declares it.
+type param struct {
+	name    string // lower case; "" when the parameter is unnamed
+	pos     int    // 1-based among the input parameters
+	boolean bool   // declared boolean or bool
+}
+
+var (
+	reParamMode    = regexp.MustCompile(`(?is)^\s*(in|out|inout|variadic)\s+`)
+	reParamDefault = regexp.MustCompile(`(?is)\s(?:default\b|=)`)
+	reParamNamed   = regexp.MustCompile(`(?is)^("(?:[^"]|"")+"|[A-Za-z_][A-Za-z0-9_$]*)\s+(\S.*)$`)
+	reBoolType     = regexp.MustCompile(`(?i)^(?:pg_catalog\s*\.\s*)?(?:boolean|bool)$`)
+)
+
+// functionParams reads the input parameters of a CREATE FUNCTION's argument
+// list. A parameter is boolean only when its declared type is boolean or
+// bool: no name is read for a meaning.
+// @enforces adapters.postgres:INV-11
+func functionParams(args []string) []param {
+	var out []param
+	for _, a := range args {
+		a = strings.TrimSpace(a)
+		if loc := reParamDefault.FindStringIndex(a); loc != nil {
+			a = strings.TrimSpace(a[:loc[0]])
+		}
+		if m := reParamMode.FindStringSubmatch(a); m != nil {
+			if strings.EqualFold(m[1], "out") {
+				continue // an output the caller does not supply
+			}
+			a = strings.TrimSpace(a[len(m[0]):])
+		}
+		if a == "" {
+			continue
+		}
+		p := param{pos: len(out) + 1}
+		typ := a
+		if m := reParamNamed.FindStringSubmatch(a); m != nil && (!reBoolType.MatchString(a)) {
+			p.name = strings.ToLower(strings.Trim(m[1], `"`))
+			typ = strings.TrimSpace(m[2])
+		}
+		p.boolean = reBoolType.MatchString(typ)
+		out = append(out, p)
+	}
+	return out
+}
+
+// paramRef is how a body names a parameter: its name, or $n.
+func (p param) ref() string {
+	if p.name != "" {
+		return p.name
+	}
+	return "$" + strconv.Itoa(p.pos)
+}
+
+// boolParams names the boolean parameters, in order.
+func boolParams(ps []param) []string {
+	var out []string
+	for _, p := range ps {
+		if p.boolean {
+			out = append(out, p.ref())
+		}
+	}
+	return out
+}
+
+var (
+	reHashCall = regexp.MustCompile(`(?i)\b(?:[a-z_][a-z0-9_]*\s*\.\s*)?(?:digest|crypt|sha224|sha256|sha384|sha512|md5|hmac)\s*\(`)
+	reWrapper  = regexp.MustCompile(`(?i)\b(?:encode|decode|lower|upper|trim|btrim|convert_from|convert_to)\s*$`)
+	reCastTail = regexp.MustCompile(`^\s*::\s*[A-Za-z_][A-Za-z0-9_.]*(?:\[\])?`)
+	reOperandR = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*(?:\s*\.\s*[A-Za-z_][A-Za-z0-9_]*)?)\s*(\(?)`)
+	reOperandL = regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*(?:\s*\.\s*[A-Za-z_][A-Za-z0-9_]*)?)\s*(?:::\s*[A-Za-z_][A-Za-z0-9_.]*(?:\[\])?)?\s*$`)
+	reWordsRef = regexp.MustCompile(`\$\d+|[A-Za-z_][A-Za-z0-9_]*`)
+	reClause   = regexp.MustCompile(`(?i)\b(?:where|if|elsif|elseif)\b`)
+	notColumn  = map[string]bool{"null": true, "true": true, "false": true, "not": true, "any": true, "all": true,
+		"some": true, "select": true, "case": true, "exists": true, "then": true, "and": true, "or": true, "where": true}
+)
+
+// hashAuth finds the first place a function body compares a hash of one of its
+// own parameters with something other than a parameter or a literal: a hash
+// function (digest, crypt, sha256, md5, hmac, also wrapped in encode(...)) whose
+// arguments name a parameter, tested with = in a WHERE or an IF. The hashed
+// expression must reference a parameter by name, or $n; a hash of a column or
+// of a literal is not read, and neither is a hash that is only assigned or
+// returned. Comments and strings are not code.
+// @enforces adapters.postgres:INV-9
+func hashAuth(file string, st statement, params []param) *ir.HashAuth {
+	if len(params) == 0 {
+		return nil
+	}
+	code := maskSQL(st.text, false)
+	from := 0
+	if loc := reBodyStart.FindStringIndex(maskSQL(st.text, true)); loc != nil {
+		from = loc[0]
+	}
+	byName := map[string]param{}
+	for _, p := range params {
+		if p.name != "" {
+			byName[p.name] = p
+		}
+	}
+	for _, loc := range reHashCall.FindAllStringIndex(code[from:], -1) {
+		callAt, open := from+loc[0], from+loc[1]-1
+		cl := matchParen(code, open)
+		if cl < 0 {
+			continue
+		}
+		pname := hashedParam(code[open+1:cl], byName, params)
+		if pname == "" {
+			continue
+		}
+		start, end := callAt, cl+1
+		for i := 0; i < 4; i++ { // encode(digest(...), 'hex'), lower(...), casts
+			if m := reCastTail.FindString(code[end:]); m != "" {
+				end += len(m)
+				continue
+			}
+			before := strings.TrimRight(code[:start], " \t\r\n")
+			if !strings.HasSuffix(before, "(") {
+				break
+			}
+			w := reWrapper.FindStringIndex(strings.TrimRight(before[:len(before)-1], " \t\r\n"))
+			if w == nil {
+				break
+			}
+			wc := matchParen(code, len(before)-1)
+			if wc < 0 {
+				break
+			}
+			start, end = w[0], wc+1
+		}
+		if !comparedWithColumn(code, start, end, params) {
+			continue
+		}
+		stmt := strings.LastIndexByte(code[:start], ';') + 1
+		if !reClause.MatchString(code[max(stmt, from):start]) {
+			continue
+		}
+		return &ir.HashAuth{Param: pname, File: file, Line: st.line + strings.Count(st.text[:callAt], "\n")}
+	}
+	return nil
+}
+
+// hashedParam returns the first parameter the arguments of a hash call name,
+// as the body spells it, or "".
+func hashedParam(args string, byName map[string]param, params []param) string {
+	for _, loc := range reWordsRef.FindAllStringIndex(args, -1) {
+		w := strings.ToLower(args[loc[0]:loc[1]])
+		if loc[0] > 0 && args[loc[0]-1] == '.' {
+			continue // a qualified name is a column
+		}
+		if rest := strings.TrimLeft(args[loc[1]:], " \t\r\n"); strings.HasPrefix(rest, "(") {
+			continue // a function name
+		}
+		if w[0] == '$' {
+			n, _ := strconv.Atoi(w[1:])
+			if n >= 1 && n <= len(params) {
+				return params[n-1].ref()
+			}
+			continue
+		}
+		if p, ok := byName[w]; ok {
+			return p.ref()
+		}
+	}
+	return ""
+}
+
+// comparedWithColumn reports whether the expression code[start:end] is an
+// operand of a plain = whose other operand is a name that is not a parameter.
+func comparedWithColumn(code string, start, end int, params []param) bool {
+	ok := func(operand string) bool {
+		w := strings.ToLower(strings.Join(strings.Fields(operand), ""))
+		if w == "" || notColumn[w] {
+			return false
+		}
+		for _, p := range params {
+			if p.name == w {
+				return false
+			}
+		}
+		return true
+	}
+	if rest := strings.TrimLeft(code[end:], " \t\r\n"); strings.HasPrefix(rest, "=") && !strings.HasPrefix(rest, "=>") && !strings.HasPrefix(rest, "==") {
+		if m := reOperandR.FindStringSubmatch(rest[1:]); m != nil && m[2] == "" && ok(m[1]) {
+			return true
+		}
+	}
+	before := strings.TrimRight(code[:start], " \t\r\n")
+	if strings.HasSuffix(before, "=") && (len(before) < 2 || !strings.ContainsRune("<>!:=|", rune(before[len(before)-2]))) {
+		if m := reOperandL.FindStringSubmatch(before[:len(before)-1]); m != nil && ok(m[1]) {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveHelperIdentity gives a function that reads no caller identity itself
+// the read of the first SQL function it calls that does, one level only: the
+// helper's own read, not what its helpers read. A call counts only when it
+// resolves to a function of the workspace that is created once; a builtin, an
+// external function and an overloaded name are not identity. It runs where
+// every module is known.
+// @enforces adapters.postgres:INV-10
+func resolveHelperIdentity(mods []ir.Module, eff map[string][2]int, overloaded map[string]string) {
+	direct := map[string]*ir.CallerIdentity{}
+	for fqn, at := range eff {
+		if ex := mods[at[0]].Symbols[at[1]].Execute; ex != nil && ex.Identity != nil {
+			if _, many := overloaded[fqn]; !many {
+				direct[fqn] = ex.Identity
+			}
+		}
+	}
+	for fqn, at := range eff {
+		sym := &mods[at[0]].Symbols[at[1]]
+		if sym.Execute == nil || sym.Execute.Identity != nil {
+			continue
+		}
+		for _, r := range sym.Refs {
+			h, ok := direct[r.Target]
+			if r.Kind != ir.RefCall || !ok || r.Target == fqn {
+				continue
+			}
+			sym.Execute.Identity = &ir.CallerIdentity{
+				Via:  "via " + strings.TrimPrefix(r.Target, "sql.") + "() → " + h.Via,
+				File: h.File, Line: h.Line}
+			break
+		}
+	}
+}

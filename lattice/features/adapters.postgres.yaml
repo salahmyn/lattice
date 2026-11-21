@@ -25,3 +25,9 @@ invariants:
     statement: A table write is recorded only from DML the adapter parsed; a write it could not read makes the table's writer set incomplete, never empty.
   - id: INV-8
     statement: A function's caller-identity read is recorded only from code in its body, never from a comment, a string, or an argument default, and is absent when the body reads none.
+  - id: INV-9
+    statement: A function is recorded as authenticating by a hash only when a hash function applied to an expression that names one of its own parameters is compared with = to a name in a WHERE or an IF; a hash of a column or a literal, one that is only assigned or returned, and one in a comment or a string are not recorded.
+  - id: INV-10
+    statement: A function that reads no caller identity itself is recorded as reading it through a SQL function it calls only when that call resolves to a function of the workspace created once and that function reads it directly; no deeper call, builtin, unknown or overloaded name is followed.
+  - id: INV-11
+    statement: A parameter is recorded as boolean only when its declared type is boolean or bool; no name, default or other type is read for a meaning, and an output parameter is not one.
