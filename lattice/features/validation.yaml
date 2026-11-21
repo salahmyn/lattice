@@ -53,6 +53,6 @@ invariants:
   - id: INV-15
     statement: INVARIANT_BROAD is an info finding, raised only on an invariant with no cases whose statement reads as several claims.
   - id: INV-16
-    statement: An invariant with a red verifier in the results of the graph's commit is VERIFIER_FAILING whether or not a BRD criterion maps it, and a criterion that reports the same invariant names its failing tests instead.
+    statement: An invariant with a red verifier in the results of the graph's commit, or of a commit whose tree differs from it only in Lattice's own ledger and cache, is VERIFIER_FAILING whether or not a BRD criterion maps it, and a criterion that reports the same invariant names its failing tests instead.
   - id: INV-17
-    statement: Validate names ingested results that are of another commit than the graph's (RESULTS_STALE, info by default) and never lets them change a level.
+    statement: Validate names ingested results that are of another commit than the graph's (RESULTS_STALE, info by default) and never lets them change a level; a commit that git shows differs only in Lattice's own ledger and cache is not another, and one git cannot compare is.

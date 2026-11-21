@@ -292,3 +292,29 @@ func TestResultsStaleKeepsLevels(t *testing.T) {
 		}
 	}
 }
+
+// Results of another commit that the caller found to have the graph's tree,
+// apart from Lattice's own ledger and cache, are current: no RESULTS_STALE,
+// and VERIFIER_FAILING reads them and names the commit they are of.
+// @verifies validation:INV-16
+// @verifies validation:INV-17
+func TestResultsEquivalentAreCurrent(t *testing.T) {
+	kg := failingGraph()
+	kg.GeneratedFromCommit = "bbbbbbbbbb222222"
+	v := Validate(kg, config.Default(), Options{ResultOf: redFor("FeesTest.rounds"),
+		ResultsCommit: "aaaaaaaaaa111111", ResultsEquivalent: true})
+	if got := staleFindings(v); len(got) != 0 {
+		t.Errorf("equivalent results are current: want no RESULTS_STALE, got %v", got)
+	}
+	f, ok := failingFindings(v)["fees:INV-1"]
+	if !ok {
+		t.Fatalf("equivalent results must raise VERIFIER_FAILING, got %v", failingFindings(v))
+	}
+	if !strings.Contains(f.Message, "evidence: ingested results of commit aaaaaaaa, whose tree matches the graph's apart from Lattice's ledger and cache") {
+		t.Errorf("message = %q", f.Message)
+	}
+	same := Validate(failingGraph(), config.Default(), Options{ResultOf: redFor("FeesTest.rounds"), ResultsCommit: "head"})
+	if f := failingFindings(same)["fees:INV-1"]; !strings.HasSuffix(f.Message, "(evidence: ingested results)") {
+		t.Errorf("results of the graph's own commit keep the plain evidence: %q", f.Message)
+	}
+}

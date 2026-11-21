@@ -122,6 +122,45 @@ func Dirty(ctx context.Context, dir string, latticeDirs []string, env ...string)
 	return Filter(changed, Owned(top, latticeDirs)), nil
 }
 
+// SameTree reports whether commits a and b of the checkout that holds dir
+// differ in nothing but Lattice's own runtime state (LatticeOwned): every
+// path `git diff --name-only a b` lists is a .ledger/ or .cache/ path of a
+// workspace, the ones latticeDirs name included. An empty commit, or one that
+// only records a ledger entry, is the same tree as its parent; a change to a
+// source file, a feature, a BRD or lattice.json is not. Unknown is never the
+// same: it is false when git is missing, either commit is empty or not in the
+// repository (a shallow clone), or the command fails.
+// @enforces validation:INV-17
+// @enforces audit:INV-9
+func SameTree(ctx context.Context, dir, a, b string, latticeDirs []string) bool {
+	if a == "" || b == "" || strings.HasPrefix(a, "-") || strings.HasPrefix(b, "-") {
+		return false
+	}
+	top, err := Top(ctx, dir)
+	if err != nil {
+		return false
+	}
+	// Run at the top so the paths are relative to it whatever diff.relative
+	// says, as Owned's are.
+	out, err := run(ctx, top, nil, "diff", "--no-renames", "--name-only", "-z", a+"^{commit}", b+"^{commit}", "--")
+	if err != nil {
+		return false
+	}
+	abs := make([]string, 0, len(latticeDirs))
+	for _, d := range latticeDirs {
+		if p, err := filepath.Abs(d); err == nil && d != "" {
+			abs = append(abs, p)
+		}
+	}
+	owned := Owned(top, abs)
+	for _, rel := range strings.Split(string(out), "\x00") {
+		if rel != "" && !LatticeOwned(rel, owned) {
+			return false
+		}
+	}
+	return true
+}
+
 // Top returns the top-level directory of the checkout that holds dir, with
 // symlinks resolved.
 func Top(ctx context.Context, dir string) (string, error) {

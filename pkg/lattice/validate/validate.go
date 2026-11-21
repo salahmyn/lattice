@@ -94,10 +94,17 @@ type Options struct {
 	// ResultsCommit is the commit the ingested results were stamped with
 	// (results.Set.Commit). The per-invariant VERIFIER_FAILING reads the
 	// results only when they belong to the graph's commit, by the audit's
-	// matches_head rule: the stamp equals the graph's commit, or either one
-	// is unknown. Results for another commit are stale: they raise no
-	// VERIFIER_FAILING, and RESULTS_STALE (info) names them once.
+	// matches_head rule: the stamp equals the graph's commit, either one is
+	// unknown, or ResultsEquivalent is set. Results for another commit are
+	// stale: they raise no VERIFIER_FAILING, and RESULTS_STALE (info) names
+	// them once.
 	ResultsCommit string
+
+	// ResultsEquivalent says the results' commit and the graph's differ only
+	// in Lattice's own ledger and cache, as git reports it (the caller reads
+	// it; the kernel runs no git). Such results are current: an empty commit,
+	// or one that only records a ledger entry, does not make them stale.
+	ResultsEquivalent bool
 
 	// Leases are the active work-claim leases (v0.8 §5). When two leases
 	// held by different actors claim overlapping scopes, LEASE_SCOPE_OVERLAP
