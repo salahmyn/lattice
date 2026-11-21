@@ -14,7 +14,7 @@ invariants:
   - id: INV-2
     statement: Breaks are made and tested on a temporary worktree at HEAD, which is always removed; the working tree is never edited, and a dirty tree is refused unless allowed.
   - id: INV-3
-    statement: A break that does not compile (only an explicit build marker counts, a runtime failure is a failing test), a baseline that fails or runs no test, a timeout or a missing runner reads unknown, never killed or survived.
+    statement: A break that does not compile (only an explicit build marker or a runner exit of 125 counts, a runtime failure is a failing test), a baseline that fails or runs no test, a timeout or a missing runner reads unknown, never killed or survived.
   - id: INV-4
     statement: Verifiers that pass before and after the break read survived, and verifiers that pass before and fail after read killed.
   - id: INV-5
