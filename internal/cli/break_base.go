@@ -17,7 +17,7 @@ import (
 
 // runFailsOnBase is `lattice break --fails-on-base <rev>`: the change comes
 // from impact, the runs from breaktest.
-func runFailsOnBase(ctx context.Context, io *IO, kg schema.KnowledgeGraph, ws *workspace.Workspace, rev string, opts breaktest.Options) error {
+func runFailsOnBase(ctx context.Context, io *IO, kg schema.KnowledgeGraph, ws *workspace.Workspace, rev string, opts breaktest.Options, failOn map[string]bool) error {
 	adCfg, err := config.LoadAdapters(ws.LatticeDir)
 	if err != nil {
 		return io.fail("BAD_CONFIG", err.Error(), nil)
@@ -36,20 +36,38 @@ func runFailsOnBase(ctx context.Context, io *IO, kg schema.KnowledgeGraph, ws *w
 	if err := breaktest.WriteFailsOnBase(ws.LatticeDir, rep); err != nil {
 		return io.fail("WRITE_FAILED", err.Error(), nil)
 	}
-	if io.JSON {
-		return io.printJSON(rep)
-	}
 	var shown []breaktest.BaseRun
+	unknown := 0
 	for _, v := range rep.Verifiers {
 		for _, p := range v.Promises {
 			if opts.Selects(p) {
 				shown = append(shown, v)
+				if v.Outcome == breaktest.Unknown {
+					unknown++
+				}
 				break
 			}
 		}
 	}
+	failMsg := failOnMessage(failOn, map[string]int{breaktest.Unknown: unknown})
+	if io.JSON {
+		out := failsOnBaseOutput{FailsOnBaseReport: rep}
+		if failMsg != "" {
+			out.Error, out.Code = failMsg, failOnCode
+		}
+		if err := io.printJSON(out); err != nil {
+			return err
+		}
+		if failMsg != "" {
+			return errExit
+		}
+		return nil
+	}
 	rep.Verifiers = shown
 	printFailsOnBaseTable(io, rep)
+	if failMsg != "" {
+		return io.fail(failOnCode, failMsg, nil)
+	}
 	return nil
 }
 
