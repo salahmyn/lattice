@@ -44,6 +44,9 @@ type checkAt struct {
 	// constraint's name, and the action's span from ADD to its last token.
 	tableEnd, nameTok int
 	lo, hi            int
+	// For a CREATE TABLE: the table's name tokens (first and last) and the
+	// last token of the constraint's element, after any NO INHERIT.
+	tblFrom, tblTo, tailTo int
 }
 
 // locateCheck finds the constraint a check symbol names: the clause on the
@@ -93,6 +96,7 @@ func checkIn(st sqlStmt, name, table string, line int) (checkAt, bool) {
 		if st.is(i, "if") && st.is(i+1, "not") && st.is(i+2, "exists") {
 			i += 3
 		}
+		tblFrom := i
 		t, next, ok := tableOf(st, i)
 		if !ok || t != table || !st.punct(next, '(') {
 			return checkAt{}, false
@@ -111,7 +115,11 @@ func checkIn(st sqlStmt, name, table string, line int) (checkAt, bool) {
 			case depth == 1 && st.is(j, "constraint") && st.is(j+2, "check") && st.punct(j+3, '(') && st.toks[j].line == line:
 				if n, ok := st.ident(j + 1); ok && n == name {
 					if cl := st.matchParen(j + 3); cl > 0 {
-						return checkAt{st: st, open: j + 3, closeAt: cl}, true
+						tail := cl
+						for tail+1 < end && !st.punct(tail+1, ',') {
+							tail++
+						}
+						return checkAt{st: st, open: j + 3, closeAt: cl, nameTok: j + 1, tblFrom: tblFrom, tblTo: next - 1, tailTo: tail}, true
 					}
 				}
 			}
@@ -169,10 +177,11 @@ func (c checkAt) checkBreak() (Break, error) {
 // planCheck is planSQL for a CHECK constraint. The statement that defines it
 // is its own: a later drop and add makes that statement the symbol, so the
 // symbol's statement is always the effective one. The object swap is offered
-// for an ADD CONSTRAINT that nothing touches later; a constraint inside
-// CREATE TABLE cannot be re-applied on its own, so a runner that needs the
-// swap reads unknown and the full reset (which applies the migrations) is the
-// way to run it.
+// for a constraint that nothing touches later: an ADD CONSTRAINT as the
+// ALTER TABLE statement itself, one inside CREATE TABLE as an ALTER TABLE that
+// drops and adds it back (see swapCheck). A later DROP, re-add, rename,
+// VALIDATE, or ALTER COLUMN of the same table makes the swap unavailable,
+// and the full reset (which applies the migrations) is the way to run it.
 // @enforces breaktest:INV-17
 func planCheck(file string, src []byte, sym Symbol) (breakPlan, error) {
 	c, err := locateCheck(src, sym)
@@ -185,13 +194,58 @@ func planCheck(file string, src []byte, sym Symbol) (breakPlan, error) {
 	}
 	why := ""
 	switch {
-	case !c.alter:
-		why = ": the CHECK is inside CREATE TABLE, which cannot be re-applied on its own"
 	case len(sym.Altered) > 0:
 		a := sym.Altered[0]
 		why = fmt.Sprintf(": altered later in %s:%d", a.File, a.Line)
+	case !c.alter && sym.DeclaredAs != "":
+		why = ": the constraint is renamed later"
+	case !c.alter:
+		if line, found := laterColumnAlter(src, c.st, sym); found {
+			why = fmt.Sprintf(": the table is altered later at line %d (ALTER COLUMN)", line)
+		}
 	}
 	return breakPlan{edits: []fileEdit{{file: file, src: src, brk: brk, line: sym.Line}}, swapWhy: why}, nil
+}
+
+// laterColumnAlter finds an ALTER TABLE ... ALTER [COLUMN] on the table of a
+// CHECK inside CREATE TABLE, in a statement after it in the same file.
+func laterColumnAlter(src []byte, create sqlStmt, sym Symbol) (int, bool) {
+	_, table, ok := checkWanted(sym)
+	if !ok {
+		return 0, false
+	}
+	toks, err := sqlLex(src, 0, len(src), 1)
+	if err != nil {
+		return 0, false
+	}
+	for _, st := range sqlStatements(src, toks) {
+		if len(st.toks) == 0 || st.toks[0].start <= create.toks[0].start || !st.is(0, "alter") || !st.is(1, "table") {
+			continue
+		}
+		i := 2
+		if st.is(i, "if") && st.is(i+1, "exists") {
+			i += 2
+		}
+		if st.is(i, "only") {
+			i++
+		}
+		t, next, ok := tableOf(st, i)
+		if !ok || t != table {
+			continue
+		}
+		depth := 0
+		for j := next; j < len(st.toks); j++ {
+			switch {
+			case st.punct(j, '('):
+				depth++
+			case st.punct(j, ')'):
+				depth--
+			case depth == 0 && st.is(j, "alter"):
+				return st.toks[j].line, true
+			}
+		}
+	}
+	return 0, false
 }
 
 // swapCheck is swapStatements for a CHECK added by ALTER TABLE: the table's
@@ -199,8 +253,11 @@ func planCheck(file string, src []byte, sym Symbol) (breakPlan, error) {
 // follows it in that action, such as NOT VALID), broken or as written.
 func swapCheck(src []byte, brk Break, sym Symbol) (patched, original string, ok bool) {
 	c, err := locateCheck(src, sym)
-	if err != nil || !c.alter {
+	if err != nil {
 		return "", "", false
+	}
+	if !c.alter {
+		return swapInlineCheck(src, brk, c)
 	}
 	all := append([]Break{{Offset: brk.Offset, Text: brk.Text}}, brk.More...)
 	for _, b := range all {
@@ -217,4 +274,39 @@ func swapCheck(src []byte, brk Break, sym Symbol) (patched, original string, ok 
 	name := string(src[st.toks[c.nameTok].start:st.toks[c.nameTok].end])
 	drop := fmt.Sprintf("%s DROP CONSTRAINT IF EXISTS %s;\n", prefix, name)
 	return drop + prefix + " " + patched + ";\n", drop + prefix + " " + string(src[c.lo:c.hi]) + ";\n", true
+}
+
+// swapInlineCheck is the swap of a CHECK inside CREATE TABLE. The table is
+// already there when the swap runs, so the constraint is replaced with an
+// ALTER TABLE, with the table and the name as the migration wrote them:
+//
+//   - patched adds CHECK (true OR (expr)) NOT VALID, so rows that exist do
+//     not stop it from being added;
+//   - original adds the constraint back as written and then validates it, so
+//     the restored constraint is checked against the rows, as the inline
+//     definition is.
+func swapInlineCheck(src []byte, brk Break, c checkAt) (patched, original string, ok bool) {
+	st := c.st
+	lo, hi := st.toks[c.open].start, st.toks[c.closeAt].end
+	all := append([]Break{{Offset: brk.Offset, Text: brk.Text}}, brk.More...)
+	for _, b := range all {
+		if b.Offset < lo || b.Offset > hi {
+			return "", "", false
+		}
+	}
+	broken, ok := applyWithin(src, brk, lo, hi)
+	if !ok {
+		return "", "", false
+	}
+	tail := strings.TrimSpace(string(src[hi:st.toks[c.tailTo].end]))
+	if tail != "" {
+		tail = " " + tail
+	}
+	table := string(src[st.toks[c.tblFrom].start:st.toks[c.tblTo].end])
+	name := string(src[st.toks[c.nameTok].start:st.toks[c.nameTok].end])
+	head := fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s, ADD CONSTRAINT %s CHECK ", table, name, name)
+	patched = head + broken + tail + " NOT VALID;\n"
+	original = head + string(src[lo:hi]) + tail + " NOT VALID;\n" +
+		fmt.Sprintf("ALTER TABLE %s VALIDATE CONSTRAINT %s;\n", table, name)
+	return patched, original, true
 }

@@ -144,8 +144,8 @@ func TestBreakCheckConstraints(t *testing.T) {
 
 // With {patched_sql} and {original_sql}, the ALTER TABLE ADD CONSTRAINT is
 // swapped as DROP CONSTRAINT IF EXISTS and the ADD, broken and as written; the
-// CHECK inside CREATE TABLE has no statement to swap, so its run reads unknown
-// with the reason, and the runner does not run for it.
+// CHECK inside CREATE TABLE is swapped as an ALTER TABLE that drops and adds
+// it back (not valid when broken, validated when restored).
 // @verifies breaktest:INV-15
 func TestBreakCheckSwap(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "applied.sql")
@@ -159,8 +159,8 @@ func TestBreakCheckSwap(t *testing.T) {
 		t.Errorf("ALTER: %s, baseline %s (%s), want killed", alter.Outcome, alter.Baseline, alter.Reason)
 	}
 	create := byPromise(rep)["orders:INV-1"]
-	if create.Outcome != breaktest.Unknown || !strings.HasPrefix(create.Reason, "{patched_sql} not available for this break: the CHECK is inside CREATE TABLE") || create.Baseline != "" {
-		t.Errorf("CREATE TABLE: outcome %s baseline %q reason %q, want unknown and nothing run", create.Outcome, create.Baseline, create.Reason)
+	if create.Outcome != breaktest.Killed || create.Baseline != "pass" {
+		t.Errorf("CREATE TABLE: %s, baseline %s (%s), want killed", create.Outcome, create.Baseline, create.Reason)
 	}
 	raw, err := os.ReadFile(out)
 	if err != nil {
@@ -171,15 +171,24 @@ func TestBreakCheckSwap(t *testing.T) {
 	add := "alter table public.orders add constraint paid_has_date check (status <> 'paid' or paid_at is not null);\n"
 	brk := "alter table public.orders add constraint paid_has_date check (true OR (status <> 'paid' or paid_at is not null));\n"
 	for _, want := range []string{
-		"== patched\n" + drop + add + "== original\n" + drop + add, // the baseline gets the original for both
 		"== patched\n" + drop + brk + "== original\n" + drop + add,
 	} {
 		if !strings.Contains(applied, want) {
 			t.Errorf("applied files lack:\n%s\nin:\n%s", want, applied)
 		}
 	}
-	if n := strings.Count(applied, "== patched"); n != 2 {
-		t.Errorf("the runner ran %d times, want 2 (the baseline and the break of the ALTER)", n)
+	head := "ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS total_not_negative, ADD CONSTRAINT total_not_negative CHECK "
+	orig := head + "(total >= 0) NOT VALID;\nALTER TABLE public.orders VALIDATE CONSTRAINT total_not_negative;\n"
+	for _, want := range []string{
+		"== patched\n" + orig + "== original\n" + orig, // the baseline gets the original for both
+		"== patched\n" + head + "(true OR (total >= 0)) NOT VALID;\n== original\n" + orig,
+	} {
+		if !strings.Contains(applied, want) {
+			t.Errorf("applied files lack:\n%s\nin:\n%s", want, applied)
+		}
+	}
+	if n := strings.Count(applied, "== patched"); n != 3 {
+		t.Errorf("the runner ran %d times, want 3 (one shared baseline and a break for each constraint)", n)
 	}
 }
 
