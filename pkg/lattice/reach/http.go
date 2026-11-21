@@ -145,12 +145,19 @@ func (e httpEnds) match(key string) []string {
 	return out
 }
 
-// resolveHTTP joins one request to the route that serves it, by key. A
+// resolveHTTP joins one request to the route that serves it, by key. Only a
+// path-only URL, an edge function call and an absolute URL on a declared
+// origin take part: an absolute URL on any other origin is external, makes
+// no edge and no finding, since nothing extracted says the origin is ours. A
 // computed key makes no edge ("dynamic"), a key no route serves none
 // (no_route), and a key several routes serve is ambiguous, with every
 // handler as a candidate.
 // @enforces reachability:INV-11
-func (b *builder) resolveHTTP(r ir.Ref, resolved func(string, string), unresolved func(string, []string)) {
+func (b *builder) resolveHTTP(r ir.Ref, resolved func(string, string), unresolved func(string, []string), external func()) {
+	if r.Qualifier != "" && r.Name != "" && !b.ownOrigin(r.Qualifier) {
+		external() // an absolute URL on an origin nothing declares ours: another service
+		return
+	}
 	if r.Name == "" {
 		unresolved("dynamic", nil)
 		return
@@ -165,14 +172,24 @@ func (b *builder) resolveHTTP(r ir.Ref, resolved func(string, string), unresolve
 	}
 }
 
+// ownOrigin reports whether the workspace declares the origin as its own.
+func (b *builder) ownOrigin(origin string) bool {
+	for _, o := range b.origins {
+		if ir.SameHTTPOrigin(o, origin) {
+			return true
+		}
+	}
+	return false
+}
+
 // firstLines is how many call sites an aggregated finding lists.
 const firstLines = 3
 
 // HTTPFindings raises the findings of the http join, at info:
 //
 //   - HTTP_CALL_UNSERVED, one per literal request that no extracted route
-//     serves (a dangling out end). A request to another origin is not raised:
-//     it is a call to another service, not a route of this system.
+//     serves (a dangling out end). A request to an origin the workspace does
+//     not declare its own is external and never reaches here.
 //   - HTTP_CALL_DYNAMIC, one per file: the count of its requests whose URL or
 //     method is computed, and the first lines, so a large codebase is not
 //     flooded.
@@ -195,7 +212,7 @@ func HTTPFindings(r *Result) []schema.Violation {
 			continue
 		}
 		switch {
-		case u.Why == WhyNoRoute && u.Qualifier == "":
+		case u.Why == WhyNoRoute:
 			out = append(out, schema.Violation{
 				Code: schema.CodeHTTPCallUnserved, Severity: schema.SeverityInfo,
 				Subject:  fmt.Sprintf("%s:%d", u.File, u.Line),

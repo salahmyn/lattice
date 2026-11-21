@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -148,5 +149,25 @@ func TestDeriveBlockLayersIsTheSet(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("layers = %v, want %v", got, want)
+	}
+}
+
+// Each http.origins entry must be a scheme plus host, with an optional port and
+// no path; a bad one is a VALIDATE_POLICY error naming its index.
+// @verifies reachability:INV-11
+func TestCheckHTTPOrigins(t *testing.T) {
+	good := []string{"https://app.example.com", "http://localhost:3000", "https://10.0.0.1:8443"}
+	if v := CheckHTTPOrigins(good); len(v) != 0 {
+		t.Errorf("valid origins: %+v", v)
+	}
+	bad := []string{"https://app.example.com/", "https://app.example.com/app", "app.example.com", "https://", "https://a.com?x=1", ""}
+	v := CheckHTTPOrigins(append([]string{"https://ok.example.com"}, bad...))
+	if len(v) != len(bad) {
+		t.Fatalf("want %d errors, got %d: %+v", len(bad), len(v), v)
+	}
+	for i, x := range v {
+		if x.Code != schema.CodeValidatePolicy || x.Severity != schema.SeverityError || x.Subject != fmt.Sprintf("http.origins[%d]", i+1) {
+			t.Errorf("violation %d = %+v", i, x)
+		}
 	}
 }

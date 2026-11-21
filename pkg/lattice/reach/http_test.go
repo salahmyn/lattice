@@ -92,15 +92,15 @@ func TestHTTPDynamicAndUnserved(t *testing.T) {
 	}
 	for from, why := range map[string]string{
 		"web.calls.a": "dynamic", "web.calls.b": "dynamic", "web.calls.c": "dynamic", "web.calls.d": "dynamic",
-		"web.calls.e": "dynamic", "web.calls.f": "no_route", "web.calls.g": "no_route", "web.calls.h": "no_route",
+		"web.calls.e": "dynamic", "web.calls.f": "no_route", "web.calls.g": "no_route", "web.calls.h": "", // h is external: no reference at all
 		"web.more.z": "dynamic",
 	} {
 		if byFrom[from] != why {
 			t.Errorf("%s: %q, want %q", from, byFrom[from], why)
 		}
 	}
-	if g.Stats.NoRoute != 3 {
-		t.Errorf("NoRoute = %d, want 3", g.Stats.NoRoute)
+	if g.Stats.NoRoute != 2 {
+		t.Errorf("NoRoute = %d, want 2", g.Stats.NoRoute)
 	}
 	// An http call left out of the RPC finding.
 	r := reach.Classify(g, nil)
@@ -121,7 +121,7 @@ func TestHTTPDynamicAndUnserved(t *testing.T) {
 			dynamic = append(dynamic, v)
 		}
 	}
-	if len(unserved) != 2 { // f and g; h goes to another origin
+	if len(unserved) != 2 { // f and g; h is an absolute URL on another origin, so external
 		t.Errorf("HTTP_CALL_UNSERVED: %d, want 2: %+v", len(unserved), unserved)
 	}
 	if len(unserved) > 0 && !strings.Contains(unserved[0].Message, "GET /api/nothing") {
@@ -250,5 +250,42 @@ func TestHTTPRefKeepsNoSelfEdge(t *testing.T) {
 	})
 	if got := edges(g, "http"); len(got) != 0 {
 		t.Errorf("a handler that calls its own route adds no self edge:%s", joined(got))
+	}
+}
+
+// An absolute URL joins nothing unless its origin is declared the workspace's
+// own: a route of the same path is not evidence that another origin is ours.
+// The call makes no edge, is not unresolved and raises no finding; with the
+// origin declared (http.origins) it is a path like any other.
+// @verifies reachability:INV-11
+func TestHTTPAbsoluteURLNeedsADeclaredOrigin(t *testing.T) {
+	files := map[string]string{
+		"api/server.ts": ordersServer,
+		"web/calls.ts": "export function other() { return fetch('https://api.example.com/api/orders'); }\n" +
+			"export function mine() { return fetch('https://app.example.com/api/orders/'); }\n" +
+			"export function gone() { return fetch('https://app.example.com/api/nothing'); }\n",
+	}
+	mods := parse(t, typescript.New(), files)
+
+	g := reach.Build(mods, reach.Options{})
+	if got := edges(g, "http"); len(got) != 0 {
+		t.Errorf("no origin is declared, so no absolute URL joins:%s", joined(got))
+	}
+	if h := httpUnresolved(g); len(h) != 0 {
+		t.Errorf("an external call is no reference left unresolved:%s", joined(h))
+	}
+	if got := reach.HTTPFindings(reach.Classify(g, nil)); len(got) != 0 {
+		t.Errorf("an external call raises no finding: %+v", got)
+	}
+
+	g = reach.Build(mods, reach.Options{Origins: []string{"https://APP.example.com", "not an origin"}})
+	if got := strings.Join(edges(g, "http"), "|"); got != "web.calls.mine -> api.server.listOrders" {
+		t.Errorf("the declared origin joins as a path; the other stays external: %q", got)
+	}
+	if h := strings.Join(httpUnresolved(g), "|"); h != "web.calls.gone [GET /api/nothing] no_route" {
+		t.Errorf("unresolved: %q", h)
+	}
+	if got := reach.HTTPFindings(reach.Classify(g, nil)); len(got) != 1 || got[0].Code != schema.CodeHTTPCallUnserved {
+		t.Errorf("a declared origin's unserved call is HTTP_CALL_UNSERVED: %+v", got)
 	}
 }

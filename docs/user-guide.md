@@ -2811,13 +2811,31 @@ match, no fuzzy match, no join through a computed URL.
 | `axios({ url, method })` | `GET`, or the literal method |
 | `supabase.functions.invoke('name')` | `POST /functions/v1/name` (`{ method }` overrides) |
 
-A literal URL is a string, or a template with no `${}`. The key drops the origin, the
-query string, the fragment and a trailing slash, so
-`https://api.example.com/api/orders/?page=2` keys as `GET /api/orders`. A URL that is
+A literal URL is a string, or a template with no `${}`. The key drops the query
+string, the fragment and a trailing slash (and the origin, see below), so
+`/api/orders/?page=2` keys as `GET /api/orders`. A URL that is
 not a path (`'orders'`, `'./orders'`) depends on the page that sends it and has no
 key. A computed URL (a variable, a concatenation, a template with `${}`), or a method
 that is not a literal, is recorded with an empty key: a `dynamic` reference, never an
 edge.
+
+**Only a path-only URL (starting with `/`) and `supabase.functions.invoke` take part in
+the join.** An absolute URL is an **external** out end: nothing extracted says its origin
+is this system, so a route of the same path is no evidence. It makes no edge, no
+`HTTP_CALL_UNSERVED`, and keeps its origin in the reference. To say which origins are
+yours, declare them in `lattice/workspace.yaml`:
+
+```yaml
+http:
+  origins:
+    - https://app.example.com
+    - http://localhost:3000
+```
+
+An absolute URL whose origin is on the list (scheme and host compared without regard
+to case) is treated as path-only. That is a declaration, not a guess. Each entry must
+be a scheme plus host with an optional port and no path; a bad one is a
+`VALIDATE_POLICY` error, like a bad `layers:` rule, and the join ignores it.
 
 **In ends** are the routes the code serves: routes the adapters detected
 (`app.get('/api/orders', listOrders)`), declared `http_route` entry points
@@ -2853,9 +2871,8 @@ info  HTTP_CALL_DYNAMIC   web/orders.ts sends 5 request(s) whose URL or method i
 
 `HTTP_CALL_UNSERVED` names a literal request that no route serves: a typo, a route the
 adapters do not detect (declare its entry point in `lattice/entry-points/`), or a
-server that is not in the workspace. A request to an absolute URL on another origin is
-not raised, since it is a call to another service; it still joins when a route of the
-workspace has that path. `HTTP_CALL_DYNAMIC` is one per file, with the count and the
+server that is not in the workspace. A request to an absolute URL on an origin not
+declared in `http.origins` is external and never raised. `HTTP_CALL_DYNAMIC` is one per file, with the count and the
 first lines. Test code raises neither. A route nothing calls raises nothing: it may be
 public API.
 

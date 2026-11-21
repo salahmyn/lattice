@@ -110,6 +110,11 @@ type Options struct {
 	// routes a request can be joined to (see http.go). A proposal is not
 	// one: it is derived from the same facts.
 	EntryPoints []schema.EntryPoint
+	// Origins are the origins (scheme and host) the workspace declares as its
+	// own (http.origins in workspace.yaml). An absolute URL on one of them
+	// takes part in the http join as a path; any other absolute URL is
+	// external and joins nothing.
+	Origins []string
 }
 
 type builder struct {
@@ -117,6 +122,7 @@ type builder struct {
 	members map[string]map[string][]string // language -> member name -> FQNs
 	edgeSet map[string]bool
 	http    httpEnds // the routes the workspace serves
+	origins []string // declared own origins
 }
 
 // Build resolves every module's references into a call graph.
@@ -168,6 +174,11 @@ func Build(modules []ir.Module, opts Options) *Graph {
 	}
 
 	b.http = g.collectHTTPEnds(opts.EntryPoints)
+	for _, o := range opts.Origins {
+		if ir.ValidHTTPOrigin(o) {
+			b.origins = append(b.origins, o)
+		}
+	}
 
 	scipLangs := map[string]bool{}
 	for lang, c := range opts.SCIP {
@@ -461,7 +472,7 @@ func (b *builder) resolve(mc *modCtx, owner *node, from string, r ir.Ref) {
 		}
 		return
 	case r.Kind == ir.RefHTTP:
-		b.resolveHTTP(r, resolved, unresolved)
+		b.resolveHTTP(r, resolved, unresolved, external)
 		return
 	case r.Kind == ir.RefRPC:
 		if r.Name == "" {

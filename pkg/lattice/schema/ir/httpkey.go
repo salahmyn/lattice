@@ -44,6 +44,15 @@ func HTTPKey(method, rawURL string) string {
 	return method + " " + u
 }
 
+var originRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+.-]*://[A-Za-z0-9.-]+(?::[0-9]+)?$`)
+
+// ValidHTTPOrigin reports whether s is a scheme plus host, with an optional
+// port and no path, query or trailing slash ("https://app.example.com").
+func ValidHTTPOrigin(s string) bool { return originRe.MatchString(s) }
+
+// SameHTTPOrigin compares two origins; scheme and host are case-insensitive.
+func SameHTTPOrigin(a, b string) bool { return strings.EqualFold(a, b) }
+
 // HTTPOrigin is the scheme and host a URL names ("https://api.example.com"),
 // or "" for a path-only URL. A key drops it; a reference keeps it, so a call
 // to another service is told apart from one to this system's own routes.

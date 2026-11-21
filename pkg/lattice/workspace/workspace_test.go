@@ -174,3 +174,15 @@ func TestOpenReadsLayerRules(t *testing.T) {
 		t.Errorf("layers = %+v", w.Layers)
 	}
 }
+
+func TestOpenReadsHTTPOrigins(t *testing.T) {
+	root := t.TempDir()
+	writeLatticeDir(t, filepath.Join(root, "lattice"), "http:\n  origins:\n    - https://app.example.com\n    - http://localhost:3000\n")
+	w, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(w.HTTP.Origins) != 2 || w.HTTP.Origins[0] != "https://app.example.com" {
+		t.Errorf("origins = %+v", w.HTTP.Origins)
+	}
+}

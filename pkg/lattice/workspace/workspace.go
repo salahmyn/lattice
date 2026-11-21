@@ -135,9 +135,20 @@ type file struct {
 	CodeRoots []CodeRoot         `yaml:"code_roots,omitempty"`
 	Exclude   []string           `yaml:"exclude,omitempty"`
 	Layers    []schema.LayerRule `yaml:"layers,omitempty"`
+	HTTP      HTTP               `yaml:"http,omitempty"`
 	Sources   []Source           `yaml:"sources,omitempty"`
 	Judgments string             `yaml:"judgments,omitempty"`
 	Storage   Storage            `yaml:"storage,omitempty"`
+}
+
+// HTTP is the http: block of workspace.yaml.
+type HTTP struct {
+	// Origins are the origins (scheme and host, optional port, no path) that
+	// are this system's own, such as "https://app.example.com". A client
+	// request to an absolute URL on one of them joins the routes the code
+	// serves as a path; a request to any other origin is external. Checked by
+	// validate, not here.
+	Origins []string `yaml:"origins,omitempty"`
 }
 
 // Workspace is the resolved view of a project's Lattice setup.
@@ -157,6 +168,8 @@ type Workspace struct {
 	// order: the first whose glob matches a file wins. Their globs and layer
 	// names are checked by validate, not here.
 	Layers []schema.LayerRule
+	// HTTP holds the declared own origins.
+	HTTP HTTP
 	// Sources are the block-graph inputs declared in workspace.yaml.
 	Sources []Source
 	// judgments is the judgments directory as declared, resolved by ResolvePath.
@@ -230,6 +243,7 @@ func (w *Workspace) loadWorkspaceFile() error {
 	w.Exclude = f.Exclude
 	w.CodeRoots = f.CodeRoots
 	w.Layers = f.Layers
+	w.HTTP = f.HTTP
 	w.Sources = f.Sources
 	w.judgments = f.Judgments
 	w.Storage = f.Storage
