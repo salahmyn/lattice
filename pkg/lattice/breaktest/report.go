@@ -125,7 +125,9 @@ type Run struct {
 // statement that sets the object's effective definition (the last ALTER
 // POLICY that sets an expression, not the CREATE a later one overrides), and
 // the object swap is offered only when no later statement touches the object.
-const GeneratorVersion = "4"
+// 5: terminal colour codes are stripped before build markers are matched, so a
+// coloured type error reads "does not compile", not killed.
+const GeneratorVersion = "5"
 
 // cacheKey is what makes an earlier outcome valid again: the same enforcer
 // source, the same verifier source, the same way of breaking it, the same
