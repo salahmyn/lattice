@@ -67,15 +67,18 @@ func TestClassify(t *testing.T) {
 	}
 }
 
-// A "did not apply" reason quotes the first ERROR:/error: line, else the last
-// non-empty line, and caps it at 120 runes.
+// A "did not apply" reason quotes the first ERROR:/error: line from the token
+// on, else the last non-empty line, and caps it at 120 runes.
 // @verifies breaktest:INV-3
 func TestApplyReasonTrim(t *testing.T) {
 	long := strings.Repeat("é", 300)
 	blob := `{"error":{"code":"x","message":"` + strings.Repeat("m", 400) + `"}}`
 	cases := []struct{ name, out, want string }{
 		{"error line wins over a later line", "reset\nERROR: relation \"a\" does not exist\n" + blob + "\n", `ERROR: relation "a" does not exist`},
-		{"lowercase error: marker", "step 1\nfatal error: boom\nstep 3\n", "fatal error: boom"},
+		{"lowercase error: marker, from the token", "step 1\nfatal error: boom\nstep 3\n", "error: boom"},
+		{"token in the middle of a JSON line", `{"level":"fatal","msg":"ERROR: relation \"a\" does not exist"}` + "\n", `ERROR: relation \"a\" does not exist"}`},
+		{"earlier token wins on a line", "x error: one ERROR: two\n", "error: one ERROR: two"},
+		{"a quoted JSON key is no marker", blob + "\n", blob[:119] + "…"},
 		{"first marker, not the last", "ERROR: first\nERROR: second\n", "ERROR: first"},
 		{"last non-empty line otherwise", "one\ntwo\n\n", "two"},
 		{"no output", "  \n", ""},

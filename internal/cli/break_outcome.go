@@ -13,6 +13,21 @@ import (
 // failOnCode is the code of the failure --fail-on reports.
 const failOnCode = "BREAK_OUTCOME"
 
+// lockedCode is the code of the failure a held break lock reports.
+const lockedCode = "BREAK_LOCKED"
+
+// failLocked reports that another `lattice break` holds the run lock. The
+// text reads "BREAK_LOCKED: <message>", so the code is in what a person reads;
+// the JSON error keeps the message as it is and carries the code in its own
+// field.
+func failLocked(io *IO, err error) error {
+	msg := err.Error()
+	if !io.JSON {
+		msg = lockedCode + ": " + msg
+	}
+	return io.fail(lockedCode, msg, nil)
+}
+
 // failOnOutcomes are the outcomes --fail-on takes, in the order messages
 // list them.
 var failOnOutcomes = []string{breaktest.Survived, breaktest.Unknown}

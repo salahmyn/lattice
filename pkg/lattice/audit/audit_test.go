@@ -597,7 +597,7 @@ func TestAuditContractGolden(t *testing.T) {
 	kg := threeEnforcers()
 	kg.Features[0].Invariants = append(kg.Features[0].Invariants, schema.Invariant{ID: "INV-2", Statement: "statement INV-2"})
 	kg.Symbols = append(kg.Symbols, schema.GraphSymbol{FQN: "f.Second", File: "f/second.go", Line: 4, Feature: "f",
-		EnforcesInvariants: []string{"INV-2"}, Reach: schema.ReachEntry})
+		EnforcesInvariants: []string{"INV-2"}, Reach: schema.ReachEntry, Layer: schema.LayerData})
 	kg.Tests = append(kg.Tests, schema.GraphSymbol{FQN: "f.TestTwo", File: "f_test.go", Feature: "f", IsTest: true, Verifies: []string{"INV-2"}})
 	killed := run("f:INV-2", "f.Second", "killed")
 	killed.FailedTests = []string{"f.TestTwo"}
@@ -624,5 +624,35 @@ func TestAuditContractGolden(t *testing.T) {
 	}
 	if string(got) != string(want) {
 		t.Errorf("lattice.audit/1 differs from %s (UPDATE_GOLDEN=1 rewrites it):\n%s", golden, got)
+	}
+}
+
+// A row's enforcers[] (what breaking each did) name the enforcer's layer, as
+// evidence.enforcers[] does.
+// @verifies audit:INV-6
+func TestEnforcerOutcomesCarryLayer(t *testing.T) {
+	kg := threeEnforcers()
+	for i := range kg.Symbols {
+		if kg.Symbols[i].FQN == "f.CapAmount" {
+			kg.Symbols[i].Layer = schema.LayerEdge
+		}
+	}
+	rep := Compute(Sources{KG: kg, Results: pass("f.TestOne"), Breaks: breaks("abc123", run("f:INV-1", "f.CapAmount", "killed"))})
+	row := rep.Rows[0]
+	layers := map[string]string{}
+	for _, e := range row.Evidence.Enforcers {
+		layers[e.FQN] = e.Layer
+	}
+	if layers["f.CapAmount"] != schema.LayerEdge {
+		t.Fatalf("evidence layers = %v, want f.CapAmount at edge", layers)
+	}
+	for _, o := range row.Enforcers {
+		if o.Layer != layers[o.Symbol] {
+			t.Errorf("enforcers[%s].layer = %q, want %q (as in evidence)", o.Symbol, o.Layer, layers[o.Symbol])
+		}
+	}
+	b, _ := json.Marshal(row)
+	if !strings.Contains(string(b), `"enforcers":[{"symbol":"f.CapAmount"`) || strings.Count(string(b), `"layer":"edge"`) != 2 {
+		t.Errorf("row JSON should carry the layer in both lists: %s", b)
 	}
 }

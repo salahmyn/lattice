@@ -787,6 +787,16 @@ func TestBreakRunLock(t *testing.T) {
 	if got, _ := os.ReadFile(lock); string(got) != held {
 		t.Errorf("the refused run touched the holder's lock: %q", got)
 	}
+	// In text the code leads the message; in JSON it is the code field and
+	// the message stays as the engine words it.
+	if res := runBreakExit(t, dir, false, "--promise", "guard:INV-1"); !strings.Contains(res.err,
+		fmt.Sprintf("BREAK_LOCKED: another lattice break is running (pid %d, started 2026-01-02T03:04:05Z)", os.Getpid())) {
+		t.Errorf("the text error should read BREAK_LOCKED: <message>: %q", res.err)
+	}
+	if _, jout, _ := runBreak(t, dir, "--promise", "guard:INV-1"); !strings.Contains(jout, `"error": "another lattice break is running`) ||
+		!strings.Contains(jout, `"code": "BREAK_LOCKED"`) {
+		t.Errorf("the JSON error keeps the bare message and carries the code: %s", jout)
+	}
 	if n := worktreeCount(t, dir); n != 1 {
 		t.Errorf("%d worktrees: the refused run should not have made one", n)
 	}

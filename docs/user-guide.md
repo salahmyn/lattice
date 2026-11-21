@@ -1413,7 +1413,7 @@ code under test could not be prepared, for example because a database reset
 failed when a generated SQL break did not apply. As in `git bisect`, where 125
 means "this revision cannot be tested", the run reads `unknown` ("did not
 apply (runner exit 125)", quoting the first line that contains `ERROR:` or
-`error:`, else the last non-empty line, cut at 120 characters), never `killed`,
+`error:` from that token on, else the last non-empty line, cut at 120 characters), never `killed`,
 whatever else the output says. A setup step that fails must not count as a
 verifier noticing the break, so end such a step with `|| exit 125`.
 
@@ -2829,7 +2829,8 @@ symbols, and an invariant's those of its enforcers. They are computed and cannot
 be declared.
 
 - `lattice audit --json` rows carry `layers` (the promise's enforcers' layers),
-  and each enforcer a `layer`.
+  and each enforcer a `layer`: both `evidence.enforcers[]` and the row's
+  `enforcers[]` (what breaking each did) name it.
 - `lattice feature show <id>` lists the feature's layers, and its `--json` output
   gains a `layers` field.
 - `/api/v2` promise objects carry `layers`, their enforcers `layer`, and a feature
