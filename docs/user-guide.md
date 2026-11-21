@@ -1805,6 +1805,81 @@ the hash of the out end's file to the usual ones. Edge runs never count as the
 promise's break signal in `lattice audit`, which reads enforcer runs only; they are
 shown by `lattice slice`, where a hop an edge break killed is `break_tested`.
 
+**Browser journeys as verifiers.** An edge break renames a literal at the client
+end, and a client-side enforcer break changes code the browser runs. The unit
+tests of an API wrapper fake the far side, so they pass either way. A verifier
+that runs the real client against the faked or real far side notices: a
+Playwright journey that fakes `/functions/v1/list-orders` by route misses the
+fake once the client asks for `list-orders-lattice-break`, and fails. A
+Playwright runner is an ordinary `break.runners` entry:
+
+```yaml
+break:
+  edges: true
+  runners:
+    - name: journeys
+      match: ["apps/client/journeys/**/*.spec.ts"]
+      dir: apps/client
+      command: [env, "PLAYWRIGHT_JUNIT_OUTPUT_NAME={junit}",
+                npx, playwright, test, "{files}", -g, "{filter}", --reporter=junit]
+```
+
+A runner has no `env` field, and its command runs without a shell, so `env`
+sets the variable that tells Playwright's JUnit reporter where to write (on
+Windows, use `cmd /c`, or set `outputFile` on the reporter in the Playwright
+config and drop the variable and `{junit}` from the command; then the executed
+count cannot be checked).
+
+- **Use a dev server, not a build.** Each break edits source in a throwaway
+  worktree, so the journey must run against code that is transformed on every
+  run. Start the dev server from Playwright's `webServer` (`vite` for a Vite
+  app). A build made once in `break.setup` would be a build of the unbroken
+  code: every break would then read `survived`, and nothing would say why.
+  ```ts
+  // apps/client/playwright.config.ts
+  webServer: {
+    command: 'npx vite --port 5173 --strictPort',
+    url: 'http://localhost:5173',
+    reuseExistingServer: false, // a server left running serves the unbroken code
+    timeout: 60_000,
+  },
+  ```
+  Install dependencies in the main checkout: the worktree links its
+  `node_modules`.
+- **Cost.** Every baseline and every break starts the dev server and the
+  browser, so a journey runner is the slow one. `--timeout` (default 120s)
+  bounds each run, server start included; raise it, and `webServer.timeout`
+  with it, rather than let a slow start read `unknown`. Baselines are shared
+  per tree and outcomes are cached, so a promise whose journeys, source and
+  `inputs` are unchanged is not run again.
+- **Tag the journeys.** A tag goes in a `/** */` doc comment directly above the
+  `test(...)`, inside or outside a `test.describe`:
+  ```ts
+  test.describe('orders', () => {
+    /** @verifies orders:INV-1 */
+    test('lists orders (page 1.0)', async ({ page }) => {
+      await page.route('**/functions/v1/list-orders', (route) =>
+        route.fulfill({ json: [] }));
+      await page.goto('/orders');
+      await expect(page.getByRole('list')).toBeVisible();
+    });
+  });
+  ```
+  The report names that test `orders › lists orders (page 1.0)` in the suite
+  `journeys/orders.spec.ts`; `lattice break` joins it to the tag by file and
+  title, so the `describe ›` prefix and the runner's own root (`apps/client`)
+  do not matter. The `{filter}` is the tagged titles with regular-expression
+  characters escaped (`(lists orders \(page 1\.0\))$`), so parentheses and dots
+  in a title select that test and no other.
+- **Reading the results.** A journey that fakes the far side by route catches a
+  renamed path; a journey that stubs the client's API module (an alias to a mock,
+  say) does not, and its edge break is `survived`
+  (`EDGE_BREAK_SURVIVED`). That is the gap the finding names. A `-g` of your
+  own in place of `{filter}` (a tag, a fixed title) leaves the tagged journeys
+  it does not select not run: the run reads `unknown`, with a `partial:` reason
+  that names them, never `survived`. A `test.skip` or a project that does not
+  run the file reads the same way.
+
 **The worktree.** A temporary worktree has no `node_modules`, so `lattice break`
 symlinks each `node_modules` directory of the main checkout into the same relative
 path of the worktree (set `break.link_node_modules: false` to opt out). `break.setup`
