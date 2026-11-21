@@ -21,3 +21,5 @@ invariants:
     statement: refresh builds the block graph from the feature manifests extract loads, nested directories included, so it warns about a flow step exactly when validate reports it as PHANTOM_FLOW.
   - id: INV-6
     statement: export map and serve draw the block graph rebuilt from the workspace's inputs, writing only the block graph in the store and only when it changed; when it cannot be rebuilt they draw the stored graph and say why.
+  - id: INV-7
+    statement: feature promote without --by prints the production entry points whose flow names the feature and writes nothing; with --by a human it sets only `status` to production and appends a ledger entry, and it refuses an agent identity, a status other than proposal or accepted, and a feature no production entry point's flow names.
