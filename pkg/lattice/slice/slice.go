@@ -74,8 +74,8 @@ type Root struct {
 type Hop struct {
 	From string `json:"from"`
 	To   string `json:"to"`
-	// Kind is the edge kind of the reach graph: call, new, rpc, table, jsx,
-	// ref, and the structural ones (import, member, use, scip).
+	// Kind is the edge kind of the reach graph: call, new, rpc, table, http,
+	// jsx, ref, and the structural ones (import, member, use, scip).
 	Kind      string `json:"kind"`
 	FromLayer string `json:"from_layer"`
 	ToLayer   string `json:"to_layer"`

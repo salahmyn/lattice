@@ -475,6 +475,7 @@ func (w *tsRefWalker) isServe(call *sitter.Node) bool {
 func (w *tsRefWalker) call(n *sitter.Node) {
 	fn := n.ChildByFieldName("function")
 	args := n.ChildByFieldName("arguments")
+	w.httpRef(fn, args)
 	switch {
 	case fn == nil:
 	case fn.Kind() == "import":

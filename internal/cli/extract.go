@@ -231,7 +231,9 @@ func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOpt
 	// points below, and the same graph is classified at the end.
 	var callGraph *reach.Graph
 	if !ws.Review && !res.Review {
-		callGraph = reach.Build(res.Modules, reach.Options{SCIP: scipByLanguage(ws, reg.Names())})
+		// Declared http_route entry points are routes a request can join.
+		declared, _, _ := entrypoints.LoadEntryPointsReport(ws.EntryPointsDir())
+		callGraph = reach.Build(res.Modules, reach.Options{SCIP: scipByLanguage(ws, reg.Names()), EntryPoints: declared})
 	}
 
 	// v0.3.0 entry-point detection + v0.3.1 SCIP/persistence/labeling.

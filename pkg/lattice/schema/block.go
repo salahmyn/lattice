@@ -49,7 +49,22 @@ type BlockEdge struct {
 	Labels     []string   `json:"labels,omitempty"`
 	When       []string   `json:"when,omitempty"`
 	Provenance Provenance `json:"provenance"`
+	// Truth says how well the edge is known, in the words of EdgeTruth*:
+	// declared (a human record or a judgment says it), wired (both ends were
+	// extracted from code and their keys are equal), half (one end was
+	// extracted, the other was not), unknown (the ends could not be told
+	// apart). Empty means no rule computed it, never that it passed.
+	Truth string `json:"truth,omitempty"`
 }
+
+// The truth of an edge (BlockEdge.Truth). Declared and wired are the words a
+// block uses too (TruthDeclared, TruthWired).
+const (
+	EdgeTruthDeclared = TruthDeclared
+	EdgeTruthWired    = TruthWired
+	EdgeTruthHalf     = "half"
+	EdgeTruthUnknown  = "unknown"
+)
 
 // Provenance says where a block or edge came from.
 type Provenance struct {
