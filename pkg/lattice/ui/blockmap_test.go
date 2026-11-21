@@ -73,6 +73,7 @@ func TestMapExportHasTheExplorer(t *testing.T) {
 		`data-tab="diag"`, `data-tab="focus"`, `data-tab="flows"`, `data-tab="discover"`, // tabs
 		`id="klegend"`, `data-act="lens"`, `containment: "Containment"`, `verdict: "Proposal verdict"`, // legend and lenses
 		`data-tool="mini"`, `data-x="svg"`, `data-x="png"`, `data-x="mmd"`, // canvas tools
+		`id="assure"`, `id="alegend"`, `"assurance":{`, // the assurance lens and its data
 		`"id":"sys.shop"`, `"owner":"team-a"`, // the graph, inlined
 	} {
 		if !strings.Contains(s, want) {

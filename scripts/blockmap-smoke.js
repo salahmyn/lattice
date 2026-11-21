@@ -4,8 +4,8 @@
 //
 //   node scripts/blockmap-smoke.js <map.html> [--elk <elk.bundled.js>] [--shots <dir>] [--perf <blocks>]
 //
-// It loads the exported page, switches every tab and lens, hides a kind from
-// the legend, uses the canvas toolbar (zoom, minimap, Mermaid text, SVG/PNG/
+// It loads the exported page, switches every tab and lens, turns the assurance
+// lens on and off, hides a kind from the legend, uses the canvas toolbar (zoom, minimap, Mermaid text, SVG/PNG/
 // Mermaid export), focuses a block, re-centres, walks the history, toggles
 // system context, uses the right-click menu, filters Discover, groups a flow
 // into swimlanes, walks it (keys and a fork) and follows deep links, and fails
@@ -137,6 +137,38 @@ async function smoke(browser) {
     check(await page.$('#legend:not([hidden])') !== null, 'verdict legend shows');
   }
   await page.selectOption('[data-act=lens]', 'containment'); await diagramDrawn(page); await settle(page);
+
+  // the assurance lens: each box takes the style the kernel gave its block, the legend says what each means
+  if (await page.evaluate(() => !!JSON.parse(document.getElementById('graph').textContent).assurance)) {
+    await page.click('#assure'); await diagramDrawn(page); await settle(page);
+    check(await page.$eval('#assure', b => b.getAttribute('aria-pressed')) === 'true' && (await hashParams(page)).as === '1', 'the assurance toggle turns the lens on');
+    const legend = await page.$eval('#alegend', e => ({ shown: !e.hidden, keys: e.querySelectorAll('.ak').length, text: e.textContent }));
+    const nKeys = (await graphOf(page)).assurance.legend.length;
+    check(legend.shown && legend.keys === nKeys && legend.text.includes('Unknown is never a pass.'), `the assurance legend lists ${legend.keys} classes and the rule`);
+    const drawn = await page.evaluate(() => { // each box's style class, against the style the data names for its block
+      const A = JSON.parse(document.getElementById('graph').textContent).assurance;
+      const out = { n: 0, bad: [] };
+      for (const g of document.querySelectorAll('#vp .bx[data-box]')) {
+        const id = g.dataset.box.replace(/^out:/, ''), r = g.querySelector('rect.l, rect.c');
+        if (/^(grp|more):/.test(g.dataset.box) || !r) continue;
+        out.n++;
+        const want = (A.nodes[id] || { style: A.fallback }).style;
+        if (!r.classList.contains('as-' + want) || [...r.classList].filter(c => c.startsWith('as-')).length !== 1) out.bad.push(id);
+      }
+      return out;
+    });
+    check(drawn.n > 0 && !drawn.bad.length, `the assurance lens draws each box in its kernel style (${drawn.n} boxes)` + (drawn.bad.length ? ': ' + drawn.bad.join(', ') : ''));
+    const feat = await page.evaluate(() => Object.entries(JSON.parse(document.getElementById('graph').textContent).assurance.nodes).find(([, n]) => n.class)?.[0] || '');
+    if (feat) {
+      await page.goto(url + '#tab=diag&as=1&id=' + encodeURIComponent(feat)); await diagramDrawn(page); await settle(page);
+      check(await page.$$eval('#detail h3', l => l.some(h => h.textContent === 'Assurance')) && await page.$eval('#alegend', e => !e.hidden), 'a deep link restores the lens; the details show the block\'s assurance');
+    }
+    await page.click('.tabs [data-tab=discover]'); await page.waitForSelector('#dtable tr[data-row]');
+    check(await page.$('th[data-sort=assure]') !== null && await page.$('[data-facet=assure]') !== null, 'Discover gains an assurance column and facet');
+    await page.click('.tabs [data-tab=diag]'); await diagramDrawn(page);
+    await page.keyboard.press('a'); await diagramDrawn(page); await settle(page);
+    check(await page.$('#alegend[hidden]') !== null && await page.$('#vp rect.as') === null && (await hashParams(page)).as === undefined, 'a turns the lens off');
+  }
 
   // focus: find a block, hops, re-centre, history, details, system context
   await page.click('.tabs [data-tab=focus]'); await page.waitForSelector('#fvp .fc.me');

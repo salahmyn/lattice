@@ -16,6 +16,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/blocks"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/store"
@@ -29,10 +30,16 @@ var mapHTML []byte
 
 const graphSlot = "/*__GRAPH__*/"
 
-// MapHTML returns the map page with g inlined, so it works as a single file
-// without a server (lattice export map). A non-empty title replaces "Block map".
+// MapHTML returns the map page with g inlined and no audit: every promise on
+// it reads unknown. MapPage inlines an assurance lens as well.
 func MapHTML(g store.Graph, title string) ([]byte, error) {
-	data, err := json.Marshal(g) // escapes < and >, so the data cannot close its <script>
+	return MapPage(MapData{Graph: g, Assurance: Assurance(g, nil, "no audit was computed for this page")}, title)
+}
+
+// MapPage returns the map page with d inlined, so it works as a single file
+// without a server (lattice export map). A non-empty title replaces "Block map".
+func MapPage(d MapData, title string) ([]byte, error) {
+	data, err := json.Marshal(d) // escapes < and >, so the data cannot close its <script>
 	if err != nil {
 		return nil, err
 	}
@@ -67,8 +74,37 @@ func (s *Server) pageMap(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write(bytes.Replace(mapHTML, []byte(graphSlot), nil, 1))
 }
 
+// apiGraph serves the stored graph with the assurance lens beside it. The
+// audit runs outside the store lock: it builds the knowledge graph.
 func (s *Server) apiGraph(w http.ResponseWriter, r *http.Request) {
-	s.withStore(w, func(st store.Store) (any, error) { return st.Graph(r.Context()) })
+	if s.opts.Store == nil {
+		writeJSONError(w, errors.New("no block graph store: serve opens the workspace store"), http.StatusServiceUnavailable)
+		return
+	}
+	s.storeMu.Lock()
+	g, err := s.opts.Store.Graph(r.Context())
+	s.storeMu.Unlock()
+	if err != nil {
+		writeJSONError(w, err, http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, MapData{Graph: g, Assurance: s.mapAssurance(r.Context(), g)})
+}
+
+// mapAssurance audits the live workspace for the map, read-only, as
+// /api/v2 does. When the graph cannot be built the lens says why and every
+// promise reads unknown.
+func (s *Server) mapAssurance(ctx context.Context, g store.Graph) AssuranceLens {
+	if s.opts.GraphBuilder == nil && s.opts.ReadOnlyGraphBuilder == nil {
+		return Assurance(g, nil, "the server has no knowledge graph to audit")
+	}
+	kg, err := s.readGraph(ctx)
+	if err != nil {
+		return Assurance(g, nil, "the audit could not build the knowledge graph: "+err.Error())
+	}
+	_, dirty := s.gitState()
+	rep := audit.Compute(audit.Collect(s.ws.LatticeDir, kg, dirty != nil && *dirty))
+	return Assurance(g, &rep, "")
 }
 
 func (s *Server) apiBlockSearch(w http.ResponseWriter, r *http.Request) {
