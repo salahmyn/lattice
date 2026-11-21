@@ -68,8 +68,9 @@ func TestBlockMapExample(t *testing.T) {
 // scripts/blockmap-smoke.js. It skips in -short mode and when node or the
 // playwright package is missing; it never installs browsers. The script blocks
 // every request that is not file://, so the map must lay out with the layout
-// library it carries.
+// library it carries, and with its graph inline it never shows the load status.
 // @verifies ui:INV-4
+// @verifies ui:INV-6
 func TestBlockMapBrowserSmoke(t *testing.T) {
 	if testing.Short() {
 		t.Skip("-short: no browser")
@@ -91,6 +92,7 @@ func TestBlockMapBrowserSmoke(t *testing.T) {
 	}
 	// the demo must exercise these checks, not skip them
 	for _, want := range []string{
+		"ok   the exported map shows no load status (its graph is inline)",
 		"ok   the layout library starts from the file itself",
 		"ok   the diagram has the layered layout (spline edges), not the grid fallback",
 		"ok   without the layout library the grid fallback draws",

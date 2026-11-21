@@ -18,3 +18,5 @@ invariants:
     statement: The block map never loads code from the network; an exported map carries its layout library inline and serve serves it from the binary, so both lay out offline.
   - id: INV-5
     statement: The server-rendered pages load no script, stylesheet or font from another origin; serve serves every one of them from the binary, so the pages render offline.
+  - id: INV-6
+    statement: The served block map shows a live loading status while its graph loads and an error with a retry when the load fails, and no status once the graph is drawn; an exported map, whose graph is inline, never shows it.

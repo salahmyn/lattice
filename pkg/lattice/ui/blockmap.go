@@ -72,6 +72,11 @@ func (s *Server) withStore(w http.ResponseWriter, fn func(store.Store) (any, err
 	writeJSON(w, v)
 }
 
+// pageMap serves the map without its graph: the page fetches /api/graph,
+// whose first answer can take seconds while the knowledge graph and the
+// audit are built, behind a live load status that turns into an error with a
+// retry when the fetch fails.
+// @enforces ui:INV-6
 func (s *Server) pageMap(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	page := bytes.Replace(mapHTML, []byte(graphSlot), nil, 1)
