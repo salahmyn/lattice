@@ -379,8 +379,11 @@ command table to detect: a Deno `serve` / `Deno.serve` handler, a
 `cron.schedule` job in a SQL migration, a route registered in TypeScript
 (`app.get('/orders', listOrders)`). `lattice extract` turns each of these
 that no declared or detected entry point covers into a **proposed entry
-point** (`status: proposal`), writes it to `lattice/entry-points/`, and
-records the fact that produced it in `detected_by`:
+point** (`status: proposal`) and records the fact that produced it in
+`detected_by`. Proposals are derived: extract recomputes them every run and
+writes nothing to `lattice/entry-points/`, so `lattice ep list`, the views
+and `validate` see them, and a root that moves simply stops being proposed.
+Accepting one writes this manifest:
 
 ```yaml
 id: ep.cron.nightly_x
@@ -399,9 +402,11 @@ detected_by: runtime_root:cron
 
 A `serve` handler takes kind `http_route`; a cron job takes kind `cron`
 with its schedule and job name when they are string literals. Proposals are
-never promoted by themselves: `lattice ep accept <id>` makes one
-`production`, `lattice ep reject <id>` archives it so extract does not
-propose it again. A manifest that already exists is never rewritten.
+never promoted by themselves: `lattice ep accept <id>` writes its manifest
+with `status: production` (the flow stays derived), and `lattice ep reject
+<id>` writes it straight into `.rejected/` so extract does not propose it
+again. Nothing is written until you accept or reject; a manifest that
+already exists is never rewritten.
 
 The flow of a proposal comes from the call graph, not from file proximity:
 one step per feature with a symbol the handler reaches through resolved

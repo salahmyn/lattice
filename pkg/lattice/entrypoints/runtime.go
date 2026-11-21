@@ -165,27 +165,3 @@ func IsRejected(entryPointsDir, id string) bool {
 	_, err := os.Stat(filepath.Join(entryPointsDir, ".rejected", rel))
 	return err == nil
 }
-
-// PersistProposals writes each proposal that has no manifest yet to
-// entryPointsDir, so `lattice ep accept` and `reject` can act on it. The
-// flow is left out: it is derived from the call graph and recomputed on
-// every extract (see Merge). A manifest that exists is never touched, so a
-// reviewer's edits and status survive. Returns the ids it wrote.
-func PersistProposals(entryPointsDir string, proposals, persisted []schema.EntryPoint) ([]string, error) {
-	have := map[string]bool{}
-	for _, ep := range persisted {
-		have[ep.ID] = true
-	}
-	var wrote []string
-	for _, ep := range proposals {
-		if have[ep.ID] || ep.Status != schema.StatusProposal || ep.DetectedBy == "" {
-			continue
-		}
-		ep.Flow, ep.SideEffects = nil, nil
-		if _, err := SaveEntryPoint(entryPointsDir, ep); err != nil {
-			return wrote, err
-		}
-		wrote = append(wrote, ep.ID)
-	}
-	return wrote, nil
-}

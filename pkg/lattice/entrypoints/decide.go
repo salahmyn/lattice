@@ -97,3 +97,38 @@ func LoadStatus(entryPointsDir, id string) string {
 	}
 	return head.Status
 }
+
+// DecideDerived records a reviewer's decision on a proposal that exists only
+// in the derived graph (see ProposeFromRuntime), so no manifest is on disk
+// yet. Accept writes it with status production; reject writes it straight
+// into .rejected/, which IsRejected reads. The flow is left out: it is
+// derived. A manifest that already exists is never overwritten.
+// @enforces entrypoints:INV-3
+func DecideDerived(entryPointsDir string, ep schema.EntryPoint, decision string) (DecideResult, error) {
+	res := DecideResult{ID: ep.ID, Decision: decision}
+	rel := filepath.FromSlash(strings.ReplaceAll(ep.ID, ".", "/")) + ".yaml"
+	path := filepath.Join(entryPointsDir, rel)
+	ep.Flow, ep.SideEffects = nil, nil
+	switch decision {
+	case DecisionAcceptEP:
+		ep.Status = schema.StatusProduction
+		res.NewStatus = string(schema.StatusProduction)
+		res.Path = path
+	case DecisionRejectEP:
+		path = filepath.Join(entryPointsDir, ".rejected", rel)
+		res.ArchivedAt = path
+	default:
+		return res, fmt.Errorf("decision must be %q or %q, got %q", DecisionAcceptEP, DecisionRejectEP, decision)
+	}
+	if _, err := os.Stat(path); err == nil {
+		return res, fmt.Errorf("%s already exists", path)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return res, err
+	}
+	out, err := schema.MarshalCanonical(ep)
+	if err != nil {
+		return res, err
+	}
+	return res, os.WriteFile(path, out, 0o644)
+}

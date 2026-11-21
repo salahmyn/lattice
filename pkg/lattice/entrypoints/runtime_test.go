@@ -169,10 +169,7 @@ func TestCoveredAndRejectedRootsAreNotProposed(t *testing.T) {
 
 	dir := t.TempDir()
 	all := proposals(kg, g, nil)
-	if _, err := entrypoints.PersistProposals(dir, all, nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := entrypoints.Decide(dir, all[0].ID, entrypoints.DecisionRejectEP); err != nil {
+	if _, err := entrypoints.DecideDerived(dir, all[0], entrypoints.DecisionRejectEP); err != nil {
 		t.Fatal(err)
 	}
 	rejected := entrypoints.ProposeFromRuntime(entrypoints.RuntimeInput{
@@ -184,35 +181,31 @@ func TestCoveredAndRejectedRootsAreNotProposed(t *testing.T) {
 	}
 }
 
-// Proposals persist without their flow so a reviewer can accept or reject
-// them; an accepted one stays what the reviewer made it, and the next
-// extract gives it the flow the call graph computes.
-// @verifies entrypoints:INV-1, entrypoints:INV-5
-func TestProposalsPersistAndStayProposals(t *testing.T) {
+// An accepted proposal keeps what the reviewer made it and takes the flow the
+// call graph computes on the next run; a manifest written by DecideDerived
+// has no flow of its own.
+// @verifies entrypoints:INV-1, entrypoints:INV-3
+func TestDerivedProposalDecisions(t *testing.T) {
 	kg, g := runtimeFixture(t)
 	all := proposals(kg, g, nil)
 	dir := t.TempDir()
-	wrote, err := entrypoints.PersistProposals(dir, all, nil)
-	if err != nil || len(wrote) != 2 {
-		t.Fatalf("wrote %v, %v", wrote, err)
-	}
-	persisted, err := entrypoints.LoadEntryPoints(dir)
-	if err != nil || len(persisted) != 2 {
-		t.Fatalf("loaded %d: %v", len(persisted), err)
-	}
-	for _, ep := range persisted {
-		if ep.Status != schema.StatusProposal || len(ep.Flow) != 0 || ep.DetectedBy == "" {
-			t.Errorf("persisted %s: %+v", ep.ID, ep)
-		}
-	}
-	if again, _ := entrypoints.PersistProposals(dir, all, persisted); len(again) != 0 {
-		t.Errorf("a manifest that exists was written again: %v", again)
-	}
-	res, err := entrypoints.Decide(dir, all[0].ID, entrypoints.DecisionAcceptEP)
+	res, err := entrypoints.DecideDerived(dir, all[0], entrypoints.DecisionAcceptEP)
 	if err != nil || res.NewStatus != string(schema.StatusProduction) {
 		t.Fatalf("accept: %+v, %v", res, err)
 	}
-	persisted, _ = entrypoints.LoadEntryPoints(dir)
+	if _, err := entrypoints.DecideDerived(dir, all[0], entrypoints.DecisionAcceptEP); err == nil {
+		t.Error("a manifest that exists must not be overwritten")
+	}
+	if _, err := entrypoints.DecideDerived(dir, all[1], entrypoints.DecisionRejectEP); err != nil {
+		t.Fatal(err)
+	}
+	if !entrypoints.IsRejected(dir, all[1].ID) {
+		t.Error("the rejected proposal is not in .rejected/")
+	}
+	persisted, err := entrypoints.LoadEntryPoints(dir)
+	if err != nil || len(persisted) != 1 || len(persisted[0].Flow) != 0 {
+		t.Fatalf("persisted = %+v, %v", persisted, err)
+	}
 	merged := entrypoints.Merge(all, persisted)
 	for _, ep := range merged {
 		if len(ep.Flow) != 1 {

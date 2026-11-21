@@ -259,7 +259,8 @@ func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOpt
 			}
 			// Runtime roots (serve handlers, cron jobs, detected routes) that
 			// no entry point covers become proposals, with the flow their
-			// handler reaches. A reviewer promotes or rejects them.
+			// handler reaches. They are derived on every extract and written
+			// to disk only when a reviewer accepts or rejects one.
 			var proposals []schema.EntryPoint
 			if callGraph != nil {
 				proposals = entrypoints.ProposeFromRuntime(entrypoints.RuntimeInput{
@@ -271,9 +272,6 @@ func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOpt
 					Rejected: func(id string) bool { return entrypoints.IsRejected(ws.EntryPointsDir(), id) },
 				})
 				detected = append(detected, proposals...)
-				if !opts.readOnly {
-					_, _ = entrypoints.PersistProposals(ws.EntryPointsDir(), proposals, persisted)
-				}
 			}
 			merged := entrypoints.Merge(detected, persisted)
 
