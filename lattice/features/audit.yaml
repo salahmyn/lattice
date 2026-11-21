@@ -44,3 +44,5 @@ invariants:
     statement: The results and coverage inputs match head when their commit stamp is head's, either side is unknown, or git shows the two commits differ only in Lattice's own ledger and cache (for coverage, only when it was ingested from a clean tree); another commit that git cannot compare with head never matches.
   - id: INV-10
     statement: A line counts as reached by an invariant's verifiers only from the coverage of an invocation that ran those verifiers (or a verifier's own per-test run), and a line with no such data is unknown, never run, verified or counted toward a floor.
+  - id: INV-11
+    statement: A killed break counts as proven through an entry point only when a verifier that killed it ran a way in that reaches the enforcer (its own per-test run, or the line data of its unshared verifier group); a static path alone is never proof, it only reads unknown, and only a complete static graph in which no killer reaches a way in reads none, which raises BREAK_NO_ENTRYPOINT (info).

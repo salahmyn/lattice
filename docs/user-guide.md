@@ -2141,6 +2141,10 @@ or not. An unknown `--promise` id is a usage error (exit 2).
 `lattice audit --lines` adds what each block of code is for and how many of
 its lines its own verifiers ran (section 4s).
 
+Each break-tested row also says whether a verifier that killed a break ran the
+promise through an entry point's handler (`entrypoint`, `none`, `unknown`; section
+4t). It never changes the class.
+
 `inputs.results.matches_head` and `inputs.coverage.matches_head` say whether
 the evidence is of the graph's commit, by the rule validate uses for
 `RESULTS_STALE`: commits that differ only in Lattice's ledger and cache count
@@ -3719,6 +3723,87 @@ Declaring `coverage.floors.verified_lines` (0-100) makes `lattice validate` repo
 below it. A feature with only unknown lines has nothing to compare: it reports "no
 line data" as info. Unknown lines never count as verified. Without the floor the
 code does not exist for validate, and no line data is read.
+
+## 4t. Entry-point proof: did a verifier run the promise through a way in?
+
+A promise can be break-tested and still not hold in production. Its verifiers may
+call the enforcer directly, with a stub that throws, while the deployed entry point
+wraps a handler that catches every error itself, so on the live path the enforcer
+never sees the failure. Breaking the enforcer kills the stub-driven verifiers, and
+the promise reads `break_tested`.
+
+```sh
+lattice break                 # the runs: which verifiers failed after each break
+lattice audit                 # an "entry-point proof" line, and a note on each break-tested row
+lattice validate              # BREAK_NO_ENTRYPOINT (info) for each proof of none
+```
+
+### What counts
+
+A **way in** is the handler of a declared entry point (`handler.symbol`, not a
+deprecated one or a proposal), or a runtime root no entry point declares (a serve
+handler or a detected route). It counts for a promise only when the static call graph
+has a synchronous path from its handler to the enforcer; a path through a queue or
+other channel does not.
+
+A **killer** is a verifier of the promise among the `failed_tests` of a killed break
+in `breaks.json`. A killer **ran a way in** when, strongest first:
+
+1. its own per-test coverage executed the handler, or a symbol on a static path from
+   the handler to the enforcer (the enforcer itself does not count, unless it is the
+   handler);
+2. `verifier-lines.json` (`lattice break --lines`) shows its verifier group's
+   invocation ran no other test and hit a line of the handler. This is group level:
+   it does not say which verifier of the group ran the line, and the evidence says so.
+   A shared invocation is no proof.
+
+A static path from the killer to the handler is **never proof**. It shows the test can
+run the way in, not that it did.
+
+### The outcomes
+
+Each break-tested promise (a break killed an enforcer) gets one outcome, in
+`lattice audit --json` as `rows[].entrypoint` with the way in, the killers and the
+evidence, and counted in `summary.entrypoint` (an addition to `lattice.audit/1`, absent
+when no promise has one):
+
+- `entrypoint`: some killer of some killed break ran a way in.
+- `none`: every killer is shown not to have run one. The killer's static call graph
+  reaches the enforcer it killed and no way in, and nothing it reaches has an
+  unresolved or dynamic call. Nothing dynamic shows a way in ran. This raises
+  `BREAK_NO_ENTRYPOINT`.
+- `unknown`: anything else. It raises no finding. The audit text counts it, with the
+  causes: `entry-point proof: 3 proven, 1 none, 7 unknown (5 no dynamic evidence, 2
+  incomplete call graph)`.
+
+The proof never changes the class of a row or its `break_tested` signal.
+`BREAK_NO_ENTRYPOINT` is info and always on, so `validate.fail_on: warning` stays green
+with it open; `validate.severity: { BREAK_NO_ENTRYPOINT: off }` drops it.
+
+### Clear the finding
+
+The finding names the ways in that reach the enforcer and the killers that did not
+run them. Add a verifier tagged `@verifies <promise>` that runs the promise through
+one of those ways in: an integration test that calls the deployed entry point
+with the far side failing, or a browser journey (see "Browser journeys as verifiers" in
+section 4i), wired as a `break.runners` entry so that breaking the enforcer can fail
+it. Run `lattice break` again: once that verifier is among the failed tests of a
+killed break, the proof reads `entrypoint` with coverage or line data, or `unknown`
+without, and the finding goes.
+
+### What reads unknown
+
+- the killer statically reaches a handler, and no per-test coverage or unshared line
+  data shows it ran (run `lattice results ingest --per-test`, or `lattice break
+  --lines`);
+- the killer's static graph has gaps: an unresolved call, no reference from the test,
+  or no path to the enforcer it killed;
+- no declared entry point or runtime root has a path to the enforcer;
+- the enforcer is SQL: its ways in are database roles, not handlers;
+- the break recorded no failed test that is a verifier of the promise (a `breaks.json`
+  from before failed tests were kept);
+- no call graph was read. `lattice audit` and `lattice validate` read it; other
+  commands that print the audit do not, and show every proof as unknown.
 
 ## 5. Day-to-day commands
 

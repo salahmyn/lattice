@@ -56,6 +56,11 @@ its evidence basis: `per_test`, `per_file` or `suite`.
   feature's lines run by their own verifiers (`lattice break --lines`, then
   `lattice audit --lines`) are under the floor. Add verifiers for the
   `not_run` ranges it lists; unknown lines never count as verified.
+- `BREAK_NO_ENTRYPOINT` (info) — a break-tested promise whose killing verifiers
+  never ran an entry point's handler that reaches the enforcer: the way in may
+  hide the failure the stubs see. Add a verifier tagged `@verifies` that runs
+  the promise through one of the ways in the finding names, and run it as a
+  break runner. An `unknown` proof raises nothing.
 
 A row reads `exercised` when it is demonstrated and a verifier's own
 per-test run executed an enforcer; only per-test coverage promotes to it.
