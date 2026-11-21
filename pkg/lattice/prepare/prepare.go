@@ -354,8 +354,15 @@ type Packet struct {
 	// signals and Diff, with Extra pinned.
 	Hash string
 	// Diff is the structural change since the last confirmed version
-	// (confirm.StructuralDiff); "initial" when none was ever confirmed.
+	// (confirm.StructuralDiff); "initial" when none was ever confirmed. It
+	// also names every acceptance case added, edited, retired or removed
+	// since the last confirmation recorded it (confirm.CaseDiff). The hash
+	// pins the BRD's own lines; the cases are hashed with their promises.
 	Diff []string
+	// Friction is the friction the review takes for Diff (confirm.FrictionOf):
+	// full for a first confirmation or any structural change, case edits
+	// included; light only for text-only drift.
+	Friction string
 	// Since is the confirmed version the diff is against; nil when never confirmed.
 	Since *confirm.Since
 	// Err is set when a confirmed version exists but could not be read from
@@ -373,11 +380,16 @@ func (env Env) Packet(b schema.BRD, extra string) Packet {
 	}
 	prev, since, err := env.lastConfirmedErr(b.ID, b.Version, rel)
 	p := Packet{Since: since, Err: err}
-	p.Diff = confirm.StructuralDiff(prev, b)
+	diff := confirm.StructuralDiff(prev, b)
 	p.Hash = confirm.PacketHash(confirm.PacketInput{
-		BRD: b, Promises: confirm.FactsFor(env.Report.Rows, confirm.PromisesOf(b)), Diff: p.Diff, Extra: extra,
+		BRD: b, Promises: confirm.FactsFor(env.Report.Rows, confirm.PromisesOf(b)), Diff: diff, Extra: extra,
 		Declared: confirm.DeclaredBy(env.KG.Features, b.ID),
 	})
+	p.Diff = confirm.WithCaseDiff(diff, confirm.CaseDiff(env.Cache, b, env.Report.Rows))
+	p.Friction = confirm.FrictionOf(p.Diff)
+	if err != nil {
+		p.Friction = confirm.FrictionFull
+	}
 	return p
 }
 

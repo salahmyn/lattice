@@ -148,3 +148,78 @@ func TestDecisionRecordsCases(t *testing.T) {
 		t.Errorf("confirm.json record = %s", body)
 	}
 }
+
+// The structural diff a reviewer sees names every case added, edited (with
+// what changed), retired or removed since the last confirmation recorded it,
+// and any such line makes the review take full friction. A promise whose
+// confirmation recorded no cases says so; one never confirmed adds nothing.
+// @verifies confirm:INV-21
+func TestStructuralDiffNamesCaseEdits(t *testing.T) {
+	b := schema.BRD{ID: "brd.x", Version: 2, SuccessCriteria: []schema.BRDCriterion{
+		{ID: "SC-1", MapsToInvariant: schema.InvariantRefs{"f:INV-1"}}, {ID: "SC-2", MapsToInvariant: schema.InvariantRefs{"g:INV-2"}}}}
+	stamp := func(id string, kind schema.CaseKind, st string) schema.CaseStamp {
+		return schema.NewCaseStamp(id, kind, st, "", false)
+	}
+	rec := func(state string, version int, cases []schema.PromiseCases) Record {
+		return Record{ID: "brd.x", Version: version, Action: ActionApprove, State: state, ApproverLogin: "ana", PR: 7, Cases: cases}
+	}
+	held := []schema.PromiseCases{{Promise: "f:INV-1", Cases: []schema.CaseStamp{
+		stamp("a", schema.CaseHappy, "A 100.00 withdrawal pays at most 5.00."),
+		stamp("b", schema.CaseEdge, "A 0.01 withdrawal pays no fee."),
+		stamp("c", schema.CaseError, "A negative amount is rejected first."),
+		stamp("d", schema.CaseEdge, "Zero pays nothing."),
+	}}, {Promise: "g:INV-2", Cases: []schema.CaseStamp{}}}
+	rows := []audit.Row{
+		{Promise: "f:INV-1", Cases: []audit.CaseRow{
+			{ID: "a", Kind: "happy", Statement: "A 100.00 withdrawal pays at most 5.00."},
+			{ID: "b", Kind: "error", Statement: "A 0.01 withdrawal pays no fee."},
+			{ID: "c", Kind: "error", Statement: "A negative amount is rejected first.", Retired: true},
+			{ID: "e", Kind: "security", Statement: "Only the owner sees the fee."},
+		}},
+		{Promise: "g:INV-2", Cases: []audit.CaseRow{{ID: "a", Kind: "happy", Statement: "x"}}},
+	}
+	cache := &File{Records: []Record{rec(StateStale, 2, held)}}
+	got := CaseDiff(cache, b, rows)
+	want := []string{
+		"case 1b of f:INV-1 edited: kind edge->error",
+		"case 1c of f:INV-1 retired",
+		"case 1d of f:INV-1 removed",
+		"case 1e of f:INV-1 added",
+		"case 2a of g:INV-2 added",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("case diff:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	diff := WithCaseDiff([]string{"none"}, got)
+	if diff[0] != want[0] || len(diff) != len(want) || FrictionOf(diff) != FrictionFull {
+		t.Errorf("a case edit is structural: %v %s", diff, FrictionOf(diff))
+	}
+	if FrictionOf([]string{"none"}) != FrictionLight || FrictionOf([]string{"initial"}) != FrictionFull || FrictionOf(nil) != FrictionFull {
+		t.Error("friction: none is light; initial and unknown are full")
+	}
+	if WithCaseDiff([]string{"none"}, nil)[0] != "none" {
+		t.Error("no case lines keep none")
+	}
+
+	// Unchanged cases add nothing; an older version's confirmation is the
+	// base when the current version has none.
+	same := []audit.Row{{Promise: "f:INV-1", Cases: []audit.CaseRow{
+		{ID: "a", Kind: "happy", Statement: "A 100.00 withdrawal pays at most 5.00."},
+		{ID: "b", Kind: "edge", Statement: "A 0.01 withdrawal pays no fee."},
+		{ID: "c", Kind: "error", Statement: "A negative amount is rejected first."},
+		{ID: "d", Kind: "edge", Statement: "Zero pays nothing."},
+	}}}
+	if got := CaseDiff(&File{Records: []Record{rec(StateConfirmed, 1, held)}}, b, same); len(got) != 0 {
+		t.Errorf("unchanged: %v", got)
+	}
+	// A confirmation that recorded no cases says so; none at all adds nothing.
+	if got := CaseDiff(&File{Records: []Record{rec(StateConfirmed, 2, nil)}}, b, rows); len(got) != 2 ||
+		got[0] != "cases of f:INV-1 not recorded at the last confirmation" {
+		t.Errorf("not recorded: %v", got)
+	}
+	for name, c := range map[string]*File{"no cache": nil, "no record": {}, "pending": {Records: []Record{rec(StatePending, 2, held)}}} {
+		if got := CaseDiff(c, b, rows); len(got) != 0 {
+			t.Errorf("%s: %v", name, got)
+		}
+	}
+}

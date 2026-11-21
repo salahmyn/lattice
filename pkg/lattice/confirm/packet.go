@@ -268,3 +268,155 @@ func StructuralDiff(prev *schema.BRD, cur schema.BRD) []string {
 	}
 	return out
 }
+
+// LastCases finds the cases the last human confirmation of a promise under
+// a BRD recorded: the current version's confirmed decision, else its stale
+// one, else the confirmed decision of the latest earlier version. found is
+// false when no such decision exists (or the current version was returned
+// or overturned); recorded is false when it was prepared before decisions
+// recorded their cases.
+func LastCases(cache *File, b schema.BRD, promise string) (stamps []schema.CaseStamp, recorded, found bool) {
+	if cache == nil || cache.SetAside() != "" {
+		return nil, false, false
+	}
+	var current, stale, older *Record
+	for i := range cache.Records {
+		r := &cache.Records[i]
+		if r.ID != b.ID {
+			continue
+		}
+		if r.Version == b.Version && r.State == StateConfirmed && (r.Action == ActionReturn || r.Action == ActionOverturn) {
+			return nil, false, false
+		}
+		covers := r.Action == ActionApprove || r.Action == ActionAck || (r.Action == ActionPromiseConfirm && containsString(r.Rows, promise))
+		switch {
+		case !covers:
+		case r.Version == b.Version && r.State == StateConfirmed:
+			current = r
+		case r.Version == b.Version && r.State == StateStale && stale == nil:
+			stale = r
+		case r.Version < b.Version && r.State == StateConfirmed && (older == nil || r.Version > older.Version):
+			older = r
+		}
+	}
+	rec := current
+	if rec == nil {
+		rec = stale
+	}
+	if rec == nil {
+		rec = older
+	}
+	if rec == nil {
+		return nil, false, false
+	}
+	stamps, recorded = schema.CasesOf(rec.Cases, promise)
+	return stamps, recorded, true
+}
+
+func containsString(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+// CaseDiff names every acceptance case of a BRD's promises that changed
+// since the last human confirmation recorded it (LastCases): "case 1b of
+// f:INV-1 edited: kind edge->error", "case 1c of f:INV-1 added", "case 1a of
+// f:INV-1 retired", "case 1d of f:INV-1 removed", or, for a promise with
+// cases whose confirmation recorded none, "cases of f:INV-1 not recorded at
+// the last confirmation". A promise never confirmed adds nothing: its
+// review is a first one. Any line here is a structural change.
+// @enforces confirm:INV-21
+func CaseDiff(cache *File, b schema.BRD, rows []audit.Row) []string {
+	by := map[string]audit.Row{}
+	for _, r := range rows {
+		by[r.Promise] = r
+	}
+	var out []string
+	for _, ref := range PromisesOf(b) {
+		stamps, recorded, found := LastCases(cache, b, ref)
+		cur := by[ref].Cases
+		inv := ref[strings.LastIndex(ref, ":")+1:]
+		switch {
+		case !found:
+			continue
+		case !recorded:
+			if len(cur) > 0 {
+				out = append(out, "cases of "+ref+" not recorded at the last confirmation")
+			}
+			continue
+		}
+		label := func(id string) string { return "case " + schema.CaseLabel(inv, id) + " of " + ref }
+		held := map[string]schema.CaseStamp{}
+		for _, s := range stamps {
+			held[s.ID] = s
+		}
+		now := map[string]bool{}
+		for _, c := range cur {
+			now[c.ID] = true
+			s, ok := held[c.ID]
+			if !ok {
+				out = append(out, label(c.ID)+" added")
+				continue
+			}
+			delta := s.Delta(schema.NewCaseStamp(c.ID, schema.CaseKind(c.Kind), c.Statement, c.Enforcer, c.Retired))
+			switch {
+			case len(delta) == 0:
+			case len(delta) == 1 && delta[0] == "retired":
+				out = append(out, label(c.ID)+" retired")
+			default:
+				out = append(out, label(c.ID)+" edited: "+strings.Join(delta, ", "))
+			}
+		}
+		for _, s := range stamps {
+			if !now[s.ID] {
+				out = append(out, label(s.ID)+" removed")
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// WithCaseDiff is the structural diff a reviewer sees: the BRD's own lines
+// (StructuralDiff) followed by the case lines (CaseDiff). Case lines replace
+// a "none". The packet hash keeps the BRD's lines only, since the cases are
+// hashed with their promises already, so a decision pinned before case
+// lines existed still matches.
+func WithCaseDiff(diff, cases []string) []string {
+	if len(cases) == 0 {
+		return diff
+	}
+	var out []string
+	for _, d := range diff {
+		if d != "none" {
+			out = append(out, d)
+		}
+	}
+	return append(out, cases...)
+}
+
+// Review friction levels (rnd/0010 §A2).
+const (
+	// FrictionFull: the reviewer types the version and must have viewed the
+	// key sections.
+	FrictionFull = "full"
+	// FrictionLight: a lighter dialog, for text-only drift.
+	FrictionLight = "light"
+)
+
+// FrictionOf is the friction a review takes for a structural diff: light
+// only when it reads "none" (text-only drift, or nothing changed); full for
+// a first confirmation ("initial"), any criterion, tier, mapping or
+// constraint change, any case added, edited, retired, removed or not
+// recorded, and a diff that could not be computed (empty).
+// @enforces confirm:INV-21
+func FrictionOf(diff []string) string {
+	if len(diff) == 1 && diff[0] == "none" {
+		return FrictionLight
+	}
+	return FrictionFull
+}

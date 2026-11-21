@@ -257,7 +257,8 @@
         "honesty": "fact",
         "code": "NOT_COMPUTED",
         "text": "not computed: the text-only diff (the kernel diffs structure only) has no kernel source yet"
-      }
+      },
+      "friction": "full"
     },
     "packet_hash": "sha256:6141863081722da803e8c7e095404fb0683ac7807147441b7496c3dec7981d4a",
     "hash_state": {

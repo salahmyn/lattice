@@ -525,10 +525,17 @@ type Diff struct {
 	SinceVersion   int    `json:"since_version,omitempty"`
 	SinceCommit    string `json:"since_commit,omitempty"`
 	NeverConfirmed bool   `json:"never_confirmed"`
-	// Structural lists criteria, tiers, mappings and constraints that changed.
+	// Structural lists criteria, tiers, mappings and constraints that changed,
+	// and each acceptance case added, edited, retired or removed since the
+	// last confirmation recorded it.
 	Structural []string `json:"structural"`
 	// TextOnly has no kernel source: the kernel diffs structure only.
 	TextOnly Assurance `json:"text_only"`
+	// Friction is the review friction the kernel sets for this diff (rnd/0010
+	// §A2): "full" for a first confirmation, any structural change (a case
+	// edit included) or a diff that could not be read; "light" only for
+	// text-only drift.
+	Friction string `json:"friction"`
 }
 
 // Packet is the review packet of one BRD version.

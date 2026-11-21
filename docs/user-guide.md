@@ -1724,12 +1724,22 @@ Refusal codes: `BRD_NOT_FOUND`, `VERSION_REQUIRED`, `VERSION_MISMATCH`,
 `generated_code`, `out_of_reach` and `accepted_risk` (the last two need an ADR). A
 waiver is shown and never counted as proof.
 
-The decision file records `{action, id, version, packet_hash, rows, reason,
-prepared_by, prepared_at}`. `prepared_by` is your git identity, for display only.
+The decision file records `{action, id, version, packet_hash, rows, cases, reason,
+prepared_by, prepared_at}`. `prepared_by` is your git identity, for display only;
+`cases` lists each row's acceptance cases (see "Acceptance cases").
 The `packet_hash` covers the BRD version's content (not its status, its approval
-block or a source's checked mark), each promise's structural signals (text, tier, enforcers, verifiers) and
+block or a source's checked mark), each promise's structural signals (text, tier, enforcers, verifiers, cases) and
 the structural diff since the last confirmed version. Run-dependent signals are
 left out, so a better test run never voids a confirmation.
+
+The review packet's structural diff (`/api/v2/brds/{id}`, `packet.diff.structural`) also
+names each acceptance case changed since the last confirmation that recorded it:
+`case 1b of wallet.fees:INV-1 edited: kind edge->error`, `case 1c of … added`, `… retired`,
+`… removed`, or `cases of … not recorded at the last confirmation`. Any edit to a promise,
+criterion or case is structural, so `packet.diff.friction` reads `full` (type the version,
+view the key sections); it reads `light` only when the diff is `none`. The case lines are
+not hashed through the diff (the cases are hashed with their promises), so a decision
+pinned before they existed still matches.
 
 ### Confirm
 

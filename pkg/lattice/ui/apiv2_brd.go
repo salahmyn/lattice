@@ -510,7 +510,8 @@ func (w *v2world) packet(b schema.BRD, promises []contract.Promise, counts contr
 		Version: b.Version, Counts: counts,
 		BlindSpot:  contract.NotComputed("the blind spot (untraced touched lines are measured per change: lattice check)"),
 		OutOfReach: []contract.Waiver{},
-		Diff:       contract.Diff{NeverConfirmed: pk.Since == nil && pk.Err == nil, Structural: pk.Diff, TextOnly: contract.NotComputed("the text-only diff (the kernel diffs structure only)")},
+		Diff: contract.Diff{NeverConfirmed: pk.Since == nil && pk.Err == nil, Structural: pk.Diff,
+			TextOnly: contract.NotComputed("the text-only diff (the kernel diffs structure only)"), Friction: pk.Friction},
 	}
 	if pk.Since != nil {
 		p.Diff.SinceVersion, p.Diff.SinceCommit = pk.Since.Version, pk.Since.SHA
@@ -520,6 +521,7 @@ func (w *v2world) packet(b schema.BRD, promises []contract.Promise, counts contr
 			Text: "the last confirmed version could not be read from git (" + pk.Err.Error() + "): the diff and the hash are not those a decision would pin"}
 		p.Diff.Structural = []string{}
 		p.Diff.TextOnly = contract.NotComputed("the text-only diff")
+		p.Diff.Friction = confirm.FrictionFull
 	} else {
 		p.PacketHash = pk.Hash
 		p.HashState = contract.Assurance{State: contract.StateInfo, Honesty: contract.Fact, Code: "PACKET_HASH", Text: "computed as `lattice prepare` pins it"}

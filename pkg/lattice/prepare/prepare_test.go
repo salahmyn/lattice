@@ -541,3 +541,33 @@ func TestPrepareRecordsCases(t *testing.T) {
 		t.Errorf("b = %+v", one[1])
 	}
 }
+
+// The review packet's diff names a case edited since the confirmation that
+// recorded it, and the review takes full friction for it; the packet hash
+// stays the one a decision pins (the case is hashed with its promise, not
+// through the diff lines).
+// @verifies confirm:INV-21
+func TestPacketDiffNamesCaseEdits(t *testing.T) {
+	f := newFixture(t)
+	cases := []schema.InvariantCase{{ID: "a", Kind: schema.CaseHappy, Statement: "A 100.00 withdrawal pays at most 5.00."}}
+	f.kg.Features[0].Invariants[0].Cases = cases
+	env := f.env("")
+	held := confirm.CasesFor(env.Report.Rows, []string{"f:INV-1", "f:INV-2"})
+	env.Cache = &confirm.File{Records: []confirm.Record{{ID: "brd.x", Version: 1, Action: confirm.ActionApprove,
+		State: confirm.StateConfirmed, ApproverLogin: "ana", PR: 7, MergedSHA: f.git("rev-parse", "HEAD"), Cases: held}}}
+	if p := env.Packet(*f.brd("brd.x"), ""); p.Friction != confirm.FrictionFull || len(p.Diff) != 1 || p.Diff[0] != "initial" {
+		t.Errorf("unchanged cases add nothing: %v %s", p.Diff, p.Friction)
+	}
+
+	f.kg.Features[0].Invariants[0].Cases = []schema.InvariantCase{{ID: "a", Kind: schema.CaseEdge, Statement: "A 100.00 withdrawal pays 5.00."}}
+	env.Report = audit.Compute(audit.Sources{KG: f.kg})
+	p := env.Packet(*f.brd("brd.x"), "")
+	if p.Err != nil || !contains(p.Diff, "case 1a of f:INV-1 edited: kind happy->edge, statement") || p.Friction != confirm.FrictionFull {
+		t.Errorf("diff = %v, friction %s, err %v", p.Diff, p.Friction, p.Err)
+	}
+	bare := env
+	bare.Cache = nil
+	if q := bare.Packet(*f.brd("brd.x"), ""); q.Hash != p.Hash || contains(q.Diff, "case 1a of f:INV-1 edited: kind happy->edge, statement") {
+		t.Errorf("the case lines must not change the hash: %s vs %s (%v)", q.Hash, p.Hash, q.Diff)
+	}
+}

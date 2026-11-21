@@ -139,7 +139,9 @@ name must be settled first.
 - **A2.** First approvals and structural drift take full friction: the reviewer
   types the version, and the key sections must have been viewed. Text-only drift
   gets a lighter dialog. Any edit to a promise, criterion or case statement is
-  structural.
+  structural. *Built:* the packet's structural diff names case adds, edits (with
+  what changed), retirements and removals, and `packet.diff.friction` is `full`
+  for any structural line (confirm:INV-21).
 - **A3.** Batching is allowed within one BRD only.
 - **A4.** Before the new UI, the existing map gets an assurance lens. Every colour
   comes from a kernel field. Unknown or `UNPROVEN` is never drawn as a pass.

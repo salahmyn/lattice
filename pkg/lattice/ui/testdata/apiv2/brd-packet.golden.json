@@ -404,7 +404,8 @@
         "honesty": "fact",
         "code": "NOT_COMPUTED",
         "text": "not computed: the text-only diff has no kernel source yet"
-      }
+      },
+      "friction": "full"
     },
     "packet_hash": "",
     "hash_state": {

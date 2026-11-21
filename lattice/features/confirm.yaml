@@ -63,3 +63,5 @@ invariants:
       - id: d
         kind: error
         statement: A decision that recorded no cases, or no confirmation at all, leaves every case unconfirmed with the reason.
+  - id: INV-21
+    statement: The review packet's structural diff names every acceptance case added, edited, retired or removed since the last confirmation recorded it, and any such line makes the review take full friction, while the packet hash stays the one a decision pins.
