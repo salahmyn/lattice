@@ -1914,8 +1914,9 @@ config left them out, or they did not run after the break) and `failed_tests`
 
 **Cache.** A break outcome is a measurement of one tree, so by default an
 earlier `killed` or `survived` outcome is reused only on the same tree (the
-same commit, or any commit with the same files): the enforcer's source, the
-verifiers' source, the method, the script, the runner configuration (the
+same commit, or any commit with the same files): the enforcer itself (by
+name, so a copy of the same code in another module never takes its outcome),
+its source, the verifiers' source, the method, the script, the runner configuration (the
 resolved runner commands, the setup and restore commands and the generator version) and
 HEAD's tree must all match. A commit that changes any file, such as a
 migration a runner applies, runs the break again, because that file can stop

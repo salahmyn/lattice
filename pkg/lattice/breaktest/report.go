@@ -126,22 +126,26 @@ type Run struct {
 // POLICY that sets an expression, not the CREATE a later one overrides), and
 // the object swap is offered only when no later statement touches the object.
 // 5: terminal colour codes are stripped before build markers are matched, so a
-// coloured type error reads "does not compile", not killed.
-const GeneratorVersion = "5"
+// coloured type error reads "does not compile", not killed. 6: the cache key
+// names the enforcer, so two enforcers with the same source no longer share a
+// cached outcome (outcomes cached under such a collision are dropped).
+const GeneratorVersion = "6"
 
 // cacheKey is what makes an earlier outcome valid again: the same enforcer
-// source, the same verifier source, the same way of breaking it, the same
+// (by name: two enforcers can have the same source, a copy in another
+// package, and must never share an outcome), its same source, the same
+// verifier source, the same way of breaking it, the same
 // way of running the verifiers, and the same inputs (by default, the same
 // tree): an outcome is a measurement of one tree, and says nothing about
 // another unless the runners declare which files they read. An edge run adds
 // the hop, and its enforcer hash is the hash of the out end's file.
 // @enforces breaktest:INV-16
-func (r Run) cacheKey() [7]string {
+func (r Run) cacheKey() [8]string {
 	hop := ""
 	if r.Hop != nil {
 		hop = r.Hop.From + "\x00" + r.Hop.To + "\x00" + r.Hop.Kind
 	}
-	return [7]string{r.EnforcerHash, r.VerifierHash, r.Method, r.ScriptHash, r.ConfigHash, r.InputsHash, hop}
+	return [8]string{r.Enforcer, r.EnforcerHash, r.VerifierHash, r.Method, r.ScriptHash, r.ConfigHash, r.InputsHash, hop}
 }
 
 // cacheable reports whether the outcome may be reused later. Unknown never

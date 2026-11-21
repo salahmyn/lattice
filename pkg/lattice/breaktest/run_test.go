@@ -122,7 +122,7 @@ func TestGoVerifiersPassed(t *testing.T) {
 // is reused only when its hashes and method match.
 // @verifies breaktest:INV-5
 func TestCacheKey(t *testing.T) {
-	base := Run{EnforcerHash: "e", VerifierHash: "v", Method: MethodEarlyReturn, InputsHash: "tree:t"}
+	base := Run{Enforcer: "a.positive", EnforcerHash: "e", VerifierHash: "v", Method: MethodEarlyReturn, InputsHash: "tree:t"}
 	for _, o := range []string{Killed, Survived} {
 		r := base
 		r.Outcome = o
@@ -137,11 +137,13 @@ func TestCacheKey(t *testing.T) {
 	}
 	for name, mut := range map[string]func(*Run){
 		"enforcer": func(r *Run) { r.EnforcerHash = "e2" },
-		"verifier": func(r *Run) { r.VerifierHash = "v2" },
-		"method":   func(r *Run) { r.Method = MethodScripted },
-		"script":   func(r *Run) { r.ScriptHash = "s" },
-		"config":   func(r *Run) { r.ConfigHash = "c" },
-		"inputs":   func(r *Run) { r.InputsHash = "tree:u" },
+		// the same source in another place is another enforcer
+		"enforcer name": func(r *Run) { r.Enforcer = "b.positive" },
+		"verifier":      func(r *Run) { r.VerifierHash = "v2" },
+		"method":        func(r *Run) { r.Method = MethodScripted },
+		"script":        func(r *Run) { r.ScriptHash = "s" },
+		"config":        func(r *Run) { r.ConfigHash = "c" },
+		"inputs":        func(r *Run) { r.InputsHash = "tree:u" },
 	} {
 		c := base
 		mut(&c)
