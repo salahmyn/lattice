@@ -96,6 +96,13 @@ type Run struct {
 	// ConfigHash is the sha256 of the resolved runner commands, the setup
 	// commands and GeneratorVersion, part of the cache key.
 	ConfigHash string `json:"config_hash,omitempty"`
+	// InputsHash names what the outcome was measured on, part of the cache
+	// key: "tree:<tree sha>" for HEAD's tree (the default), or "inputs:<sha256>"
+	// of the files the runners declare as their inputs (break.runners[].inputs).
+	// Empty for a run on a dirty tree, which has no tree to name, and in
+	// reports written before the field existed: neither is ever reused. An
+	// addition to the lattice.breaks/1 contract; readers ignore it.
+	InputsHash string `json:"inputs_hash,omitempty"`
 }
 
 // GeneratorVersion stamps the generators, the runner logic and the outcome
@@ -105,18 +112,23 @@ type Run struct {
 const GeneratorVersion = "3"
 
 // cacheKey is what makes an earlier outcome valid again: the same enforcer
-// source, the same verifier source, the same way of breaking it, and the
-// same way of running the verifiers.
-func (r Run) cacheKey() [5]string {
-	return [5]string{r.EnforcerHash, r.VerifierHash, r.Method, r.ScriptHash, r.ConfigHash}
+// source, the same verifier source, the same way of breaking it, the same
+// way of running the verifiers, and the same inputs (by default, the same
+// tree): an outcome is a measurement of one tree, and says nothing about
+// another unless the runners declare which files they read.
+// @enforces breaktest:INV-16
+func (r Run) cacheKey() [6]string {
+	return [6]string{r.EnforcerHash, r.VerifierHash, r.Method, r.ScriptHash, r.ConfigHash, r.InputsHash}
 }
 
 // cacheable reports whether the outcome may be reused later. Unknown never
 // is: a missing runner can be configured and a timeout can be a slow
-// machine, so neither says anything about the next run.
-// @enforces breaktest:INV-5
+// machine, so neither says anything about the next run. Nor is a run with no
+// InputsHash (a dirty tree, or a report from before the field existed): it
+// names no tree, so nothing shows where it holds.
+// @enforces breaktest:INV-5, breaktest:INV-16
 func (r Run) cacheable() bool {
-	return r.Outcome == Killed || r.Outcome == Survived
+	return (r.Outcome == Killed || r.Outcome == Survived) && r.InputsHash != ""
 }
 
 // Path is where breaks.json lives under the lattice directory.

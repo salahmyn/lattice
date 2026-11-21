@@ -231,7 +231,9 @@ func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOpt
 	// points below, and the same graph is classified at the end.
 	var callGraph *reach.Graph
 	if !ws.Review && !res.Review {
-		callGraph = reach.Build(res.Modules, reach.Options{SCIP: scipByLanguage(ws, reg.Names())})
+		// Declared http_route entry points are routes a request can join.
+		declared, _, _ := entrypoints.LoadEntryPointsReport(ws.EntryPointsDir())
+		callGraph = reach.Build(res.Modules, reach.Options{SCIP: scipByLanguage(ws, reg.Names()), EntryPoints: declared, Origins: ws.HTTP.Origins})
 	}
 
 	// v0.3.0 entry-point detection + v0.3.1 SCIP/persistence/labeling.
@@ -309,6 +311,7 @@ func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOpt
 	// Runtime layers come after the entry points: a handler's layer is its
 	// entry point's.
 	kg.Violations = append(kg.Violations, graph.AssignLayers(&kg, ws.Layers)...)
+	kg.Violations = append(kg.Violations, graph.CheckHTTPOrigins(ws.HTTP.Origins)...)
 
 	var rr *reach.Result
 	if !ws.Review && !res.Review {
@@ -320,6 +323,7 @@ func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOpt
 			Declared:    cfg.CoverageConfig().Roots,
 			SCIP:        scipByLanguage(ws, reg.Names()),
 			Graph:       callGraph,
+			Origins:     ws.HTTP.Origins,
 		})
 		reach.Annotate(&kg, rr)
 	}

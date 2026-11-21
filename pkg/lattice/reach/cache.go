@@ -67,13 +67,15 @@ type Input struct {
 	// Graph is the call graph of Modules, when the caller already built it
 	// (Build with the same SCIP indexes); Compute builds one otherwise.
 	Graph *Graph
+	// Origins are the declared own origins, for Compute's own Build.
+	Origins []string
 }
 
 // Compute builds, roots and classifies the call graph in one call.
 func Compute(in Input) *Result {
 	g := in.Graph
 	if g == nil {
-		g = Build(in.Modules, Options{SCIP: in.SCIP})
+		g = Build(in.Modules, Options{SCIP: in.SCIP, EntryPoints: in.EntryPoints, Origins: in.Origins})
 	}
 	ri := RootInput{EntryPoints: in.EntryPoints, EntryFiles: EntryFiles(in.CodeRoots, in.Modules), Declared: in.Declared}
 	roots := g.Roots(ri)

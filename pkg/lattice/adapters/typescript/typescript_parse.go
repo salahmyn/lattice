@@ -628,6 +628,9 @@ func (p *tsParser) detectRoute(call *sitter.Node) {
 	if !httpRouteMethods[method] {
 		return
 	}
+	if obj := fn.ChildByFieldName("object"); obj != nil && obj.Kind() == "identifier" && obj.Utf8Text(p.src) == "axios" {
+		return // axios.get('/path') sends a request; it registers no route
+	}
 	args := call.ChildByFieldName("arguments")
 	path := p.firstStringArg(args)
 	if !strings.HasPrefix(path, "/") {

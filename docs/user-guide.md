@@ -1029,6 +1029,9 @@ is the severity each is designed for.
 | `IMPORT_UNRESOLVED` | info, with any of the four above | an `import()` or `require()` of a computed module |
 | `SUITE_OVERLAP` | info | two test suites verify nearly the same targets (below) |
 
+The HTTP join raises `HTTP_CALL_UNSERVED` and `HTTP_CALL_DYNAMIC` (info, always on;
+see [HTTP edges](#4q-http-edges-and-edge-truth)).
+
 ```yaml
 validate:
   severity:
@@ -1591,11 +1594,46 @@ Each run in `breaks.json` records `ran_verifiers` (from the JUnit report, or Go'
 config left them out, or they did not run after the break) and `failed_tests`
 (the tests that failed after the break).
 
-**Cache.** An earlier killed or survived outcome is reused when the
-enforcer's source, the verifiers' source, the method, the script and the
-runner configuration (the resolved runner commands, the setup commands and the
-generator version) all match, so a config change runs again; `unknown` is never
-reused, so a timeout is always tried again.
+**Cache.** A break outcome is a measurement of one tree, so by default an
+earlier `killed` or `survived` outcome is reused only on the same tree (the
+same commit, or any commit with the same files): the enforcer's source, the
+verifiers' source, the method, the script, the runner configuration (the
+resolved runner commands, the setup commands and the generator version) and
+HEAD's tree must all match. A commit that changes any file, such as a
+migration a runner applies, runs the break again, because that file can stop
+the baseline from running at all. `unknown` is never reused, so a timeout is
+always tried again; a run on a dirty tree neither reuses nor leaves an outcome
+for reuse; an outcome written by an older version (no `inputs_hash` in
+`breaks.json`) is not reused. The default is always safe.
+
+To reuse outcomes across commits, declare what the runner reads with `inputs`,
+doublestar globs over repository files, relative to the directory that holds
+`lattice/`, as `match` is:
+
+```yaml
+break:
+  runners:
+    - name: pgtap
+      match: ["supabase/tests/**/*.sql"]
+      command: [sh, -c, '{ db/reset.sh || exit 125; } && pg_prove -d "$PGDATABASE" "$@"', sh, "{files}"]
+      inputs: ["supabase/migrations/**", "supabase/tests/**", "supabase/seed.sql"]
+```
+
+When every runner a promise's verifiers run under declares `inputs`, the
+outcome is keyed by the blob shas of the files of HEAD's tree that match, plus
+the enforcer's and the verifiers' own files (whole files, not just the spans
+hashed above, so a change elsewhere in them runs the break again). A commit
+that touches none of them reuses the outcome. If any of the promise's runners
+has no `inputs`, if it also runs under `break.commands` or Go's built-in
+runner (neither takes `inputs`), or if a glob is not valid, the promise uses
+the tree. **Inputs declared too narrow make reuse wrong**: a file the runner
+reads that no glob names can change the result without the cache noticing.
+When in doubt, leave `inputs` out.
+
+Whatever the inputs say, a cached outcome is not reused when a baseline
+invocation of the run is known to fail at this tree (it failed earlier in the
+run, or an earlier run at this tree kept it as failed in
+`break-baselines.json`): it runs again, which shows what the tree does now.
 
 A baseline runs once per distinct command: promises whose verifiers render the
 same invocation (a runner that takes whole `{files}`, such as `pg_prove`, given
@@ -1603,7 +1641,8 @@ two tests of one file) share it, and each promise still reads its own verifiers
 from its output. A passing baseline is also kept for the HEAD tree in
 `lattice/.cache/results/break-baselines.json` and reused by the next `lattice
 break` at that tree; a new commit, a dirty tree, a failure, a timeout or an
-error runs it again. The summary line says `baselines: 12 run, 40 reused`, and
+error runs it again (a failure is kept only to stop a cached outcome from being
+reused over it). The summary line says `baselines: 12 run, 40 reused`, and
 `--json` has `summary.baselines` (`run`, `reused`).
 
 `--promise` and `--feature` print only the runs they selected; `breaks.json`
@@ -2784,7 +2823,7 @@ paths (2)
       root: index.html; carried by ui -> data; 3 hops
 ```
 
-Each hop is an edge of the reach graph (`call`, `new`, `rpc`, `table`, `jsx`,
+Each hop is an edge of the reach graph (`call`, `new`, `rpc`, `table`, `http`, `jsx`,
 `ref`, and the structural `import`, `member`, `use`) with the layer of both ends
 (see [Layers](#4o-layers-what-kind-of-runtime-is-this-code)); a node that is not
 a symbol (a module's top-level code, a table) takes `data` from the Postgres
@@ -2822,6 +2861,101 @@ id is a usage error (exit 2).
 `GET /api/v2/promises/{id}/slice` returns the same JSON, and each promise on the
 `lattice serve` audit page has a **Slice** section with its reading and one line per
 path.
+
+## 4q. HTTP edges and edge truth
+
+A client's `fetch('/api/orders')` and the route that serves `GET /api/orders` are two
+facts. Lattice joins them into one **`http` edge** of the reach graph only when both
+ends were extracted from code and their keys are equal. Nothing is guessed: no prefix
+match, no fuzzy match, no join through a computed URL.
+
+**Out ends** are the requests the TypeScript adapter reads, keyed by method and path:
+
+| Call | Key |
+|---|---|
+| `fetch(url)`, `fetch(url, { method: 'POST' })`, `window.fetch(...)` | `GET`, or the literal method |
+| `axios.get/post/put/patch/delete/head(url)` | the method of the call |
+| `axios({ url, method })` | `GET`, or the literal method |
+| `supabase.functions.invoke('name')` | `POST /functions/v1/name` (`{ method }` overrides) |
+
+A literal URL is a string, or a template with no `${}`. The key drops the query
+string, the fragment and a trailing slash (and the origin, see below), so
+`/api/orders/?page=2` keys as `GET /api/orders`. A URL that is
+not a path (`'orders'`, `'./orders'`) depends on the page that sends it and has no
+key. A computed URL (a variable, a concatenation, a template with `${}`), or a method
+that is not a literal, is recorded with an empty key: a `dynamic` reference, never an
+edge.
+
+**Only a path-only URL (starting with `/`) and `supabase.functions.invoke` take part in
+the join.** An absolute URL is an **external** out end: nothing extracted says its origin
+is this system, so a route of the same path is no evidence. It makes no edge, no
+`HTTP_CALL_UNSERVED`, and keeps its origin in the reference. To say which origins are
+yours, declare them in `lattice/workspace.yaml`:
+
+```yaml
+http:
+  origins:
+    - https://app.example.com
+    - http://localhost:3000
+```
+
+An absolute URL whose origin is on the list (scheme and host compared without regard
+to case) is treated as path-only. That is a declaration, not a guess. Each entry must
+be a scheme plus host with an optional port and no path; a bad one is a
+`VALIDATE_POLICY` error, like a bad `layers:` rule, and the join ignores it.
+
+**In ends** are the routes the code serves: routes the adapters detected
+(`app.get('/api/orders', listOrders)`), declared `http_route` entry points
+(`trigger.method` + `trigger.path`), and an edge function's `serve` handler, which the
+platform serves at `/functions/v1/<name>` for supabase/functions/<name>/index.ts and
+which answers every method. A route whose handler is not a symbol of the graph has no
+node to draw an edge to and is left out. An axios call is a request, never a route.
+
+**Matching** normalises path parameters on both sides, so `/orders/:id`,
+`/orders/{id}` and `/orders/[id]` are one shape. The method must match (an `ANY` end
+answers every method), the segment counts must agree, and two literal segments must
+be equal. A literal client segment may stand where the route has a parameter:
+`/api/orders/42` matches `GET /api/orders/:id`. A route with a catch-all segment
+(`[...rest]`, `*`) is never matched, because equality cannot say how many segments it
+covers.
+
+| Result | Recorded as |
+|---|---|
+| exactly one route matches | an edge of kind `http` to its handler, via `route` |
+| several routes match | an ambiguous reference with each handler as a candidate, no edge |
+| none matches | unresolved, `why: no_route` |
+| the key is computed | unresolved, `why: dynamic` |
+
+In `lattice slice`, an `http` edge is a hop of kind `http`, `resolved`; an ambiguous
+one is `unknown` (`-http?->`), and a slice through it is never complete.
+
+Two findings (info, always on) show what the join could not do:
+
+```
+info  HTTP_CALL_UNSERVED  web.orders.load sends GET /api/nothing, and no route extracted from code serves it (evidence: static call graph, literal request key)
+info  HTTP_CALL_DYNAMIC   web/orders.ts sends 5 request(s) whose URL or method is computed, so which route they call is unknown (lines 4, 9, 12 and 2 more; evidence: static call graph)
+```
+
+`HTTP_CALL_UNSERVED` names a literal request that no route serves: a typo, a route the
+adapters do not detect (declare its entry point in `lattice/entry-points/`), or a
+server that is not in the workspace. A request to an absolute URL on an origin not
+declared in `http.origins` is external and never raised. `HTTP_CALL_DYNAMIC` is one per file, with the count and the
+first lines. Test code raises neither. A route nothing calls raises nothing: it may be
+public API.
+
+**Edge truth.** A block edge (`block_edges` in the graph) can carry `truth`:
+
+| Truth | Meaning |
+|---|---|
+| `declared` | a human record or a judgment states it (a feature's `depends_on`, an `edge` judgment) |
+| `wired` | both ends were extracted from code and their keys are equal |
+| `half` | one end was extracted, the other was not |
+| `unknown` | the ends could not be told apart |
+
+An empty `truth` means no rule computed it, never that it passed. Today the engine
+sets `declared`; edges read from a catalogue or derived from an entry point's flow
+carry none. The reach graph's `http` edges are the `wired` ones: they exist only on
+equal keys.
 
 ## 5. Day-to-day commands
 

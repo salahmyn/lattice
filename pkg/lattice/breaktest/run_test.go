@@ -117,7 +117,7 @@ func TestGoVerifiersPassed(t *testing.T) {
 // is reused only when its hashes and method match.
 // @verifies breaktest:INV-5
 func TestCacheKey(t *testing.T) {
-	base := Run{EnforcerHash: "e", VerifierHash: "v", Method: MethodEarlyReturn}
+	base := Run{EnforcerHash: "e", VerifierHash: "v", Method: MethodEarlyReturn, InputsHash: "tree:t"}
 	for _, o := range []string{Killed, Survived} {
 		r := base
 		r.Outcome = o
@@ -136,11 +136,26 @@ func TestCacheKey(t *testing.T) {
 		"method":   func(r *Run) { r.Method = MethodScripted },
 		"script":   func(r *Run) { r.ScriptHash = "s" },
 		"config":   func(r *Run) { r.ConfigHash = "c" },
+		"inputs":   func(r *Run) { r.InputsHash = "tree:u" },
 	} {
 		c := base
 		mut(&c)
 		if c.cacheKey() == base.cacheKey() {
 			t.Errorf("a changed %s must miss the cache", name)
+		}
+	}
+}
+
+// A run with no inputs hash (a dirty tree, or a report from before the field
+// existed) is never cached, whatever its outcome.
+// @verifies breaktest:INV-16
+func TestCacheableNeedsInputsHash(t *testing.T) {
+	for _, o := range []string{Killed, Survived} {
+		if (Run{Outcome: o}).cacheable() {
+			t.Errorf("%s with no inputs hash must not be cached", o)
+		}
+		if !(Run{Outcome: o, InputsHash: "tree:t"}).cacheable() {
+			t.Errorf("%s on a named tree should be cached", o)
 		}
 	}
 }

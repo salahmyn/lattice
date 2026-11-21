@@ -39,3 +39,5 @@ invariants:
     statement: A break run that executes runners holds an exclusive lock on the repository (lattice/.cache/results/break.lock, created with O_EXCL, holding its pid and start time) until it ends, a second run fails fast naming the holder, and a lock whose process is gone is reclaimed; a run that executes nothing takes no lock.
   - id: INV-15
     statement: For a SQL break the runner may name {patched_sql} and {original_sql}, files holding only the broken object's statement and the same statement unbroken (a policy or trigger preceded by its DROP ... IF EXISTS), the baseline gets the original for both, a command that names either for a break with no such statement does not run and reads unknown, and the temporary paths never enter a baseline key.
+  - id: INV-16
+    statement: A cached break outcome is reused only for the same enforcer, verifiers, break, runner configuration and inputs (by default, the same tree), and never over a baseline that failed at this tree.
