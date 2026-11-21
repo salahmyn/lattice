@@ -50,12 +50,18 @@ var (
 	reOn            = regexp.MustCompile(`(?i)\bon\b`)
 	reToFrom        = regexp.MustCompile(`(?is)\b(?:to|from)\s+(` + ident + `(?:\s*,\s*(?:` + ident + `))*)`)
 	reDynamicRole   = regexp.MustCompile(`(?is)\bcreate\s+(?:role|user|group)\s+(` + ident + `)[^;]{0,300}?\bin\s+(?:role|group)\b`)
-	reSecurity      = regexp.MustCompile(`(?i)\bsecurity\s+(definer|invoker)\b`)
-	reSetSchema     = regexp.MustCompile(`(?i)\bset\s+schema\b`)
+	// reDynamicGrantee finds a CREATE ROLE x ... ROLE|USER|ADMIN m, which
+	// makes m a member of x: the member is only known by reading the clause,
+	// so inside dynamic text it makes every role unknown.
+	reDynamicGrantee = regexp.MustCompile(`(?is)\bcreate\s+(?:role|user|group)\s+(?:` + ident + `)\b[^;]{0,300}?(?:^|[^\w])(?:role|user|admin)\s+(?:` + ident + `)`)
+	reSecurity       = regexp.MustCompile(`(?i)\bsecurity\s+(definer|invoker)\b`)
+	reSetSchema      = regexp.MustCompile(`(?i)\bset\s+schema\b`)
 	// reDynamicPriv finds a GRANT or REVOKE on functions inside a statement
 	// that is not one itself (a DO block, a function body, an EXECUTE string).
 	reDynamicPriv = regexp.MustCompile(`(?is)\b(?:grant|revoke)\b[^;]{0,400}?\bon\s+(all\s+)?(function|procedure|routine)s?\b`)
-	reDynSchema   = regexp.MustCompile(`(?is)^\s+in\s+schema\s+(` + ident + `)\b`)
+	// reInRoleOnly matches a clause whose ROLE keyword is only the one of IN ROLE.
+	reInRoleOnly = regexp.MustCompile(`(?is)\bin\s+(?:role|group)\s+(?:` + ident + `)\s*$`)
+	reDynSchema  = regexp.MustCompile(`(?is)^\s+in\s+schema\s+(` + ident + `)\b`)
 )
 
 // blankNested blanks what lies inside parentheses, strings, quoted identifiers
@@ -858,6 +864,14 @@ func scanDynamicMember(mod *ir.Module, st statement) {
 	}
 	for _, m := range reDynamicRole.FindAllStringSubmatch(st.text, -1) {
 		members = append(members, unquote(m[1]))
+	}
+	for _, loc := range reDynamicGrantee.FindAllStringIndex(st.text, -1) {
+		clause := strings.ToLower(st.text[loc[0]:loc[1]])
+		// IN ROLE alone is read above; a ROLE, USER or ADMIN clause names members.
+		if reInRoleOnly.MatchString(clause) {
+			continue
+		}
+		all = true
 	}
 	if len(members) > 0 || all {
 		memberUnknownEvent(mod, st, members, all, reason)

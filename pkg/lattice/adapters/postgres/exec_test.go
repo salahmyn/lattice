@@ -332,17 +332,23 @@ func TestMembershipFacts(t *testing.T) {
 // @verifies adapters.postgres:INV-5
 func TestMembershipUnknown(t *testing.T) {
 	for name, c := range map[string]struct{ sql, want string }{
-		"do block":    {"do $$ begin grant app_writer to authenticated; end $$;\n", "authenticated>* unknown"},
-		"execute":     {"do $$ begin execute 'revoke app_writer from anon'; end $$;\n", "anon>* unknown"},
-		"body":        {"create function public.g() returns void language plpgsql as $$ begin grant a to b; end $$;\n", "b>* unknown"},
-		"computed":    {"do $$ begin execute format('grant %s to %s', 'a', 'b'); end $$;\n", "*>* unknown"},
-		"create role": {"do $$ begin create role x in role app_writer; end $$;\n", "x>* unknown"},
-		"unreadable":  {"grant app_writer;\n", "*>* unknown"},
+		"do block":                 {"do $$ begin grant app_writer to authenticated; end $$;\n", "authenticated>* unknown"},
+		"execute":                  {"do $$ begin execute 'revoke app_writer from anon'; end $$;\n", "anon>* unknown"},
+		"body":                     {"create function public.g() returns void language plpgsql as $$ begin grant a to b; end $$;\n", "b>* unknown"},
+		"computed":                 {"do $$ begin execute format('grant %s to %s', 'a', 'b'); end $$;\n", "*>* unknown"},
+		"create role":              {"do $$ begin create role x in role app_writer; end $$;\n", "x>* unknown"},
+		"unreadable":               {"grant app_writer;\n", "*>* unknown"},
+		"create role with members": {"do $$ begin create role app_writer role authenticated; end $$;\n", "*>* unknown"},
+		"create role with admin":   {"do $$ begin execute 'create role app_writer nologin admin authenticated'; end $$;\n", "*>* unknown"},
 	} {
 		got := memberships(t, m1, c.sql)
 		if len(got) != 1 || !strings.HasPrefix(got[0], c.want) {
 			t.Errorf("%s: %v, want %s", name, got, c.want)
 		}
+	}
+	// A role created inside a DO block with no membership clause names no member.
+	if got := memberships(t, m1, "do $$ begin if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon nologin; end if; end $$;\n"); len(got) != 0 {
+		t.Errorf("plain create role read as membership: %v", got)
 	}
 	// An object grant inside a DO block is not a membership statement.
 	if got := memberships(t, m1, "do $$ begin grant execute on function public.f() to anon; end $$;\n"); len(got) != 0 {
