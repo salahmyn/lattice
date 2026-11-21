@@ -1503,7 +1503,7 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
       h += rollSvg(roll.get(n.id), b.x + b.w - 14, b.y + 24) + // an open box is a boundary: not in the legend
         (asOn() && !g ? asRoll(n.id, b.x + b.w - 14 - rollW(roll.get(n.id)) - (roll.get(n.id) ? 12 : 0), b.y + 24) : "") + `</g>`;
     }
-    const labelled = pr.es.length <= 90;
+    const labelled = pr.es.length <= 90, labels = [];
     pr.es.forEach((e, i) => {
       const p = lay.pts.get("e" + i) || straight(lay.boxes.get(e.from), lay.boxes.get(e.to));
       if (!p) return;
@@ -1511,11 +1511,12 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
       const col = kinds.length === 1 ? kindColor(kinds[0][0]) : "";
       const nm = x => x.startsWith("grp:") ? (pr.nodes.get(x)?.title || x) : x.startsWith("more:") ? "more" : title(x.replace(/^out:/, ""));
       h += `<path class="e" data-e="${i}" d="${curve(p)}" style="stroke-width:${strokeW(e.n, 1.2)}${col ? ";stroke:" + col : ""}"><title>${esc(nm(e.from))} → ${esc(nm(e.to))}: ${kinds.map(([k, n]) => esc(k) + (n > 1 ? " ×" + n : "")).join(", ")}</title></path>`;
-      if (labelled) {
-        const m = p[Math.floor(p.length / 2)], t = `${kinds[0][1] > 1 ? kinds[0][1] + " × " : ""}${kinds[0][0].replace(/_/g, " ")}${kinds.length > 1 ? " +" + (kinds.length - 1) : ""}`;
-        h += `<text class="el" data-e="${i}" x="${m.x}" y="${m.y - 4}" text-anchor="middle">${esc(t)}</text>`;
-      }
+      if (labelled) labels.push({ i, p, t: `${kinds[0][1] > 1 ? kinds[0][1] + " × " : ""}${kinds[0][0].replace(/_/g, " ")}${kinds.length > 1 ? " +" + (kinds.length - 1) : ""}` });
     });
+    if (labels.length) {
+      const at = placeLabels(labels, [...pr.nodes.values()].map(n => { const b = lay.boxes.get(n.id); return b && (n.open ? { ...b, h: 40 } : b); }).filter(Boolean));
+      for (const l of labels) h += `<text class="el" data-e="${l.i}" x="${at.get(l.i).x}" y="${at.get(l.i).y}" text-anchor="middle">${esc(l.t)}</text>`;
+    }
     for (const n of leaf) {
       const b = lay.boxes.get(n.id); if (!b) continue;
       if (n.grp) { h += clusterBox(n, b, roll.get(n.id), pr); for (const id of n.grp.ids) shownKinds.push(byId.get(id).kind); continue; }
@@ -1580,6 +1581,50 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
     if (p.length >= 4 && (p.length - 1) % 3 === 0)
       return `M${p[0].x},${p[0].y}` + p.slice(1).map((q, j) => (j % 3 === 0 ? " C" : " ") + q.x + "," + q.y).join("");
     return p.map((q, j) => (j ? "L" : "M") + q.x + "," + q.y).join(" ");
+  }
+  // Edge labels. Lines into one block merge for their last stretch, so a label at a fixed point of each line can land
+  // on the others' where several converge (or leave one block). Each label in turn takes the first spot along its own
+  // line, from the middle outwards and above the line before below it, where it overlaps no label placed before it
+  // and no box (an open box only by its title row); when every spot overlaps, the one that overlaps least, a label
+  // weighing far more than a box. Same layout, same places.
+  const LCH = 6.2, LSPOTS = [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74, 0.18, 0.82, 0.12, 0.88].map(t => [t, -4]).concat([0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74].map(t => [t, 13]));
+  function along(p) { // the point at a share t of a line's length (ELK spline sections, or a polyline)
+    const q = [p[0]];
+    if (p.length >= 4 && (p.length - 1) % 3 === 0) for (let i = 0; i + 3 < p.length; i += 3) for (let k = 1; k <= 12; k++) {
+      const t = k / 12, u = 1 - t, a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t;
+      q.push({ x: a * p[i].x + b * p[i + 1].x + c * p[i + 2].x + d * p[i + 3].x, y: a * p[i].y + b * p[i + 1].y + c * p[i + 2].y + d * p[i + 3].y });
+    }
+    else q.push(...p.slice(1));
+    const len = [0];
+    for (let i = 1; i < q.length; i++) len.push(len[i - 1] + Math.hypot(q[i].x - q[i - 1].x, q[i].y - q[i - 1].y));
+    return t => {
+      const want = t * len[len.length - 1];
+      let i = 1;
+      while (i < q.length - 1 && len[i] < want) i++;
+      const f = len[i] > len[i - 1] ? (want - len[i - 1]) / (len[i] - len[i - 1]) : 0;
+      return { x: q[i - 1].x + (q[i].x - q[i - 1].x) * f, y: q[i - 1].y + (q[i].y - q[i - 1].y) * f };
+    };
+  }
+  function placeLabels(labels, boxes) { // labels: { i, p, t }; the text anchor (middle, baseline) of each, by i
+    const over = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+    const placed = [], at = new Map();
+    for (const l of labels) {
+      const pt = along(l.p), w = l.t.length * LCH + 6, xs = l.p.map(q => q.x), ys = l.p.map(q => q.y);
+      const x0 = Math.min(...xs) - w, x1 = Math.max(...xs) + w, y0 = Math.min(...ys) - 30, y1 = Math.max(...ys) + 30;
+      const near = boxes.filter(b => b.x < x1 && b.x + b.w > x0 && b.y < y1 && b.y + b.h > y0); // a line lies within its points' hull
+      let best = null;
+      for (const [t, dy] of LSPOTS) {
+        const m = pt(t), x = Math.round(m.x * 10) / 10, y = Math.round((m.y + dy) * 10) / 10, r = { x: x - w / 2, y: y - 11, w, h: 15 };
+        let cost = 0;
+        for (const o of placed) cost += 1000 * over(r, o);
+        for (const b of near) cost += over(r, b);
+        if (!best || cost < best.cost) best = { cost, x, y, r };
+        if (!cost) break;
+      }
+      placed.push(best.r);
+      at.set(l.i, { x: best.x, y: best.y });
+    }
+    return at;
   }
   function straight(a, b) { return a && b ? [{ x: a.x + a.w, y: a.y + a.h / 2 }, { x: b.x, y: b.y + b.h / 2 }] : null; }
   function rollW(m) { return m ? Object.keys(m).reduce((t, k) => t + String(m[k]).length * 6.6 + 18, 0) : 0; }
