@@ -1,0 +1,19 @@
+id: shop.refunds
+version: 1
+status: proposal
+purpose: |
+  Code on no entry-point flow and reached by no root (an unmodelled seam, such as a webhook).
+owners:
+  business: product
+  engineering: web
+implements_brd: brd.shop.orders
+capabilities:
+  - id: refund
+    summary: Refunds an order.
+    rules:
+      - A refund names its order.
+invariants:
+  - id: INV-1
+    statement: A refund needs an order id.
+    verifiable_by:
+      - test

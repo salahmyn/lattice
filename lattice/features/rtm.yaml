@@ -26,3 +26,5 @@ invariants:
     statement: An invariant verifiable only by structural check or mutation is not unverified for lack of a test.
   - id: INV-8
     statement: A criterion is exercised only when it is demonstrated and a verifier's own per-test coverage executed an enforcer of every invariant behind it; per-file and suite coverage never promote.
+  - id: INV-9
+    statement: An invariant is required when a criterion of any BRD, whatever its status, maps it; the audit's line view and the second RTM figure, invariants required of those declared, use the same rule, and the criteria figure is unchanged.

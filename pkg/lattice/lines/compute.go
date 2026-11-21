@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/salahmyn/lattice/pkg/lattice/coverage"
+	"github.com/salahmyn/lattice/pkg/lattice/rtm"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
@@ -266,14 +267,7 @@ func Compute(in Input) Report {
 	}
 	nodes := intents(kg, isBlock, in.Edges)
 
-	required := map[string]bool{}
-	for _, b := range kg.BRDs {
-		for _, sc := range b.SuccessCriteria {
-			for _, r := range sc.MapsToInvariant {
-				required[r] = true
-			}
-		}
-	}
+	required := rtm.RequiredInvariants(kg.BRDs)
 	verifiers := map[string][]string{} // promise -> verifier FQNs
 	for _, t := range kg.Tests {
 		for _, v := range t.Verifies {
