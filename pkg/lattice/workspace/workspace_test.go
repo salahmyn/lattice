@@ -222,3 +222,26 @@ func TestOpenReadsChannelWrappers(t *testing.T) {
 		t.Errorf("valid wrappers = %+v", valid)
 	}
 }
+
+// sql.default_execute tells unset (unknown) from an empty list (none).
+func TestOpenReadsSQLRoles(t *testing.T) {
+	read := func(body string) SQL {
+		root := t.TempDir()
+		writeLatticeDir(t, filepath.Join(root, "lattice"), body)
+		w, err := Open(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return w.SQL
+	}
+	s := read("sql:\n  api_roles: [anon, authenticated]\n  default_execute: [service_role]\n")
+	if len(s.APIRoles) != 2 || s.APIRoles[1] != "authenticated" || s.DefaultExecute == nil || (*s.DefaultExecute)[0] != "service_role" {
+		t.Errorf("sql = %+v", s)
+	}
+	if s := read("sql:\n  api_roles: [anon]\n"); s.DefaultExecute != nil {
+		t.Errorf("unset default_execute = %v, want nil", *s.DefaultExecute)
+	}
+	if s := read("sql:\n  default_execute: []\n"); s.DefaultExecute == nil || len(*s.DefaultExecute) != 0 {
+		t.Errorf("empty default_execute = %+v, want a non-nil empty list", s.DefaultExecute)
+	}
+}

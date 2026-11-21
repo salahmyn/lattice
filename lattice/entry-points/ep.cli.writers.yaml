@@ -1,0 +1,16 @@
+id: ep.cli.writers
+version: 1
+status: production
+kind: cli
+purpose: Show who writes a table or column, and which promises each writer is guarded or unguarded for
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: lattice writers
+handler:
+  symbol: internal.cli.newWritersCommand
+  file: internal/cli/writers.go
+flow:
+  - feature: cli
+  - feature: graph

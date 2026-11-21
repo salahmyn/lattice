@@ -17,3 +17,9 @@ invariants:
     statement: An ALTER POLICY, ALTER FUNCTION or ALTER TRIGGER after the effective definition is recorded on its symbol in apply order (which parts it sets, and where), a rename gives the symbol its new name, and a later create or a drop discards the alterations before it.
   - id: INV-4
     statement: A named CHECK constraint, in a CREATE TABLE or an ALTER TABLE ... ADD CONSTRAINT, is a symbol sql.check.<schema>.<table>.<name> bound by the tag directly above its line, a CHECK with no name is never a symbol, and a drop, a re-add, a rename or a validate follow the effective-definition rules of policies.
+  - id: INV-5
+    statement: A function's EXECUTE privilege for a role is read only from statements the adapter parsed, in migration order; a role no statement names holds what PUBLIC holds, and one the adapter could not resolve is unknown, never closed.
+  - id: INV-6
+    statement: A SQL enforcer that a declared API role can execute is reported as ENFORCER_EXPOSED unless a security case naming it is verified; a privilege that is unknown, or API roles that are not declared, are reported as EXPOSURE_UNKNOWN; both are info.
+  - id: INV-7
+    statement: A table write is recorded only from DML the adapter parsed; a write it could not read makes the table's writer set incomplete, never empty.
