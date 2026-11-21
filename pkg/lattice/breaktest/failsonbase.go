@@ -156,6 +156,11 @@ func RunFailsOnBase(ctx context.Context, kg schema.KnowledgeGraph, opts Options,
 	targets := baseTargets(kg, opts, ch)
 	rep.Overlay = overlayFiles(kg, repo.Prefix, targets, ch.Files)
 	if len(targets) > 0 {
+		release, err := acquireLock(opts.LatticeDir, opts.warn())
+		if err != nil {
+			return rep, err
+		}
+		defer release()
 		head, err := NewWorktree(ctx, repo, repo.Dirty)
 		if err != nil {
 			return rep, err
