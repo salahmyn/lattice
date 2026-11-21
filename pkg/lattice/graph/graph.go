@@ -57,6 +57,10 @@ func Build(in Input, opts Options) schema.KnowledgeGraph {
 				Feature: r.feature, Capabilities: r.capabilities,
 				EnforcesInvariants: r.enforces, DependsOnFeatures: r.dependsOn,
 				Roles: r.roles, Verifies: r.verifies, VerifiesCases: r.cases, SuppressedInvariants: r.suppressed,
+				DeclaredAs: sym.DeclaredAs,
+			}
+			for _, a := range sym.Altered {
+				gs.Altered = append(gs.Altered, schema.GraphAlteration{File: a.File, Line: a.Line, EndLine: a.EndLine, Sets: a.Sets})
 			}
 			gm.SymbolFQNs = append(gm.SymbolFQNs, sym.FQN)
 			if sym.IsTest {

@@ -93,6 +93,20 @@ type GraphSymbol struct {
 	// LayerSource says where it came from (adapter or rule), empty for unknown.
 	Layer       string `json:"layer,omitempty"`
 	LayerSource string `json:"layer_source,omitempty"`
+	// Altered and DeclaredAs mirror ir.Symbol: the later statements that
+	// change the symbol's database object, and the name its own statement
+	// gave it before a rename.
+	Altered    []GraphAlteration `json:"altered,omitempty"`
+	DeclaredAs string            `json:"declared_as,omitempty"`
+}
+
+// GraphAlteration is one later statement that changes a symbol's object (see
+// ir.Alteration).
+type GraphAlteration struct {
+	File    string   `json:"file"`
+	Line    int      `json:"line"`
+	EndLine int      `json:"end_line,omitempty"`
+	Sets    []string `json:"sets,omitempty"`
 }
 
 // Reach classes (GraphSymbol.Reach).

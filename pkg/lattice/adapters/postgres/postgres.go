@@ -225,6 +225,9 @@ var (
 	reFunction    = regexp.MustCompile(`(?is)^create\s+(?:or\s+replace\s+)?(function|procedure)\s+` + qname + `\s*\(`)
 	rePolicy      = regexp.MustCompile(`(?is)^create\s+policy\s+(` + ident + `)\s+on\s+` + qname)
 	reTrigger     = regexp.MustCompile(`(?is)^create\s+(?:or\s+replace\s+)?(?:constraint\s+)?trigger\s+(` + ident + `)\s.*?\bon\s+` + qname)
+	reAlterPolicy = regexp.MustCompile(`(?is)^alter\s+policy\s+(` + ident + `)\s+on\s+` + qname)
+	reAlterFunc   = regexp.MustCompile(`(?is)^alter\s+(?:function|procedure)\s+` + qname)
+	reAlterTrig   = regexp.MustCompile(`(?is)^alter\s+trigger\s+(` + ident + `)\s+on\s+` + qname)
 	reDropFunc    = regexp.MustCompile(`(?is)^drop\s+(?:function|procedure)\s+(?:if\s+exists\s+)?` + qname)
 	reDropPolicy  = regexp.MustCompile(`(?is)^drop\s+policy\s+(?:if\s+exists\s+)?(` + ident + `)\s+on\s+` + qname)
 	reDropTrigger = regexp.MustCompile(`(?is)^drop\s+trigger\s+(?:if\s+exists\s+)?(` + ident + `)\s+on\s+` + qname)
@@ -232,6 +235,20 @@ var (
 
 // dropKind marks a drop statement in ModuleAnnotations; Resolve consumes it.
 const dropKind = "sql_drop"
+
+// alterKind marks an ALTER statement in ModuleAnnotations; Resolve consumes
+// it. Args[0] is the FQN of the object it names. Kwargs: "sets" (the
+// ir.Alteration.Sets), "end_line", and for a rename "new_fqn" and "new_name".
+const alterKind = "sql_alter"
+
+// Alteration.Sets values.
+const (
+	setUsing     = "using"
+	setWithCheck = "with_check"
+	setTo        = "to"
+	setRename    = "rename"
+	setOther     = "other"
+)
 
 // unquote folds an identifier the way PostgreSQL does: quoted ones keep their
 // case, unquoted ones are lower-cased.
@@ -303,6 +320,25 @@ func parseDefinitions(mod *ir.Module, stmts []statement) {
 			name := unquote(m[1])
 			sym = &ir.Symbol{Name: "trigger " + name + " on " + s + "." + t, FQN: triggerFQN(s, t, name)}
 			kind, tSchema, table = "trigger", s, t
+		case reAlterPolicy.MatchString(st.text):
+			m := reAlterPolicy.FindStringSubmatch(st.text)
+			s, t := qualify(m[2], m[3])
+			rest := st.text[len(m[0]):]
+			markAlter(mod, st, policyFQN(s, t, unquote(m[1])), rest, func(n string) (string, string) {
+				return policyFQN(s, t, n), "policy " + n + " on " + s + "." + t
+			}, true)
+		case reAlterFunc.MatchString(st.text):
+			m := reAlterFunc.FindStringSubmatch(st.text)
+			s, n := qualify(m[1], m[2])
+			markAlter(mod, st, functionFQN(s, n), st.text[len(m[0]):], func(n string) (string, string) {
+				return functionFQN(s, n), s + "." + n
+			}, false)
+		case reAlterTrig.MatchString(st.text):
+			m := reAlterTrig.FindStringSubmatch(st.text)
+			s, t := qualify(m[2], m[3])
+			markAlter(mod, st, triggerFQN(s, t, unquote(m[1])), st.text[len(m[0]):], func(n string) (string, string) {
+				return triggerFQN(s, t, n), "trigger " + n + " on " + s + "." + t
+			}, false)
 		case reDropFunc.MatchString(st.text):
 			m := reDropFunc.FindStringSubmatch(st.text)
 			s, n := qualify(m[1], m[2])
@@ -373,6 +409,119 @@ func markDrop(mod *ir.Module, fqn string, line int) {
 	mod.ModuleAnnotations = append(mod.ModuleAnnotations, ir.Annotation{Kind: dropKind, Args: []interface{}{fqn}, Line: line})
 }
 
+// markAlter records an ALTER statement for Resolve. rest is the statement
+// after the object's name; renamed gives the FQN and symbol name of the object
+// under a new name; policy says whether USING, WITH CHECK and TO are read.
+func markAlter(mod *ir.Module, st statement, fqn, rest string, renamed func(string) (string, string), policy bool) {
+	sets, newName := alterSets(rest, policy)
+	kw := map[string]interface{}{"sets": sets, "end_line": st.endLine}
+	if newName != "" {
+		kw["new_fqn"], kw["new_name"] = renamed(newName)
+	}
+	mod.ModuleAnnotations = append(mod.ModuleAnnotations,
+		ir.Annotation{Kind: alterKind, Args: []interface{}{fqn}, Kwargs: kw, Line: st.line})
+}
+
+// alterSets reads what an ALTER statement changes from the text after the
+// object's name, looking only outside parentheses so a "to" or "using" inside
+// an expression is never taken for a clause. A rename returns the new name,
+// folded as PostgreSQL folds it.
+func alterSets(rest string, policy bool) (sets []string, newName string) {
+	toks := topTokens(rest)
+	for i := 0; i < len(toks); i++ {
+		next := func(k int) string {
+			if i+k < len(toks) {
+				return toks[i+k]
+			}
+			return ""
+		}
+		switch t := strings.ToLower(toks[i]); {
+		case t == "rename" && strings.EqualFold(next(1), "to") && next(2) != "" && next(2) != "(":
+			newName = unquote(next(2))
+			sets = append(sets, setRename)
+			i += 2
+		case policy && t == "to":
+			sets = append(sets, setTo)
+		case policy && t == "using" && next(1) == "(":
+			sets = append(sets, setUsing)
+		case policy && t == "with" && strings.EqualFold(next(1), "check") && next(2) == "(":
+			sets = append(sets, setWithCheck)
+		}
+	}
+	if len(sets) == 0 {
+		sets = []string{setOther}
+	}
+	return sets, newName
+}
+
+// topTokens splits SQL into the words, quoted identifiers and "(" that lie
+// outside any parentheses; whatever is inside a parenthesis is skipped, and
+// so are strings and dollar-quoted bodies.
+func topTokens(s string) []string {
+	var out []string
+	depth := 0
+	for i := 0; i < len(s); {
+		c := s[i]
+		switch {
+		case c == '(':
+			if depth == 0 {
+				out = append(out, "(")
+			}
+			depth++
+			i++
+		case c == ')':
+			if depth > 0 {
+				depth--
+			}
+			i++
+		case c == '\'' || c == '"':
+			j := i + 1
+			for j < len(s) {
+				if s[j] == c {
+					if j+1 < len(s) && s[j+1] == c {
+						j += 2
+						continue
+					}
+					break
+				}
+				j++
+			}
+			if j < len(s) {
+				j++
+			}
+			if c == '"' && depth == 0 {
+				out = append(out, s[i:j])
+			}
+			i = j
+		case c == '$':
+			j := i + 1
+			for j < len(s) && (s[j] == '_' || s[j] >= 'a' && s[j] <= 'z' || s[j] >= 'A' && s[j] <= 'Z' || s[j] >= '0' && s[j] <= '9') {
+				j++
+			}
+			if j < len(s) && s[j] == '$' {
+				tag := s[i : j+1]
+				if k := strings.Index(s[j+1:], tag); k >= 0 {
+					i = j + 1 + k + len(tag)
+					continue
+				}
+			}
+			i++
+		case c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c >= 0x80:
+			j := i + 1
+			for j < len(s) && (s[j] == '_' || s[j] == '$' || s[j] >= 'a' && s[j] <= 'z' || s[j] >= 'A' && s[j] <= 'Z' || s[j] >= '0' && s[j] <= '9' || s[j] >= 0x80) {
+				j++
+			}
+			if depth == 0 {
+				out = append(out, s[i:j])
+			}
+			i = j
+		default:
+			i++
+		}
+	}
+	return out
+}
+
 // orphan reports tags above a statement that declares nothing Lattice reads.
 func orphan(mod *ir.Module, anns []ir.Annotation, st statement) {
 	if len(anns) == 0 {
@@ -394,11 +543,21 @@ func orphan(mod *ir.Module, anns []ir.Annotation, st statement) {
 }
 
 // Resolve applies migrations in filename order (definition files first, then
-// migrations): the last create wins, a drop removes the symbol, and tags count
-// only on the effective definition. A redefinition that loses tags an earlier
-// definition carried raises SQL_TAG_DROPPED on the effective one, because a
-// reader of the older file would believe the rule still holds.
+// migrations, and within a file in statement order): the last create wins, a
+// drop removes the symbol, and tags count only on the effective definition. A
+// redefinition that loses tags an earlier definition carried raises
+// SQL_TAG_DROPPED on the effective one, because a reader of the older file
+// would believe the rule still holds.
+//
+// An ALTER POLICY, ALTER FUNCTION or ALTER TRIGGER that follows the effective
+// definition is recorded on that symbol (Symbol.Altered), so a consumer knows
+// which statement sets the object's current expressions and whether anything
+// touched it after its CREATE. A rename gives the symbol its new name
+// (Symbol.DeclaredAs keeps the one its CREATE used); a later CREATE or a drop
+// discards the alterations that came before it. An ALTER of an object no
+// definition in the scanned files created is ignored.
 // @enforces adapters.postgres:INV-1
+// @enforces adapters.postgres:INV-3
 func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 	order := make([]int, 0, len(mods))
 	for i := range mods {
@@ -414,9 +573,10 @@ func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 
 	type def struct{ mod, sym int }
 	type event struct {
-		line int
-		drop string
-		sym  int
+		line  int
+		drop  string
+		alter *ir.Annotation
+		sym   int
 	}
 	effective := map[string]def{}
 	removed := map[def]bool{}
@@ -429,10 +589,17 @@ func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 			}
 		}
 		kept := m.ModuleAnnotations[:0]
-		for _, an := range m.ModuleAnnotations {
+		for ai, an := range m.ModuleAnnotations {
 			if an.Kind == dropKind {
 				if len(an.Args) > 0 {
 					events = append(events, event{line: an.Line, drop: fmt.Sprint(an.Args[0]), sym: -1})
+				}
+				continue
+			}
+			if an.Kind == alterKind {
+				if len(an.Args) > 0 {
+					a := m.ModuleAnnotations[ai]
+					events = append(events, event{line: an.Line, alter: &a, sym: -1})
 				}
 				continue
 			}
@@ -442,6 +609,27 @@ func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 		sort.SliceStable(events, func(x, y int) bool { return events[x].line < events[y].line })
 
 		for _, e := range events {
+			if e.alter != nil {
+				fqn := fmt.Sprint(e.alter.Args[0])
+				cur, ok := effective[fqn]
+				if !ok {
+					continue
+				}
+				sym := &mods[cur.mod].Symbols[cur.sym]
+				endLine, _ := e.alter.Kwargs["end_line"].(int)
+				sets, _ := e.alter.Kwargs["sets"].([]string)
+				sym.Altered = append(sym.Altered, ir.Alteration{File: m.File, Line: e.line, EndLine: endLine, Sets: sets})
+				newFQN, _ := e.alter.Kwargs["new_fqn"].(string)
+				if _, taken := effective[newFQN]; newFQN != "" && newFQN != fqn && !taken {
+					if sym.DeclaredAs == "" {
+						sym.DeclaredAs = sym.Name
+					}
+					sym.Name, sym.FQN = fmt.Sprint(e.alter.Kwargs["new_name"]), newFQN
+					delete(effective, fqn)
+					effective[newFQN] = cur
+				}
+				continue
+			}
 			if e.drop != "" {
 				if old, ok := effective[e.drop]; ok {
 					removed[old] = true

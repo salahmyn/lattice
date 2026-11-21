@@ -107,6 +107,30 @@ func swapStatements(src []byte, brk Break, sym Symbol) (patched, original string
 	return prefix + patched + ";\n", prefix + original + ";\n", true
 }
 
+// swapAlter is swapStatements for a break placed in an ALTER POLICY
+// statement: the statement as it is, broken and unbroken. It sets the
+// expression and nothing else, so it can be re-applied on a database that
+// already has the policy, with no DROP.
+// @enforces breaktest:INV-15
+func swapAlter(e fileEdit) (patched, original string, ok bool) {
+	st, _, err := locateAlterPolicy(e.src, e.line)
+	if err != nil || len(st.toks) == 0 {
+		return "", "", false
+	}
+	lo, hi := st.toks[0].start, st.toks[len(st.toks)-1].end
+	all := append([]Break{{Offset: e.brk.Offset, Text: e.brk.Text}}, e.brk.More...)
+	for _, b := range all {
+		if b.Offset < lo || b.Offset > hi {
+			return "", "", false
+		}
+	}
+	patched, ok = applyWithin(e.src, e.brk, lo, hi)
+	if !ok {
+		return "", "", false
+	}
+	return patched + ";\n", string(e.src[lo:hi]) + ";\n", true
+}
+
 // applyWithin applies b to src and returns the text of the span [lo, hi) of
 // src as it then reads, given that every insertion lies inside the span.
 func applyWithin(src []byte, b Break, lo, hi int) (string, bool) {
@@ -151,27 +175,41 @@ func (s sqlStmt) dropStatement(kind sqlEnforcer, next int) (string, bool) {
 // swapFiles writes the patched and original statements of a SQL break to
 // files beside the worktree, never inside it, and returns their paths. A
 // break that is not SQL, a scripted break, and a statement that cannot be
-// isolated give the zero value.
-func (r *runner) swapFiles(language string, scripted bool, brk Break, src []byte, sym Symbol) (sqlFiles, error) {
-	if scripted || (language != "postgres" && language != "sql") {
-		return sqlFiles{}, nil
+// isolated give the zero value, with why saying so when it is known: the
+// object swap is offered only when the broken statement is the last one that
+// touches the object, because the original would otherwise undo the later
+// statements.
+// @enforces breaktest:INV-16
+func (r *runner) swapFiles(language string, scripted bool, plan breakPlan, sym Symbol) (f sqlFiles, why string, err error) {
+	if scripted || (language != "postgres" && language != "sql") || len(plan.edits) == 0 {
+		return sqlFiles{}, "", nil
 	}
-	patched, original, ok := swapStatements(src, brk, sym)
+	if plan.swapWhy != "" {
+		return sqlFiles{}, plan.swapWhy, nil
+	}
+	e := plan.edits[0]
+	var patched, original string
+	var ok bool
+	if e.alter {
+		patched, original, ok = swapAlter(e)
+	} else {
+		patched, original, ok = swapStatements(e.src, e.brk, sym)
+	}
 	if !ok {
-		return sqlFiles{}, nil
+		return sqlFiles{}, "", nil
 	}
 	r.sqlSeq++
-	f := sqlFiles{
+	f = sqlFiles{
 		patched:  filepath.Join(r.wt.tmp, fmt.Sprintf("patched-%d.sql", r.sqlSeq)),
 		original: filepath.Join(r.wt.tmp, fmt.Sprintf("original-%d.sql", r.sqlSeq)),
 	}
 	if err := os.WriteFile(f.patched, []byte(patched), 0o644); err != nil {
-		return sqlFiles{}, err
+		return sqlFiles{}, "", err
 	}
 	if err := os.WriteFile(f.original, []byte(original), 0o644); err != nil {
-		return sqlFiles{}, err
+		return sqlFiles{}, "", err
 	}
-	return f, nil
+	return f, "", nil
 }
 
 // asBaseline is what a baseline command sees: it has no patched object, so

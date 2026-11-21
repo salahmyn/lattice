@@ -13,3 +13,5 @@ invariants:
     statement: 'Migrations apply in filename order: the last create or replace is the effective definition and a drop removes the symbol.'
   - id: INV-2
     statement: A feature-qualified @enforces attributes the database symbol to that feature.
+  - id: INV-3
+    statement: An ALTER POLICY, ALTER FUNCTION or ALTER TRIGGER after the effective definition is recorded on its symbol in apply order (which parts it sets, and where), a rename gives the symbol its new name, and a later create or a drop discards the alterations before it.
