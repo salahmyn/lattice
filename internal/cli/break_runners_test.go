@@ -300,6 +300,27 @@ func TestBreakRuntimeFailureVersusBuildMarker(t *testing.T) {
 	}
 }
 
+// A pgTAP script that the break makes stop partway is a failing test: the
+// harness's "Parse errors: Bad plan" line is not a build marker, so with a
+// passing baseline the run reads killed.
+// @verifies breaktest:INV-3
+func TestBreakTAPBadPlanReadsKilled(t *testing.T) {
+	cmd := "if grep -q 'return undefined' src/guard.js; then " +
+		"printf 'db/tests/fees.sql .. 1/10 \\n# Looks like you planned 10 tests but ran 4.\\n" +
+		"db/tests/fees.sql .. Dubious, test returned 255\\nFailed 6/10 subtests \\n\\nTest Summary Report\\n" +
+		"  Parse errors: Bad plan.  You planned 10 tests but ran 4.\\nResult: FAIL\\n'; exit 1; fi; " +
+		"printf 'db/tests/fees.sql .. ok\\nAll tests successful.\\nResult: PASS\\n'"
+	dir := jsFixture(t, "break:\n  runners:\n    - name: pgtap\n      match: [\"fw1/**\"]\n      command: [sh, -c, "+shellYAML(cmd)+"]\n")
+	rep, out, err := runBreak(t, dir, "--promise", "web:INV-1")
+	if err != nil {
+		t.Fatalf("break: %v\n%s", err, out)
+	}
+	r := byPromise(rep)["web:INV-1"]
+	if r.Outcome != breaktest.Killed || r.Baseline != breaktest.BaselinePass || strings.Contains(r.Reason, "does not compile") {
+		t.Errorf("a bad TAP plan after the break must read killed: %+v", r)
+	}
+}
+
 // The text table shows only the selected runs, while breaks.json keeps every
 // run of the commit.
 // @verifies breaktest:INV-2

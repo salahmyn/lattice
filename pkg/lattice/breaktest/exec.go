@@ -52,9 +52,14 @@ var (
 	reEsbuild = regexp.MustCompile(`(?m)^\s*\S+:\d+:\d+: ERROR: .*$|(?m)^.*Transform failed with \d+ error.*$`)
 	// Deno type-check, resolution and check-file errors.
 	reDeno = regexp.MustCompile(`(?m)^\s*(error: (TS\d+|Module not found).*|TS\d+ \[ERROR\].*|Check file:.*)$`)
-	// pytest collection and import errors, and php parse errors, matched
-	// case-insensitively as substrings.
-	otherMarkers = []string{"error collecting", "indentationerror", "modulenotfounderror", "importerror", "parse error"}
+	// PHP parse errors, in PHP's own wording and case: "PHP Parse error:  syntax
+	// error, ..." on stderr, "Parse error: syntax error, ... on line N" on
+	// stdout. A TAP harness's "Parse errors: Bad plan" is not one: it says a
+	// test script stopped early, which is a failing test.
+	rePHP = regexp.MustCompile(`(?m)^.*(PHP Parse error|Parse error: syntax error).*$`)
+	// pytest collection and import errors, matched case-insensitively as
+	// substrings.
+	otherMarkers = []string{"error collecting", "indentationerror", "modulenotfounderror", "importerror"}
 )
 
 // NotAppliedExit is the exit code a runner uses to say the code under test
@@ -67,7 +72,7 @@ const NotAppliedExit = 125
 // buildLine finds the explicit build marker in a non-Go runner's output and
 // returns its line, "" when there is none.
 func buildLine(out string) string {
-	for _, re := range []*regexp.Regexp{reEsbuild, reDeno} {
+	for _, re := range []*regexp.Regexp{reEsbuild, reDeno, rePHP} {
 		if m := re.FindString(out); m != "" {
 			return strings.TrimSpace(m)
 		}

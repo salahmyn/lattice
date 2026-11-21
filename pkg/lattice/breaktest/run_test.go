@@ -31,6 +31,15 @@ func TestClassify(t *testing.T) {
 		{"", "Error: Transform failed with 1 error:\nsrc/a.ts:3:10: ERROR: Expected \";\"\n", 1, false, statusBuild},
 		{"", "E   IndentationError: unexpected indent\n", 2, false, statusBuild},
 		{"", "ERROR collecting tests/test_a.py\n", 2, false, statusBuild},
+		{"", "==== ERRORS ====\n_ ERROR collecting tests/test_fees.py _\nImportError while importing test module '/w/tests/test_fees.py'.\n", 2, false, statusBuild},
+		// PHP parse errors, as PHP prints them on stderr and on stdout.
+		{"", "PHP Parse error:  syntax error, unexpected token \"}\" in /w/src/Fees.php on line 12\n", 255, false, statusBuild},
+		{"", "Parse error: syntax error, unexpected '}' in /w/src/Fees.php on line 12\n", 255, false, statusBuild},
+		// A TAP harness's "Parse errors" says a test script stopped before its
+		// plan: a failing test, not a broken build.
+		{"", "db/tests/fees.sql .. 1/10 \n# Looks like you planned 10 tests but ran 4.\ndb/tests/fees.sql .. Dubious, test returned 255 (wstat 65280, 0xff00)\nFailed 6/10 subtests \n\nTest Summary Report\n-------------------\ndb/tests/fees.sql (Wstat: 65280 Tests: 4 Failed: 0)\n  Non-zero exit status: 255\n  Parse errors: Bad plan.  You planned 10 tests but ran 4.\nFiles=1, Tests=4,  0 wallclock secs\nResult: FAIL\n", 1, false, statusFail},
+		{"", "db/tests/wallet.sql (Wstat: 768 Tests: 0 Failed: 0)\n  Parse errors: No plan found in TAP output\nResult: FAIL\n", 1, false, statusFail},
+		{"", "db/tests/orders.sql .. Failed 2/5 subtests\nResult: FAIL\n", 1, false, statusFail},
 		// Deno: type-check, resolution and check-file errors are build failures.
 		{"", "Check file:///w/a_test.ts\nerror: TS2322 [ERROR]: Type 'string' is not assignable\n", 1, false, statusBuild},
 		{"", "error: Module not found \"file:///w/b.ts\".\n", 1, false, statusBuild},
