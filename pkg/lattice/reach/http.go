@@ -92,10 +92,10 @@ func (g *Graph) collectHTTPEnds(eps []schema.EntryPoint) httpEnds {
 				add(s.Method, s.Path, s.Symbol)
 			}
 		}
-		if sm := functionRe.FindStringSubmatch(m.File); sm != nil {
+		if fnPath := EdgeFunctionPath(m.File); fnPath != "" {
 			for _, n := range m.Nodes {
 				if n.Kind == ir.NodeServe && n.Root == "serve" && !n.IsTest {
-					add(anyMethod, "/functions/v1/"+sm[1], n.FQN)
+					add(anyMethod, fnPath, n.FQN)
 				}
 			}
 		}

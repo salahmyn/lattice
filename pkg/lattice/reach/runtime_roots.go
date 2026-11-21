@@ -4,7 +4,6 @@ package reach
 
 import (
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -113,17 +112,11 @@ func (g *Graph) RuntimeRoots() []RuntimeRoot {
 	return out
 }
 
-// edgeFunctionRe finds the edge function a file is: the platform serves
-// supabase/functions/<name>/index.<ext> at /functions/v1/<name>. A directory
-// whose name starts with an underscore (_shared) holds code the functions
-// share, not a function.
-var edgeFunctionRe = regexp.MustCompile(`(?:^|/)supabase/functions/([^/_][^/]*)/index\.(?:ts|tsx|js|jsx|mts|mjs)$`)
-
 // EdgeFunctionPath is the path the platform serves the edge function in file
 // at: /functions/v1/<name>. Empty when file is not an edge function's entry
 // file. A Deno.serve handler answers every method, so no method goes with it.
 func EdgeFunctionPath(file string) string {
-	if m := edgeFunctionRe.FindStringSubmatch(file); m != nil {
+	if m := functionRe.FindStringSubmatch(file); m != nil {
 		return "/functions/v1/" + m[1]
 	}
 	return ""
