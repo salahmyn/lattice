@@ -337,11 +337,17 @@ func TestWritersCommand(t *testing.T) {
 		"public.jobs: 3 writer(s)",
 		"sql.public.claim_jobs  update  attempts, status, updated_at  supabase/migrations/20260101000000_jobs.sql:12\n    unguarded for queue.jobs:INV-1",
 		"sql.public.fail_job  update  status, updated_at  supabase/migrations/20260101000000_jobs.sql:28\n    guarded for queue.jobs:INV-1 by enforcer",
-		"writer set complete",
+		"writer set not known to be complete",
+		"sql.api_roles is not declared",
 	} {
 		if !strings.Contains(text.String(), want) {
 			t.Errorf("text lacks %q:\n%s", want, text.String())
 		}
+	}
+	// With no API roles declared, unnamed roles were not checked, so the set is
+	// never called complete.
+	if strings.Contains(text.String(), "writer set complete") {
+		t.Errorf("text calls the writer set complete with roles unchecked:\n%s", text.String())
 	}
 
 	out, err := run(t, repo, newWritersCommand, "jobs.run_after")

@@ -109,7 +109,7 @@ func writeWriters(io *IO, rep graph.WriterReport) {
 		if rep.RolesChecked {
 			io.printf("writer set complete (from the migrations and sql.default_write)\n")
 		} else {
-			io.printf("writer set complete, but sql.api_roles is not declared, so roles that no statement names were not checked\n")
+			io.printf("writer set not known to be complete: functions and migrations were read, but sql.api_roles is not declared, so roles that no statement names were not checked\n")
 		}
 		return
 	}
