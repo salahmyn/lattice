@@ -3,6 +3,7 @@
 // Browser smoke test for the block map (`lattice export map`), with Playwright.
 //
 //   node scripts/blockmap-smoke.js <map.html> [--shots <dir>] [--perf <blocks>]
+//   node scripts/blockmap-smoke.js --served <base-url>
 //
 // It loads the exported page, switches every tab and lens, turns the assurance
 // lens on and off, hides a kind from the legend, uses the canvas toolbar (zoom, minimap, Mermaid text, SVG/PNG/
@@ -18,6 +19,12 @@
 //
 // --shots writes PNGs of each view in light and dark. --perf N swaps in a
 // generated graph of about N blocks and prints timings instead of the smoke run.
+//
+// --served opens <base-url>/map from a running `lattice serve` instead, with
+// /api/graph intercepted: a slow graph must show the live load status (elapsed
+// seconds, then the first-load hint), a failed one an error naming the cause
+// with a retry that loads it, and the status must be gone once the map draws.
+// Every request to another origin is blocked and fails the run.
 // It needs `require('playwright')` to resolve; it never installs browsers.
 'use strict';
 const fs = require('fs');
@@ -25,10 +32,10 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const args = process.argv.slice(2);
-const file = path.resolve(args[0] || '');
-const opt = name => { const i = args.indexOf('--' + name); return i > 0 ? args[i + 1] : ''; };
-const shots = opt('shots'), perf = parseInt(opt('perf'), 10) || 0;
-if (!args[0] || !fs.existsSync(file)) { console.error('usage: blockmap-smoke.js <map.html> [--shots dir] [--perf n]'); process.exit(2); }
+const opt = name => { const i = args.indexOf('--' + name); return i >= 0 ? args[i + 1] || '' : ''; };
+const shots = opt('shots'), perf = parseInt(opt('perf'), 10) || 0, served = opt('served');
+const file = served ? '' : path.resolve(args[0] || '');
+if (!served && (!args[0] || !fs.existsSync(file))) { console.error('usage: blockmap-smoke.js <map.html> [--shots dir] [--perf n] | --served <base-url>'); process.exit(2); }
 
 let failed = 0;
 function check(ok, what) { if (ok) console.log('ok   ' + what); else { failed++; console.log('FAIL ' + what); } }
@@ -63,6 +70,7 @@ async function smoke(browser) {
   const url = 'file://' + file;
   const { page, errors } = await open(browser, url);
   await diagramDrawn(page);
+  check(await page.$('#gload') === null && !(await pageText(page)).includes('Building the block graph'), 'the exported map shows no load status (its graph is inline)');
   check(await page.evaluate(() => typeof window.ELK === 'function'), 'the layout library starts from the file itself');
   check(!(await pageText(page)).includes('simple grid') && await page.$('#vp path[d*="C"]') !== null, 'the diagram has the layered layout (spline edges), not the grid fallback');
   const tabs = await page.$$eval('.tabs button', bs => bs.map(b => b.textContent.trim()));
@@ -325,9 +333,79 @@ async function smoke(browser) {
   // the layout library does not start: the grid fallback still draws, with no request either
   const off = await open(browser, url, 'light', true);
   await diagramDrawn(off.page);
-  check((await pageText(off.page)).includes('layout library not available: simple grid') && off.errors.length === 0,
+  check((await pageText(off.page)).includes('layout library not available: simple grid') && await off.page.$('#gload') === null && off.errors.length === 0,
     'without the layout library the grid fallback draws' + (off.errors.length ? ':\n  ' + off.errors.join('\n  ') : ''));
   await off.page.close();
+}
+
+// the served map while /api/graph is slow or failing: a live status, then an error with a retry, and neither once drawn
+async function loading(browser) {
+  const origin = new URL(served).origin, url = origin + '/map';
+  async function openServed(graph, noLayout) { // graph(route, n) answers the n-th /api/graph request
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const errors = [];
+    page.on('console', m => { if (m.type() === 'error' && !/^Failed to load resource/.test(m.text())) errors.push(m.text()); });
+    page.on('pageerror', e => errors.push('uncaught: ' + e.message));
+    let n = 0;
+    await page.route('**/*', r => {
+      const u = new URL(r.request().url());
+      if (u.origin !== origin) { errors.push('request to another origin: ' + u.href); return r.abort('blockedbyclient'); }
+      if (u.pathname === '/api/graph') return graph(r, ++n);
+      if (noLayout && u.pathname.startsWith('/map/elkjs')) return r.abort('failed');
+      return r.continue();
+    });
+    await page.goto(url);
+    return { page, errors, count: () => n };
+  }
+  const status = page => page.evaluate(() => {
+    const el = document.getElementById('gload');
+    if (!el) return null;
+    const hint = el.querySelector('.ld-hint');
+    return { shown: !el.hidden, role: el.getAttribute('role'), live: el.getAttribute('aria-live'), err: el.classList.contains('err'),
+      text: el.textContent, sec: el.querySelector('.ld-sec')?.textContent || '', hint: !!hint && !hint.hidden, retry: !!el.querySelector('button[data-retry]') };
+  });
+  const wait = (page, fn, arg, ms) => page.waitForFunction(fn, arg, { timeout: ms || 10000 }).then(() => true, () => false);
+
+  // slow: the status counts the seconds, adds the first-load hint after about 3 s, and goes once the map draws
+  const slow = await openServed(async r => { await new Promise(t => setTimeout(t, 4200)); return r.continue(); });
+  await wait(slow.page, () => !document.getElementById('gload')?.hidden);
+  const s0 = await status(slow.page);
+  check(s0 && s0.shown && s0.role === 'status' && s0.live === 'polite' && /Building the block graph/.test(s0.text) && !s0.hint,
+    'served, slow graph: a polite live status says the graph is being built' + (s0 ? ` ("${s0.text.trim()}")` : ''));
+  const ticked = await wait(slow.page, () => /^[1-9]\d* s$/.test(document.querySelector('#gload .ld-sec')?.textContent || ''), null, 2500);
+  const s1 = await status(slow.page);
+  check(ticked && s1 && !s1.hint, `served, slow graph: the elapsed seconds update (${s0 && s0.sec} -> ${s1 && s1.sec})`);
+  const hinted = await wait(slow.page, () => { const h = document.querySelector('#gload .ld-hint'); return h && !h.hidden; }, null, 4000);
+  const s2 = await status(slow.page);
+  check(hinted && /first load builds the graph and the audit/.test(s2.text) && /cached/.test(s2.text) && +s2.sec.split(' ')[0] >= 3,
+    `served, slow graph: after about 3 s the status says the first load builds the graph and later loads are cached (at ${s2 && s2.sec})`);
+  await diagramDrawn(slow.page);
+  check(await slow.page.$('#gload') === null, 'served, slow graph: the status is gone once the map draws');
+  check(slow.errors.length === 0, 'served, slow graph: no console errors' + (slow.errors.length ? ':\n  ' + slow.errors.join('\n  ') : ''));
+  await slow.page.close();
+
+  // failing: a 500 names its status and the server's error, a network failure names itself; each offers a retry
+  const fail = await openServed((r, n) => n === 1 ? r.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'graph build failed' }) })
+    : n === 2 ? r.abort('failed') : r.continue());
+  const errState = () => wait(fail.page, () => !!document.querySelector('#gload.err button[data-retry]'));
+  const e1 = (await errState()) && await status(fail.page);
+  check(e1 && e1.shown && e1.role === 'status' && /500/.test(e1.text) && /graph build failed/.test(e1.text) && e1.retry && !/Building/.test(e1.text),
+    'served, HTTP 500: the status turns into an error naming the status and the cause, with a retry' + (e1 ? ` ("${e1.text.trim()}")` : ''));
+  await fail.page.click('#gload button[data-retry]');
+  const e2 = (await wait(fail.page, () => { const e = document.querySelector('#gload.err'); return !!e && !/500/.test(e.textContent) && !!e.querySelector('button[data-retry]'); })) && await status(fail.page);
+  check(e2 && fail.count() === 2 && e2.retry && /fetch|network|failed/i.test(e2.text), 'served, network failure: retry fetches again and the error names the failure' + (e2 ? ` ("${e2.text.trim()}")` : ''));
+  await fail.page.click('#gload button[data-retry]');
+  await diagramDrawn(fail.page);
+  check(fail.count() === 3 && await fail.page.$('#gload') === null, 'served: retry after a failure loads the graph, and the status is gone once the map draws');
+  check(fail.errors.length === 0, 'served, failing graph: no console errors' + (fail.errors.length ? ':\n  ' + fail.errors.join('\n  ') : ''));
+  await fail.page.close();
+
+  // the layout library does not load: the grid fallback draws, and the status is gone with it
+  const grid = await openServed(async r => { await new Promise(t => setTimeout(t, 600)); return r.continue(); }, true);
+  await diagramDrawn(grid.page);
+  check((await pageText(grid.page)).includes('layout library not available: simple grid') && await grid.page.$('#gload') === null && grid.errors.length === 0,
+    'served, no layout library: the grid fallback draws and the status is gone' + (grid.errors.length ? ':\n  ' + grid.errors.join('\n  ') : ''));
+  await grid.page.close();
 }
 
 async function screenshots(browser) {
@@ -449,7 +527,8 @@ async function measure(browser) {
 (async () => {
   const browser = await chromium.launch();
   try {
-    if (perf) await measure(browser);
+    if (served) await loading(browser);
+    else if (perf) await measure(browser);
     else if (shots) await screenshots(browser);
     else await smoke(browser);
   } finally { await browser.close(); }
