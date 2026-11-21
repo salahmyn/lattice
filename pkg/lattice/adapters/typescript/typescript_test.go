@@ -129,6 +129,11 @@ func TestDetectsRoutesAndNoDoubleCount(t *testing.T) {
 			t.Errorf("surface %+v: want detected http", s)
 		}
 		got[s.Method+" "+s.Path] = true
+		// A route handed a plain identifier names it; an inline function names none.
+		wantSym := map[string]string{"POST /carts/:id/items": "src.index.addItemRoute"}[s.Method+" "+s.Path]
+		if s.Symbol != wantSym {
+			t.Errorf("surface %s %s: handler symbol %q, want %q", s.Method, s.Path, s.Symbol, wantSym)
+		}
 	}
 	for _, want := range []string{"GET /health", "POST /carts/:id/items"} {
 		if !got[want] {

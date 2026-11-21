@@ -144,6 +144,12 @@ type Node struct {
 	IsTest bool   `json:"is_test,omitempty"`
 	Line   int    `json:"line"`
 	Refs   []Ref  `json:"refs,omitempty"`
+	// Job and Schedule are a cron job's name and schedule, when the source
+	// gives them as literals. KeyComputed marks a job whose name or schedule
+	// is an expression, so the job has no stable key.
+	Job         string `json:"job,omitempty"`
+	Schedule    string `json:"schedule,omitempty"`
+	KeyComputed bool   `json:"key_computed,omitempty"`
 }
 
 // TopFQN is the FQN of a namespace's top-level code: <namespace>.<top>, or

@@ -635,8 +635,25 @@ func (p *tsParser) detectRoute(call *sitter.Node) {
 	}
 	p.mod.Surfaces = append(p.mod.Surfaces, ir.Surface{
 		Type: "http", Method: strings.ToUpper(method), Path: path,
-		Line: line(call), Detected: true,
+		Symbol: p.routeHandler(args),
+		Line:   line(call), Detected: true,
 	})
+}
+
+// routeHandler names the symbol a route registration hands its request to
+// when the last argument is a plain identifier (app.get("/x", listX)): the
+// module's own symbol of that name. Whether the module has one is for the
+// reader of the graph to check; an inline function or a member expression
+// names none, and "" is returned.
+func (p *tsParser) routeHandler(args *sitter.Node) string {
+	if args == nil || args.NamedChildCount() == 0 {
+		return ""
+	}
+	last := args.NamedChild(args.NamedChildCount() - 1)
+	if last.Kind() != "identifier" {
+		return ""
+	}
+	return p.modulePath + "." + last.Utf8Text(p.src)
 }
 
 // addClass records a class symbol and its method symbols.
