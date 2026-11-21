@@ -155,7 +155,7 @@ func parseTree(out, prefix string) []treeFile {
 // @enforces breaktest:INV-16
 func (r *runner) baselineKnownFailing(groups []group) bool {
 	for _, g := range groups {
-		key := invocationKey(g)
+		key := r.keyOf(g)
 		if inv, ok := r.shared[key]; ok && inv.failedBaseline() {
 			return true
 		}

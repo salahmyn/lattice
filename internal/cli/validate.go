@@ -20,6 +20,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/gitstate"
 	"github.com/salahmyn/lattice/pkg/lattice/lease"
 	"github.com/salahmyn/lattice/pkg/lattice/ledger"
+	"github.com/salahmyn/lattice/pkg/lattice/lines"
 	"github.com/salahmyn/lattice/pkg/lattice/reach"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
@@ -76,6 +77,12 @@ func newValidateCommand(io *IO) *cobra.Command {
 			activeLeases, _ := lease.Active(ws.LatticeDir, time.Now())
 			entries, _ := ledger.Load(ws.LatticeDir)
 
+			var linesRep *lines.Report
+			if cfg.CoverageConfig().Floors.VerifiedLinesDeclared() {
+				dirty, _ := gitDirty(filepath.Dir(ws.LatticeDir), ws.LatticeDir)
+				lr := linesReport(ws, kg, cfg, rr, dirty)
+				linesRep = &lr
+			}
 			violations := validate.Validate(kg, cfg, validate.Options{
 				ReviewMode:    ws.Review,
 				ResultOf:      resultOfFrom(set),
@@ -86,6 +93,7 @@ func newValidateCommand(io *IO) *cobra.Command {
 				LedgerEntries: entries,
 				FlagsOf:       flagReasons(flags.OpenByUnit(ws.LatticeDir)),
 				Coverage:      coverageIndex(ws, kg),
+				Lines:         linesRep,
 				Reach:         rr,
 				Confirm:       confirm.LoadCache(ws.LatticeDir),
 				Tracked:       trackedDerived(ws.LatticeDir),

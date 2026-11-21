@@ -110,6 +110,10 @@ type CoverageFloors struct {
 	Invariant float64 `yaml:"invariant,omitempty"`
 	// Tier: per BRD criterion tier, the worst of the criterion's invariants.
 	Tier map[int]float64 `yaml:"tier,omitempty"`
+	// VerifiedLines: per feature, the lines of its blocks that the verifiers
+	// of each block's own intent ran (lattice break --lines), over the lines
+	// with line data. Declaring it turns on VERIFIED_LINES_BELOW_FLOOR.
+	VerifiedLines float64 `yaml:"verified_lines,omitempty"`
 }
 
 // Declared reports whether any floor is set.
@@ -124,6 +128,9 @@ func (f CoverageFloors) Declared() bool {
 	}
 	return false
 }
+
+// VerifiedLinesDeclared reports whether the verified-lines floor is set.
+func (f CoverageFloors) VerifiedLinesDeclared() bool { return f.VerifiedLines > 0 }
 
 // OnlyVerifiersOrDefault returns per_test.only_verifiers, true when unset.
 func (p CoveragePerTest) OnlyVerifiersOrDefault() bool {

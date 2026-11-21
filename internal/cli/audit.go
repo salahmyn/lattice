@@ -9,12 +9,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
+	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/lines"
 )
 
 // newAuditCommand is `lattice audit`: one row per invariant, saying whether
 // there is evidence the promise is kept or it only looks done.
 func newAuditCommand(io *IO) *cobra.Command {
-	var markdown bool
+	var markdown, withLines bool
 	var class, feature string
 	var promises []string
 	cmd := &cobra.Command{
@@ -48,10 +50,28 @@ unknown, not_run), so a fake names the enforcer no test notices.
 
 --promise, --feature and --class only narrow what is printed: the audit is
 always computed over the whole workspace. An unknown --promise id is a usage
-error (exit 2).`,
+error (exit 2).
+
+--lines adds what each block of code is for, and how far the verifiers of
+that intent reach into its lines. A block is a function, method, policy or
+trigger. Its intent is the invariant it enforces (@enforces), serves (every
+caller in the call graph enforces or serves it), or shares (also reached from
+blocks with no intent); else none. Each instrumented line is checked (a
+killed break of the intent edited it), run (an unshared invocation of the
+intent's verifiers ran it, recorded by 'lattice break --lines'), run_shared
+(only an invocation that also ran other tests did), other (the suite, or
+other verifiers, ran it), not_run, or unknown (no line data: never counted as
+run). Verified lines are (checked + run) over the lines with data, always
+printed with the unknown count; with no line data it says so. The JSON output
+gains a lines section (lattice.audit-lines/1). --feature, --promise and
+--class narrow it too.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			kg, ws, err := graphFor(io, cmd, false)
+			ws, err := openWorkspace(io)
+			if err != nil {
+				return io.fail("EXTRACT_FAILED", err.Error(), nil)
+			}
+			kg, rr, err := buildGraphReach(cmd.Context(), ws, buildOptions{})
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
@@ -65,18 +85,39 @@ error (exit 2).`,
 				return usageError(io, "AUDIT_UNKNOWN_PROMISE", "unknown promise "+strings.Join(unknown, ", ")+" (want <feature>:INV-n, as listed by lattice audit)")
 			}
 			rep = audit.Filter{Class: class, Feature: feature, Promises: ids}.Apply(rep)
+			var lr *lines.Report
+			if withLines {
+				cfg, _ := config.Load(ws.LatticeDir)
+				full := linesReport(ws, kg, cfg, rr, dirty)
+				var kept []string
+				for _, row := range rep.Rows {
+					kept = append(kept, row.Promise)
+				}
+				full = lines.Narrow(full, feature, kept, class != "" || len(ids) > 0)
+				lr = &full
+				rep.Lines = lr
+			}
 			switch {
 			case io.JSON:
 				return io.printJSON(rep)
 			case markdown:
 				audit.WriteMarkdown(io.Out, rep)
+				if lr != nil {
+					io.printf("\n")
+					lines.WriteMarkdown(io.Out, *lr)
+				}
 			default:
 				audit.WriteText(io.Out, rep)
+				if lr != nil {
+					io.printf("\n")
+					lines.WriteText(io.Out, *lr)
+				}
 			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&markdown, "markdown", false, "print Markdown for a PR comment or a report")
+	cmd.Flags().BoolVar(&withLines, "lines", false, "also show each block's intent and how far its verifiers reach into its lines (needs lattice break --lines)")
 	cmd.Flags().StringVar(&class, "class", "", "show only rows of this class")
 	cmd.Flags().StringVar(&feature, "feature", "", "show only rows of this feature")
 	cmd.Flags().StringSliceVar(&promises, "promise", nil, "show only this promise, as <feature>:INV-n (repeatable, or a comma list)")

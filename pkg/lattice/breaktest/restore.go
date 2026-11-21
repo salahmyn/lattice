@@ -63,7 +63,7 @@ func (r *runner) rerunSetup(ctx context.Context) {
 // @enforces breaktest:INV-18
 func (r *runner) healBaseline(ctx context.Context, groups []group, sw sqlFiles) baseline {
 	for _, g := range groups {
-		key := invocationKey(g)
+		key := r.keyOf(g)
 		if inv, ok := r.shared[key]; ok && inv.failedBaseline() {
 			delete(r.shared, key)
 		}

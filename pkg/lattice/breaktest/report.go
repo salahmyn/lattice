@@ -11,6 +11,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/salahmyn/lattice/pkg/lattice/lines"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 )
 
@@ -59,6 +60,8 @@ type Report struct {
 	// baselines are the passing baselines Write keeps for the tree, nil
 	// when none are kept (a dirty tree).
 	baselines *baselineFile
+	// vlines is the line data Write keeps beside them, nil without --lines.
+	vlines *lines.File
 }
 
 // Run is one enforcer of one promise, broken and checked against the
@@ -116,6 +119,12 @@ type Run struct {
 	// reports written before the field existed: neither is ever reused. An
 	// addition to the lattice.breaks/1 contract; readers ignore it.
 	InputsHash string `json:"inputs_hash,omitempty"`
+	// Lines are the first and last line of EnforcerFile that a generated
+	// break edits, when the generator knows them: an early return spans from
+	// its own line to the end of the enforcer, a SQL break the lines of its
+	// insertions. A scripted break and an edge break have none. An addition
+	// to the lattice.breaks/1 contract; runs written before it lack it.
+	Lines []int `json:"lines,omitempty"`
 }
 
 // GeneratorVersion stamps the generators, the runner logic and the outcome
@@ -178,6 +187,11 @@ func Read(latticeDir string) Report {
 func Write(latticeDir string, r Report) error {
 	if r.baselines != nil {
 		if err := r.baselines.write(latticeDir); err != nil {
+			return err
+		}
+	}
+	if r.vlines != nil {
+		if err := r.vlines.Write(latticeDir); err != nil {
 			return err
 		}
 	}

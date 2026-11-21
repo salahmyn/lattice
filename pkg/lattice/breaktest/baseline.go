@@ -10,6 +10,7 @@ import (
 	"sort"
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/lines"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 )
 
@@ -39,6 +40,9 @@ type invocation struct {
 	junit     bool // the command asked for a JUnit report
 	report    []byte
 	reportErr error
+	// cov is the line data the invocation wrote, set only for a --lines
+	// baseline that ran with coverage.
+	cov *lines.Invocation
 }
 
 // result is the invocation accounted for one group's verifiers.
@@ -103,7 +107,14 @@ var keySQL = sqlFiles{patched: patchedSQLToken, original: originalSQLToken}
 // substituted), with the worktree and the report path as placeholders. Two
 // promises whose groups render the same command share one baseline. A Go
 // group is keyed by its verifiers, which name the tests `go test -run` runs.
-func invocationKey(g group) string {
+func invocationKey(g group) string { return invocationKeyFor(g, false) }
+
+// invocationKeyFor is invocationKey for an invocation that runs with
+// coverage on (a `lattice break --lines` baseline): the same command with
+// the coverage report asked for is a different invocation, so its key
+// differs and a plain cached baseline is never taken as having line data. A
+// key made with lines false is byte-for-byte the plain one.
+func invocationKeyFor(g group, lines bool) string {
 	d := struct {
 		Kind     string
 		Name     string
@@ -112,7 +123,8 @@ func invocationKey(g group) string {
 		Dir      string         `json:",omitempty"`
 		Argv     []string       `json:",omitempty"`
 		Tests    []string       `json:",omitempty"`
-	}{Kind: g.kind.String(), Name: g.name}
+		Lines    bool           `json:",omitempty"`
+	}{Kind: g.kind.String(), Name: g.name, Lines: lines}
 	switch g.kind {
 	case kindGo:
 		for _, t := range g.tests {
@@ -161,23 +173,36 @@ func (r *runner) baseline(ctx context.Context, groups []group, sql sqlFiles) bas
 // a verifier as executed that it did not execute.
 // @enforces breaktest:INV-13
 func (r *runner) baselineGroup(ctx context.Context, g group, sql sqlFiles) execResult {
-	key := invocationKey(g)
+	key := r.keyOf(g)
+	withLines := r.opts.Lines && g.coversLines()
 	if inv, ok := r.shared[key]; ok {
 		r.counts.Reused++
+		r.remember(key, inv)
 		return inv.result(g)
 	}
 	if inv, ok := r.store.get(key, g); ok {
-		r.counts.Reused++
-		r.shared[key] = inv
-		return inv.result(g)
+		// A --lines baseline is reused only with the line data kept for it.
+		if cov, kept := r.keptLines(key, withLines); kept {
+			inv.cov = cov
+			r.counts.Reused++
+			r.shared[key] = inv
+			r.remember(key, inv)
+			return inv.result(g)
+		}
 	}
-	inv := r.invoke(ctx, g, sql)
+	inv := r.invokeWith(ctx, g, sql, withLines)
 	r.counts.Run++
+	r.remember(key, inv)
 	if inv.reusable() {
 		r.shared[key] = inv
 	}
 	if inv.persistable() {
 		r.store.put(key, g, inv)
+		if withLines && inv.cov != nil && r.vlines != nil {
+			iv := *inv.cov
+			iv.Name = g.name
+			r.vlines.Invocations[key] = iv
+		}
 	} else if inv.failedBaseline() {
 		r.store.putFailed(key, inv.res.reason)
 	}

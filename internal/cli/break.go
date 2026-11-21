@@ -23,7 +23,7 @@ func newBreakCommand(io *IO) *cobra.Command {
 	var promise, feature, failsOnBase string
 	var failOn []string
 	var timeout time.Duration
-	var allowDirty, noPreflight, edges bool
+	var allowDirty, noPreflight, edges, withLines bool
 	cmd := &cobra.Command{
 		Use:   "break",
 		Short: "Break each promise's enforcer and see whether its verifiers notice",
@@ -61,6 +61,16 @@ func newBreakCommand(io *IO) *cobra.Command {
 			"edge break (EDGE_BREAK_SURVIVED, info) means no verifier noticed the hop breaking;\n" +
 			"a killed one marks the hop break_tested in lattice slice. Verifiers that run SQL\n" +
 			"object files ({patched_sql}) are left out of edge runs. At most 20 hops per promise.\n" +
+			"\n" +
+			"--lines also records which lines each promise's own verifiers run. Each baseline\n" +
+			"invocation runs with coverage on and its report is kept in\n" +
+			"lattice/.cache/results/verifier-lines.json for the tree, which lattice audit --lines\n" +
+			"reads. Go gets -coverprofile and -coverpkg=./...; a runner or break.commands\n" +
+			"template asks for the report with {coverage}, a path unique to the invocation\n" +
+			"(a file, or a directory when the tool can only write into one, which then holds\n" +
+			"exactly one report). A runner with no {coverage} has no line data, and pgTAP\n" +
+			"reports calls per function, not lines; both read unknown. Without --lines\n" +
+			"nothing changes. It needs a clean tree and is ignored with --fails-on-base.\n" +
 			"\n" +
 			"The working tree is never edited. A tree with uncommitted changes is refused\n" +
 			"unless --allow-dirty, which tests the tree as it stands and records dirty: true.\n" +
@@ -141,6 +151,7 @@ func newBreakCommand(io *IO) *cobra.Command {
 				CodeRoot:   ws.PrimaryCodeRoot().Abs,
 				Warn:       io.Err,
 				Edges:      edges || cfg.Break.Edges,
+				Lines:      withLines && failsOnBase == "",
 			}
 			if opts.Edges && failsOnBase == "" {
 				opts.EdgeHops = edgeHopsOf(kg, rr, ws.Layers, opts)
@@ -188,6 +199,9 @@ func newBreakCommand(io *IO) *cobra.Command {
 			rep.Runs = shown
 			printBreakTable(io, rep, sum)
 			printEdgeNotes(io, rep.Runs)
+			if opts.Lines && !rep.Dirty {
+				io.printf("verifier lines: kept in lattice/.cache/results/verifier-lines.json (lattice audit --lines)\n")
+			}
 			if failMsg != "" {
 				return io.fail(failOnCode, failMsg, nil)
 			}
@@ -199,6 +213,7 @@ func newBreakCommand(io *IO) *cobra.Command {
 	cmd.Flags().DurationVar(&timeout, "timeout", 120*time.Second, "timeout for each test run (a timeout reads unknown)")
 	cmd.Flags().BoolVar(&allowDirty, "allow-dirty", false, "test a working tree with uncommitted changes")
 	cmd.Flags().BoolVar(&edges, "edges", false, "also break each hop of a promise's slice paths (a request, rpc, table or channel literal at the out end) and see whether a verifier notices; adds a run per hop (or break.edges: true)")
+	cmd.Flags().BoolVar(&withLines, "lines", false, "also record which lines each promise's own verifiers run, for lattice audit --lines (runs each baseline with coverage; needs a clean tree)")
 	cmd.Flags().BoolVar(&noPreflight, "no-preflight", false, noPreflightUsage)
 	cmd.Flags().StringSliceVar(&failOn, "fail-on", nil, "exit 1 when a shown run has one of these outcomes: survived, unknown (repeatable, or a comma list)")
 	cmd.Flags().StringVar(&failsOnBase, "fails-on-base", "", "run the new and changed verifiers on the code of merge-base(<rev>, HEAD) instead of breaking")

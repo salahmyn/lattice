@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/coverage"
+	"github.com/salahmyn/lattice/pkg/lattice/lines"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
@@ -42,6 +44,16 @@ type runner struct {
 	counts     BaselineCounts
 	junitSeq   int
 	sqlSeq     int
+	covSeq     int
+
+	// vlines is the line data kept for the tree (--lines on a clean tree),
+	// nil otherwise. last holds each baseline invocation of this run by key,
+	// whether it was run or taken from the store, for recordLines. paths
+	// and src map a coverage report onto the workspace's files.
+	vlines *lines.File
+	last   map[string]invocation
+	paths  *coverage.PathMapper
+	src    map[string]bool
 
 	setupDone bool
 	setupErr  error
@@ -77,7 +89,7 @@ func Execute(ctx context.Context, kg schema.KnowledgeGraph, opts Options) (Repor
 
 	targets := plan(kg, opts)
 	prior := Read(opts.LatticeDir)
-	r := &runner{opts: opts, repo: repo, prior: map[[8]string]Run{}, shared: map[string]invocation{}}
+	r := &runner{opts: opts, repo: repo, prior: map[[8]string]Run{}, shared: map[string]invocation{}, last: map[string]invocation{}}
 	for _, p := range prior.Runs {
 		if p.cacheable() {
 			r.prior[p.cacheKey()] = p
@@ -90,7 +102,19 @@ func Execute(ctx context.Context, kg schema.KnowledgeGraph, opts Options) (Repor
 			r.tree = tree
 			r.store = loadBaselines(opts.LatticeDir, tree, baselineStamp(tree, repo.Prefix, opts.Config.Break))
 			rep.baselines = r.store
+			if opts.Lines {
+				r.vlines = loadLines(opts.LatticeDir, tree, baselineStamp(tree, repo.Prefix, opts.Config.Break))
+				rep.vlines = r.vlines
+			}
 		}
+	}
+	if opts.Lines && r.vlines == nil {
+		// Line data is kept for HEAD's tree, which a dirty tree is not.
+		fmt.Fprintln(opts.warn(), "--lines records line data only for a clean tree: it is skipped")
+		r.opts.Lines = false
+	}
+	if r.opts.Lines {
+		r.paths, r.src = coverage.NewPathMapper(kg), lines.SourceFiles(kg)
 	}
 	if len(targets) > 0 {
 		release, err := acquireLock(opts.LatticeDir, opts.warn())
@@ -280,10 +304,18 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 		if t.script == "" {
 			if plan, err := r.planFor(enf); err == nil {
 				run.EnforcerFile = plan.edits[0].file
+				run.Lines = editLines(plan, enf)
 			}
 		}
 		run.Baseline, run.Outcome, run.Reason, run.Cached = hit.Baseline, hit.Outcome, hit.Reason, true
 		run.RanVerifiers, run.NotRunVerifiers, run.FailedTests = hit.RanVerifiers, hit.NotRunVerifiers, hit.FailedTests
+		if r.opts.Lines {
+			// The outcome is reused; the lines the verifiers ran are not
+			// part of it, so a baseline with coverage is still made.
+			if err := r.linesOnly(ctx, t, groups); err != nil {
+				return run, err
+			}
+		}
 		return run, nil
 	}
 	if len(t.tests) == 0 {
@@ -300,6 +332,7 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 			return run, nil
 		}
 		run.EnforcerFile = plan.edits[0].file
+		run.Lines = editLines(plan, enf)
 	}
 
 	if err := r.measure(ctx, &run, t, enf, plan, patch, groups, noRunner); err != nil {
@@ -368,6 +401,9 @@ func (r *runner) measure(ctx context.Context, run *Run, t target, enf schema.Gra
 		base = r.healBaseline(ctx, groups, sw)
 	}
 	r.restoreSQL(ctx, sw.asBaseline(), r.swapInvokes > swapped)
+	if t.hop == nil {
+		r.recordLines(t.promise, groups)
+	}
 	run.Baseline = base.status
 	if base.status != BaselinePass {
 		run.Reason = base.reason
@@ -684,8 +720,18 @@ func (r *runner) runGroup(ctx context.Context, g group, sql sqlFiles) execResult
 // that names the SQL object files is never run without them.
 // @enforces breaktest:INV-15
 func (r *runner) invoke(ctx context.Context, g group, sql sqlFiles) invocation {
+	return r.invokeWith(ctx, g, sql, false)
+}
+
+// invokeWith is invoke with the option to record coverage: Go's command gets
+// -coverprofile and -coverpkg=./... and a runner or template reads what it
+// wrote to {coverage}. A command that names {coverage} always gets a path
+// for it, so it never runs with the placeholder unfilled; the report is read
+// only when withLines is set.
+func (r *runner) invokeWith(ctx context.Context, g group, sql sqlFiles, withLines bool) invocation {
 	if g.kind == kindGo {
-		return invocation{res: r.runGo(ctx, g)}
+		res, cov := r.runGo(ctx, g, withLines)
+		return invocation{res: res, cov: cov}
 	}
 	if g.usesSQLFiles() && !sql.ok() {
 		// Never run a command with its placeholders unfilled.
@@ -700,10 +746,27 @@ func (r *runner) invoke(ctx context.Context, g group, sql sqlFiles) invocation {
 		r.swapInvokes++
 		r.swapDirty = true
 	}
-	dir, argv := render(g, r.wt.Dir, junit, sql)
+	covPath := ""
+	if g.usesCoverage() {
+		covPath = r.newCoveragePath()
+	}
+	dir, argv := renderCov(g, r.wt.Dir, junit, covPath, sql)
 	inv := invocation{res: command(ctx, "", dir, r.opts.Timeout, argv[0], argv[1:]...), junit: junit != ""}
 	if inv.junit {
 		inv.report, inv.reportErr = os.ReadFile(junit)
+	}
+	if withLines && g.coversLines() && inv.res.status == statusOK {
+		var cov lines.Invocation
+		if covPath == "" {
+			cov = lines.Invocation{Unknown: whyNoCoverage}
+		} else {
+			root := ""
+			if g.kind == kindRunner {
+				root = g.runner.Dir
+			}
+			cov = r.readCoverage(covPath, root, nil)
+		}
+		inv.cov = &cov
 	}
 	return inv
 }
@@ -712,16 +775,25 @@ func (r *runner) invoke(ctx context.Context, g group, sql sqlFiles) invocation {
 // group runs, in a worktree at root, with the JUnit report at junit and the
 // SQL object files of a SQL break in sql.
 func render(g group, root, junit string, sql sqlFiles) (dir string, argv []string) {
+	return renderCov(g, root, junit, "", sql)
+}
+
+// renderCov is render with the path {coverage} stands for. With none the
+// placeholder is left as written, which is how an invocation key names it.
+func renderCov(g group, root, junit, cov string, sql sqlFiles) (dir string, argv []string) {
 	files, filter := templateRaw(g)
 	if g.kind == kindRunner {
 		return filepath.Join(root, filepath.FromSlash(g.runner.Dir)),
-			expandArgvSQL(g.runner.Command, relativeTo(root, g.runner.Dir, files), filter, junit, sql)
+			expandArgvCov(g.runner.Command, relativeTo(root, g.runner.Dir, files), filter, junit, cov, sql)
 	}
 	var quoted []string
 	for _, f := range files {
 		quoted = append(quoted, shellQuote(f))
 	}
 	pairs := []string{"{files}", strings.Join(quoted, " "), "{filter}", shellQuote(filter), "{junit}", shellQuote(junit)}
+	if cov != "" {
+		pairs = append(pairs, coverageToken, shellQuote(cov))
+	}
 	if sql.ok() {
 		pairs = append(pairs, patchedSQLToken, shellQuote(sql.patched), originalSQLToken, shellQuote(sql.original))
 	}
@@ -752,6 +824,12 @@ func expandArgv(cmd, files []string, filter, junit string) []string {
 // expandArgvSQL is expandArgv with the SQL object files of a SQL break.
 // {patched_sql} and {original_sql} are left as written when there are none.
 func expandArgvSQL(cmd, files []string, filter, junit string, sql sqlFiles) []string {
+	return expandArgvCov(cmd, files, filter, junit, "", sql)
+}
+
+// expandArgvCov is expandArgvSQL with the path {coverage} stands for, left as
+// written when empty.
+func expandArgvCov(cmd, files []string, filter, junit, cov string, sql sqlFiles) []string {
 	var out []string
 	for _, a := range cmd {
 		if a == "{files}" {
@@ -759,6 +837,9 @@ func expandArgvSQL(cmd, files []string, filter, junit string, sql sqlFiles) []st
 			continue
 		}
 		pairs := []string{"{files}", strings.Join(files, " "), "{filter}", filter, "{junit}", junit}
+		if cov != "" {
+			pairs = append(pairs, coverageToken, cov)
+		}
 		if sql.ok() {
 			pairs = append(pairs, patchedSQLToken, sql.patched, originalSQLToken, sql.original)
 		}
@@ -892,8 +973,12 @@ func leafName(s results.Selector) string {
 }
 
 // runGo runs the Go verifiers with `go test`, one invocation per module,
-// naming the top-level tests so only the promise's verifiers run.
-func (r *runner) runGo(ctx context.Context, g group) execResult {
+// naming the top-level tests so only the promise's verifiers run. With
+// withLines each module's run also writes a coverage profile over every
+// package of the module (-coverpkg=./..., relative to the module's own
+// directory, where the command runs) and the profiles are read as the group's
+// line data; a run that does not pass has none.
+func (r *runner) runGo(ctx context.Context, g group, withLines bool) (execResult, *lines.Invocation) {
 	type mod struct {
 		dir   string
 		pkgs  map[string]bool
@@ -925,32 +1010,46 @@ func (r *runner) runGo(ctx context.Context, g group) execResult {
 	}
 	sort.Strings(order)
 	out := execResult{status: statusOK}
+	var parts []lines.Invocation
 	for _, d := range order {
 		m := mods[d]
 		pkgs, tests := keys(m.pkgs), keys(m.tests)
 		args := []string{"test", "-vet=off", "-count=1", "-v", "-run", "^(" + strings.Join(tests, "|") + ")$"}
+		profile := ""
+		if withLines {
+			profile = r.newCoveragePath()
+			args = append(args, "-coverprofile="+profile, "-coverpkg=./...")
+		}
 		args = append(args, pkgs...)
-		res := command(ctx, "go", filepath.Join(r.wt.Dir, filepath.FromSlash(d)), r.opts.Timeout, "go", args...)
+		modDir := filepath.Join(r.wt.Dir, filepath.FromSlash(d))
+		res := command(ctx, "go", modDir, r.opts.Timeout, "go", args...)
 		switch res.status {
 		case statusOK:
 			if name, ok := goVerifiersPassed(res.output, tests); !ok {
-				return execResult{status: statusError, reason: "verifier " + name + " did not run and pass", output: res.output}
+				return execResult{status: statusError, reason: "verifier " + name + " did not run and pass", output: res.output}, nil
 			}
 			for _, top := range tests {
 				out.ran = append(out.ran, m.sels[top])
 			}
 			out.executed += len(tests)
+			if withLines {
+				parts = append(parts, r.readCoverage(profile, "", goResolver(goModulePath(modDir), d)))
+			}
 		case statusFail:
 			res.failed = goFailedTests(res.output)
 			if len(res.failed) > 0 {
 				res.reason = "failed: " + nameList(res.failed)
 			}
-			return res
+			return res, nil
 		default:
-			return res
+			return res, nil
 		}
 	}
-	return out
+	if !withLines {
+		return out, nil
+	}
+	cov := mergeInvocation(parts)
+	return out, &cov
 }
 
 // moduleDir is the nearest directory at or above dir (relative to the code

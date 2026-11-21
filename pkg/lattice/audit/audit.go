@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/salahmyn/lattice/pkg/lattice/lines"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/rtm"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
@@ -198,6 +199,11 @@ type Report struct {
 	// Note states what the confirmed signal is and is not.
 	Note string `json:"note"`
 	Rows []Row  `json:"rows"`
+	// Lines is the lines section of `lattice audit --lines`: what each block
+	// is for and how far the verifiers of that intent reach into its lines
+	// (lattice.audit-lines/1). It is an addition to lattice.audit/1, absent
+	// without --lines.
+	Lines *lines.Report `json:"lines,omitempty"`
 }
 
 // confirmedNote is carried on every report: a human approval is a fact about
