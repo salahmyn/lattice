@@ -62,8 +62,10 @@ func noBreak(format string, a ...any) error {
 }
 
 // Generate builds the "early return" break for a function: an early return
-// at the start of its body. Languages without a generator (SQL, PHP, ...)
-// and symbols that are not plain function bodies return a *NoBreak.
+// at the start of its body. For PostgreSQL ("postgres", the adapter's
+// language name) it neutralises a policy, trigger or PL/pgSQL function
+// instead (see generateSQL). Languages without a generator (PHP, ...) and
+// symbols that are not plain function bodies return a *NoBreak.
 // @enforces breaktest:INV-1
 func Generate(language, file string, src []byte, sym Symbol) (Break, error) {
 	switch language {
@@ -73,6 +75,8 @@ func Generate(language, file string, src []byte, sym Symbol) (Break, error) {
 		return generateTS(file, src, sym)
 	case "python":
 		return generatePython(src, sym)
+	case "postgres", "sql":
+		return generateSQL(src, sym)
 	}
 	return Break{}, noBreak("no generated break for %s; add a script", language)
 }

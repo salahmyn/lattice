@@ -10,7 +10,7 @@ owners:
 implements_brd: brd.verification
 invariants:
   - id: INV-1
-    statement: A generated break only inserts an early return at the top of the enforcer's body, and a language or symbol kind with no generator gets no break.
+    statement: A generated break only inserts an early return at the top of the enforcer's body (for SQL, an always-true policy or never-true trigger condition instead), and a language or symbol kind with no generator gets no break.
   - id: INV-2
     statement: Breaks are made and tested on a temporary worktree at HEAD, which is always removed; the working tree is never edited, and a dirty tree is refused unless allowed.
   - id: INV-3

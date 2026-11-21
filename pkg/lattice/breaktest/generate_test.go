@@ -312,10 +312,10 @@ async def co(x):
 	}
 }
 
-// SQL and every language without a generator read unknown.
+// Every language without a generator reads unknown (SQL has one: gen_sql_test.go).
 // @verifies breaktest:INV-1
 func TestGenerateNoGenerator(t *testing.T) {
-	for _, lang := range []string{"postgres", "php", "rust"} {
+	for _, lang := range []string{"php", "rust", "ruby"} {
 		_, err := Generate(lang, "x", []byte("select 1;"), Symbol{Name: "f", Line: 1})
 		var nb *NoBreak
 		if !errors.As(err, &nb) || !strings.Contains(nb.Reason, "add a script") {
