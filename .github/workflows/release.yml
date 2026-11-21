@@ -91,7 +91,7 @@ jobs:
             -o dist/lattice ./cmd/lattice
           ./dist/lattice version
           name="lattice_${ver}_${GOOS}_${GOARCH}"
-          cp LICENSE README.md dist/ 2>/dev/null || true
+          cp LICENSE THIRD_PARTY_NOTICES.md README.md dist/ 2>/dev/null || true
           cd dist
           tar czf "../$name.tar.gz" .
       - uses: actions/upload-artifact@v4

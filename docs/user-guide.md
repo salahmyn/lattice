@@ -997,8 +997,9 @@ run it in a copy to keep the example as committed.
 `lattice refresh` builds the block graph from a workspace's sources and
 judgments. `lattice serve` shows it at `/map`, and `lattice export map
 out.html` writes the same page as one file that works offline. The page
-lays out with ELK from a pinned, SRI-checked CDN copy; without the network
-it falls back to a simple grid.
+lays out with ELK (elkjs 0.9.3, shipped in the binary): the export inlines
+it, and `serve` serves it itself, so neither makes a network request. If the
+library cannot start, the page falls back to a simple grid.
 
 `examples/block-map/` is a fictional bookshop to try it on:
 
@@ -1187,7 +1188,8 @@ also `[` `]` back and forward, `1` `2` `3` hops and `c` system context.
 ### Checking it in a browser
 
 `scripts/blockmap-smoke.js` drives an exported map in Chromium with
-Playwright and fails on any console error. `go test ./internal/cli -run
+Playwright, with every request that is not `file://` blocked, and fails on
+any console error, any network request, or a grid layout. `go test ./internal/cli -run
 BlockMapBrowserSmoke` runs it on the demo; the test skips when node or the
 `playwright` package is missing. The script can also take screenshots
 (`--shots dir`) and time a generated graph (`--perf 2000`).

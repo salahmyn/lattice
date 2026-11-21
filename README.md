@@ -259,7 +259,8 @@ commits, each publishing `catalogue/v1` files), add judgments for what the
 catalogues cannot say, and run `lattice refresh`. The result is one graph
 of blocks and edges, stamped with the commit and release each source
 reflects. `lattice serve` shows it at `/map`; `lattice export map` writes
-the same page as one file. Storage is files by default, or PostgreSQL
+the same page as one file that needs no network (its layout library, elkjs,
+is inlined; see [third-party notices](THIRD_PARTY_NOTICES.md)). Storage is files by default, or PostgreSQL
 (`storage: {backend: postgres}`) for search and relation queries.
 
 The map's **Assurance** toggle (`a`) colours each block by the audit
@@ -332,7 +333,8 @@ extraction pass.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE). Bundled third-party code is listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 <p align="center">
   <picture>
