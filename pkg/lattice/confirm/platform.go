@@ -53,6 +53,23 @@ type PullAuthors interface {
 	PullAuthor(ctx context.Context, sha string) (login, accountType string, err error)
 }
 
+// Collaborator is one account with access to the repository, as the code
+// host lists it.
+type Collaborator struct {
+	Login string
+	// Type is the platform's account type: "User", "Bot", ...
+	Type string
+	// Write is true when the account can push: write, maintain or admin.
+	Write bool
+}
+
+// CollaboratorLister is a Platform that lists the repository's
+// collaborators. Listing them may need more access than reading reviews; a
+// Platform without it, or a list that cannot be read, adds no note.
+type CollaboratorLister interface {
+	Collaborators(ctx context.Context) ([]Collaborator, error)
+}
+
 // Verdict states of a record.
 const (
 	StateConfirmed = "confirmed" // a human approved the merged head and the packet still matches
@@ -75,6 +92,10 @@ type Outcome struct {
 	Via         string
 	Fingerprint string
 	Base        string
+	// Author is who opened the pull request a review verdict is about, and
+	// AuthorBot is true when that is a bot or agent account.
+	Author    string
+	AuthorBot bool
 }
 
 // IsBot reports whether a login or account type names a bot.
@@ -96,7 +117,8 @@ func Verify(ctx context.Context, p Platform, sha string) Outcome {
 	if pr == nil {
 		return Outcome{State: StatePending, Code: "NO_PR", Text: "no pull request is known for commit " + short(sha)}
 	}
-	out := Outcome{PR: pr.Number, Merged: pr.MergeSHA}
+	out := Outcome{PR: pr.Number, Merged: pr.MergeSHA, Author: pr.Author,
+		AuthorBot: pr.Author != "" && (IsBot(pr.Author, pr.AuthorType) || schema.IsAgentActor(pr.Author))}
 	if out.Merged == "" {
 		out.Merged = sha
 	}

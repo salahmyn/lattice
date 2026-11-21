@@ -71,8 +71,10 @@ type UnsignedInput struct {
 // BRD's current version approved or acknowledged by a typed note (a local
 // command, or a file written before the local mark existed) and not
 // confirmed since; a council's approval its delegating human has not
-// acknowledged; and each confirmed review-route record of a current version
-// that no signature confirms. For each it gives the exact commands.
+// acknowledged; and each review-route record of a current version that no
+// signature confirms: confirmed, or approved and not accepted because
+// confirm.routes leaves the review route out (ROUTE_NOT_ACCEPTED). For each
+// it gives the exact commands.
 // It reads only; it signs, prepares and writes nothing.
 // @enforces confirm:INV-19
 func ListUnsigned(in UnsignedInput) UnsignedList {
@@ -93,13 +95,13 @@ func ListUnsigned(in UnsignedInput) UnsignedList {
 	key := func(id string, v int, action string) string { return id + "|" + strconv.Itoa(v) + "|" + action }
 	signed, human := map[string]bool{}, map[string]bool{}
 	for _, r := range recs {
-		if r.State != StateConfirmed {
+		if r.State != StateConfirmed && !reviewNotAccepted(r) {
 			continue
 		}
 		if r.Action == ActionApprove || r.Action == ActionAck {
 			human[r.ID+"|"+strconv.Itoa(r.Version)] = true
 		}
-		if r.Via == ViaSignature {
+		if r.Via == ViaSignature && r.State == StateConfirmed {
 			signed[key(r.ID, r.Version, r.Action)] = true
 		}
 	}
@@ -111,7 +113,7 @@ func ListUnsigned(in UnsignedInput) UnsignedList {
 	}
 
 	for _, r := range recs {
-		if r.State != StateConfirmed || r.Via == ViaSignature || signed[key(r.ID, r.Version, r.Action)] {
+		if (r.State != StateConfirmed && !reviewNotAccepted(r)) || r.Via == ViaSignature || signed[key(r.ID, r.Version, r.Action)] {
 			continue
 		}
 		if v, ok := current[r.ID]; (!ok || v != r.Version) && r.Action != ActionWaiverAdd {
@@ -124,6 +126,10 @@ func ListUnsigned(in UnsignedInput) UnsignedList {
 		u := Unsigned{ID: r.ID, Version: r.Version, Action: r.Action, Rests: RestsReview, By: r.ApproverLogin, PR: r.PR, DecisionPath: p,
 			Commands: []string{"lattice sign " + p}}
 		u.Text = r.Method() + "; sign the decision file, then commit " + strings.TrimSuffix(p, ".yaml") + ".sig and merge it"
+		if reviewNotAccepted(r) {
+			u.Text = r.Method() + ", which confirm.routes does not accept; sign the decision file, then commit " +
+				strings.TrimSuffix(p, ".yaml") + ".sig and merge it"
+		}
 		out.Decisions = append(out.Decisions, u)
 	}
 
@@ -193,4 +199,10 @@ func (l UnsignedList) Text() string {
 		b.WriteString("note: " + l.Note + "\n")
 	}
 	return b.String()
+}
+
+// reviewNotAccepted reports a review approval that confirm.routes does not
+// accept as a human confirmation: a signature would confirm it.
+func reviewNotAccepted(r Record) bool {
+	return r.State == StatePending && r.Assurance.Code == CodeRouteNotAccepted && r.route() == ViaReview && r.ApproverLogin != ""
 }

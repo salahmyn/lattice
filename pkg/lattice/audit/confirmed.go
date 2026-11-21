@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm/signature"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm/stamp"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
@@ -50,9 +51,23 @@ type ConfirmRecord struct {
 	// packet the decision pinned, "mismatch" when Cases contradicts it, and
 	// empty when it was not checked. Only a verified list confirms a case.
 	CasesCheck string `json:"cases_check,omitempty"`
+	// Assurance is the record's own reason, as confirm.json carries it.
+	Assurance RecordReason `json:"assurance"`
 	// Note says why a signature verdict was set aside when it was re-verified.
 	Note string `json:"-"`
 }
+
+// RecordReason is the code and text of a confirm record's verdict.
+type RecordReason struct {
+	Code string `json:"code,omitempty"`
+	Text string `json:"text,omitempty"`
+}
+
+// Codes confirm.routes gives a record (see the confirm package).
+const (
+	codeRouteNotAccepted = "ROUTE_NOT_ACCEPTED"
+	codeRoutesUnreadable = "CONFIRM_ROUTES_UNREADABLE"
+)
 
 // Routes a confirm record's verdict comes by.
 const (
@@ -158,7 +173,37 @@ func LoadConfirm(latticeDir string) *ConfirmData {
 	if res := stamp.Check(p, data); !res.OK() {
 		return cd.setAside(res.Code, res.Text)
 	}
-	return cd.recheck(latticeDir)
+	routes, rerr := config.LoadConfirm(latticeDir)
+	return cd.recheck(latticeDir).narrow(routes, rerr)
+}
+
+// narrow applies the workspace's confirm.routes, as `lattice confirm` does,
+// so a file written before the setting changed narrows too: a confirmed or
+// stale verdict by a route left out reads pending (ROUTE_NOT_ACCEPTED). When
+// config.yaml cannot be read, which routes count is unknown, and every
+// confirmed or stale verdict reads unknown. It never makes a verdict human.
+// @enforces confirm:INV-22
+func (cd *ConfirmData) narrow(routes config.Confirm, loadErr error) *ConfirmData {
+	if loadErr == nil && !routes.Narrowed() {
+		return cd
+	}
+	out := *cd
+	out.Records = append([]ConfirmRecord(nil), cd.Records...)
+	for i := range out.Records {
+		r := &out.Records[i]
+		if r.State != "confirmed" && r.State != "stale" {
+			continue
+		}
+		switch {
+		case loadErr != nil:
+			r.State = ConfirmedUnknown
+			r.Assurance = RecordReason{Code: codeRoutesUnreadable, Text: config.Unreadable(loadErr)}
+		case !routes.Accepts(r.Route()):
+			r.State = "pending"
+			r.Assurance = RecordReason{Code: codeRouteNotAccepted, Text: routes.NotAccepted(r.Method(), r.Route())}
+		}
+	}
+	return &out
 }
 
 // recheck re-verifies every signature verdict from the repository: the
@@ -226,7 +271,7 @@ func approvalState(b schema.BRD, promise string, cd *ConfirmData) (state, detail
 
 // approvalRecord is approvalState with the record behind a human state.
 func approvalRecord(b schema.BRD, promise string, cd *ConfirmData) (state, detail string, human *ConfirmRecord) {
-	var stale, pending, voided, unverified *ConfirmRecord
+	var stale, pending, voided, unverified, unreadable *ConfirmRecord
 	var olderHuman *ConfirmRecord
 	if cd != nil && cd.SetAside != "" {
 		for _, r := range cd.Records {
@@ -250,10 +295,12 @@ func approvalRecord(b schema.BRD, promise string, cd *ConfirmData) (state, detai
 				voided = r
 			case r.Version == b.Version && r.State == "stale" && covers:
 				stale = r
-			case r.Version == b.Version && r.State == "pending" && covers:
+			case r.Version == b.Version && r.State == "pending" && covers && (pending == nil || r.Assurance.Code == codeRouteNotAccepted):
 				pending = r
 			case r.Version == b.Version && r.State == ConfirmedUnknown && r.Note != "" && covers:
 				unverified = r
+			case r.Version == b.Version && r.State == ConfirmedUnknown && r.Assurance.Code == codeRoutesUnreadable && covers:
+				unreadable = r
 			case r.Version < b.Version && r.State == "confirmed" && covers:
 				olderHuman = r
 			}
@@ -273,10 +320,14 @@ func approvalRecord(b schema.BRD, promise string, cd *ConfirmData) (state, detai
 		return ConfirmedDrifted, stale.Method() + ", but the packet changed since: confirm again", nil
 	case olderHuman != nil:
 		return ConfirmedDrifted, "confirmed at version " + strconv.Itoa(olderHuman.Version) + ", now version " + v, nil
+	case pending != nil && pending.Assurance.Code == codeRouteNotAccepted:
+		return ConfirmedPending, pending.Assurance.Text, nil
 	case pending != nil:
 		return ConfirmedPending, "prepared, not merged or not approved by a human on the merged head", nil
 	case unverified != nil:
 		return ConfirmedUnknown, "a signature verdict that does not re-verify (" + unverified.Note + ")", nil
+	case unreadable != nil:
+		return ConfirmedUnknown, unreadable.Assurance.Text, nil
 	}
 
 	a := b.Approval

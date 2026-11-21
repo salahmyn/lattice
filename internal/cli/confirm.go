@@ -12,6 +12,7 @@ import (
 
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/brd"
+	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm/signature"
 	"github.com/salahmyn/lattice/pkg/lattice/prepare"
@@ -51,6 +52,16 @@ unknown); removing a key needs nothing. A non-sk key reads SOFTWARE_KEY; an
 unreadable GitHub or a shallow clone reads unknown, never confirmed.
 Records carry via: review or via: signature, with the login and fingerprint.
 
+confirm.routes in lattice/config.yaml narrows the routes: with
+'confirm: {routes: [signature]}' a decision confirmed only by a review reads
+pending (ROUTE_NOT_ACCEPTED), never human, and every reader applies it. The
+default is both routes. An unknown route is a config error (BAD_CONFIG here,
+VALIDATE_POLICY in validate). When a bot or agent account opened the pull
+request and the approver is the repository's only human with write access,
+a review record carries an informational note (SOLE_HUMAN_APPROVER) that
+suggests 'routes: [signature]'; it never changes the verdict, and it is left
+out when the collaborator list cannot be read.
+
 Writes lattice/.cache/confirm.json (lattice.confirm/1), derived and never
 committed, cached by commit. The file is stamped with what produced it: the
 commit, the CI run (GITHUB_RUN_ID, CI_PIPELINE_ID, ... or "local"), the
@@ -66,7 +77,8 @@ unknown, never confirmed. Run it in CI on the default branch.
 --unsigned lists the decisions a hardware-key signature could re-confirm: a
 BRD's current version approved or acknowledged by a local command
 ('lattice brd approve', 'brd ack'), and each decision confirmed by a review
-that no signature confirms, from the cache. For each it prints the exact
+that no signature confirms (or approved by a review that confirm.routes does
+not accept), from the cache. For each it prints the exact
 commands, ending in 'lattice sign'. It reads only: it signs, prepares and
 writes nothing (lattice.confirm-unsigned/1).`,
 		Args: cobra.NoArgs,
@@ -77,6 +89,13 @@ writes nothing (lattice.confirm-unsigned/1).`,
 			ws, err := openWorkspace(io)
 			if err != nil {
 				return io.fail("NO_WORKSPACE", err.Error(), nil)
+			}
+			routes, err := config.LoadConfirm(ws.LatticeDir)
+			if err == nil {
+				err = routes.Check()
+			}
+			if err != nil {
+				return io.fail("BAD_CONFIG", err.Error(), nil)
 			}
 			g := confirm.Git{Dir: filepath.Dir(ws.LatticeDir)}
 			head, _ := g.Head()
@@ -146,6 +165,7 @@ writes nothing (lattice.confirm-unsigned/1).`,
 				CIRun: results.CIRunID(), PlatformName: platform, Repository: repo,
 				Signed:       &signature.Repo{Dir: top, LatticeRel: rel, Ref: branch, Repository: signature.RepositoryOf(top)},
 				CurrentCases: func(refs []string) []schema.PromiseCases { return confirm.CasesFor(rows, refs) },
+				Routes:       routes,
 			})
 			f.Warnings = warnings
 			if plat != nil {

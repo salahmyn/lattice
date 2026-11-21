@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm/signature"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm/stamp"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
@@ -71,13 +72,36 @@ type Record struct {
 	// SignatureBase is the commit allowed_signers was read at: the first
 	// parent of the default-branch commit that introduced the signature.
 	SignatureBase string `json:"signature_base,omitempty"`
-	// PRAuthor is who opened the pull request that merged a signed decision,
-	// and PRAuthorBot is true when that is a bot or agent account. Display
-	// only: the signer is ApproverLogin, a human login.
+	// PRAuthor is who opened the pull request that merged the decision, and
+	// PRAuthorBot is true when that is a bot or agent account. Display only:
+	// the signer or approver is ApproverLogin, a human login.
 	PRAuthor    string    `json:"pr_author,omitempty"`
 	PRAuthorBot bool      `json:"pr_author_bot,omitempty"`
 	Assurance   Assurance `json:"assurance"`
+	// Notes are informational facts about the verdict, such as
+	// SOLE_HUMAN_APPROVER. A note never changes the verdict's state.
+	Notes []Note `json:"notes,omitempty"`
 }
+
+// Note is one informational fact about a verdict: {code, params, text}.
+type Note struct {
+	Code   string                 `json:"code"`
+	Params map[string]interface{} `json:"params,omitempty"`
+	Text   string                 `json:"text"`
+}
+
+// Codes of the confirm.routes setting and of the notes on a verdict.
+const (
+	// CodeRouteNotAccepted is a decision confirmed by a route the
+	// workspace's confirm.routes leaves out: it reads pending.
+	CodeRouteNotAccepted = "ROUTE_NOT_ACCEPTED"
+	// CodeRoutesUnreadable is a confirmed verdict read while config.yaml
+	// could not be read: which routes count is unknown, so it reads unknown.
+	CodeRoutesUnreadable = "CONFIRM_ROUTES_UNREADABLE"
+	// CodeSoleHumanApprover notes a review by the repository's only human
+	// with write access on a pull request a bot or agent account opened.
+	CodeSoleHumanApprover = "SOLE_HUMAN_APPROVER"
+)
 
 // Routes a verdict comes by.
 const (
@@ -208,6 +232,10 @@ type Input struct {
 	// case list of a decision whose packet still matches is checked against
 	// them. Nil leaves every case list unchecked.
 	CurrentCases func(promises []string) []schema.PromiseCases
+	// Routes is the workspace's confirm: block. A decision confirmed only by
+	// a route it leaves out reads pending (ROUTE_NOT_ACCEPTED). The zero
+	// value accepts both routes.
+	Routes config.Confirm
 }
 
 // Case-list checks of a record.
@@ -251,6 +279,7 @@ func Compute(ctx context.Context, in Input) File {
 	}
 
 	keys := signingKeys{platform: in.Platform, lists: map[string]keyList{}}
+	writers := writeAccess{platform: in.Platform}
 	for _, fd := range in.Found {
 		d := fd.Decision
 		rec := Record{ID: d.ID, Version: d.Version, Action: d.Action, DecisionSHA: fd.AddedSHA, Cases: d.Cases}
@@ -266,8 +295,8 @@ func Compute(ctx context.Context, in Input) File {
 		case fd.AddedSHA == "":
 			o = Outcome{State: StateUnknown, Code: "NO_COMMIT", Text: "the commit that added the decision file was not found"}
 		default:
-			// Either route suffices. A signature is checked first: it needs
-			// one platform read per signer, the review route several.
+			// Either accepted route suffices. A signature is checked first:
+			// it needs one platform read per signer, the review route several.
 			var signed *Outcome
 			if in.Signed != nil {
 				if ev, sf, ok := in.Signed.Evaluate(fd.Path, signatureDecision(d)); ok {
@@ -275,22 +304,25 @@ func Compute(ctx context.Context, in Input) File {
 					signed = &so
 				}
 			}
-			if signed != nil && signed.State == StateConfirmed {
-				o = *signed
-				break
+			verifiedAt := ""
+			review := func() Outcome {
+				var r Outcome
+				if c, ok := cached[rec.key()]; ok {
+					r = Outcome{State: StateConfirmed, Code: "APPROVED", Approver: c.ApproverLogin, PR: c.PR, Merged: c.MergedSHA,
+						Author: c.PRAuthor, AuthorBot: c.PRAuthorBot, Text: "approved by " + c.ApproverLogin + " (cached)"}
+					verifiedAt = c.VerifiedAt
+				} else if in.Platform == nil {
+					r = Outcome{State: StateUnknown, Code: "NO_PLATFORM", Text: "no platform data for this decision"}
+				} else {
+					r = Verify(ctx, in.Platform, fd.AddedSHA)
+				}
+				r.Via = ViaReview
+				return r
 			}
-			if c, ok := cached[rec.key()]; ok {
-				o = Outcome{State: StateConfirmed, Code: "APPROVED", Approver: c.ApproverLogin, PR: c.PR, Merged: c.MergedSHA,
-					Text: "approved by " + c.ApproverLogin + " (cached)"}
-				rec.VerifiedAt = c.VerifiedAt
-			} else if in.Platform == nil {
-				o = Outcome{State: StateUnknown, Code: "NO_PLATFORM", Text: "no platform data for this decision"}
-			} else {
-				o = Verify(ctx, in.Platform, fd.AddedSHA)
-			}
-			o.Via = ViaReview
-			if signed != nil && o.State != StateConfirmed {
-				o = *signed
+			o = pickRoute(signed, review, in.Routes)
+			if o.Via == ViaReview {
+				rec.VerifiedAt = verifiedAt
+				rec.PRAuthor, rec.PRAuthorBot = o.Author, o.AuthorBot
 			}
 		}
 		if o.Via == ViaSignature {
@@ -320,6 +352,9 @@ func Compute(ctx context.Context, in Input) File {
 			rec.VerifiedAt = now().UTC().Format(time.RFC3339)
 		}
 		rec.Assurance = Assurance{State: o.State, Honesty: "fact", Code: o.Code, Params: o.Params, Text: o.Text}
+		if n, ok := writers.soleApprover(ctx, rec); ok {
+			rec.Notes = append(rec.Notes, n)
+		}
 		f.Records = append(f.Records, rec)
 	}
 	f.Signers = signersReport(in.Signed)
@@ -481,6 +516,8 @@ func LoadCache(latticeDir string) *File {
 		return &f
 	}
 	f = Recheck(latticeDir, f)
+	routes, err := config.LoadConfirm(latticeDir)
+	f = Narrow(f, routes, err)
 	return &f
 }
 
@@ -561,7 +598,7 @@ func (f File) Text() string {
 			}
 		}
 		b.WriteString(r.State + "  " + r.Action + " " + r.ID + " v" + itoa(r.Version) + who + "  [" + r.Assurance.Code + "]\n")
-		if r.PRAuthor != "" {
+		if r.PRAuthor != "" && r.Via == ViaSignature {
 			note := "    note: the pull request was opened by " + r.PRAuthor
 			if r.PRAuthorBot {
 				note += ", a bot or agent account: it prepared the decision"
@@ -570,6 +607,9 @@ func (f File) Text() string {
 				}
 			}
 			b.WriteString(note + "\n")
+		}
+		for _, n := range r.Notes {
+			b.WriteString("    note: " + n.Text + "  [" + n.Code + "]\n")
 		}
 	}
 	if len(f.Records) == 0 {
