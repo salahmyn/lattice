@@ -196,8 +196,9 @@ func EdgeFunctionPath(file string) string {
 //   - the root is a serve handler and the entry point is an http_route or a
 //     webhook whose trigger path equals the path the platform serves the
 //     function at, whatever its method (a proposal has none); or whose handler
-//     is a direct callee of the serve node (Deno.serve(createHandler(...))
-//     calls createHandler, which a manifest names);
+//     the serve call calls anywhere in its argument expression, at any depth
+//     (Deno.serve(withSentry('n', createHandler(...))) calls createHandler,
+//     which a manifest names);
 //   - the root is a cron job and the entry point is a cron with the same job
 //     name; or, when either names no job, with the same schedule and a handler
 //     the job's body reaches: by a direct call, or by one http hop to an edge
@@ -254,7 +255,8 @@ func (r RuntimeRoot) servedAt(ep schema.EntryPoint) bool {
 }
 
 // callsHandler reports an http_route or webhook entry point whose handler the
-// serve root r calls directly.
+// serve root r calls: the adapter records every call in the serve call's
+// arguments as the serve node's own, however deeply it is nested.
 func (r RuntimeRoot) callsHandler(ep schema.EntryPoint) bool {
 	return (ep.Kind == schema.EntryPointKindHTTP || ep.Kind == schema.EntryPointKindWebhook) &&
 		containsFQN(r.Calls, ep.Handler.Symbol)

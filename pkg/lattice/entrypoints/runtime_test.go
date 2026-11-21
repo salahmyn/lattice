@@ -482,3 +482,55 @@ func TestCoverageNeedsTheSameScheduleAndPath(t *testing.T) {
 		}
 	}
 }
+
+// wrappedServe parses an edge function whose serve call wraps the handler it
+// builds: Deno.serve(withSentry('n', createHandler({}))).
+func wrappedServe(t *testing.T, serveCall string) *reach.Graph {
+	t.Helper()
+	mods, err := func() ([]ir.Module, error) {
+		var out []ir.Module
+		ts := typescript.New()
+		for _, f := range []struct{ path, src string }{
+			{"supabase/functions/n/index.ts", "import { createHandler } from './handler.ts';\nimport { withSentry } from '../_shared/sentry.ts';\n" + serveCall + "\n"},
+			{"supabase/functions/n/handler.ts", "export function createHandler(deps: unknown) { return async (req: Request) => new Response('ok'); }\n"},
+			{"supabase/functions/n/other.ts", "export function other() { return 1; }\n"},
+			{"supabase/functions/_shared/sentry.ts", "export function withSentry(name: string, h: unknown) { return h; }\n"},
+		} {
+			m, err := ts.Parse(context.Background(), f.path, []byte(f.src))
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, m)
+		}
+		return ts.Resolve(out), nil
+	}()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return reach.Build(mods, reach.Options{})
+}
+
+// A declared entry point covers a serve root whose call mentions the handler
+// anywhere in its argument expression, however deep the wrappers nest. A
+// handler the serve call does not mention is still proposed.
+// @verifies entrypoints:INV-5
+func TestWrappedServeHandlerIsCovered(t *testing.T) {
+	g := wrappedServe(t, "Deno.serve(withSentry('n', createHandler({})));")
+	declared := func(symbol string) []schema.EntryPoint {
+		return []schema.EntryPoint{{ID: "ep.n", Kind: schema.EntryPointKindHTTP, Status: schema.StatusProduction,
+			Trigger: schema.Trigger{Method: "POST", Path: "/somewhere/else"}, Handler: schema.Handler{Symbol: symbol}}}
+	}
+	propose := func(g *reach.Graph, symbol string) []schema.EntryPoint {
+		return entrypoints.ProposeFromRuntime(entrypoints.RuntimeInput{Roots: g.RuntimeRoots(), Known: declared(symbol), Reach: g})
+	}
+	if got := propose(g, "supabase.functions.n.handler.createHandler"); len(got) != 0 {
+		t.Errorf("a handler named inside the wrapped serve call is covered, got %+v", got)
+	}
+	deep := wrappedServe(t, "Deno.serve(withSentry('n', withSentry('m', createHandler({}))));")
+	if got := propose(deep, "supabase.functions.n.handler.createHandler"); len(got) != 0 {
+		t.Errorf("a handler nested two wrappers deep is covered, got %+v", got)
+	}
+	if got := propose(g, "supabase.functions.n.other.other"); len(got) != 1 {
+		t.Errorf("a handler the serve call does not reference still proposes the root, got %+v", got)
+	}
+}

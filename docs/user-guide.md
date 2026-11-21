@@ -424,9 +424,11 @@ runtime root, so the root is not proposed, when any of these holds:
   `webhook`, and its `trigger.path` equals the path the platform serves the
   function at (`/functions/v1/<name>`), whatever its method: a proposal has no
   method;
-- the root is a serve handler and the entry point's handler is a direct
-  callee of the serve call: `Deno.serve(createHandler(...))` calls
-  `createHandler`, and a manifest names that function;
+- the root is a serve handler and the entry point's handler is called
+  anywhere in the serve call's argument expression, at any depth:
+  `Deno.serve(createHandler(...))` and `Deno.serve(withSentry('n',
+  createHandler(...)))` both call `createHandler`, and a manifest names that
+  function. A handler the serve call does not mention does not cover it;
 - the root is a cron job and the entry point is a `cron` with the same
   `trigger.job`; or, when either names no job, with the same
   `trigger.schedule` and a handler the job's body reaches: by a direct call, or
