@@ -36,6 +36,9 @@ type corpus struct {
 	roles    map[string]bool            // role ids declared anywhere
 	initOK   map[string]bool            // initiative ids
 	streams  map[string]map[string]bool // initiative -> stream ids
+
+	failing     map[string][]string // invariant ref -> red verifiers (failingVerifiers)
+	failingDone bool
 }
 
 func newCorpus(kg schema.KnowledgeGraph, cfg config.Config, opts Options) *corpus {
@@ -87,6 +90,13 @@ type Options struct {
 	// evidence drives validation, RTM display, and coverage. nil means no
 	// results ingested — validation behaves as v0.7.
 	ResultOf func(testFQN string) (passed bool, known bool)
+
+	// ResultsCommit is the commit the ingested results were stamped with
+	// (results.Set.Commit). The per-invariant VERIFIER_FAILING reads the
+	// results only when they belong to the graph's commit, by the audit's
+	// matches_head rule: the stamp equals the graph's commit, or either one
+	// is unknown. Results for another commit are stale and raise nothing.
+	ResultsCommit string
 
 	// Leases are the active work-claim leases (v0.8 §5). When two leases
 	// held by different actors claim overlapping scopes, LEASE_SCOPE_OVERLAP
@@ -153,6 +163,7 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 	v = append(v, c.checkCaseSchema()...)
 	v = append(v, c.checkBroadInvariants()...)
 	v = append(v, c.checkBRDs()...)
+	v = append(v, c.checkFailingVerifiers()...)
 	v = append(v, c.checkBRDSources()...)
 	v = append(v, c.checkCouncil()...)
 	v = append(v, c.checkScenarios()...) // v0.8 α/β — scenario + reach

@@ -268,10 +268,15 @@ func (c *corpus) checkBRDs() []schema.Violation {
 		case rtm.StatusFailing:
 			// γ — an ingested test result for the criterion's verifier is
 			// red. Distinct from "no test": the test we have is failing.
+			// It names the red tests of the invariant, so the per-invariant
+			// finding for the same ref is not raised beside it.
+			msg := fmt.Sprintf("BRD %q criterion %s: %s", row.BRDID, row.CriterionID, row.StatusReason)
+			if red := c.failingVerifiers()[row.Ref()]; len(red) > 0 {
+				msg += fmt.Sprintf(" (%s: %s)", row.Ref(), nameFailures(red))
+			}
 			v = append(v, schema.Violation{
 				Code: schema.CodeVerifierFailing, Severity: schema.SeverityWarning,
-				Message: fmt.Sprintf("BRD %q criterion %s: %s",
-					row.BRDID, row.CriterionID, row.StatusReason),
+				Message:  msg,
 				Subject:  row.BRDID + ":" + row.CriterionID,
 				Location: rowLoc,
 				NextAction: &schema.NextAction{
