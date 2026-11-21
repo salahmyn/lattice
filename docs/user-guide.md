@@ -3511,6 +3511,104 @@ wrapper). `CHANNEL_NO_PUBLISHER` is a consumer whose channel nothing publishes t
 fine for a queue fed from outside the workspace, but it is named. Renaming the queue at one
 end gives no edge and both findings. `CHANNEL_DYNAMIC` is one per file. Test code raises none.
 
+## 4s. Who can call a SQL enforcer
+
+An enforcer can be correct and break-tested, and the promise still not hold. A
+`SECURITY DEFINER` function that trusts a verdict passed in as a parameter (`p_ok boolean`)
+and is granted to the role every signed-in client uses (`authenticated`) can be called by
+any client through the database API with the verdict forged, and every break inside the
+function is still killed by its tests. Lattice reads who can execute a function from the
+migrations and says so.
+
+**Declare the roles** in `workspace.yaml`, next to `http:`:
+
+```yaml
+sql:
+  # Roles a client reaches the database as, through its API.
+  api_roles: [anon, authenticated]
+  # Roles the platform grants EXECUTE on every new function directly, beside PUBLIC.
+  # Unset means unknown; [] means none.
+  default_execute: [anon, authenticated, service_role]
+```
+
+Entries are lower-case SQL identifiers; anything else is a `VALIDATE_POLICY` error.
+`default_execute` matters once `PUBLIC` is revoked: a role that no statement names then
+holds what the platform grants new functions, which the migrations cannot show.
+
+**The adapter reads** `GRANT` and `REVOKE ... ON FUNCTION | PROCEDURE | ROUTINE` (including
+`PUBLIC`, `WITH GRANT OPTION`, `GRANTED BY`, `CASCADE`), the `ON ALL FUNCTIONS | PROCEDURES |
+ROUTINES IN SCHEMA` forms (the functions defined at that point), `ALTER DEFAULT PRIVILEGES
+[IN SCHEMA] ... ON FUNCTIONS` (the functions created later), and `SECURITY DEFINER | INVOKER`
+in `CREATE FUNCTION` and `ALTER FUNCTION`, in the order migrations apply. `CREATE OR REPLACE`
+keeps the privileges; `DROP FUNCTION` then `CREATE` resets them to the defaults. A role no
+statement names holds what `PUBLIC` holds (granted by default, cited at the `CREATE`), and a
+`REVOKE` from one role does not take away what `PUBLIC` still grants. `REVOKE GRANT OPTION
+FOR` removes no privilege.
+
+**Two findings**, both info and always on, so an unknown is never hidden. Neither fails a
+run unless you set it in `validate.severity`:
+
+```
+info  ENFORCER_EXPOSED  sql.public.finish_submission enforces review.submissions:INV-1 and is executable by authenticated (supabase/migrations/20260101000000_submissions.sql:27); it is SECURITY DEFINER (supabase/migrations/20260101000000_submissions.sql:11): a client can call it directly, so its inputs are the client's
+info  EXPOSURE_UNKNOWN  who can execute sql.public.finish_submission is not known from the migrations: service_role: no statement names service_role and PUBLIC is revoked at supabase/migrations/20260101000000_submissions.sql:26, so it holds what the platform grants new functions, and sql.default_execute is not declared
+```
+
+`ENFORCER_EXPOSED` is one per (enforcer, invariant): a function tagged `@enforces f:INV-n`
+that a declared API role can execute. `EXPOSURE_UNKNOWN` is one per enforcer whose state for
+an API role cannot be told, and one for the workspace when there are SQL enforcers but
+`sql.api_roles` is not declared. Both go through the allowlist like any finding.
+
+**To clear `ENFORCER_EXPOSED`**, either revoke the grant:
+
+```sql
+revoke execute on function public.finish_submission(uuid, boolean, bigint) from authenticated;
+```
+
+or keep the exposure on purpose and show that calling it as the API role with forged inputs
+fails. Add a `security` case to the invariant that names the enforcer, and a test tagged with
+the case that calls the function as the role:
+
+```yaml
+invariants:
+  - id: INV-1
+    statement: A submission becomes accepted only when the checker found the file valid.
+    cases:
+      - id: a
+        kind: security
+        statement: A signed-in client cannot call the function with a verdict it made up.
+        enforcer: sql.public.finish_submission
+```
+
+```sql
+begin;
+select plan(1);
+set local role authenticated;
+-- @verifies review.submissions:INV-1#a
+select throws_ok($$ select public.finish_submission('...', true, 100) $$,
+  '42501', null, 'a signed-in client cannot pass the checker''s verdict itself');
+select * from finish();
+rollback;
+```
+
+A live (non-retired) security case that names the enforcer and that a test verifies clears
+the finding. Lattice does not check that the test really calls the function as that role or
+that its inputs are forgeable; the case says what the test is for.
+
+**What reads as unknown**, never as closed:
+
+- a `GRANT` or `REVOKE` inside a `DO` block, a function body or an `EXECUTE` string that
+  names the function (that function is unknown), or names nothing literal (every function
+  defined before it is unknown);
+- a name created with different argument lists (an overload): exposure is read per name, not
+  per signature;
+- `ALTER DEFAULT PRIVILEGES FOR ROLE | USER`: the creating role is unknown, so the roles it
+  names are unknown for functions created later;
+- `ALTER FUNCTION ... SET SCHEMA`, and a `GRANT` or `REVOKE` on functions that the parser could
+  not read;
+- a role no statement names once `PUBLIC` is revoked, while `sql.default_execute` is unset.
+
+Table grants and row-level policies are not read here.
+
 ## 5. Day-to-day commands
 
 ```sh

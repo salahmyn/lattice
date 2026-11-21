@@ -230,7 +230,7 @@ var (
 	rePolicy      = regexp.MustCompile(`(?is)^create\s+policy\s+(` + ident + `)\s+on\s+` + qname)
 	reTrigger     = regexp.MustCompile(`(?is)^create\s+(?:or\s+replace\s+)?(?:constraint\s+)?trigger\s+(` + ident + `)\s.*?\bon\s+` + qname)
 	reAlterPolicy = regexp.MustCompile(`(?is)^alter\s+policy\s+(` + ident + `)\s+on\s+` + qname)
-	reAlterFunc   = regexp.MustCompile(`(?is)^alter\s+(?:function|procedure)\s+` + qname)
+	reAlterFunc   = regexp.MustCompile(`(?is)^alter\s+(?:function|procedure|routine)\s+` + qname)
 	reAlterTrig   = regexp.MustCompile(`(?is)^alter\s+trigger\s+(` + ident + `)\s+on\s+` + qname)
 	reDropFunc    = regexp.MustCompile(`(?is)^drop\s+(?:function|procedure)\s+(?:if\s+exists\s+)?` + qname)
 	reDropPolicy  = regexp.MustCompile(`(?is)^drop\s+policy\s+(?:if\s+exists\s+)?(` + ident + `)\s+on\s+` + qname)
@@ -312,6 +312,8 @@ func parseDefinitions(mod *ir.Module, stmts []statement, o refOpts) {
 			m := reFunction.FindStringSubmatch(st.text)
 			s, n := qualify(m[2], m[3])
 			sym = &ir.Symbol{Name: s + "." + n, FQN: functionFQN(s, n)}
+			sym.Execute = headerExecute(mod.File, st, strings.ToLower(m[1]))
+			scanDynamicPriv(mod, st)
 		case rePolicy.MatchString(st.text):
 			m := rePolicy.FindStringSubmatch(st.text)
 			s, t := qualify(m[2], m[3])
@@ -337,6 +339,7 @@ func parseDefinitions(mod *ir.Module, stmts []statement, o refOpts) {
 			markAlter(mod, st, functionFQN(s, n), st.text[len(m[0]):], func(n string) (string, string) {
 				return functionFQN(s, n), s + "." + n
 			}, false)
+			alterExec(mod, st, len(m[0]))
 		case reAlterTrig.MatchString(st.text):
 			m := reAlterTrig.FindStringSubmatch(st.text)
 			s, t := qualify(m[2], m[3])
@@ -357,6 +360,7 @@ func parseDefinitions(mod *ir.Module, stmts []statement, o refOpts) {
 			markDrop(mod, triggerFQN(s, t, unquote(m[1])), st.line)
 		}
 		if sym == nil {
+			readPrivileges(mod, st)
 			used := parseConstraints(mod, st, anns)
 			if n, ok := cronNode(mod, st, o); ok {
 				mod.Nodes = append(mod.Nodes, n)
@@ -596,8 +600,10 @@ func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 		line  int
 		drop  string
 		alter *ir.Annotation
+		priv  *ir.Annotation
 		sym   int
 	}
+	fold := newExecFold()
 	effective := map[string]def{}
 	removed := map[def]bool{}
 	for _, mi := range order {
@@ -616,6 +622,11 @@ func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 				}
 				continue
 			}
+			if an.Kind == privKind || an.Kind == privUnknownKind {
+				a := m.ModuleAnnotations[ai]
+				events = append(events, event{line: an.Line, priv: &a, sym: -1})
+				continue
+			}
 			if an.Kind == alterKind {
 				if len(an.Args) > 0 {
 					a := m.ModuleAnnotations[ai]
@@ -629,12 +640,17 @@ func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 		sort.SliceStable(events, func(x, y int) bool { return events[x].line < events[y].line })
 
 		for _, e := range events {
+			if e.priv != nil {
+				fold.apply(*e.priv, m.File)
+				continue
+			}
 			if e.alter != nil {
 				fqn := fmt.Sprint(e.alter.Args[0])
 				cur, ok := effective[fqn]
 				if !ok {
 					continue
 				}
+				fold.alter(fqn, *e.alter, m.File)
 				sym := &mods[cur.mod].Symbols[cur.sym]
 				endLine, _ := e.alter.Kwargs["end_line"].(int)
 				sets, _ := e.alter.Kwargs["sets"].([]string)
@@ -647,6 +663,7 @@ func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 					sym.Name, sym.FQN = fmt.Sprint(e.alter.Kwargs["new_name"]), newFQN
 					delete(effective, fqn)
 					effective[newFQN] = cur
+					fold.rename(fqn, newFQN)
 				}
 				continue
 			}
@@ -655,6 +672,7 @@ func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 					removed[old] = true
 					delete(effective, e.drop)
 				}
+				fold.drop(e.drop)
 				continue
 			}
 			s := m.Symbols[e.sym]
@@ -670,6 +688,14 @@ func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 				}
 			}
 			effective[s.FQN] = def{mi, e.sym}
+			if s.Execute != nil {
+				fold.create(s.FQN, strings.SplitN(s.Name, ".", 2)[0], s)
+			}
+		}
+	}
+	for fqn, d := range effective {
+		if sym := &mods[d.mod].Symbols[d.sym]; sym.Execute != nil {
+			sym.Execute = fold.final(fqn)
 		}
 	}
 

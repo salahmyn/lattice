@@ -183,6 +183,15 @@ func SplitCaseRef(ref string) (base, caseID string, ok bool) {
 	return ref[:i], ref[i+1:], true
 }
 
+// ResolveRef interprets an annotation reference. A qualified "feature:item"
+// ref returns its parts; a bare ref is scoped to fallbackFeature.
+func ResolveRef(ref, fallbackFeature string) (feature, item string) {
+	if i := strings.LastIndex(ref, ":"); i > 0 {
+		return ref[:i], ref[i+1:]
+	}
+	return fallbackFeature, ref
+}
+
 // EffectiveVerifiableBy returns the verification methods, applying the
 // documented default of ["test"] when none are declared.
 func (inv Invariant) EffectiveVerifiableBy() []VerifiableBy {

@@ -72,6 +72,57 @@ type Symbol struct {
 	// DeclaredAs is the name the symbol's own statement gave it, set only
 	// when a later rename changed Name (SQL ALTER ... RENAME TO).
 	DeclaredAs string `json:"declared_as,omitempty"`
+	// Execute is who can run a SQL function, read from the GRANT, REVOKE and
+	// ALTER DEFAULT PRIVILEGES statements of the migrations (SQL functions
+	// only; nil for every other symbol).
+	Execute *Execute `json:"execute,omitempty"`
+}
+
+// Execute states for ExecuteGrant.State.
+const (
+	ExecGranted = "granted"
+	ExecRevoked = "revoked"
+	ExecUnknown = "unknown"
+)
+
+// ExecPublic is the Role of the entry that holds PUBLIC's state.
+const ExecPublic = "public"
+
+// Execute is the EXECUTE privilege of one SQL function as the statements
+// state it. It holds only what the statements say: which roles are named, and
+// what PUBLIC holds. Resolving a role the statements never name needs the
+// platform's own defaults, which come from configuration, so the core does it
+// (graph.ExecutableBy) and the adapter never guesses.
+type Execute struct {
+	// SecurityDefiner is true when the function runs with its owner's
+	// rights (SECURITY DEFINER, as CREATE or a later ALTER FUNCTION set it).
+	SecurityDefiner bool `json:"security_definer,omitempty"`
+	// DefinerFile and DefinerLine locate the statement that set it.
+	DefinerFile string `json:"definer_file,omitempty"`
+	DefinerLine int    `json:"definer_line,omitempty"`
+	// Signature is the normalized argument list of the effective CREATE.
+	Signature string `json:"signature,omitempty"`
+	// Procedure is true for CREATE PROCEDURE.
+	Procedure bool `json:"procedure,omitempty"`
+	// Roles are the entries the statements decided, sorted by role. The
+	// entry for PUBLIC (Role "public") is always present: with Default set
+	// it is PostgreSQL's own default, cited at the CREATE line.
+	Roles []ExecuteGrant `json:"roles,omitempty"`
+	// Unknown, when set, is why no entry can be trusted: an overload, or a
+	// statement the adapter could not resolve to this function.
+	Unknown string `json:"unknown,omitempty"`
+}
+
+// ExecuteGrant is the state of one role, with the statement that decided it.
+type ExecuteGrant struct {
+	Role  string `json:"role"`
+	State string `json:"state"` // ExecGranted, ExecRevoked or ExecUnknown
+	File  string `json:"file,omitempty"`
+	Line  int    `json:"line,omitempty"`
+	// Default marks PUBLIC's state when no statement named it.
+	Default bool `json:"default,omitempty"`
+	// Reason says why the state is unknown.
+	Reason string `json:"reason,omitempty"`
 }
 
 // Alteration is one statement that changes an object after its definition.
