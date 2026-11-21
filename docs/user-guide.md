@@ -211,6 +211,10 @@ validate:
   require_level: {default: demonstrated, tier: {3: exercised}}
 ```
 
+A value `validate` cannot use is itself a `VALIDATE_POLICY` error naming the
+key: an unknown `validate.severity` name or `require_level`, or a
+`confirm.routes` entry that is not `review` or `signature` (section 4l).
+
 `UNATTRIBUTED_MODULE` (off unless set) flags a production module with no
 `@module-feature` and no feature on any of its symbols, so a coverage figure
 over annotated code cannot hide the code nobody annotated.
@@ -2021,7 +2025,8 @@ not merged reads `pending`. With no token, `unknown`. `--offline`, or a missing
 cache, reads `unknown`, never confirmed. The result is
 `lattice/.cache/confirm.json` (`lattice.confirm/1`: derived, cached by commit,
 never committed), with `{id, version, action, state, via, approver_login, pr,
-merged_sha, verified_at}` per decision. `lattice audit` reads the `confirmed`
+merged_sha, verified_at}` per decision, plus `pr_author` and `pr_author_bot`
+(who opened the pull request) and any informational `notes`. `lattice audit` reads the `confirmed`
 signal from that file only. Set branch protection to require a current review;
 `confirm` does not rely on it, but it keeps the platform's own state in step.
 
@@ -2061,9 +2066,32 @@ not satisfy it.
 
 A decision also reaches `human` through a second route: a detached SSH
 signature over the decision, made with a hardware security key. Either route
-suffices. The signature route needs no second GitHub account, so it works on a
-project where one person owns the repository and an agent opens the pull
-requests.
+suffices, unless `confirm.routes` (below) narrows them. The signature route
+needs no second GitHub account, so it works on a project where one person owns
+the repository and an agent opens the pull requests.
+
+**Which routes count: `confirm.routes`.** By default both routes confirm. A
+workspace can accept fewer in `lattice/config.yaml`:
+
+```yaml
+confirm:
+  routes: [signature]           # review, signature, or both (the default)
+```
+
+With `routes: [signature]`, a decision confirmed only by an approving review
+reads `pending`, `ROUTE_NOT_ACCEPTED`, never `human`. The record keeps the
+approver and the pull request for display, and its text names the routes the
+workspace accepts. `routes: [review]` does the same for a signature. The
+setting only narrows: every reader (`audit`'s `confirmed` signal, `check`,
+`validate`, `feature show`, `/api/v2`, `confirm --offline`) applies it to the
+`confirm.json` it reads, including one written before the setting changed. An
+entry that is not `review` or `signature` accepts nothing: `validate` reports it
+as `VALIDATE_POLICY` (error) and `lattice confirm` refuses with `BAD_CONFIG`.
+A `config.yaml` that cannot be read leaves the accepted routes unknown:
+`lattice confirm` refuses with `BAD_CONFIG`, and every reader reads each
+confirmed verdict as `unknown`, `CONFIRM_ROUTES_UNREADABLE`. Use it on a
+repository with one maintainer, where an agent's token can approve pull
+requests: there the review route proves only that another account approved.
 
 **Enrol a key once.**
 
@@ -2169,8 +2197,24 @@ The record then reads `confirmed` with `via: signature`, the signer's login,
 the key's `fingerprint`, the `decision_path` and the `signature_base`; a changed
 packet reads `stale` as on the review route. Review-route records carry
 `via: review`. If the signature fails and an approving review exists, the review
-counts. Text output always names the method:
+counts (unless `confirm.routes` leaves the review route out: then the
+signature's failure is the verdict). Text output always names the method:
 `human (signed by ana, SHA256:Xb3k9...)` or `human (approved by bo on PR #41)`.
+
+**The sole-approver note.** When a bot or agent account opened the pull request
+and the approving reviewer is the repository's only human with write access,
+the review record carries an informational note, `SOLE_HUMAN_APPROVER`, in
+`notes` and under the record in text:
+
+```text
+confirmed  brd.approve brd.refunds v3 human (approved by ana on PR #41)  [APPROVED]
+    note: PR #41 was opened by release-agent[bot], a bot or agent account, and ana, who approved it, is the only human with write access: the review route here proves only that an account other than the author approved; to require a hardware-key signature, set confirm.routes: [signature] in lattice/config.yaml  [SOLE_HUMAN_APPROVER]
+```
+
+The note never changes the verdict. The collaborator list comes from
+`GET /repos/{owner}/{repo}/collaborators`, which needs push access: when it
+cannot be read, `confirm` says nothing rather than guess. The note is not made
+under `routes: [signature]`, where the review does not confirm.
 
 The signer is the login `allowed_signers` and GitHub's signing keys name, never
 the pull request's author, so a decision an agent prepared and a human signed
@@ -2252,7 +2296,9 @@ review  promise.confirm brd.refunds v3  (approved by bo on PR #41; sign the deci
   it. The stem is the one `prepare` writes now; if the BRD or a promise changes
   first, `prepare` prints another.
 - `review`: a decision confirmed by an approving review, on a current version,
-  that no signature confirms. It reads the cache `lattice confirm` wrote, so run
+  that no signature confirms. Under `confirm.routes: [signature]` it also lists
+  a decision a review approved that therefore reads `pending`
+  (`ROUTE_NOT_ACCEPTED`). It reads the cache `lattice confirm` wrote, so run
   that first.
 
 **Revocation.** Remove the key from `allowed_signers` on the default branch, or

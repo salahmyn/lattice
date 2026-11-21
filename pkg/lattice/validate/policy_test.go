@@ -229,3 +229,27 @@ func TestAllowlistQuotingHint(t *testing.T) {
 		t.Errorf("want one ALLOWLIST_SCHEMA with a quoting hint, got %+v", bad)
 	}
 }
+
+// A confirm.routes value that names no route is a VALIDATE_POLICY error that
+// names it; known routes, in any case, raise nothing.
+// @verifies confirm:INV-22
+func TestConfirmRoutesPolicy(t *testing.T) {
+	cfg := config.Default()
+	for _, ok := range []config.Routes{nil, {"signature"}, {"review", "Signature"}} {
+		cfg.Confirm.Routes = ok
+		if codes(Validate(schema.KnowledgeGraph{}, cfg, Options{}))[schema.CodeValidatePolicy] {
+			t.Errorf("%v must raise nothing", ok)
+		}
+	}
+	cfg.Confirm.Routes = config.Routes{"signature", "signatrue"}
+	var found *schema.Violation
+	for _, v := range Validate(schema.KnowledgeGraph{}, cfg, Options{}) {
+		if v.Code == schema.CodeValidatePolicy && v.Subject == "confirm.routes" {
+			found = &v
+		}
+	}
+	if found == nil || found.Severity != schema.SeverityError || !strings.Contains(found.Message, `"signatrue" is not a route`) ||
+		found.Location == nil || found.Location.File != "config.yaml" {
+		t.Errorf("an unknown route: %+v", found)
+	}
+}

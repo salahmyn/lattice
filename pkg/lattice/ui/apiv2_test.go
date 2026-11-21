@@ -744,3 +744,38 @@ func TestAPIV1Unchanged(t *testing.T) {
 		t.Errorf("/api/v1/overview = %d %s", code, body)
 	}
 }
+
+// /api/v2 reads confirm.routes as every reader does: with routes:
+// [signature] a BRD confirmed only by a review is not CONFIRMED.
+// @verifies confirm:INV-22
+func TestAPIV2HonoursConfirmRoutes(t *testing.T) {
+	f := newV2Fixture(t)
+	state := func() (string, contract.BRDPage) {
+		t.Helper()
+		_, body := f.get(t, "/api/v2/brds")
+		var list contract.BRDList
+		if err := json.Unmarshal(body, &list); err != nil {
+			t.Fatal(err)
+		}
+		_, body = f.get(t, "/api/v2/brds/brd.legacy?version=2")
+		var page contract.BRDPage
+		if err := json.Unmarshal(body, &page); err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range list.BRDs {
+			if b.ID == "brd.legacy" {
+				return b.State, page
+			}
+		}
+		t.Fatal("brd.legacy is not listed")
+		return "", page
+	}
+	if st, _ := state(); st != "CONFIRMED" {
+		t.Fatalf("default routes: %s", st)
+	}
+	writeFile(t, filepath.Join(f.dir, "config.yaml"), "confirm:\n  routes: [signature]\n")
+	st, page := state()
+	if st == "CONFIRMED" || page.Confirmation.ConfirmedBy != "" || !strings.Contains(page.Confirmation.State.Text, "accepts only signature") {
+		t.Errorf("routes: [signature]: %s %+v", st, page.Confirmation)
+	}
+}

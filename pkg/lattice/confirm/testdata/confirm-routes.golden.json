@@ -1,0 +1,77 @@
+{
+  "contract": "lattice.confirm/1",
+  "commit": "deadbeef",
+  "branch": "main",
+  "generated_at": "2026-01-02T03:04:05Z",
+  "assurance": {
+    "state": "pass",
+    "honesty": "fact",
+    "code": "PLATFORM_READ",
+    "text": "approvals read from the platform"
+  },
+  "records": [
+    {
+      "id": "brd.x",
+      "version": 2,
+      "action": "brd.approve",
+      "state": "confirmed",
+      "via": "review",
+      "approver_login": "ana",
+      "pr": 12,
+      "merged_sha": "m1",
+      "verified_at": "2026-01-02T03:04:05Z",
+      "decision_sha": "c0ffee",
+      "pr_author": "release-agent[bot]",
+      "pr_author_bot": true,
+      "assurance": {
+        "state": "confirmed",
+        "honesty": "fact",
+        "code": "APPROVED",
+        "text": "approved by ana on the merged head of PR #12"
+      },
+      "notes": [
+        {
+          "code": "SOLE_HUMAN_APPROVER",
+          "params": {
+            "approver": "ana",
+            "author": "release-agent[bot]",
+            "pr": 12
+          },
+          "text": "PR #12 was opened by release-agent[bot], a bot or agent account, and ana, who approved it, is the only human with write access: the review route here proves only that an account other than the author approved; to require a hardware-key signature, set confirm.routes: [signature] in lattice/config.yaml"
+        }
+      ]
+    },
+    {
+      "id": "brd.y",
+      "version": 2,
+      "action": "brd.approve",
+      "state": "pending",
+      "via": "review",
+      "approver_login": "ana",
+      "pr": 12,
+      "merged_sha": "m1",
+      "decision_sha": "c0ffee",
+      "pr_author": "release-agent[bot]",
+      "pr_author_bot": true,
+      "assurance": {
+        "state": "pending",
+        "honesty": "fact",
+        "code": "ROUTE_NOT_ACCEPTED",
+        "params": {
+          "routes": [
+            "signature"
+          ],
+          "via": "review"
+        },
+        "text": "approved by ana on PR #12, but confirm.routes in lattice/config.yaml accepts only signature: a review is not a human confirmation in this workspace"
+      }
+    }
+  ],
+  "stamp": {
+    "commit": "deadbeef",
+    "ci_run": "4812",
+    "platform": "github",
+    "repository": "acme/shop",
+    "digest": "sha256:7ce0ba9cb4b0e6bf1948d783ee11dc07dc35bc2d26301c8e4ad612f8fa2c689e"
+  }
+}

@@ -157,7 +157,8 @@ weakens enforcement silently.
   author, or `lattice sign` with a hardware security key listed in
   `lattice/allowed_signers` and on the signer's GitHub account. A key added
   to `allowed_signers` counts only when a key already trusted endorses the
-  change (`lattice sign --signers`).
+  change (`lattice sign --signers`). `confirm.routes: [signature]` in
+  `lattice/config.yaml` makes the signature the only route that counts.
 
 ## Quick start
 

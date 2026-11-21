@@ -71,3 +71,7 @@ invariants:
         statement: A decision's case list counts only when lattice confirm bound it to the packet the decision pinned; a list that contradicts it reads stamp mismatch, one never checked reads stamp unverified, and neither confirms a case.
   - id: INV-21
     statement: The review packet's structural diff names every acceptance case added, edited, retired or removed since the last confirmation recorded it, and any such line makes the review take full friction, while the packet hash stays the one a decision pins.
+  - id: INV-22
+    statement: 'confirm.routes only narrows: with routes: [signature] a decision confirmed only by a review does not read human, in confirm or any reader of confirm.json.'
+  - id: INV-23
+    statement: The sole-approver note is informational and never changes a confirmation.

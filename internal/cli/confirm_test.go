@@ -140,3 +140,77 @@ func TestConfirmUnsignedCommands(t *testing.T) {
 		t.Errorf("the local approval: %q, want %q", local.Commands, wantCmds)
 	}
 }
+
+// With confirm.routes: [signature] a promise confirmed only by a review is
+// not confirmed in check, confirm --offline reads it pending, and confirm
+// --unsigned lists it as awaiting a signature. An unknown route fails the
+// command with BAD_CONFIG.
+// @verifies confirm:INV-22
+func TestConfirmRoutesSignatureOnly(t *testing.T) {
+	clearCIEnv(t)
+	f := newCheckFixture(t)
+	reviewed := confirm.Decision{Action: confirm.ActionApprove, ID: "brd.shop", Version: 1, PacketHash: "sha256:77aa88bb99",
+		PreparedBy: "Bo <bo@example.com>", PreparedAt: "2026-01-01T00:00:00Z"}
+	body, err := reviewed.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewedPath := "lattice/" + reviewed.RelPath()
+	f.write(reviewedPath, string(body))
+	f.commit("an approval confirmed by review")
+	f.git("checkout", "-q", "-b", "edit")
+	f.write("shop/shop.go", strings.Replace(shopGo(true), "n > 0", "n >= 1", 1))
+	f.commit("edit")
+	head := f.git("rev-parse", "HEAD")
+	added := f.git("rev-parse", "main")
+	latticeDir := filepath.Join(f.dir, "lattice")
+	cf := confirm.File{Contract: confirm.Schema, Commit: head, Branch: "main", Records: []confirm.Record{{
+		ID: "brd.shop", Version: 1, Action: confirm.ActionApprove, State: confirm.StateConfirmed, Via: confirm.ViaReview,
+		ApproverLogin: "bo", PR: 4, DecisionSHA: added,
+	}}}
+	if err := confirm.SaveCache(latticeDir, confirm.Seal(cf, confirm.Stamp{CIRun: "4812", Platform: "github"})); err != nil {
+		t.Fatal(err)
+	}
+	confirmed := func() check.Assurance {
+		t.Helper()
+		rep, _ := f.check("--base", "main")
+		for _, r := range rep.Promises {
+			if r.Promise == "shop:INV-1" {
+				return r.Signals.Confirmed
+			}
+		}
+		t.Fatalf("shop:INV-1 is not on the page: %+v", rep.Promises)
+		return check.Assurance{}
+	}
+	if c := confirmed(); c.State != check.Pass {
+		t.Fatalf("default routes: a review confirms: %+v", c)
+	}
+
+	f.write("lattice/config.yaml", "agentic:\n  llm:\n    enabled: false\nconfirm:\n  routes: [signature]\n")
+	if c := confirmed(); c.State == check.Pass || !strings.Contains(c.Text, "accepts only signature") {
+		t.Errorf("routes: [signature]: a review alone must not confirm: %+v", c)
+	}
+	out, err := run(t, f.dir, newConfirmCommand, "--offline")
+	if err != nil {
+		t.Fatalf("confirm --offline: %v\n%s", err, out)
+	}
+	var off confirm.File
+	if err := json.Unmarshal([]byte(out), &off); err != nil || len(off.Records) != 1 ||
+		off.Records[0].State != confirm.StatePending || off.Records[0].Assurance.Code != confirm.CodeRouteNotAccepted {
+		t.Errorf("confirm --offline: %v\n%s", err, out)
+	}
+	out, err = run(t, f.dir, newConfirmCommand, "--unsigned")
+	if err != nil {
+		t.Fatalf("confirm --unsigned: %v\n%s", err, out)
+	}
+	var l confirm.UnsignedList
+	if err := json.Unmarshal([]byte(out), &l); err != nil || len(l.Decisions) != 1 || l.Decisions[0].Rests != confirm.RestsReview ||
+		strings.Join(l.Decisions[0].Commands, "|") != "lattice sign "+reviewedPath {
+		t.Errorf("--unsigned lists the review-only decision: %v\n%s", err, out)
+	}
+
+	f.write("lattice/config.yaml", "confirm:\n  routes: [signatures]\n")
+	if out, err := run(t, f.dir, newConfirmCommand, "--offline"); err == nil || !strings.Contains(out, "BAD_CONFIG") || !strings.Contains(out, "signatures") {
+		t.Errorf("an unknown route must fail: %v\n%s", err, out)
+	}
+}
