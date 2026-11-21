@@ -2,6 +2,30 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.19.2] — 2026-11-21
+
+Two `lattice break` outcomes read truthfully on real database tests.
+
+### Fixed
+
+- **A TAP "Bad plan" is a failing test, not a build failure.** When a break makes a pgTAP script
+  stop partway, pg_prove prints `Parse errors: Bad plan`; a case-insensitive marker meant for
+  PHP read that as "break does not compile" (`unknown`). The PHP marker now matches PHP's own
+  wording only (`PHP Parse error`, `Parse error: syntax error`), so such runs read `killed` when
+  the baseline passed.
+- **A run some verifiers never saw reads `unknown`, not `survived`.** `survived` now requires every
+  verifier of the run to have run, at baseline and after the break. A run whose verifiers that ran
+  stayed green while others did not run (no runner, no test selected, absent from JUnit, or not
+  run after the break) reads `unknown` with a `partial:` reason, so `--fail-on survived` no longer
+  fails on a survival nobody tested. A group that fails after the break still reads `killed`.
+
+### Behaviour changes to plan for
+
+- **Cached break outcomes are re-checked once.** The generator version is bumped, so the first
+  `lattice break` after upgrading re-runs each break and baseline once.
+- **Fewer `survived`, more `unknown` (partial) and `killed`.** On a real project this moved 72
+  runs from `survived` to `unknown` and 37 from `unknown` to `killed`.
+
 ## [0.19.1] — 2026-11-21
 
 Faster, more truthful `lattice break` for database tests, results that stay current across
