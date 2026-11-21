@@ -2,6 +2,39 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.22.2] — 2026-11-21
+
+Two ways a result could read as a pass that was not earned are fixed. A type error that a runner
+printed in colour read as a verifier catching the break. A member call matched by name joined code
+the caller never loads.
+
+### Fixed
+
+- **A coloured type error reads "does not compile", not `killed`.**
+  - **What went wrong.** Deno colours its output even into a pipe, so a type-check error such as
+    `TS18046 [ERROR]` reached the classifier wrapped in escape codes. The build marker did not match,
+    and the run read as a failing test.
+  - **Now.** Terminal escape sequences are stripped before build markers are matched. Runner
+    processes are started with `NO_COLOR=1` and `FORCE_COLOR=0` unless the environment already sets
+    them.
+  - **Cached outcomes.** `GeneratorVersion` is now 5, so cached outcomes are recomputed once.
+- **A member call resolves only into code loaded with the caller.**
+  - **What went wrong.** A call such as `client.messages.create()` on an SDK object resolved by name
+    to the only `create` in the language. That could be a method in another edge function the caller
+    never imports, which made an enforcer look reached when it was not.
+  - **The rule.** For TypeScript, JavaScript and Python, a candidate must be in a module that some
+    module transitively imports together with the caller's.
+  - **What still resolves.** Dependency injection keeps its edge. A test's imports join modules only
+    for test callers.
+  - **No candidate left.** The call is external.
+
+### Behaviour changes to plan for
+
+- **Reach can drop on TypeScript and Python code** where it was granted only by a by-name guess. Code
+  that no entry module imports alongside its caller loses those edges. This shows up as more
+  `unreached` enforcers, which were not reached before either.
+- **Break runs recompute their cached outcomes** once after upgrading.
+
 ## [0.22.1] — 2026-11-21
 
 `lattice break --edges` now breaks a client's call to an edge function. A cron job that reads its
