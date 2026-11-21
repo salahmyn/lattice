@@ -203,8 +203,8 @@ func caseCoverage(ref string, verifiers []string, set results.Set, targets []str
 		if !target[run.Enforcer] {
 			continue
 		}
-		switch run.Outcome {
-		case "killed":
+		switch {
+		case run.Outcome == "killed":
 			failedSet := results.FailedSet(run.FailedTests)
 			hit := false
 			for _, v := range passed {
@@ -218,7 +218,7 @@ func caseCoverage(ref string, verifiers []string, set results.Set, targets []str
 			} else if !hit {
 				other = append(other, run.Enforcer)
 			}
-		case "survived":
+		case run.Outcome == "survived" || partialRun(run):
 			for _, v := range passed {
 				if ranIn(run, v) {
 					green = append(green, run.Enforcer+methodNote(run)+" left "+v+" green")

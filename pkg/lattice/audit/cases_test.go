@@ -99,6 +99,7 @@ func TestCasePartial(t *testing.T) {
 	}{
 		"no break run": {nil, "no break run of f.EnfINV-1"},
 		"left green":   {breaks("abc123", run("f:INV-1", "f.EnfINV-1", "survived")), "left f.TestHundred green"},
+		"partial run":  {breaks("abc123", partialUnknown("f:INV-1", "f.EnfINV-1", "f.TestOther")), "left f.TestHundred green"},
 		"other tests":  {breaks("abc123", killedWith("f:INV-1", "f.EnfINV-1", "f.TestOther")), "failed other tests"},
 		"no names":     {breaks("abc123", run("f:INV-1", "f.EnfINV-1", "killed")), "recorded no failed test names"},
 		"stale breaks": {breaks("old999", killedWith("f:INV-1", "f.EnfINV-1", "f.TestHundred")), "no break run"},
@@ -108,6 +109,15 @@ func TestCasePartial(t *testing.T) {
 			t.Errorf("%s: a = %+v, want partial naming %q", name, a, tc.reason)
 		}
 	}
+}
+
+// partialUnknown is a run lattice break reads unknown because the verifiers
+// that ran passed after the break while notRun did not run.
+func partialUnknown(promise, enforcer string, notRun ...string) BreakRun {
+	r := run(promise, enforcer, "unknown")
+	r.Reason = "partial: the verifiers that ran passed after the break"
+	r.NotRunVerifiers = notRun
+	return r
 }
 
 // A case is failing when a tagged verifier is red, even when another tagged

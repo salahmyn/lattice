@@ -116,10 +116,12 @@ func has(list []string, sub string) bool {
 
 // A promise whose verifiers span two frameworks runs both: it is killed when
 // either group fails after the break, and each framework's tests are
-// recorded as run. A verifier no runner covers is not run, so a survived
-// outcome carries it in not_run_verifiers; a runner whose filter selects no
-// test leaves the baseline unknown, never survived.
+// recorded as run. A verifier no runner covers is not run, so a break the
+// others do not notice reads unknown (partial), never survived, and carries
+// it in not_run_verifiers; a runner whose filter selects no test leaves the
+// baseline unknown, never survived.
 // @verifies breaktest:INV-3
+// @verifies breaktest:INV-4
 // @verifies breaktest:INV-6
 // @verifies breaktest:INV-7
 func TestBreakRunnersSpanFrameworks(t *testing.T) {
@@ -158,10 +160,12 @@ func TestBreakRunnersSpanFrameworks(t *testing.T) {
 	}
 
 	// INV-3: the checking verifier is under a glob no runner matches. The
-	// other one survives, but the promise is not fully run.
+	// other one passes after the break, but the promise is not fully run, so
+	// nothing is known about the one that could have noticed.
 	r = runs["web:INV-3"]
-	if r.Outcome != breaktest.Survived || len(r.RanVerifiers) != 1 || len(r.NotRunVerifiers) != 1 ||
-		!strings.Contains(r.NotRunVerifiers[0], "orphan") || !strings.Contains(r.Reason, "no runner matches fw3/orphan.test.js") {
+	if r.Outcome != breaktest.Unknown || len(r.RanVerifiers) != 1 || len(r.NotRunVerifiers) != 1 ||
+		!strings.Contains(r.NotRunVerifiers[0], "orphan") || !strings.HasPrefix(r.Reason, "partial: the 1 verifier(s) that ran passed after the break; ") ||
+		!strings.Contains(r.Reason, "no runner matches fw3/orphan.test.js") {
 		t.Errorf("INV-3: %+v", r)
 	}
 
@@ -297,6 +301,27 @@ func TestBreakRuntimeFailureVersusBuildMarker(t *testing.T) {
 		if !strings.Contains(r.Reason, "not checked") && c.outcome == breaktest.Killed {
 			t.Errorf("%s: reason should note the unchecked count: %q", c.name, r.Reason)
 		}
+	}
+}
+
+// A pgTAP script that the break makes stop partway is a failing test: the
+// harness's "Parse errors: Bad plan" line is not a build marker, so with a
+// passing baseline the run reads killed.
+// @verifies breaktest:INV-3
+func TestBreakTAPBadPlanReadsKilled(t *testing.T) {
+	cmd := "if grep -q 'return undefined' src/guard.js; then " +
+		"printf 'db/tests/fees.sql .. 1/10 \\n# Looks like you planned 10 tests but ran 4.\\n" +
+		"db/tests/fees.sql .. Dubious, test returned 255\\nFailed 6/10 subtests \\n\\nTest Summary Report\\n" +
+		"  Parse errors: Bad plan.  You planned 10 tests but ran 4.\\nResult: FAIL\\n'; exit 1; fi; " +
+		"printf 'db/tests/fees.sql .. ok\\nAll tests successful.\\nResult: PASS\\n'"
+	dir := jsFixture(t, "break:\n  runners:\n    - name: pgtap\n      match: [\"fw1/**\"]\n      command: [sh, -c, "+shellYAML(cmd)+"]\n")
+	rep, out, err := runBreak(t, dir, "--promise", "web:INV-1")
+	if err != nil {
+		t.Fatalf("break: %v\n%s", err, out)
+	}
+	r := byPromise(rep)["web:INV-1"]
+	if r.Outcome != breaktest.Killed || r.Baseline != breaktest.BaselinePass || strings.Contains(r.Reason, "does not compile") {
+		t.Errorf("a bad TAP plan after the break must read killed: %+v", r)
 	}
 }
 
