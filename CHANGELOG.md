@@ -2,6 +2,74 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.22.0] — 2026-11-21
+
+Lattice now follows a promise through queues and events. It can break the hops between layers as
+well as the code at their ends, and it treats named CHECK constraints as SQL enforcers. Break runs
+that use the SQL object swap heal a database a failed restore left wrong.
+
+### Added
+
+- **Channels for async hops.** Queues, `NOTIFY` channels and events are channel nodes,
+  `chan.<kind>.<name>`. A publisher reaches the channel, and the channel reaches every consumer that
+  names it with a literal.
+  - **Out ends.** SQL `pg_notify`, `NOTIFY` and `pgmq.send`. TypeScript `rpc('pgmq_send')`, and
+    BullMQ queues bound in the same module.
+  - **In ends.** `queue` and `event_consumer` entry points, `pgmq.read` and `pop`, and BullMQ
+    workers.
+  - **Declared wrappers.** List your own queue functions under `channels:` in
+    `lattice/workspace.yaml`.
+  - **Async reach is reported apart.** It shows as `async_hops` and never changes a symbol's `reach`
+    or the audit's live signal.
+  - **`lattice slice`.** Paths can cross channels, as `publish` and `consume` hops.
+  - **Findings (info).** `CHANNEL_NO_CONSUMER`, `CHANNEL_NO_PUBLISHER` and `CHANNEL_DYNAMIC`.
+  - User guide section 4r.
+- **Edge breaks: `lattice break --edges`** (or `break.edges: true`).
+  - **What it breaks.** Each resolved hop on a promise's slice paths is broken at its out end by
+    inserting `-lattice-break` into the literal: an `http` path, a `functions.invoke` name, an `rpc`
+    or `table` name, or a publisher's channel. Then the promise's verifiers run.
+  - **What it never breaks.** An unknown hop, a hop with no recorded literal, or a computed key is
+    skipped as `unknown` with a reason. Nothing is guessed.
+  - **Results.** A survived edge break carries `EDGE_BREAK_SURVIVED` (info). `lattice slice` marks a
+    hop `break_tested` (`kind*`) only when its edge break was killed.
+  - **Off by default.**
+- **Named CHECK constraints are SQL enforcers.** `CONSTRAINT n CHECK (…)` in `CREATE TABLE` and
+  `ALTER TABLE … ADD CONSTRAINT n CHECK (…)` are `sql.check.<schema>.<table>.<name>`, tagged by the
+  comment above their line.
+  - **The break.** `CHECK (true OR (expr))`, on the effective statement.
+  - **The swap.** `DROP CONSTRAINT IF EXISTS` plus the `ADD CONSTRAINT`. A CHECK inside
+    `CREATE TABLE` has no swap.
+- **`net.http_post` and declared origins.** `net.http_post`, `net.http_get` and `net.http_request`
+  in SQL are http out ends.
+  - **New origin forms.** `http.origins` accepts `env:NAME` (`import.meta.env.NAME`,
+    `process.env.NAME`, `Deno.env.get('NAME')`) and `setting:name` (`current_setting('name')`).
+  - **When it joins.** A URL that is exactly one declared origin plus a literal path joins routes
+    and edge functions. Anything else stays `dynamic`.
+- **`break.restore`.** Commands run after every run that used `{patched_sql}` or `{original_sql}`.
+  If one fails, `break.setup` runs again at once.
+
+### Fixed
+
+- **An awaited call with type arguments is no longer dropped.** `await invoke<T>('x')` (and
+  likewise `fetch`, `axios`, `.rpc`, `.from` and channel calls) now joins its route or object.
+- **Runtime-root proposals no longer duplicate declared entry points.**
+  - **Serve roots.** A declared `http_route` or `webhook` covers a serve root by its
+    `/functions/v1/<name>` path, or by the handler the serve call builds.
+  - **Cron roots.** A declared `cron` covers a cron root when it has the same schedule and its
+    handler the job reaches, including through one `http` hop.
+- **A "did not apply" reason ends at a literal `\n`** from a CLI's JSON output.
+- **A failed SQL swap restore no longer poisons later runs.**
+  - **The heal.** When a baseline fails and a swap has run since the last setup, `break.setup` runs
+    again and that baseline is retried once. A second failure reads as before.
+  - **The outcome stands.** A run whose verifiers already ran keeps its outcome.
+  - **Summary.** It shows `setup: 1 + N after restore`. The JSON summary gains `setup_runs`.
+
+### Behaviour changes to plan for
+
+- **New info findings.** On a codebase with queues or notify channels, `CHANNEL_*` info findings can
+  appear.
+- **Longer runs with `--edges`.** Edge breaks add one run per hop, up to 20 per promise.
+
 ## [0.21.0] — 2026-11-21
 
 Two `lattice break` results that could read as a pass without one are fixed: a cached outcome
