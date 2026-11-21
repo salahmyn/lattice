@@ -378,6 +378,13 @@ A `/api/v1/*` tree mirrors every page as JSON, same shape the CLI emits
 with `--json`. The import-decisions endpoint reuses the v0.2.1 batch
 driver so a UI accept and a CLI accept produce byte-identical state.
 
+`/api/graph` and `/api/v2` reuse the last read-only graph and audit while
+nothing they read has changed: git HEAD, every changed or untracked file,
+everything under `lattice/` (`.cache/` included), and the files the
+entry-point detectors read. Any change computes them again, and when that
+state cannot be named the request computes afresh. The `X-Lattice-Cache`
+response header says `hit`, `miss` or `bypass`.
+
 Security defaults: loopback bind needs no token. Any non-loopback host
 refuses to start unless `--token <X>` is supplied, and every request
 then must carry `X-Lattice-Token: <X>`.
@@ -1080,8 +1087,8 @@ The page computes no class. `/api/graph` (and the data `lattice export
 map` inlines) carries an `assurance` object beside the graph: the audit's
 classes in order, the style of each class, the legend, every promise with
 its class, and for every block its weakest class, count per class and
-promises. `serve` audits the live workspace on each request, read-only;
-`export map` audits it once. When the audit cannot run, every promise reads
+promises. `serve` audits the live workspace read-only, again as soon as
+any input changes (section 4c); `export map` audits it once. When the audit cannot run, every promise reads
 unknown and the legend says why. The lens only shows: it confirms and
 prepares nothing.
 

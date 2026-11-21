@@ -55,7 +55,8 @@ type Options struct {
 	GraphBuilder func(ctx context.Context) (schema.KnowledgeGraph, error)
 	// ReadOnlyGraphBuilder builds the graph for /api/v2 without writing
 	// anything (no LLM labelling of entry points, no indexer run). Nil falls
-	// back to GraphBuilder.
+	// back to GraphBuilder. Its graph and the audit over it are reused while
+	// a fingerprint of every input they read is unchanged.
 	ReadOnlyGraphBuilder func(ctx context.Context) (schema.KnowledgeGraph, error)
 	// CheckGraphBuilder builds the read-only graph and its static call graph
 	// for /api/v2/check, as `lattice check` builds them. Nil falls back to
@@ -90,6 +91,11 @@ type Server struct {
 	csrf string
 	// storeMu serializes store calls: the Postgres store holds one connection.
 	storeMu sync.Mutex
+	// cache keeps the read-only graph and its audit while their inputs'
+	// fingerprint is unchanged (factcache.go).
+	cache factsCache
+	// fingerprint names the inputs; nil is inputsFingerprint. Tests swap it.
+	fingerprint func(context.Context, *workspace.Workspace) (string, error)
 }
 
 // New constructs a Server. Templates and static assets are loaded lazily

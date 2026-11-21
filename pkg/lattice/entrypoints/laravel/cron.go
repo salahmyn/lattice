@@ -183,6 +183,30 @@ func resolveScheduledHandler(c scheduledCall, commands map[string]schema.Handler
 	return schema.Handler{}
 }
 
+// kernelPatterns are the globs, relative to a code root, where Laravel keeps
+// its console kernels. Some sit beside the root rather than under it.
+func kernelPatterns(rootAbs string) []string {
+	return []string{
+		filepath.Join(rootAbs, "..", "app", "Console", "Kernel.php"),
+		filepath.Join(rootAbs, "Console", "Kernel.php"),
+		filepath.Join(rootAbs, "..", "Modules", "*", "Console", "Kernel.php"),
+		filepath.Join(rootAbs, "*", "Console", "Kernel.php"),
+		filepath.Join(rootAbs, "..", "Modules", "*", "Providers", "*Kernel.php"),
+	}
+}
+
+// InputGlobs implements entrypoints.InputLister: the kernels are read
+// wherever they sit, whether or not the source scan parses them.
+func (CronDetector) InputGlobs(ws *workspace.Workspace) []string {
+	var out []string
+	for _, root := range ws.CodeRoots {
+		if root.Available {
+			out = append(out, kernelPatterns(root.Abs)...)
+		}
+	}
+	return out
+}
+
 // collectKernelFiles enumerates the canonical Laravel Console kernel
 // locations across every available code root.
 type kernelFile struct{ abs, rel string }
@@ -194,13 +218,7 @@ func collectKernelFiles(ws *workspace.Workspace) []kernelFile {
 		if !root.Available {
 			continue
 		}
-		for _, pat := range []string{
-			filepath.Join(root.Abs, "..", "app", "Console", "Kernel.php"),
-			filepath.Join(root.Abs, "Console", "Kernel.php"),
-			filepath.Join(root.Abs, "..", "Modules", "*", "Console", "Kernel.php"),
-			filepath.Join(root.Abs, "*", "Console", "Kernel.php"),
-			filepath.Join(root.Abs, "..", "Modules", "*", "Providers", "*Kernel.php"),
-		} {
+		for _, pat := range kernelPatterns(root.Abs) {
 			matches, _ := filepath.Glob(pat)
 			for _, m := range matches {
 				if seen[m] {

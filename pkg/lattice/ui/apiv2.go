@@ -89,20 +89,19 @@ func (s *Server) gitState() (head string, dirty *bool) {
 	return h, &d
 }
 
-func (s *Server) loadWorld(ctx context.Context) (*v2world, error) {
-	kg, err := s.readGraph(ctx)
+// loadWorld reads the world of one request. The graph and the audit come
+// from the facts cache; the evidence stamps are read fresh. cache says how
+// the graph and audit were obtained.
+func (s *Server) loadWorld(ctx context.Context) (w *v2world, cache string, err error) {
+	f, cache, err := s.facts(ctx)
 	if err != nil {
-		return nil, err
+		return nil, cache, err
 	}
-	w := &v2world{s: s, kg: kg}
-	gitHead, dirty := s.gitState()
-	w.dirty = dirty
-	w.head = kg.GeneratedFromCommit
+	w = &v2world{s: s, kg: f.kg, report: f.report, dirty: f.dirty}
+	w.head = f.kg.GeneratedFromCommit
 	if w.head == "" {
-		w.head = gitHead
+		w.head = f.head
 	}
-	isDirty := dirty != nil && *dirty
-	w.report = audit.Compute(audit.Collect(s.ws.LatticeDir, kg, isDirty))
 	w.cd = audit.LoadConfirm(s.ws.LatticeDir)
 	w.conf = confirm.LoadCache(s.ws.LatticeDir)
 	w.ev = check.Gather(s.ws.LatticeDir, w.head, false)
@@ -111,7 +110,7 @@ func (s *Server) loadWorld(ctx context.Context) (*v2world, error) {
 	for _, r := range w.report.Rows {
 		w.rows[r.Promise] = r
 	}
-	return w, nil
+	return w, cache, nil
 }
 
 // header is the envelope of a payload.
@@ -231,7 +230,8 @@ func writeV2Error(w http.ResponseWriter, status int, code, text string, violatio
 
 // loadOr500 loads the world or writes the error.
 func (s *Server) loadOr500(w http.ResponseWriter, r *http.Request) *v2world {
-	world, err := s.loadWorld(r.Context())
+	world, cache, err := s.loadWorld(r.Context())
+	w.Header().Set(cacheHeader, cache)
 	if err != nil {
 		writeV2Error(w, http.StatusInternalServerError, "GRAPH_FAILED", err.Error(), nil)
 		return nil

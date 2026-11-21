@@ -282,6 +282,8 @@ Pages: **Overview**, **BRDs**, **Features**, **Entry points**,
 **Coverage**, **Validation**, **Import**, **Config**.
 Auth: localhost is open; non-loopback binds require either
 `--token <…>` or `--basic-auth user:pass`.
+The map and `/api/v2` reuse the last graph and audit until any input
+changes (`X-Lattice-Cache: hit|miss|bypass`).
 
 ## Documentation
 

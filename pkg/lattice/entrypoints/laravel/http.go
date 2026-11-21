@@ -88,6 +88,30 @@ func (HTTPDetector) Detect(_ context.Context, ws *workspace.Workspace, modules [
 // paths so the EntryPoint can refer to the relative form (matching IR).
 type routeFile struct{ abs, rel string }
 
+// routePatterns are the globs, relative to a code root, where Laravel keeps
+// its route files. Some sit beside the root rather than under it.
+func routePatterns(rootAbs string) []string {
+	return []string{
+		filepath.Join(rootAbs, "..", "routes", "*.php"), // standard Laravel
+		filepath.Join(rootAbs, "routes", "*.php"),       // root is repo
+		filepath.Join(rootAbs, "..", "Modules", "*", "Routes", "*.php"),
+		filepath.Join(rootAbs, "*", "Routes", "*.php"), // Modules itself is the root
+		filepath.Join(rootAbs, "..", "modules", "*", "Routes", "*.php"),
+	}
+}
+
+// InputGlobs implements entrypoints.InputLister: the route files are read
+// wherever they sit, whether or not the source scan parses them.
+func (HTTPDetector) InputGlobs(ws *workspace.Workspace) []string {
+	var out []string
+	for _, root := range ws.CodeRoots {
+		if root.Available {
+			out = append(out, routePatterns(root.Abs)...)
+		}
+	}
+	return out
+}
+
 // collectRouteFiles enumerates the canonical Laravel route file
 // locations relative to every code root: routes/*.php and
 // Modules/*/Routes/*.php (and Module/*/Routes/*.php, the older naming).
@@ -98,14 +122,7 @@ func collectRouteFiles(ws *workspace.Workspace) []routeFile {
 		if !root.Available {
 			continue
 		}
-		patterns := []string{
-			filepath.Join(root.Abs, "..", "routes", "*.php"), // standard Laravel
-			filepath.Join(root.Abs, "routes", "*.php"),       // root is repo
-			filepath.Join(root.Abs, "..", "Modules", "*", "Routes", "*.php"),
-			filepath.Join(root.Abs, "*", "Routes", "*.php"), // Modules itself is the root
-			filepath.Join(root.Abs, "..", "modules", "*", "Routes", "*.php"),
-		}
-		for _, p := range patterns {
+		for _, p := range routePatterns(root.Abs) {
 			matches, _ := filepath.Glob(p)
 			for _, m := range matches {
 				clean, _ := filepath.Abs(m)
