@@ -1845,7 +1845,19 @@ count cannot be checked).
   },
   ```
   Install dependencies in the main checkout: the worktree links its
-  `node_modules`.
+  `node_modules`. If the project's Playwright config serves a build
+  (`vite preview`) for its own CI, keep it and add a second config for breaks
+  that spreads it and swaps only `webServer` (and a `url` that the dev server
+  serves: a file that exists only in a build, such as a version manifest, never
+  appears); pass it with `-c`.
+- **Tag journeys that pass on the dev server.** Some journeys depend on the
+  build: chunk preloading, a service worker, hashed asset names. They fail
+  against the dev server at baseline, and a run whose baseline fails reads
+  `unknown`. That is safe, but each one costs a server start and tells you
+  nothing. Tag the journeys that drive the flows whose hops you want tested and
+  that pass on the dev server, and keep build-only specs out of the runner's
+  `match`. On a real project 313 of 333 journeys passed on the dev server; the
+  edge hops of the three promises tried were each killed in 15 to 21 seconds.
 - **Cost.** Every baseline and every break starts the dev server and the
   browser, so a journey runner is the slow one. `--timeout` (default 120s)
   bounds each run, server start included; raise it, and `webServer.timeout`
