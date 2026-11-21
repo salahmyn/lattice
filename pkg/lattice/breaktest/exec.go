@@ -57,6 +57,13 @@ var (
 	otherMarkers = []string{"error collecting", "indentationerror", "modulenotfounderror", "importerror", "parse error"}
 )
 
+// NotAppliedExit is the exit code a runner uses to say the code under test
+// could not be set up, e.g. a database reset failed because a generated SQL
+// break did not apply. As in git bisect (125: "this revision cannot be
+// tested"), the run reads unknown, never killed: a runner that fails to apply
+// a break must not count as a verifier catching it.
+const NotAppliedExit = 125
+
 // buildLine finds the explicit build marker in a non-Go runner's output and
 // returns its line, "" when there is none.
 func buildLine(out string) string {
@@ -88,6 +95,12 @@ func classify(kind string, exit int, out string, timedOut bool) execResult {
 		return execResult{status: statusOK, output: out}
 	case exit < 0:
 		return execResult{status: statusError, reason: "runner did not start: " + firstLine(out), output: out}
+	case exit == NotAppliedExit:
+		reason := "did not apply (runner exit 125)"
+		if l := lastLine(out); l != "" {
+			reason += ": " + clip(l)
+		}
+		return execResult{status: statusBuild, reason: reason, output: out}
 	}
 	if kind == "go" {
 		if l := goBuildLine(out); l != "" {
@@ -162,6 +175,16 @@ func firstLine(s string) string {
 	s = strings.TrimSpace(s)
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		s = s[:i]
+	}
+	return clip(s)
+}
+
+// lastLine is the last non-empty line of s, where a failed setup step
+// usually says why.
+func lastLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.LastIndexByte(s, '\n'); i >= 0 {
+		s = s[i+1:]
 	}
 	return clip(s)
 }

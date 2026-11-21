@@ -1302,6 +1302,14 @@ pytest's collection and import errors. A runtime failure with a stack trace is
 a failing test, so it reads `killed` when the baseline passed. The reason
 names the failing tests, else the first error line.
 
+**Exit 125: the code could not be set up.** A runner that exits 125 says the
+code under test could not be prepared, for example because a database reset
+failed when a generated SQL break did not apply. As in `git bisect`, where 125
+means "this revision cannot be tested", the run reads `unknown` ("did not
+apply (runner exit 125)", with the runner's last output line), never `killed`,
+whatever else the output says. A setup step that fails must not count as a
+verifier noticing the break, so end such a step with `|| exit 125`.
+
 **The generated break** is an early return at the top of the enforcer's
 body, with the rest left in place so imports and variables stay used. Go
 returns zero values (`if true { return }` for named or no results);
@@ -1389,11 +1397,13 @@ break:
     runners:
       - name: pgtap
         match: ["db/tests/**/*.sql"]
-        command: [sh, -c, 'db/reset.sh && pg_prove -d "$PGDATABASE" "$@"', sh, "{files}"]
+        command: [sh, -c, '{ db/reset.sh || exit 125; } && pg_prove -d "$PGDATABASE" "$@"', sh, "{files}"]
   ```
 
-  pg_prove runs whole files, so `{filter}` does not apply. With Supabase,
-  `supabase db reset && supabase test db` fits the same way.
+  The reset exits 125 when it fails, so a break whose SQL does not apply reads
+  `unknown`, not `killed`. pg_prove runs whole files, so `{filter}` does not
+  apply. With Supabase, `{ supabase db reset || exit 125; } && supabase test db`
+  fits the same way.
 
 **The worktree.** A temporary worktree has no `node_modules`, so `lattice break`
 symlinks each `node_modules` directory of the main checkout into the same relative
