@@ -18,7 +18,8 @@
 // library from starting and checks that the grid fallback still draws. At
 // 1600×1000 a generated wide, shallow graph must be laid out wide (its
 // width:height near the pane's, Fit at 35% or more, no boxes overlapping), and
-// the demo graph no smaller than before.
+// the demo graph no smaller than before. Where many lines converge on one block, closed or open, no two edge
+// labels overlap.
 //
 // --shots writes PNGs of each view in light and dark. --perf N swaps in a
 // generated graph of about N blocks and prints timings instead of the smoke run.
@@ -341,6 +342,51 @@ async function smoke(browser) {
   await off.page.close();
 
   await paneShape(browser);
+  await labelsApart(browser);
+}
+
+// edge labels: where many lines converge on one block, no two labels overlap (beyond 1.5 px, at 100% so the text
+// boxes are the browser's own), whether the block is closed or open with the lines lifted to its frame
+async function labelsApart(browser) {
+  for (const [name, hub, n] of [['a closed block', 'composite', 8], ['an open block', 'system', 6]]) {
+    const g = converging(hub, n), lines = new Set(g.block_edges.map(e => e.from.split('.')[0])).size;
+    const conv = path.join(path.dirname(file), path.basename(file, '.html') + `-converging-${hub}.html`);
+    fs.writeFileSync(conv, withGraph(fs.readFileSync(file, 'utf8'), g));
+    const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+    await page.route(u => !/^(file|data|blob|about):/.test(u.protocol), r => r.abort('blockedbyclient'));
+    await page.goto('file://' + conv); await diagramDrawn(page); await settle(page);
+    const m = await page.evaluate(() => {
+      const vp = document.getElementById('vp'), tf = vp.getAttribute('transform');
+      vp.setAttribute('transform', '');
+      const ls = [...vp.querySelectorAll('text.el')].map(t => { const b = t.getBBox(); return { t: t.textContent, x0: b.x, y0: b.y, x1: b.x + b.width, y1: b.y + b.height }; });
+      vp.setAttribute('transform', tf);
+      const pairs = [];
+      let area = 0;
+      for (let i = 0; i < ls.length; i++) for (let j = i + 1; j < ls.length; j++) {
+        const a = ls[i], b = ls[j], w = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0), h = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+        if (w > 1.5 && h > 1.5) { pairs.push(a.t + ' / ' + b.t); area += w * h; }
+      }
+      return { n: ls.length, pairs, area: Math.round(area), grid: document.body.innerText.includes('simple grid') };
+    });
+    check(!m.grid && m.n === lines && !m.pairs.length, `edge labels: ${lines} lines into ${name}, ${m.n} labels, ${m.pairs.length} overlapping (${m.area} px²)` +
+      (m.pairs.length ? ': ' + m.pairs.slice(0, 5).join(', ') : ''));
+    await page.close();
+  }
+}
+
+// n blocks of two parts each, every part with a line into one hub block, so the n lines of 2 into the hub converge
+function converging(hubKind, n) {
+  const blocks = [{ id: 'hub', kind: hubKind, title: 'orders.checkout', truth: 'declared', provenance: { kind: 'human' } }], edges = [];
+  for (let i = 1; i <= 2; i++) blocks.push({ id: 'hub.p' + i, kind: 'invariant', parent: 'hub', title: 'INV-' + i, truth: 'declared', provenance: { kind: 'human' } });
+  const kinds = ['flow', 'uses', 'api', 'event'];
+  for (let s = 0; s < n; s++) {
+    blocks.push({ id: 'src' + s, kind: 'composite', title: `fees.part${s}`, truth: 'declared', provenance: { kind: 'human' } });
+    for (let i = 1; i <= 2; i++) {
+      blocks.push({ id: `src${s}.p${i}`, kind: 'invariant', parent: 'src' + s, title: 'INV-' + i, truth: 'declared', provenance: { kind: 'human' } });
+      edges.push({ from: `src${s}.p${i}`, to: 'hub.p' + i, kind: kinds[s % 4], provenance: { kind: 'human' } });
+    }
+  }
+  return { blocks, block_edges: edges, flows: [], sources: [] };
 }
 
 // the first layout follows the pane's shape: a wide, shallow graph is drawn wide, not as one tall column, and the

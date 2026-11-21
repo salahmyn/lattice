@@ -22,3 +22,5 @@ invariants:
     statement: The served block map shows a live loading status while its graph loads and an error with a retry when the load fails, and no status once the graph is drawn; an exported map, whose graph is inline, never shows it.
   - id: INV-7
     statement: The block map's first layout follows the pane's aspect ratio; a wide, shallow graph is laid out wide, not as one tall column.
+  - id: INV-8
+    statement: Edge labels on the block map do not overlap one another.
