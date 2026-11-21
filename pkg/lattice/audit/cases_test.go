@@ -153,3 +153,25 @@ func TestNoCasesNoField(t *testing.T) {
 		t.Errorf("row = %s", b)
 	}
 }
+
+// A break run of one case (`lattice break --promise f:INV-1#c`, recorded
+// under the case ref) counts for that case's coverage and never for the
+// promise's break signal, which still reads only runs of all its verifiers.
+// @verifies breaktest:INV-11
+func TestCaseBreakRunCountsForTheCaseOnly(t *testing.T) {
+	kg := feeGraph(map[string][]string{"f.TestNegative": {"f:INV-1#c"}, "f.TestHundred": {"f:INV-1#a"}})
+	set := pass("f.TestNegative", "f.TestHundred")
+	rep := Compute(Sources{KG: kg, Results: set, Breaks: breaks("abc123",
+		killedWith("f:INV-1#c", "f.Validate", "f.TestNegative"),
+		run("f:INV-1#a", "f.EnfINV-1", "survived"))})
+	r := rowOf(t, rep, "f:INV-1")
+	if c := caseOf(t, r, "c"); c.Coverage != CaseCovered || !strings.Contains(c.Reason, "f.Validate") {
+		t.Errorf("c = %+v", c)
+	}
+	if a := caseOf(t, r, "a"); a.Coverage != CasePartial || !strings.Contains(a.Reason, "left f.TestHundred green") {
+		t.Errorf("a = %+v", a)
+	}
+	if r.Signals.BreakTested.Value != "unknown" || len(r.Evidence.Breaks) != 0 || r.Class == ClassFake {
+		t.Errorf("case runs must not reach the promise: break_tested %s, breaks %+v, class %s", r.Signals.BreakTested.Value, r.Evidence.Breaks, r.Class)
+	}
+}

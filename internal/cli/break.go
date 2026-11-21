@@ -13,6 +13,7 @@ import (
 
 	"github.com/salahmyn/lattice/pkg/lattice/breaktest"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
 func newBreakCommand(io *IO) *cobra.Command {
@@ -38,6 +39,11 @@ func newBreakCommand(io *IO) *cobra.Command {
 			"directories are linked from the main checkout unless break.link_node_modules is\n" +
 			"false. A verifier that did not run is listed in not_run_verifiers.\n" +
 			"\n" +
+			"--promise <feature>:INV-n#<case> breaks one acceptance case: its own enforcer\n" +
+			"(else each enforcer of the invariant) against only the tests tagged\n" +
+			"@verifies <feature>:INV-n#<case>. The runs are recorded under the case ref, so\n" +
+			"they count for the case's coverage and never for the promise's break signal.\n" +
+			"\n" +
 			"The working tree is never edited. A tree with uncommitted changes is refused\n" +
 			"unless --allow-dirty, which tests the tree as it stands and records dirty: true.\n" +
 			"The result is written to lattice/.cache/results/breaks.json.\n" +
@@ -57,6 +63,11 @@ func newBreakCommand(io *IO) *cobra.Command {
 			kg, ws, err := graphFor(io, cmd, false)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
+			}
+			if _, _, isCase := schema.SplitCaseRef(promise); isCase {
+				if _, ok := breaktest.FindCase(kg, promise); !ok {
+					return io.fail("CASE_NOT_FOUND", "no acceptance case "+promise+" (use <feature>:INV-n#<case>)", nil)
+				}
 			}
 			cfg, err := config.Load(ws.LatticeDir)
 			if err != nil {
@@ -105,7 +116,7 @@ func newBreakCommand(io *IO) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&promise, "promise", "", "break one promise, as <feature>:INV-n")
+	cmd.Flags().StringVar(&promise, "promise", "", "break one promise, as <feature>:INV-n, or one case, as <feature>:INV-n#<case>")
 	cmd.Flags().StringVar(&feature, "feature", "", "break the promises of one feature")
 	cmd.Flags().DurationVar(&timeout, "timeout", 120*time.Second, "timeout for each test run (a timeout reads unknown)")
 	cmd.Flags().BoolVar(&allowDirty, "allow-dirty", false, "test a working tree with uncommitted changes")

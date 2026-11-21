@@ -134,11 +134,13 @@ func appendOnce(list []string, v string) []string {
 }
 
 // caseRows computes the coverage of every case of one invariant from the
-// ingested results and the promise's usable break runs. enforcers are the
-// invariant's enforcers, used for a case that names none of its own.
+// ingested results and the usable break runs: the promise's, and the case's
+// own (`lattice break --promise <promise>#<case>`, recorded under the case
+// ref). enforcers are the invariant's enforcers, used for a case that names
+// none of its own.
 // @enforces audit:INV-8
 func caseRows(promise string, inv schema.Invariant, tagged map[string][]string, set results.Set,
-	enforcers []string, runs []BreakRun) []CaseRow {
+	enforcers []string, breaks map[string][]BreakRun) []CaseRow {
 	if len(inv.Cases) == 0 {
 		return nil
 	}
@@ -150,6 +152,7 @@ func caseRows(promise string, inv schema.Invariant, tagged map[string][]string, 
 		if cs.Enforcer != "" {
 			targets = []string{cs.Enforcer}
 		}
+		runs := append(append([]BreakRun(nil), breaks[promise]...), breaks[promise+"#"+cs.ID]...)
 		r.Coverage, r.Reason = caseCoverage(promise+"#"+cs.ID, r.Verifiers, set, targets, runs)
 		out = append(out, r)
 	}

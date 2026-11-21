@@ -228,8 +228,8 @@ A complete, validating three-language example lives in
 | `lattice journey <brd>` \| `lattice actor list` | Journey and actor views |
 | `lattice rtm` | Requirements traceability matrix with attestation header |
 | `lattice check --base <rev>` | One verdict for a change (ASSURED / UNPROVEN / BROKEN) and the merge rule |
-| `lattice impact --since <rev> [--tests]` | What a change touches; `--tests` lists the verifier tests to run, by runner |
-| `lattice break [--promise f:INV-n] [--fails-on-base <rev>]` | Break each enforcer and see whether its verifiers notice; `--fails-on-base` runs a change's new or edited tests on the old code |
+| `lattice impact --since <rev> [--tests]` | What a change touches, the acceptance cases included; `--tests` lists the verifier tests to run, by runner |
+| `lattice break [--promise f:INV-n[#case]] [--fails-on-base <rev>]` | Break each enforcer and see whether its verifiers notice; `--promise f:INV-n#a` breaks one case against its tagged tests; `--fails-on-base` runs a change's new or edited tests on the old code |
 | `lattice audit [--promise f:INV-n]` | Classify every promise: fake, break-tested, exercised, a gap; each case covered, partial, failing or uncovered |
 | `lattice prepare brd\|promise\|waiver …` | Prepare a decision branch for a human to approve; never pushes |
 | `lattice confirm [--offline] [--unsigned]` | Which decisions a human confirmed: an approving review on the merged PR, or a hardware-key signature; `--unsigned` lists what a signature could re-confirm, with the commands |

@@ -1159,8 +1159,16 @@ breaking the enforcer and running only that promise's verifiers:
 ```sh
 lattice break                          # every promise with an enforcer
 lattice break --promise cart:INV-2     # one promise
+lattice break --promise cart:INV-2#b   # one acceptance case
 lattice break --feature cart --json
 ```
+
+`--promise <promise>#<case>` breaks one acceptance case: the case's own `enforcer`,
+or each enforcer of the invariant when it names none, against only the tests tagged
+`@verifies <promise>#<case>`. Its runs are written under the case ref (`"promise":
+"cart:INV-2#b"` in `breaks.json`) next to the promise's runs, which are kept. They count
+for that case's coverage in the audit and never for the promise's break signal, which
+still needs a run of all its verifiers. An unknown case is refused (`CASE_NOT_FOUND`).
 
 For each enforcer it makes a temporary detached `git worktree` at HEAD,
 runs the verifiers unbroken (the **baseline**), applies the break, runs
@@ -2258,6 +2266,13 @@ The report has five sections:
 | Removed enforcement | A base-side enforcer that no longer enforces its invariant: the symbol was deleted, its `@enforces` tag was dropped (the tag sits above the symbol, outside its lines, so this compares each file's (symbol, invariant) pairs on both sides), or its file was deleted or moved out of the scanned tree. A file moved elsewhere in the scanned tree is not a removal. |
 | Manifest changes | Features, BRDs and entry points added, removed, renamed and changed, with every changed field named (`invariants[INV-1].verifiable_by`, `user_scenarios[US-1].then`, `success_criteria[SC-2].maps_to_invariant`). The walk is generic over the schema, so a new field is compared without a code change. A manifest moved out of `lattice/features/` is removed; one moved within it is renamed, compared by id. |
 | Code roll-up | With a SCIP code graph (`lattice extract --with-code-graph`), the blast radius of each changed or removed enforcer, rolled up to referencing modules, test files and entry points (through each entry point's handler and `flow`). `--max-symbols N` (default 50) caps how many are expanded, enforcers of approved criteria first, and the report says when it truncated. Without a code graph the section says "code graph unavailable" and the command still succeeds. |
+
+When the change touches an acceptance case, the report adds a **Touched cases** section
+(`touched_cases` in `--json`, always present): each case whose own `enforcer` changed
+(`why: enforcer_changed`) and each case a changed test is tagged with (`@verifies
+<promise>#<case>`, `why: verifier_changed`), with the symbol and its change. A change to
+an enforcer of the invariant that the case does not name touches the promise, not the
+case. `lattice break --promise <promise>#<case>` re-breaks one of them.
 
 When an enforcer's own lines change and its invariant's statement and tier do
 not, the report adds a **Notes** section with a `STATEMENT_UNCHANGED` note for that

@@ -116,6 +116,12 @@ invariants:
       - { id: c, kind: error, statement: A negative amount is rejected first., enforcer: wallet.fees.validateAmount }
 ```
 
+*Built:* `lattice impact` names the cases a change touches (a case's own
+enforcer changed, or a `#case` verifier changed; impact:INV-10), and `lattice
+break --promise f:INV-1#a` breaks one case against its tagged tests, recorded
+under the case ref so it never reaches the promise's break signal
+(breaktest:INV-11).
+
 Cases are also the answer to "split the broad invariants". Splitting is still
 right only where one invariant holds unrelated claims.
 

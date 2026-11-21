@@ -21,7 +21,10 @@ var ErrDirty = errors.New("working tree has uncommitted changes (commit them, or
 
 // Options controls a break run.
 type Options struct {
-	Promise    string // "feature:INV-n", "" for every promise
+	// Promise is "feature:INV-n", or "feature:INV-n#<case>" for one
+	// acceptance case: its own enforcer (else the invariant's) broken against
+	// only the tests tagged with the case. "" breaks every promise.
+	Promise    string
 	Feature    string // limit to one feature, "" for all
 	Timeout    time.Duration
 	AllowDirty bool
@@ -64,6 +67,9 @@ func promiseKey(feature, ref string) string {
 // a script replaces the generated break. Promises without an enforcer have
 // nothing to break and no run.
 func plan(kg schema.KnowledgeGraph, opts Options) []target {
+	if base, id, ok := schema.SplitCaseRef(opts.Promise); ok {
+		return planCase(kg, opts, base, id)
+	}
 	enforcers := map[string][]schema.GraphSymbol{}
 	for _, s := range kg.Symbols {
 		for _, inv := range s.EnforcesInvariants {
@@ -139,5 +145,84 @@ func dedupSymbols(in []schema.GraphSymbol) []schema.GraphSymbol {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].FQN < out[j].FQN })
+	return out
+}
+
+// FindCase looks up an acceptance case by its ref ("feature:INV-n#<case>").
+func FindCase(kg schema.KnowledgeGraph, ref string) (schema.InvariantCase, bool) {
+	base, id, ok := schema.SplitCaseRef(ref)
+	if !ok {
+		return schema.InvariantCase{}, false
+	}
+	feature, invID, _ := strings.Cut(base, ":")
+	for _, f := range kg.Features {
+		if f.ID != feature {
+			continue
+		}
+		for _, inv := range f.Invariants {
+			if inv.ID != invID {
+				continue
+			}
+			for _, c := range inv.Cases {
+				if c.ID == id {
+					return c, true
+				}
+			}
+		}
+	}
+	return schema.InvariantCase{}, false
+}
+
+// planCase lists the runs for one acceptance case: the case's own enforcer,
+// or each enforcer of the invariant when it names none, broken against only
+// the tests tagged @verifies <promise>#<case>. The runs are recorded under
+// the case ref, never the promise's, so they count for the case's coverage
+// and leave the promise's break signal to runs of all its verifiers.
+// @enforces breaktest:INV-11
+func planCase(kg schema.KnowledgeGraph, opts Options, base, id string) []target {
+	c, ok := FindCase(kg, opts.Promise)
+	if !ok {
+		return nil
+	}
+	var syms []schema.GraphSymbol
+	for _, s := range kg.Symbols {
+		for _, inv := range s.EnforcesInvariants {
+			if promiseKey(s.Feature, inv) == base && (c.Enforcer == "" || s.FQN == c.Enforcer) {
+				syms = append(syms, s)
+			}
+		}
+	}
+	syms = dedupSymbols(syms)
+	if len(syms) == 0 {
+		return nil
+	}
+	selectors := map[string]results.Selector{}
+	for _, sel := range results.Selectors(kg, true) {
+		selectors[sel.Test] = sel
+	}
+	var sels []results.Selector
+	var tests []schema.GraphSymbol
+	for _, t := range kg.Tests {
+		for _, ref := range t.VerifiesCases {
+			if promiseKey(t.Feature, ref) == opts.Promise {
+				sels = append(sels, selectors[t.FQN])
+				tests = append(tests, t)
+				break
+			}
+		}
+	}
+	tests = dedupSymbols(tests)
+	feature, inv, _ := strings.Cut(base, ":")
+	script := filepath.Join(opts.LatticeDir, "breaks", feature, inv+".patch")
+	if _, err := os.Stat(script); err != nil {
+		script = ""
+	}
+	if script != "" {
+		return []target{{promise: opts.Promise, enforcers: syms, verifiers: sels, tests: tests, script: script}}
+	}
+	var out []target
+	for _, s := range syms {
+		out = append(out, target{promise: opts.Promise, enforcers: []schema.GraphSymbol{s}, verifiers: sels, tests: tests})
+	}
 	return out
 }
