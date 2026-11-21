@@ -254,7 +254,7 @@ func buildBlockGraph(ctx context.Context, ws *workspace.Workspace, st store.Stor
 // extract loads them: nested directories included, so a flow step or
 // depends_on naming a nested feature resolves, and every feature and
 // invariant gets a block.
-// @enforces cli:INV-4
+// @enforces cli:INV-5
 func loadFeatureManifests(ws *workspace.Workspace) ([]schema.Manifest, error) {
 	ms, viol := extract.LoadManifests(ws)
 	for _, v := range viol {

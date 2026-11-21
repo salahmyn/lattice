@@ -13,7 +13,10 @@ package check
 
 // @module-feature check
 
-import "github.com/salahmyn/lattice/pkg/lattice/impact"
+import (
+	"github.com/salahmyn/lattice/internal/preflight"
+	"github.com/salahmyn/lattice/pkg/lattice/impact"
+)
 
 // Contract is the version tag of the JSON report, frozen by a golden test.
 const Contract = "lattice.check/1"
@@ -314,8 +317,20 @@ type Report struct {
 	// configured break.runners, as `lattice impact --tests` does. It is a
 	// listing for a script: nothing is run and it never changes the verdict.
 	Tests impact.TestPlan `json:"tests"`
+	// Preflight is present when the preflight of break.runners found a
+	// problem: the commands Tests lists may not run where check ran. It is
+	// informational and never changes the verdict, the merge rule or the
+	// exit code.
+	Preflight *Preflight `json:"preflight,omitempty"`
 	// Note is carried on every report: UNPROVEN is not a pass.
 	Note string `json:"note"`
+}
+
+// Preflight is the note of a failed preflight of break.runners. Problems
+// has the shape of a refused preflight's problems (break, runs-clean).
+type Preflight struct {
+	Text     string              `json:"text"`
+	Problems []preflight.Problem `json:"problems"`
 }
 
 const note = "UNPROVEN is not a pass: it means nothing fell and something is not shown. Unknown is never a pass; only CI's verdict counts."

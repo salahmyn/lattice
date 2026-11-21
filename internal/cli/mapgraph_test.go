@@ -103,8 +103,8 @@ func exportMap(t *testing.T, repo string, args ...string) (ui.MapData, string) {
 // invariant on it: export map builds the block graph, saves it, and every
 // audited promise has a block, nested under its feature's parent.
 // @verifies blocks:INV-4
-// @verifies cli:INV-4
 // @verifies cli:INV-5
+// @verifies cli:INV-6
 func TestExportMapPlacesEveryPromise(t *testing.T) {
 	repo, promises := nestedFeatureWorkspace(t)
 	d, out := exportMap(t, repo)
@@ -194,7 +194,7 @@ func tree(t *testing.T, dir string, skip ...string) map[string]string {
 // When the block graph cannot be rebuilt, export map draws the stored graph,
 // says why on the page, and writes nothing; when it can, the store's graph
 // file is the only thing it writes.
-// @verifies cli:INV-5
+// @verifies cli:INV-6
 func TestExportMapKeepsTheStoredGraphWhenRefreshFails(t *testing.T) {
 	repo, _ := nestedFeatureWorkspace(t)
 	lat := filepath.Join(repo, "lattice")
@@ -238,7 +238,7 @@ func TestExportMapKeepsTheStoredGraphWhenRefreshFails(t *testing.T) {
 // features: a step naming a nested feature resolves in both, and a step
 // naming no feature is PHANTOM_FLOW in validate, with a next action, and
 // the one step refresh warns about.
-// @verifies cli:INV-4
+// @verifies cli:INV-5
 func TestRefreshAndValidateAgreeOnFlowSteps(t *testing.T) {
 	repo, _ := nestedFeatureWorkspace(t)
 	out, err := run(t, repo, newRefreshCommand)

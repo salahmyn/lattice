@@ -16,6 +16,8 @@ invariants:
   - id: INV-3
     statement: A build without link-time version flags reports the module version and the commit, time and modified state the Go toolchain embedded; values set at link time are never replaced.
   - id: INV-4
-    statement: refresh builds the block graph from the feature manifests extract loads, nested directories included, so it warns about a flow step exactly when validate reports it as PHANTOM_FLOW.
+    statement: A preflight refuses break, runs-clean or demonstrate before any step runs, exiting 2 with every problem found (code, config key, fix) when a declared executable, runner dir, Node minimum, Docker daemon or service is missing or unmet, or break's tree is dirty; check only notes its break.runners problems; --no-preflight skips it.
   - id: INV-5
+    statement: refresh builds the block graph from the feature manifests extract loads, nested directories included, so it warns about a flow step exactly when validate reports it as PHANTOM_FLOW.
+  - id: INV-6
     statement: export map and serve draw the block graph rebuilt from the workspace's inputs, writing only the block graph in the store and only when it changed; when it cannot be rebuilt they draw the stored graph and say why.

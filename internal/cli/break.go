@@ -7,10 +7,12 @@ import (
 	"errors"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/salahmyn/lattice/internal/preflight"
 	"github.com/salahmyn/lattice/pkg/lattice/breaktest"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
@@ -19,7 +21,7 @@ import (
 func newBreakCommand(io *IO) *cobra.Command {
 	var promise, feature, failsOnBase string
 	var timeout time.Duration
-	var allowDirty bool
+	var allowDirty, noPreflight bool
 	cmd := &cobra.Command{
 		Use:   "break",
 		Short: "Break each promise's enforcer and see whether its verifiers notice",
@@ -58,16 +60,19 @@ func newBreakCommand(io *IO) *cobra.Command {
 			"unknown: it does not pass at head, does not compile on base (an API it calls is\n" +
 			"new), has no runner, timed out or did not run; unknown is never a pass. The\n" +
 			"result is written to lattice/.cache/results/fails-on-base.json, and lattice\n" +
-			"check --base adds a note (never a gap) for a verifier that passes on base.",
+			"check --base adds a note (never a gap) for a verifier that passes on base.\n" +
+			"\n" +
+			"A preflight runs first, before the graph is built, and takes seconds: the\n" +
+			"executables of break.setup, break.runners and break.commands are on PATH,\n" +
+			"each runner's dir exists, a Node minimum declared in package.json\n" +
+			"engines.node is met, the Docker daemon answers for a command that runs\n" +
+			"docker, each break.services address answers on TCP, and the tree is clean\n" +
+			"(unless --allow-dirty). It reports every problem at once (code, config\n" +
+			"key, fix) and exits 2 before anything runs. --no-preflight skips it.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			kg, ws, err := graphFor(io, cmd, false)
+			ws, err := openWorkspace(io)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
-			}
-			if _, _, isCase := schema.SplitCaseRef(promise); isCase {
-				if _, ok := breaktest.FindCase(kg, promise); !ok {
-					return io.fail("CASE_NOT_FOUND", "no acceptance case "+promise+" (use <feature>:INV-n#<case>)", nil)
-				}
 			}
 			cfg, err := config.Load(ws.LatticeDir)
 			if err != nil {
@@ -77,6 +82,26 @@ func newBreakCommand(io *IO) *cobra.Command {
 			// An interrupt stops the run; the worktree is removed on the way out.
 			ctx, stop := signal.NotifyContext(commandContext(cmd), os.Interrupt)
 			defer stop()
+
+			if !noPreflight {
+				var dirty []preflight.Problem
+				if !allowDirty {
+					dirty = dirtyProblem(ctx, ws)
+				}
+				reqs := preflight.Break(cfg.Break, filepath.Dir(ws.LatticeDir))
+				if err := runPreflight(ctx, io, "break", reqs, dirty...); err != nil {
+					return err
+				}
+			}
+			kg, err := buildGraph(ctx, ws, false)
+			if err != nil {
+				return io.fail("EXTRACT_FAILED", err.Error(), nil)
+			}
+			if _, _, isCase := schema.SplitCaseRef(promise); isCase {
+				if _, ok := breaktest.FindCase(kg, promise); !ok {
+					return io.fail("CASE_NOT_FOUND", "no acceptance case "+promise+" (use <feature>:INV-n#<case>)", nil)
+				}
+			}
 
 			opts := breaktest.Options{
 				Promise:    promise,
@@ -120,6 +145,7 @@ func newBreakCommand(io *IO) *cobra.Command {
 	cmd.Flags().StringVar(&feature, "feature", "", "break the promises of one feature")
 	cmd.Flags().DurationVar(&timeout, "timeout", 120*time.Second, "timeout for each test run (a timeout reads unknown)")
 	cmd.Flags().BoolVar(&allowDirty, "allow-dirty", false, "test a working tree with uncommitted changes")
+	cmd.Flags().BoolVar(&noPreflight, "no-preflight", false, noPreflightUsage)
 	cmd.Flags().StringVar(&failsOnBase, "fails-on-base", "", "run the new and changed verifiers on the code of merge-base(<rev>, HEAD) instead of breaking")
 	return cmd
 }

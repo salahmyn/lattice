@@ -231,7 +231,7 @@ func TestLoopbackRefusesForeignHost(t *testing.T) {
 
 // With BlockGraph set, /api/graph draws the graph it gives, under the store
 // lock, and carries its refresh note beside the lens.
-// @verifies cli:INV-5
+// @verifies cli:INV-6
 func TestBlockMapDrawsTheRebuiltGraph(t *testing.T) {
 	ws := &workspace.Workspace{LatticeDir: t.TempDir()}
 	st := store.OpenFiles(ws)

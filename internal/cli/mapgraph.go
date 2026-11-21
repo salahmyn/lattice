@@ -21,7 +21,7 @@ import (
 // refresh writes, and nothing else is. When it cannot be built, the stored
 // graph is drawn as it is and the note says why and what to do. Only an
 // unreadable store is an error.
-// @enforces cli:INV-5
+// @enforces cli:INV-6
 func mapGraph(ctx context.Context, ws *workspace.Workspace, st store.Store) (store.Graph, *ui.MapRefresh, error) {
 	old, err := st.Graph(ctx)
 	if err != nil {

@@ -373,5 +373,16 @@
       }
     ]
   },
+  "preflight": {
+    "text": "the break.runners commands the test listing names may not run here (1 problem); this never changes the verdict, the merge rule or the exit code",
+    "problems": [
+      {
+        "code": "EXEC_NOT_FOUND",
+        "key": "break.runners[0].command",
+        "detail": "vitest is not on PATH",
+        "next": "install vitest or put it on PATH, or change break.runners[0].command"
+      }
+    ]
+  },
   "note": "UNPROVEN is not a pass: it means nothing fell and something is not shown. Unknown is never a pass; only CI's verdict counts."
 }
