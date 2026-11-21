@@ -40,7 +40,15 @@
     "by_kind": {
       "fake:passes_when_broken": 1
     },
-    "fakes": 1
+    "fakes": 1,
+    "entrypoint": {
+      "proven": 0,
+      "none": 0,
+      "unknown": 1,
+      "unknown_by": {
+        "no_call_graph": 1
+      }
+    }
   },
   "note": "confirmed is a fact about the approval record (who signed which version), not proof the promise is the right one. Only break_tested and exercised are positive; unknown is never a pass.",
   "rows": [
@@ -275,7 +283,18 @@
           "reason": "breaking it (early_return) made the verifiers fail",
           "layer": "data"
         }
-      ]
+      ],
+      "entrypoint": {
+        "outcome": "unknown",
+        "cause": "no_call_graph",
+        "reason": "no call graph was read, so no way in can be named for f.Second",
+        "enforcers": [
+          "f.Second"
+        ],
+        "killers": [
+          "f.TestTwo"
+        ]
+      }
     }
   ]
 }

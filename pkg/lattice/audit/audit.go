@@ -178,6 +178,11 @@ type Row struct {
 	// Cases are the invariant's acceptance cases, each with the coverage
 	// the audit computed for it. They never change Class.
 	Cases []CaseRow `json:"cases,omitempty"`
+	// EntryPoint is the entry-point proof of a break-tested promise: whether
+	// a verifier that killed a break ran the enforcer through a way in. It is
+	// set only when a break killed an enforcer, and never changes Class or
+	// the break_tested signal.
+	EntryPoint *EntryProof `json:"entrypoint,omitempty"`
 }
 
 // Summary counts the rows.
@@ -187,6 +192,9 @@ type Summary struct {
 	// ByKind counts "<class>:<kind>" for rows that have a kind.
 	ByKind map[string]int `json:"by_kind,omitempty"`
 	Fakes  int            `json:"fakes"`
+	// EntryPoint counts the break-tested promises by entry-point proof; absent
+	// when no promise has one.
+	EntryPoint *EntryPointSummary `json:"entrypoint,omitempty"`
 }
 
 // Report is the audit: lattice.audit/1.
@@ -269,6 +277,12 @@ type Sources struct {
 	// Confirm is lattice/.cache/confirm.json; nil reads "no confirm data".
 	Confirm *ConfirmData
 	Notes   []Note
+	// Calls is the resolved call graph, for the entry-point proof. nil reads
+	// "no call graph": every proof is unknown, never none.
+	Calls *CallGraph
+	// VerifierLines is verifier-lines.json when it is of this tree; nil when
+	// absent or of another tree.
+	VerifierLines *lines.File
 	// Stamps describe the evidence files; Collect sets them.
 	Stamps Inputs
 	Dirty  bool
@@ -330,12 +344,16 @@ func Compute(src Sources) Report {
 	}
 
 	tagged := caseVerifiers(kg)
+	entry := newProver(src, symbols)
 
 	rep.Rows = make([]Row, 0, len(refs))
 	for _, ref := range refs {
 		inv := statements[ref]
 		r := buildRow(ref, featureOf[ref], inv, rtmRows[ref], src, symbols, testFile, breaks, brdMap[ref])
 		r.Notes = notesBy[ref]
+		if r.Signals.BreakTested.Value == "killed" {
+			r.EntryPoint = entry.proveRow(ref, verifierFQNs(r), r.Evidence.Breaks)
+		}
 		r.Cases = caseRows(ref, inv, tagged[ref], src.Results, rtmRows[ref].Enforcers, breaks)
 		caseConfirmations(r.Cases, brdMap[ref], ref, src.Confirm)
 		rep.Rows = append(rep.Rows, r)
@@ -662,6 +680,7 @@ func summarize(rows []Row) Summary {
 		}
 	}
 	s.Fakes = s.ByClass[ClassFake]
+	s.EntryPoint = tallyEntryPoints(rows)
 	if len(s.ByKind) == 0 {
 		s.ByKind = nil
 	}

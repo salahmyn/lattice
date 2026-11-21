@@ -19,6 +19,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/salahmyn/lattice/pkg/lattice/coverage"
+	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
 // FileSchema is the version tag of verifier-lines.json.
@@ -178,4 +181,20 @@ func Expand(s string) []int {
 		}
 	}
 	return out
+}
+
+// RanSymbol reports whether this file's hit lines include a line of the
+// symbol's own body, by the rule the line levels use (the lines after its
+// declaration, or its one line when the format never marks a declaration as
+// run). known is false when the data says nothing about the symbol: its
+// lines are not among the instrumented ones, or it has no extent.
+func (fl FileLines) RanSymbol(s schema.GraphSymbol) (ran, known bool) {
+	if s.File == "" || s.EndLine <= 0 {
+		return false, false
+	}
+	cov := coverage.Of(fileDataOf(fl).report(s.File), s, nil)
+	if !cov.Known || cov.Lines == 0 {
+		return false, false
+	}
+	return len(cov.HitLines()) > 0, true
 }

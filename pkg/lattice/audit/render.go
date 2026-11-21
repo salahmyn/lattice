@@ -135,6 +135,9 @@ func WriteText(w io.Writer, r Report) {
 		fmt.Fprintf(w, "  (no invariants)\n")
 		return
 	}
+	if ep := r.Summary.EntryPoint; ep != nil {
+		fmt.Fprintf(w, "\n%s\n", ep.Line())
+	}
 	fmt.Fprintf(w, "\n%-18s %-26s %-20s %-9s %s\n", "class", "promise", "kind", "confirmed", "reason")
 	fmt.Fprintf(w, "%s\n", strings.Repeat("-", 110))
 	for _, row := range r.Rows {
@@ -144,6 +147,9 @@ func WriteText(w io.Writer, r Report) {
 			for _, e := range row.Enforcers {
 				fmt.Fprintf(w, "%-18s enforcer %-9s %s%s: %s\n", "", e.Outcome, e.Symbol, at(e.File, e.Line), e.Reason)
 			}
+		}
+		if ep := row.EntryPoint; ep != nil {
+			fmt.Fprintf(w, "%-18s entry point %-10s %s\n", "", ep.Outcome, ep.Reason)
 		}
 		for _, n := range row.Notes {
 			fmt.Fprintf(w, "%-18s second reader %s: %s %s\n", "", n.Reader, n.Verdict, n.Note)
@@ -204,6 +210,16 @@ func WriteMarkdown(w io.Writer, r Report) {
 		for _, row := range r.Rows {
 			fmt.Fprintf(w, "| `%s` | %s | %s | %s | %s |\n", row.Promise, row.Class, row.Kind,
 				mdCell(ConfirmedText(row)), mdCell(row.Reason))
+		}
+	}
+
+	if ep := r.Summary.EntryPoint; ep != nil {
+		fmt.Fprintf(w, "\n### Entry-point proof\n\n%s. Only `entrypoint` shows a verifier that killed a break ran the enforcer through a way in; `none` raises `BREAK_NO_ENTRYPOINT` (info); `unknown` raises nothing.\n\n", ep.Line())
+		fmt.Fprintf(w, "| Promise | Entry point | Reason |\n|---|---|---|\n")
+		for _, row := range r.Rows {
+			if row.EntryPoint != nil {
+				fmt.Fprintf(w, "| `%s` | %s | %s |\n", row.Promise, row.EntryPoint.Outcome, mdCell(row.EntryPoint.Reason))
+			}
 		}
 	}
 

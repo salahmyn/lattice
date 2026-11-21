@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 
+	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm"
 	"github.com/salahmyn/lattice/pkg/lattice/coverage"
@@ -139,6 +140,11 @@ type Options struct {
 	// VERIFIED_LINES_BELOW_FLOOR does not fire.
 	Lines *lines.Report
 
+	// Audit is the audit report, computed by the caller when breaks.json is
+	// present. It carries the entry-point proof BREAK_NO_ENTRYPOINT is raised
+	// from; nil means none, and the rule does not fire.
+	Audit *audit.Report
+
 	// Reach is the classified call graph (rnd/0009, phase 2). nil means
 	// none was built: no reachability finding fires, and FEATURE_UNREACHED
 	// keeps its flow-based rule.
@@ -210,6 +216,7 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 			// rnd/0009 — coverage findings, only on ingested data.
 			v = append(v, coverage.Findings(kg, c.opts.Coverage, cfg.CoverageConfig())...)
 			v = append(v, lines.Findings(c.opts.Lines, cfg.CoverageConfig().Floors.VerifiedLines, featureLocations(kg))...)
+			v = append(v, audit.EntryPointFindings(c.opts.Audit, featureLocations(kg))...)
 			// rnd/0009 phase 2 — reachability and suite overlap, off until
 			// enabled in validate.severity.
 			var ran reach.Executed

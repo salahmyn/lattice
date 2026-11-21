@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm"
 	"github.com/salahmyn/lattice/pkg/lattice/flags"
@@ -77,11 +78,18 @@ func newValidateCommand(io *IO) *cobra.Command {
 			activeLeases, _ := lease.Active(ws.LatticeDir, time.Now())
 			entries, _ := ledger.Load(ws.LatticeDir)
 
+			dirty, _ := gitDirty(filepath.Dir(ws.LatticeDir), ws.LatticeDir)
 			var linesRep *lines.Report
 			if cfg.CoverageConfig().Floors.VerifiedLinesDeclared() {
-				dirty, _ := gitDirty(filepath.Dir(ws.LatticeDir), ws.LatticeDir)
 				lr := linesReport(ws, kg, cfg, rr, dirty)
 				linesRep = &lr
+			}
+			// The entry-point proof reads break runs, so the audit is computed
+			// only when there is a breaks.json.
+			var auditRep *audit.Report
+			if _, present, _ := audit.LoadBreaks(ws.LatticeDir); present {
+				ar := computeAudit(ws, kg, rr, dirty)
+				auditRep = &ar
 			}
 			violations := validate.Validate(kg, cfg, validate.Options{
 				ReviewMode:    ws.Review,
@@ -94,6 +102,7 @@ func newValidateCommand(io *IO) *cobra.Command {
 				FlagsOf:       flagReasons(flags.OpenByUnit(ws.LatticeDir)),
 				Coverage:      coverageIndex(ws, kg),
 				Lines:         linesRep,
+				Audit:         auditRep,
 				Reach:         rr,
 				Confirm:       confirm.LoadCache(ws.LatticeDir),
 				Tracked:       trackedDerived(ws.LatticeDir),

@@ -155,6 +155,7 @@ const (
 	// β — entry-point journey coverage.
 	CodeFeatureUnreached     = "FEATURE_UNREACHED"      // production feature on no entry-point flow
 	CodeScenarioNoEntryPoint = "SCENARIO_NO_ENTRYPOINT" // scenario verified only at pure-logic altitude
+	CodeBreakNoEntryPoint    = "BREAK_NO_ENTRYPOINT"    // a break-tested promise whose killing verifiers ran no way in (info)
 	CodeEntryPointParse      = "ENTRYPOINT_PARSE_ERROR" // a persisted entry-point file could not be used
 
 	// γ — demonstration (ingested test results).

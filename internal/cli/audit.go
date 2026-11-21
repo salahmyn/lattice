@@ -79,7 +79,7 @@ gains a lines section (lattice.audit-lines/1). --feature, --promise and
 				return io.fail("AUDIT_BAD_CLASS", "unknown class "+class, map[string]interface{}{"classes": audit.Classes})
 			}
 			dirty, _ := gitDirty(filepath.Dir(ws.LatticeDir), ws.LatticeDir)
-			rep := audit.Compute(audit.Collect(ws.LatticeDir, kg, dirty))
+			rep := computeAudit(ws, kg, rr, dirty)
 			ids := splitPromises(promises)
 			if unknown := rep.UnknownPromises(ids); len(unknown) > 0 {
 				return usageError(io, "AUDIT_UNKNOWN_PROMISE", "unknown promise "+strings.Join(unknown, ", ")+" (want <feature>:INV-n, as listed by lattice audit)")

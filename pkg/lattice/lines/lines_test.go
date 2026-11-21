@@ -442,3 +442,26 @@ func TestWholeBlockKillCreditsNoLine(t *testing.T) {
 		t.Errorf("survived: whole %q", b.Whole)
 	}
 }
+
+// RanSymbol reads a symbol's own body lines: a hit among them is a run, an
+// instrumented body with no hit is known not to have run, and a file that
+// lists none of the body says nothing.
+// @verifies audit:INV-11
+func TestFileLinesRanSymbol(t *testing.T) {
+	sym := schema.GraphSymbol{FQN: "m.F", File: "f.go", Line: 10, EndLine: 14}
+	for name, c := range map[string]struct {
+		fl         FileLines
+		sym        schema.GraphSymbol
+		ran, known bool
+	}{
+		"body hit":         {FileLines{Instrumented: "11-13", Hit: "12"}, sym, true, true},
+		"body not hit":     {FileLines{Instrumented: "11-13", Hit: "20"}, sym, false, true},
+		"declaration only": {FileLines{Instrumented: "10-13", Hit: "10"}, sym, false, true},
+		"no body listed":   {FileLines{Instrumented: "30-33", Hit: "31"}, sym, false, false},
+		"no extent":        {FileLines{Instrumented: "11-13", Hit: "12"}, schema.GraphSymbol{FQN: "m.F", File: "f.go", Line: 10}, false, false},
+	} {
+		if ran, known := c.fl.RanSymbol(c.sym); ran != c.ran || known != c.known {
+			t.Errorf("%s: ran=%v known=%v, want %v %v", name, ran, known, c.ran, c.known)
+		}
+	}
+}
