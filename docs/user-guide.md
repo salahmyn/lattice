@@ -372,6 +372,60 @@ Four new validation rules surface entry-point integrity issues:
 names a non-existent feature; its next action names the entry point),
 and `HANDLER_MISSING` (handler FQN not in the IR).
 
+### Proposed entry points from what the runtime invokes
+
+Some code runs because the platform calls it, with no route file or
+command table to detect: a Deno `serve` / `Deno.serve` handler, a
+`cron.schedule` job in a SQL migration, a route registered in TypeScript
+(`app.get('/orders', listOrders)`). `lattice extract` turns each of these
+that no declared or detected entry point covers into a **proposed entry
+point** (`status: proposal`) and records the fact that produced it in
+`detected_by`. Proposals are derived: extract recomputes them every run and
+writes nothing to `lattice/entry-points/`, so `lattice ep list`, the views
+and `validate` see them, and a root that moves simply stops being proposed.
+Accepting one writes this manifest:
+
+```yaml
+id: ep.cron.nightly_x
+version: 1
+status: proposal
+kind: cron
+trigger:
+  schedule: 0 3 * * *
+  job: nightly-x
+handler:
+  symbol: sql.cron.nightly_x
+  file: supabase/migrations/001_reports.sql
+  line: 4
+detected_by: runtime_root:cron
+```
+
+A `serve` handler takes kind `http_route`; a cron job takes kind `cron`
+with its schedule and job name when they are string literals. Proposals are
+never promoted by themselves: `lattice ep accept <id>` writes its manifest
+with `status: production` (the flow stays derived), and `lattice ep reject
+<id>` writes it straight into `.rejected/` so extract does not propose it
+again. Nothing is written until you accept or reject; a manifest that
+already exists is never rewritten.
+
+The flow of a proposal comes from the call graph, not from file proximity:
+one step per feature with a symbol the handler reaches through resolved
+calls, sorted by feature, each step marked `basis: reach` with the symbols
+it reached in `via_symbols`. A feature that sits beside the handler but is
+never called gets no step. A step found by module proximity (the laravel
+tracer) is marked `basis: proximity`.
+
+A root that cannot become an entry point is not dropped silently. A route
+whose handler is not a symbol of the graph (an inline function, a name the
+module neither defines nor imports), and a cron job whose name or schedule
+is an expression, each raise `RUNTIME_ROOT_UNPROPOSED` (info), with the
+file and line. Name the handler as a function, write the job as literals, or
+declare the entry point yourself in `lattice/entry-points/`.
+
+```
+info  RUNTIME_ROOT_UNPROPOSED  the cron job at supabase/migrations/002_dynamic.sql:2 has a computed name or schedule, so it has no stable key and cannot be proposed as an entry point
+```
+
 ---
 
 ## 4c. The web UI (v0.4.0)

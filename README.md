@@ -214,7 +214,7 @@ A complete, validating three-language example lives in
 | `lattice brd from-code <feature-id>` | LLM-regenerate a BRD from a feature (brownfield) |
 | `lattice feature show <id>` | Show one feature + reverse links, with each invariant's cases, their coverage and their confirmation |
 | `lattice feature spec <id>` | Emit the ≤500-word `.ai-spec.md` loading contract |
-| `lattice ep list\|show\|accept\|reject` | Manage entry points |
+| `lattice ep list\|show\|accept\|reject` | Manage entry points, including the proposals `extract` makes from `serve` handlers, cron jobs and detected routes |
 | `lattice initiative list\|show\|kanban\|critical-path` | Inspect work in flight |
 | `lattice initiative add\|evidence\|status` | Record a proposal, attach its `evidence/v1`, move its status |
 | `lattice import scan\|review\|inscribe` | Brownfield import session |

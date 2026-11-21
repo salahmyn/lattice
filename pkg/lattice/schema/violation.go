@@ -76,6 +76,10 @@ const (
 	CodeHandlerMissing         = "HANDLER_MISSING"          // EP handler symbol not in IR
 	CodeDuplicateTrigger       = "DUPLICATE_TRIGGER"        // two EPs share (kind, trigger)
 	CodePhantomFlow            = "PHANTOM_FLOW"             // flow step names a non-existent feature
+	// A runtime root (a serve handler, a cron job, a detected route) that
+	// cannot become an entry point: its handler is not in the graph, or its
+	// key is computed (info).
+	CodeRuntimeRootUnproposed = "RUNTIME_ROOT_UNPROPOSED"
 
 	// BRD integrity (v0.5.0)
 	//

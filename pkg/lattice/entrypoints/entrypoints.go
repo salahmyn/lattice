@@ -92,7 +92,7 @@ func DetectAll(ctx context.Context, ws *workspace.Workspace, modules []ir.Module
 
 // triggerKey hashes the trigger to a stable string for dedup.
 func triggerKey(t schema.Trigger) string {
-	return t.Method + " " + t.Path + " " + t.Schedule + " " + t.Queue + " " + t.Event + " " + t.Command
+	return t.Method + " " + t.Path + " " + t.Schedule + " " + t.Job + " " + t.Queue + " " + t.Event + " " + t.Command
 }
 
 // ResetForTest clears the registry. Test-only.

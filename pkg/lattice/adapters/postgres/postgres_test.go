@@ -243,3 +243,32 @@ func TestImpliedFeature(t *testing.T) {
 		}
 	}
 }
+
+// A cron.schedule job records its name and schedule when they are string
+// literals, and says so when either is an expression.
+func TestCronJobLiterals(t *testing.T) {
+	mod := parse(t, New(nil, nil), "db/jobs.sql", `select cron.schedule('nightly-x', '0 3 * * *', $$ select 1 $$);
+select cron.schedule('0 4 * * *', $$ select 2 $$);
+select cron.schedule(job_name, '*/5 * * * *', $$ select 3 $$);
+select cron.schedule('every-min', sched, $$ select 4 $$);
+`)
+	type job struct {
+		job, schedule string
+		computed      bool
+	}
+	var got []job
+	for _, n := range mod.Nodes {
+		if n.Kind == ir.NodeCron {
+			got = append(got, job{n.Job, n.Schedule, n.KeyComputed})
+		}
+	}
+	want := []job{{"nightly-x", "0 3 * * *", false}, {"", "0 4 * * *", false}, {"", "*/5 * * * *", true}, {"every-min", "", true}}
+	if len(got) != len(want) {
+		t.Fatalf("cron nodes = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("job %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}

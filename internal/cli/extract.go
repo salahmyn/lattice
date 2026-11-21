@@ -227,6 +227,13 @@ func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOpt
 		LanguageIndexes: indexPaths(reg.Names()),
 	})
 
+	// The call graph is built once: runtime roots become proposed entry
+	// points below, and the same graph is classified at the end.
+	var callGraph *reach.Graph
+	if !ws.Review && !res.Review {
+		callGraph = reach.Build(res.Modules, reach.Options{SCIP: scipByLanguage(ws, reg.Names())})
+	}
+
 	// v0.3.0 entry-point detection + v0.3.1 SCIP/persistence/labeling.
 	// Skipped in review mode (no source to walk).
 	if !ws.Review {
@@ -249,6 +256,22 @@ func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOpt
 					NextAction: &schema.NextAction{Kind: "edit_entry_point",
 						Detail: "fix the YAML (quote a value that contains \": \") so the entry point reaches the graph"},
 				})
+			}
+			// Runtime roots (serve handlers, cron jobs, detected routes) that
+			// no entry point covers become proposals, with the flow their
+			// handler reaches. They are derived on every extract and written
+			// to disk only when a reviewer accepts or rejects one.
+			var proposals []schema.EntryPoint
+			if callGraph != nil {
+				proposals = entrypoints.ProposeFromRuntime(entrypoints.RuntimeInput{
+					Roots:    callGraph.RuntimeRoots(),
+					Known:    append(append([]schema.EntryPoint(nil), detected...), persisted...),
+					Reach:    callGraph,
+					Symbols:  kg.Symbols,
+					Features: kg.Features,
+					Rejected: func(id string) bool { return entrypoints.IsRejected(ws.EntryPointsDir(), id) },
+				})
+				detected = append(detected, proposals...)
 			}
 			merged := entrypoints.Merge(detected, persisted)
 
@@ -296,6 +319,7 @@ func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOpt
 			CodeRoots:   reachCodeRoots(ws),
 			Declared:    cfg.CoverageConfig().Roots,
 			SCIP:        scipByLanguage(ws, reg.Names()),
+			Graph:       callGraph,
 		})
 		reach.Annotate(&kg, rr)
 	}

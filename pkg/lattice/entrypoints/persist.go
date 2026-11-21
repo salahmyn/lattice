@@ -102,7 +102,7 @@ func SaveEntryPoint(entryPointsDir string, ep schema.EntryPoint) (string, error)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
 	}
-	data, err := yaml.Marshal(ep)
+	data, err := schema.MarshalCanonical(ep)
 	if err != nil {
 		return "", err
 	}

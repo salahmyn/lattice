@@ -64,11 +64,17 @@ type Input struct {
 	Declared    []config.CoverageRoot
 	// SCIP maps a language to its index, when one exists.
 	SCIP map[string]*scip.Corpus
+	// Graph is the call graph of Modules, when the caller already built it
+	// (Build with the same SCIP indexes); Compute builds one otherwise.
+	Graph *Graph
 }
 
 // Compute builds, roots and classifies the call graph in one call.
 func Compute(in Input) *Result {
-	g := Build(in.Modules, Options{SCIP: in.SCIP})
+	g := in.Graph
+	if g == nil {
+		g = Build(in.Modules, Options{SCIP: in.SCIP})
+	}
 	ri := RootInput{EntryPoints: in.EntryPoints, EntryFiles: EntryFiles(in.CodeRoots, in.Modules), Declared: in.Declared}
 	roots := g.Roots(ri)
 	sort.SliceStable(roots, func(i, j int) bool { return roots[i].FQN < roots[j].FQN })

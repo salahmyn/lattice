@@ -8,15 +8,19 @@ package schema
 // the call graph. Together they form the second axis of the knowledge
 // graph: features describe meaning, entry points describe invocation.
 type EntryPoint struct {
-	ID      string     `yaml:"id" json:"id"`
-	Version int        `yaml:"version" json:"version"`
-	Status  Status     `yaml:"status" json:"status"` // proposal | production | deprecated
-	Kind    string     `yaml:"kind" json:"kind"`     // see EntryPointKind* constants
-	Purpose string     `yaml:"purpose,omitempty" json:"purpose,omitempty"`
-	Owners  Owners     `yaml:"owners,omitempty" json:"owners,omitempty"`
-	Trigger Trigger    `yaml:"trigger" json:"trigger"`
-	Handler Handler    `yaml:"handler" json:"handler"`
-	Flow    []FlowStep `yaml:"flow,omitempty" json:"flow,omitempty"`
+	ID      string  `yaml:"id" json:"id"`
+	Version int     `yaml:"version" json:"version"`
+	Status  Status  `yaml:"status" json:"status"` // proposal | production | deprecated
+	Kind    string  `yaml:"kind" json:"kind"`     // see EntryPointKind* constants
+	Purpose string  `yaml:"purpose,omitempty" json:"purpose,omitempty"`
+	Owners  Owners  `yaml:"owners,omitempty" json:"owners,omitempty"`
+	Trigger Trigger `yaml:"trigger" json:"trigger"`
+	Handler Handler `yaml:"handler" json:"handler"`
+	// DetectedBy names the fact that produced a proposed entry point, such
+	// as "runtime_root:serve", "runtime_root:cron" or "surface:http". Empty
+	// for an entry point a detector or a person wrote.
+	DetectedBy string     `yaml:"detected_by,omitempty" json:"detected_by,omitempty"`
+	Flow       []FlowStep `yaml:"flow,omitempty" json:"flow,omitempty"`
 	// SideEffects is what this entry point causes the system to do
 	// (writes, network calls, queue publishes). Populated by the flow
 	// tracer.
@@ -49,6 +53,8 @@ type Trigger struct {
 	Middleware []string `yaml:"middleware,omitempty" json:"middleware,omitempty"`
 	// Scheduled / cron field.
 	Schedule string `yaml:"schedule,omitempty" json:"schedule,omitempty"`
+	// Job is the name of a scheduled job, where the source gives one.
+	Job string `yaml:"job,omitempty" json:"job,omitempty"`
 	// Queue / event_consumer fields.
 	Queue string `yaml:"queue,omitempty" json:"queue,omitempty"`
 	Event string `yaml:"event,omitempty" json:"event,omitempty"`
@@ -74,7 +80,18 @@ type FlowStep struct {
 	// the previous step (or the handler) and this feature — debugging
 	// breadcrumb, not for end-user views.
 	ViaSymbols []string `yaml:"via_symbols,omitempty" json:"via_symbols,omitempty"`
+	// Basis says how the step was found: FlowBasisReach (the handler reaches
+	// a symbol of the feature through the call graph) or FlowBasisProximity
+	// (the feature shares the handler's class, file or directory). Empty on
+	// a step written before the field existed.
+	Basis string `yaml:"basis,omitempty" json:"basis,omitempty"`
 }
+
+// Flow step bases (FlowStep.Basis).
+const (
+	FlowBasisReach     = "reach"
+	FlowBasisProximity = "proximity"
+)
 
 // SideEffect is something the entry point causes the system to do. The
 // flow tracer recognises common patterns (Eloquent persistence, Guzzle

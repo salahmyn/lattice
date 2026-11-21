@@ -3,7 +3,10 @@ package cli
 // @module-feature cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"sort"
 	"strings"
@@ -13,12 +16,13 @@ import (
 
 	"github.com/salahmyn/lattice/pkg/lattice/entrypoints"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
+	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
 // newEPCommand is the v0.3.2 review-loop surface for entry points.
-// Reframing: EPs are auto-persisted as `status: proposal` by
-// `lattice extract`, then a reviewer accepts (status -> production)
-// or rejects (file -> .rejected/). No parallel CandidatesFile model
+// Reframing: proposals are derived by `lattice extract` (nothing is written
+// for runtime roots), and a reviewer accepts (a production manifest is
+// written) or rejects (the manifest goes to .rejected/). No parallel CandidatesFile model
 // for the invocation axis — the on-disk YAML is the queue.
 func newEPCommand(io *IO) *cobra.Command {
 	cmd := &cobra.Command{
@@ -48,6 +52,7 @@ func newEPListCommand(io *IO) *cobra.Command {
 			if err != nil {
 				return io.fail("EP_LIST_FAILED", err.Error(), nil)
 			}
+			eps = append(eps, derivedProposals(io, ws, eps)...)
 			filtered := eps[:0:0]
 			for _, ep := range eps {
 				if statusFilter != "" && string(ep.Status) != statusFilter {
@@ -88,7 +93,11 @@ func newEPShowCommand(io *IO) *cobra.Command {
 			}
 			ep, err := loadOneEP(ws.EntryPointsDir(), args[0])
 			if err != nil {
-				return io.fail("EP_NOT_FOUND", err.Error(), nil)
+				d, ok := derivedProposal(io, ws, args[0])
+				if !ok {
+					return io.fail("EP_NOT_FOUND", err.Error(), nil)
+				}
+				ep = d
 			}
 			if io.JSON {
 				return io.printJSON(ep)
@@ -145,6 +154,12 @@ func runEPDecision(io *IO, id, decision string) error {
 		return io.fail("NO_WORKSPACE", err.Error(), nil)
 	}
 	res, err := entrypoints.Decide(ws.EntryPointsDir(), id, decision)
+	if errors.Is(err, fs.ErrNotExist) {
+		// No manifest: the id may be a proposal derived from a runtime root.
+		if ep, ok := derivedProposal(io, ws, id); ok {
+			res, err = entrypoints.DecideDerived(ws.EntryPointsDir(), ep, decision)
+		}
+	}
 	if err != nil {
 		return io.fail("EP_DECIDE_FAILED", err.Error(), nil)
 	}
@@ -159,6 +174,35 @@ func runEPDecision(io *IO, id, decision string) error {
 			strings.Replace(res.ArchivedAt, ".rejected/", "", 1))
 	}
 	return nil
+}
+
+// derivedProposals returns the proposals the call graph derives from runtime
+// roots (detected_by set) that have no manifest on disk, built read-only.
+func derivedProposals(io *IO, ws *workspace.Workspace, onDisk []schema.EntryPoint) []schema.EntryPoint {
+	kg, err := buildGraphWith(context.Background(), ws, buildOptions{readOnly: true})
+	if err != nil {
+		return nil
+	}
+	have := map[string]bool{}
+	for _, ep := range onDisk {
+		have[ep.ID] = true
+	}
+	var out []schema.EntryPoint
+	for _, ep := range kg.EntryPoints {
+		if ep.DetectedBy != "" && ep.Status == schema.StatusProposal && !have[ep.ID] {
+			out = append(out, ep)
+		}
+	}
+	return out
+}
+
+func derivedProposal(io *IO, ws *workspace.Workspace, id string) (schema.EntryPoint, bool) {
+	for _, ep := range derivedProposals(io, ws, nil) {
+		if ep.ID == id {
+			return ep, true
+		}
+	}
+	return schema.EntryPoint{}, false
 }
 
 func loadOneEP(dir, id string) (schema.EntryPoint, error) {

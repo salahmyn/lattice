@@ -17,3 +17,7 @@ invariants:
     statement: A rejected entry point is archived and no longer contributes to the graph.
   - id: INV-4
     statement: Laravel route groups and mounts prefix the routes they contain.
+  - id: INV-5
+    statement: Every root the runtime invokes is an entry point or a named finding.
+  - id: INV-6
+    statement: A flow step exists only when the handler reaches a symbol of that feature, or it is labelled proximity.

@@ -218,12 +218,19 @@ func cronNode(mod *ir.Module, st statement) (ir.Node, bool) {
 		return ir.Node{}, false
 	}
 	args := callArgs(st.text[loc[0]:])
-	var name, command string
+	var name, command, schedule string
+	computed := false
 	switch len(args) {
 	case 2:
 		command = args[1]
+		schedule, computed = literalOrComputed(args[0])
 	case 3:
-		name, _ = stringLiteral(args[0])
+		var named bool
+		name, named = stringLiteral(args[0])
+		computed = !named
+		var sched bool
+		schedule, sched = stringLiteral(args[1])
+		computed = computed || !sched
 		command = args[2]
 	default:
 		return ir.Node{}, false
@@ -234,9 +241,17 @@ func cronNode(mod *ir.Module, st statement) (ir.Node, bool) {
 	} else if tag, ok := dollarTag(strings.TrimSpace(command)); ok {
 		body = strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(command), tag), tag)
 	}
-	n := ir.Node{FQN: cronFQN(name, mod.File, st.line), Kind: ir.NodeCron, Root: "cron", Line: st.line}
+	n := ir.Node{FQN: cronFQN(name, mod.File, st.line), Kind: ir.NodeCron, Root: "cron", Line: st.line,
+		Job: name, Schedule: schedule, KeyComputed: computed}
 	n.Refs = callRefs(statement{text: body, line: st.line}, true)
 	return n, true
+}
+
+// literalOrComputed returns a string literal's value, or "" and true when
+// the argument is an expression.
+func literalOrComputed(arg string) (string, bool) {
+	lit, ok := stringLiteral(arg)
+	return lit, !ok
 }
 
 // cronFQN names a cron job: sql.cron.<job>, or for an unnamed job its file
