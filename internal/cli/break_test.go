@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -498,5 +499,202 @@ func TestBreakOneCase(t *testing.T) {
 	}
 	if _, out, err := runBreak(t, dir, "--promise", "guard:INV-1#z"); err == nil || !strings.Contains(out, "CASE_NOT_FOUND") {
 		t.Errorf("an unknown case must be refused: %v\n%s", err, out)
+	}
+}
+
+// breakResult is one `lattice break` invocation: its exit code, its output
+// and, with --json, the document it printed.
+type breakResult struct {
+	code     int
+	out, err string
+	doc      struct {
+		breaktest.Report
+		Summary breakSummary `json:"summary"`
+		Error   string       `json:"error"`
+		Code    string       `json:"code"`
+	}
+}
+
+func runBreakExit(t *testing.T, dir string, jsonOut bool, args ...string) breakResult {
+	t.Helper()
+	var out, errOut bytes.Buffer
+	io := &IO{Repo: dir, JSON: jsonOut, Out: &out, Err: &errOut}
+	cmd := newBreakCommand(io)
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	cmd.SetArgs(args)
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	err := cmd.Execute()
+	res := breakResult{out: out.String(), err: errOut.String()}
+	var ec exitCodeError
+	switch {
+	case err == nil:
+	case errors.As(err, &ec):
+		res.code = ec.code
+	case IsExit(err):
+		res.code = 1
+	default:
+		t.Fatalf("break %v: %v\n%s%s", args, err, res.out, res.err)
+	}
+	if jsonOut && res.code != 2 {
+		if jerr := json.Unmarshal(out.Bytes(), &res.doc); jerr != nil {
+			t.Fatalf("break %v: output is not one JSON document: %v\n%s", args, jerr, res.out)
+		}
+	}
+	return res
+}
+
+// noRunnerFixture is breakFixture plus a TypeScript promise no runner covers.
+func noRunnerFixture(t *testing.T) string {
+	t.Helper()
+	dir := breakFixture(t)
+	files := map[string]string{
+		"lattice/features/web.yaml": "id: web\nversion: 1\nstatus: production\npurpose: x\nowners:\n  business: n\n  engineering: n\ninvariants:\n  - id: INV-1\n    statement: A thing.\n",
+		"web/a.ts":                  "/** @module-feature web */\n\n/** @enforces web:INV-1 */\nexport function f(a: number): number {\n  return a;\n}\n",
+		"web/a.test.ts":             "/** @module-feature web */\n\n/** @verifies web:INV-1 */\ntest('f', () => {});\n",
+	}
+	for name, body := range files {
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, dir, "add", "-A")
+	runGit(t, dir, "commit", "-q", "-m", "web")
+	return dir
+}
+
+// When no shown break ran, the output says so and names why; the exit code
+// stays 0 unless --fail-on unknown asks for 1, with the counts.
+// @verifies breaktest:INV-12
+func TestBreakFailOnUnknownWhenNothingRan(t *testing.T) {
+	dir := noRunnerFixture(t)
+
+	res := runBreakExit(t, dir, false, "--feature", "web")
+	if res.code != 0 {
+		t.Fatalf("without --fail-on the exit code must be 0, got %d\n%s%s", res.code, res.out, res.err)
+	}
+	want := "no break ran: 1 of 1 run unknown (no runner configured for typescript (set break.runners or break.commands in config.yaml) ×1); break_tested stays unknown\n"
+	if !strings.HasSuffix(res.out, want) || !strings.Contains(res.out, "0 killed, 0 survived, 1 unknown\n") {
+		t.Errorf("text output must keep the counts and end with the no-break line:\n%s", res.out)
+	}
+
+	res = runBreakExit(t, dir, false, "--feature", "web", "--fail-on", "unknown")
+	if res.code != 1 || !strings.Contains(res.err, "error: 1 unknown; --fail-on unknown") || !strings.HasSuffix(res.out, want) {
+		t.Errorf("--fail-on unknown: exit %d\n%s%s", res.code, res.out, res.err)
+	}
+
+	res = runBreakExit(t, dir, true, "--feature", "web", "--fail-on", "unknown")
+	s := res.doc.Summary
+	if res.code != 1 || res.doc.Code != "BREAK_OUTCOME" || res.doc.Error != "1 unknown; --fail-on unknown" {
+		t.Errorf("--json --fail-on unknown: exit %d, code %q, error %q", res.code, res.doc.Code, res.doc.Error)
+	}
+	if s.Runs != 1 || s.Unknown != 1 || s.Killed != 0 || s.Survived != 0 || s.Ran ||
+		len(s.UnknownReasons) != 1 || s.UnknownReasons[0].Count != 1 || !strings.HasPrefix(s.UnknownReasons[0].Reason, "no runner configured") {
+		t.Errorf("summary = %+v", s)
+	}
+}
+
+// --fail-on survived exits 1 only when a shown run survived: a survived run
+// outside --promise does not count, and killed or unknown runs never do.
+// @verifies breaktest:INV-12
+func TestBreakFailOnSurvived(t *testing.T) {
+	dir := breakFixture(t) // INV-1 killed, INV-2 survived, INV-3 unknown
+
+	res := runBreakExit(t, dir, true)
+	s := res.doc.Summary
+	if res.code != 0 || res.doc.Code != "" || s.Runs != 3 || s.Killed != 1 || s.Survived != 1 || s.Unknown != 1 || !s.Ran {
+		t.Fatalf("default: exit %d, summary %+v\n%s", res.code, s, res.out)
+	}
+	if res := runBreakExit(t, dir, false); res.code != 0 || strings.Contains(res.out, "no break ran") {
+		t.Errorf("a run that was killed or survived prints no no-break line: exit %d\n%s", res.code, res.out)
+	}
+
+	res = runBreakExit(t, dir, true, "--fail-on", "survived")
+	if res.code != 1 || res.doc.Code != "BREAK_OUTCOME" || res.doc.Error != "1 survived; --fail-on survived" {
+		t.Errorf("--fail-on survived: exit %d, code %q, error %q", res.code, res.doc.Code, res.doc.Error)
+	}
+	for _, args := range [][]string{
+		{"--fail-on", "survived,unknown"},
+		{"--fail-on", "survived", "--fail-on", "unknown"},
+	} {
+		res := runBreakExit(t, dir, true, args...)
+		if res.code != 1 || res.doc.Error != "1 survived, 1 unknown; --fail-on survived,unknown" {
+			t.Errorf("%v: exit %d, error %q", args, res.code, res.doc.Error)
+		}
+	}
+
+	// Only the shown runs count: breaks.json still holds the survived run.
+	for promise, why := range map[string]string{"guard:INV-1": "killed", "guard:INV-3": "unknown"} {
+		res := runBreakExit(t, dir, false, "--promise", promise, "--fail-on", "survived")
+		if res.code != 0 {
+			t.Errorf("--promise %s (%s) --fail-on survived: exit %d\n%s%s", promise, why, res.code, res.out, res.err)
+		}
+	}
+	if res := runBreakExit(t, dir, true, "--promise", "guard:INV-1", "--fail-on", "survived"); res.code != 0 || len(res.doc.Runs) != 3 || res.doc.Summary.Runs != 1 {
+		t.Errorf("--promise scopes the summary, not the report: exit %d, %d runs, summary %+v", res.code, len(res.doc.Runs), res.doc.Summary)
+	}
+	if res := runBreakExit(t, dir, false, "--promise", "guard:INV-2", "--fail-on", "survived"); res.code != 1 {
+		t.Errorf("--promise guard:INV-2 --fail-on survived: exit %d", res.code)
+	}
+}
+
+// A bad --fail-on value is a usage error, refused before anything runs; with
+// --fails-on-base only unknown applies.
+// @verifies breaktest:INV-12
+func TestBreakFailOnBadValue(t *testing.T) {
+	dir := t.TempDir() // no workspace: the flag is checked first
+	for _, args := range [][]string{
+		{"--fail-on", "killed"},
+		{"--fail-on", "survived,nope"},
+		{"--fails-on-base", "main", "--fail-on", "survived"},
+	} {
+		res := runBreakExit(t, dir, true, args...)
+		if res.code != 2 || !strings.Contains(res.out, `"code": "BAD_FLAG"`) {
+			t.Errorf("%v: exit %d\n%s", args, res.code, res.out)
+		}
+	}
+}
+
+// The no-break line names the three most common reasons by count.
+// @verifies breaktest:INV-12
+func TestBreakNothingRanLine(t *testing.T) {
+	var runs []breaktest.Run
+	for reason, n := range map[string]int{"a": 1, "b": 5, "c": 2, "d": 2} {
+		for i := 0; i < n; i++ {
+			runs = append(runs, breaktest.Run{Outcome: breaktest.Unknown, Reason: reason})
+		}
+	}
+	s := summarize(runs)
+	if got, want := nothingRanLine(s), "no break ran: 10 of 10 runs unknown (b ×5, c ×2, d ×2, …); break_tested stays unknown"; got != want {
+		t.Errorf("line =\n%s\nwant\n%s", got, want)
+	}
+	if line := nothingRanLine(summarize(append(runs, breaktest.Run{Outcome: breaktest.Killed}))); line != "" {
+		t.Errorf("a killed run means a break ran: %q", line)
+	}
+	if line := nothingRanLine(summarize(nil)); line != "" {
+		t.Errorf("no runs: %q", line)
+	}
+}
+
+// With --fails-on-base, --fail-on unknown counts the shown verifiers that
+// read unknown; fails_on_base and passes_on_base never trigger it.
+// @verifies breaktest:INV-12
+func TestBreakFailOnWithFailsOnBase(t *testing.T) {
+	clearCIEnv(t)
+	dir := baseProofFixture(t).dir
+	res := runBreakExit(t, dir, true, "--fails-on-base", "main", "--promise", "web:INV-1", "--fail-on", "unknown")
+	if res.code != 1 || res.doc.Code != "BREAK_OUTCOME" || res.doc.Error != "1 unknown; --fail-on unknown" {
+		t.Errorf("unknown verifier: exit %d, code %q, error %q\n%s", res.code, res.doc.Code, res.doc.Error, res.out)
+	}
+	res = runBreakExit(t, dir, false, "--fails-on-base", "main", "--promise", "fees:INV-1", "--fail-on", "unknown")
+	if res.code != 0 || !strings.Contains(res.out, "1 fail on base, 1 pass on base, 0 unknown") {
+		t.Errorf("fails_on_base and passes_on_base: exit %d\n%s%s", res.code, res.out, res.err)
+	}
+	if res := runBreakExit(t, dir, false, "--fails-on-base", "main", "--promise", "web:INV-1"); res.code != 0 {
+		t.Errorf("without --fail-on the exit code must be 0, got %d", res.code)
 	}
 }

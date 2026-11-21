@@ -1257,6 +1257,7 @@ lattice break                          # every promise with an enforcer
 lattice break --promise cart:INV-2     # one promise
 lattice break --promise cart:INV-2#b   # one acceptance case
 lattice break --feature cart --json
+lattice break --fail-on survived,unknown   # exit 1 when a shown run survived or is unknown
 ```
 
 `--promise <promise>#<case>` breaks one acceptance case: the case's own `enforcer`,
@@ -1374,6 +1375,27 @@ reused, so a timeout is always tried again.
 `--promise` and `--feature` print only the runs they selected; `breaks.json`
 still keeps the rest of the commit's runs.
 
+**Exit code.** Once the report is written, `lattice break` exits 0 whatever the
+outcomes. `--fail-on survived`, `--fail-on unknown` or both (repeat the flag, or
+a comma list) exit 1 when a shown run has a listed outcome, with code
+`BREAK_OUTCOME` and the counts (`3 survived, 648 unknown; --fail-on
+survived,unknown`). Shown means the `--promise` or `--feature` selection, so a
+survived run of another promise in `breaks.json` does not count. Any other value
+is a usage error (exit 2). With `--json` the output is one document: the report,
+a `summary` of the shown runs (`runs`, `killed`, `survived`, `unknown`, `ran`
+and the top `unknown_reasons`), and `error` and `code` when `--fail-on` matched.
+
+When no shown run was killed or survived, nothing was learned about the
+verifiers, and the text output ends with a line that says so and names the
+three most common reasons:
+
+```text
+no break ran: 651 of 651 runs unknown (no runner configured for typescript (set …) ×640, …); break_tested stays unknown
+```
+
+`lattice check --base` stays the merge gate: there an unknown `break_tested` is
+a gap, with or without `--fail-on`.
+
 The result is `lattice/.cache/results/breaks.json` (`lattice.breaks/1`,
 derived and gitignored). A promise with several enforcers has one run each.
 Nothing blocks on it yet: it is evidence for `lattice audit`.
@@ -1486,7 +1508,9 @@ The result is `lattice/.cache/results/fails-on-base.json`
 (`lattice.fails_on_base/1`), stamped with `base`, `head`, `ci_run` and `dirty`
 like `breaks.json`. `--json` prints it. `--promise`, `--feature`, `--timeout` and
 `--allow-dirty` work as for a break: a dirty tree is refused unless allowed, and
-`dirty: true` is recorded. `lattice check --base` reads the file when its base
+`dirty: true` is recorded. `--fail-on unknown` exits 1 when a shown verifier reads
+`unknown`; `--fail-on survived` is refused there (exit 2), since this run has no
+survived outcome and `passes_on_base` is not one. `lattice check --base` reads the file when its base
 and head match the change, and adds a `PASSES_ON_BASE` note to each touched
 promise of a verifier that passes on base. The note is information only: it
 never changes the verdict, a gap or `merge_allowed`.

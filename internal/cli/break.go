@@ -20,6 +20,7 @@ import (
 
 func newBreakCommand(io *IO) *cobra.Command {
 	var promise, feature, failsOnBase string
+	var failOn []string
 	var timeout time.Duration
 	var allowDirty, noPreflight bool
 	cmd := &cobra.Command{
@@ -68,8 +69,19 @@ func newBreakCommand(io *IO) *cobra.Command {
 			"engines.node is met, the Docker daemon answers for a command that runs\n" +
 			"docker, each break.services address answers on TCP, and the tree is clean\n" +
 			"(unless --allow-dirty). It reports every problem at once (code, config\n" +
-			"key, fix) and exits 2 before anything runs. --no-preflight skips it.",
+			"key, fix) and exits 2 before anything runs. --no-preflight skips it.\n" +
+			"\n" +
+			"Exit codes: 0 once the report is written, whatever the outcomes; 1 with\n" +
+			"--fail-on survived,unknown (either or both) when a shown run (the --promise or\n" +
+			"--feature selection) has a listed outcome (BREAK_OUTCOME); 2 for a usage or\n" +
+			"setup error. With --fails-on-base only --fail-on unknown applies. When no\n" +
+			"shown run was killed or survived, the output ends with a \"no break ran\" line\n" +
+			"naming the top reasons; --json adds summary (counts and ran) for the shown runs.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			want, err := parseFailOn(failOn, failsOnBase != "")
+			if err != nil {
+				return usageError(io, "BAD_FLAG", err.Error())
+			}
 			ws, err := openWorkspace(io)
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
@@ -113,7 +125,7 @@ func newBreakCommand(io *IO) *cobra.Command {
 				CodeRoot:   ws.PrimaryCodeRoot().Abs,
 			}
 			if failsOnBase != "" {
-				return runFailsOnBase(ctx, io, kg, ws, failsOnBase, opts)
+				return runFailsOnBase(ctx, io, kg, ws, failsOnBase, opts, want)
 			}
 			rep, err := breaktest.Execute(ctx, kg, opts)
 			switch {
@@ -125,19 +137,34 @@ func newBreakCommand(io *IO) *cobra.Command {
 			if err := breaktest.Write(ws.LatticeDir, rep); err != nil {
 				return io.fail("WRITE_FAILED", err.Error(), nil)
 			}
-			if io.JSON {
-				return io.printJSON(rep)
-			}
-			// The file keeps every run of the commit; the table shows the
-			// ones this invocation asked for.
+			// The file keeps every run of the commit; the table, the summary
+			// and --fail-on see the ones this invocation asked for.
 			var shown []breaktest.Run
 			for _, r := range rep.Runs {
 				if opts.Selects(r.Promise) {
 					shown = append(shown, r)
 				}
 			}
+			sum := summarize(shown)
+			failMsg := failOnMessage(want, map[string]int{breaktest.Survived: sum.Survived, breaktest.Unknown: sum.Unknown})
+			if io.JSON {
+				out := breakOutput{Report: rep, Summary: sum}
+				if failMsg != "" {
+					out.Error, out.Code = failMsg, failOnCode
+				}
+				if err := io.printJSON(out); err != nil {
+					return err
+				}
+				if failMsg != "" {
+					return errExit
+				}
+				return nil
+			}
 			rep.Runs = shown
-			printBreakTable(io, rep)
+			printBreakTable(io, rep, sum)
+			if failMsg != "" {
+				return io.fail(failOnCode, failMsg, nil)
+			}
 			return nil
 		},
 	}
@@ -146,6 +173,7 @@ func newBreakCommand(io *IO) *cobra.Command {
 	cmd.Flags().DurationVar(&timeout, "timeout", 120*time.Second, "timeout for each test run (a timeout reads unknown)")
 	cmd.Flags().BoolVar(&allowDirty, "allow-dirty", false, "test a working tree with uncommitted changes")
 	cmd.Flags().BoolVar(&noPreflight, "no-preflight", false, noPreflightUsage)
+	cmd.Flags().StringSliceVar(&failOn, "fail-on", nil, "exit 1 when a shown run has one of these outcomes: survived, unknown (repeatable, or a comma list)")
 	cmd.Flags().StringVar(&failsOnBase, "fails-on-base", "", "run the new and changed verifiers on the code of merge-base(<rev>, HEAD) instead of breaking")
 	return cmd
 }
@@ -157,15 +185,13 @@ func commandContext(cmd *cobra.Command) context.Context {
 	return context.Background()
 }
 
-func printBreakTable(io *IO, rep breaktest.Report) {
+func printBreakTable(io *IO, rep breaktest.Report, sum breakSummary) {
 	if len(rep.Runs) == 0 {
 		io.printf("no promise has an enforcer to break\n")
 		return
 	}
 	io.printf("%-26s %-34s %-12s %-9s %s\n", "PROMISE", "ENFORCER", "METHOD", "OUTCOME", "REASON")
-	counts := map[string]int{}
 	for _, r := range rep.Runs {
-		counts[r.Outcome]++
 		reason := r.Reason
 		if r.Cached {
 			reason = "(cached) " + reason
@@ -173,9 +199,12 @@ func printBreakTable(io *IO, rep breaktest.Report) {
 		io.printf("%-26s %-34s %-12s %-9s %s\n",
 			truncate(r.Promise, 26), truncate(r.Enforcer, 34), r.Method, r.Outcome, reason)
 	}
-	io.printf("\n%d killed, %d survived, %d unknown", counts[breaktest.Killed], counts[breaktest.Survived], counts[breaktest.Unknown])
+	io.printf("\n%d killed, %d survived, %d unknown", sum.Killed, sum.Survived, sum.Unknown)
 	if rep.Dirty {
 		io.printf("  (dirty tree)")
 	}
 	io.printf("\n")
+	if line := nothingRanLine(sum); line != "" {
+		io.printf("%s\n", line)
+	}
 }
