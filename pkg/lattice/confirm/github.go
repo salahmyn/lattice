@@ -161,3 +161,34 @@ func (g GitHub) SigningKeys(ctx context.Context, login string) ([]string, error)
 	}
 	return all, nil
 }
+
+// Collaborators lists the repository's collaborators, direct or through an
+// organization (GET /repos/{owner}/{repo}/collaborators?affiliation=all),
+// with whether each can push. The endpoint needs push access; without it
+// the error is returned and no note is made.
+func (g GitHub) Collaborators(ctx context.Context) ([]Collaborator, error) {
+	var all []Collaborator
+	for page := 1; page <= 10; page++ {
+		var cs []struct {
+			Login       string `json:"login"`
+			Type        string `json:"type"`
+			Permissions struct {
+				Admin    bool `json:"admin"`
+				Maintain bool `json:"maintain"`
+				Push     bool `json:"push"`
+			} `json:"permissions"`
+		}
+		p := fmt.Sprintf("/repos/%s/%s/collaborators?affiliation=all&per_page=100&page=%d", url.PathEscape(g.Owner), url.PathEscape(g.Repo), page)
+		if err := g.get(ctx, p, &cs); err != nil {
+			return nil, err
+		}
+		for _, c := range cs {
+			all = append(all, Collaborator{Login: c.Login, Type: c.Type,
+				Write: c.Permissions.Push || c.Permissions.Maintain || c.Permissions.Admin})
+		}
+		if len(cs) < 100 {
+			return all, nil
+		}
+	}
+	return nil, fmt.Errorf("more than 1000 collaborators")
+}

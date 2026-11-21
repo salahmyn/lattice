@@ -46,6 +46,9 @@ type Config struct {
 	// Coverage (rnd/0009) is opt-in: nil when config.yaml has no coverage:
 	// block, which keeps every coverage finding off.
 	Coverage *Coverage `yaml:"coverage,omitempty"`
+	// Confirm tunes `lattice confirm`: which routes may make a decision
+	// read human.
+	Confirm Confirm `yaml:"confirm,omitempty"`
 }
 
 // ValidatePolicy tunes `lattice validate` for a workspace: how severe each

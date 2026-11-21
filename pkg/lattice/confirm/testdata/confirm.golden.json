@@ -21,6 +21,7 @@
       "merged_sha": "m1",
       "verified_at": "2026-01-02T03:04:05Z",
       "decision_sha": "c0ffee",
+      "pr_author": "dev",
       "assurance": {
         "state": "confirmed",
         "honesty": "fact",
@@ -42,6 +43,7 @@
         "f:INV-1"
       ],
       "decision_sha": "c0ffee",
+      "pr_author": "dev",
       "assurance": {
         "state": "confirmed",
         "honesty": "fact",
@@ -65,6 +67,6 @@
   "stamp": {
     "commit": "deadbeef",
     "ci_run": "local",
-    "digest": "sha256:f720dd1b6720cdc413d18f2c30025ae6a4439c4cd9bd353741990d2d0f003af0"
+    "digest": "sha256:98aa5f67539319eec66c6a03d938bfe81e4779a1766d682e738115ecc48e3150"
   }
 }

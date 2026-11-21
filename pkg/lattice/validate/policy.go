@@ -357,3 +357,20 @@ func (al Allowlist) Apply(v []schema.Violation) (open []schema.Violation, accept
 	}
 	return open, accepted
 }
+
+// checkConfirmRoutes reports a confirm.routes value that names no route
+// (VALIDATE_POLICY, error). Such a value accepts nothing, so it can only
+// narrow which decisions read human; the finding says so before it does.
+// @enforces confirm:INV-22
+func checkConfirmRoutes(cfg config.Config) []schema.Violation {
+	err := cfg.Confirm.Check()
+	if err == nil {
+		return nil
+	}
+	return []schema.Violation{{
+		Code: schema.CodeValidatePolicy, Severity: schema.SeverityError,
+		Subject:  "confirm.routes",
+		Message:  "config.yaml " + err.Error(),
+		Location: &schema.Location{File: "config.yaml"},
+	}}
+}
