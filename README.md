@@ -142,6 +142,9 @@ weakens enforcement silently.
 
 - `lattice break` breaks each promise's enforcer in a temporary worktree and
   runs only its verifiers. A test that still passes is a **fake**.
+  When `break.setup` fails, it prints `setup failed: N promises not run (<reason>)`,
+  and `lattice validate` states the break facts per feature as info:
+  `BREAK_SURVIVED`, `BREAK_UNKNOWN_CAUSE`, or "no break evidence".
 - `lattice break --fails-on-base <rev>` runs a change's new or edited tests on
   the old code. A fix's test should fail there.
 - `lattice audit` classifies every promise (fake, break-tested, exercised,
@@ -220,6 +223,7 @@ A complete, validating three-language example lives in
 | `lattice brd decide <id>` | Council decision; its summary states criteria with no pinned tier (`CRITERION_TIER_UNSET` in `validate`); a mandate's `require_pinned_tiers` is an owner opt-in that refuses them |
 | `lattice feature show <id>` | Show one feature + reverse links, with each invariant's cases, their coverage and their confirmation |
 | `lattice feature spec <id>` | Emit the ≤500-word `.ai-spec.md` loading contract |
+| `lattice feature promote <id>` | Print the production entry points that name a feature (writes nothing); with `--by <email>`, a human sets `status: production` and the ledger records it |
 | `lattice ep list\|show\|accept\|reject` | Manage entry points, including the proposals `extract` makes from `serve` handlers, cron jobs and detected routes |
 | `lattice initiative list\|show\|kanban\|critical-path` | Inspect work in flight |
 | `lattice initiative add\|evidence\|status` | Record a proposal, attach its `evidence/v1`, move its status |

@@ -81,6 +81,60 @@ type breakSummary struct {
 	// SetupRuns counts the times break.setup ran: once, plus each re-run
 	// after a failed break.restore or a baseline healed after a SQL swap.
 	SetupRuns int `json:"setup_runs"`
+	// SetupFailed is set when break.setup failed, or failed again after a
+	// failed restore or baseline: every run after it reads unknown without
+	// a test having run. It is the same fact as the runs' reasons, said once.
+	SetupFailed *setupFailure `json:"setup_failed,omitempty"`
+}
+
+// setupFailure counts the promises a failed setup left unrun.
+type setupFailure struct {
+	// Promises is how many distinct promises have a run that reads unknown
+	// because setup failed.
+	Promises int `json:"promises"`
+	// Runs is the number of such runs.
+	Runs int `json:"runs"`
+	// Reason is the failing command and why, as the most common run gives it.
+	Reason string `json:"reason"`
+}
+
+// setupFailureOf reads the failed-setup fact from the shown runs, or nil.
+// @enforces breaktest:INV-20
+func setupFailureOf(runs []breaktest.Run) *setupFailure {
+	promises := map[string]bool{}
+	reasons := map[string]int{}
+	n := 0
+	for _, r := range runs {
+		if r.Outcome == breaktest.Killed || r.Outcome == breaktest.Survived {
+			continue
+		}
+		why, ok := breaktest.SetupFailure(r.Reason)
+		if !ok {
+			continue
+		}
+		n++
+		promises[r.Promise] = true
+		reasons[why]++
+	}
+	if n == 0 {
+		return nil
+	}
+	top := rankCounts(reasons, 1)
+	return &setupFailure{Promises: len(promises), Runs: n, Reason: top[0].Reason}
+}
+
+// setupFailedLine is the line printed under the table's counts when setup failed. A
+// dead dependency (a stopped database, say) fails setup in seconds and leaves
+// every promise unknown, which must not read as a quick, real result.
+func setupFailedLine(f *setupFailure) string {
+	if f == nil {
+		return ""
+	}
+	reason := strings.Join(strings.Fields(f.Reason), " ")
+	if r := []rune(reason); len(r) > 200 {
+		reason = string(r[:200]) + "..."
+	}
+	return fmt.Sprintf("setup failed: %s not run (%s)", plural(f.Promises, "promise"), reason)
 }
 
 // noRunnerReason is the reason a summary groups runs with no runner under,
@@ -141,6 +195,7 @@ func summarize(runs []breaktest.Run) breakSummary {
 		}
 	}
 	s.Ran = s.Killed+s.Survived > 0
+	s.SetupFailed = setupFailureOf(runs)
 	s.UnknownReasons = rankCounts(reasons, 3)
 	s.MissingRunners = rankCounts(missing, 0)
 	return s

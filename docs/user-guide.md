@@ -3708,7 +3708,7 @@ allowlist like any finding; the subject of a function writer is its FQN, of a ro
 `sql.role.<role>`, of a migration its file.
 
 On a project where every enforcer writes `status` or `updated_at`, the derived columns link
-unrelated promises. Declare the columns the promise is about; see 4x.
+unrelated promises. Declare the columns the promise is about; see 4z.
 
 **To clear `UNGUARDED_WRITER`**, do one of:
 
@@ -4129,14 +4129,104 @@ open. `validate.severity` can raise or drop them like any other code.
       subject: "fees:INV-3"
       reason: an internal detail no business criterion states
   ```
-- `STATUS_DRIFT`: promote the status by hand once you know the feature is production
-  (edit its manifest), or allowlist the finding with a reason.
+- `STATUS_DRIFT`: once you know the feature is production, run
+  `lattice feature promote <id> --by <email>` (section 4x), or edit its manifest, or
+  allowlist the finding with a reason.
 - `FEATURE_UNREACHED` on an unpromoted feature: declare the entry point that reaches it,
   or allowlist the finding with a reason.
 
-## 4x. Precision: which columns a promise is about, and who calls its enforcer
+## 4x. Promote: set a feature to production on evidence
 
-Two findings are only as precise as what they are told. 4x narrows both.
+`STATUS_DRIFT` says a proposal or accepted feature sits on the flow of a production
+entry point. `lattice feature promote <id>` shows that evidence, and lets a human act on
+it.
+
+```sh
+lattice feature promote shop.checkout                    # prints; writes nothing
+lattice feature promote shop.checkout --by sal@example.com   # sets status: production
+```
+
+Without `--by` it prints, and writes nothing, so an agent may run it:
+
+```
+shop.checkout  [proposal]
+  production entry point  shop.orders_route  handler src.route.ordersRoute  src/route.ts
+  criterion  brd.shop.orders SC-1  demonstrated
+  Lattice cannot see runtime flags.
+  Nothing was written. A human sets the status with: lattice feature promote shop.checkout --by <email>
+```
+
+It lists the production entry points whose flow names the feature, their handler paths,
+and the level of each criterion that maps to the feature. The levels are context; they
+never decide anything. The last line is a caveat: the graph holds no runtime state, so a
+production entry point is a declaration, not proof of rollout. `--json` prints the same
+as one object.
+
+With `--by <email>` it writes. Only the `status` key changes, to `production`; every
+other key, and any comment, stays as written. One ledger entry (event `gate`) records
+`by`, the actor, the transition `proposal→production` and the entry points printed.
+
+It refuses, and writes nothing, when:
+
+- `--by` or `--actor` names an agent (`PROMOTE_HUMAN_ONLY`);
+- the feature's status is not `proposal` or `accepted` (`PROMOTE_STATUS`);
+- no production entry point's flow names the feature (`PROMOTE_NO_EVIDENCE`). Declare the
+  entry point, or edit the manifest by hand.
+
+No mandate covers it and no grant exists for it. It never touches a BRD, so it causes no
+`BRD_DRIFT`.
+
+## 4y. Break facts: what did breaking the code show?
+
+`lattice validate` reads `lattice/.cache/results/breaks.json`, which `lattice break`
+writes, and states what it shows per feature. Each finding is a fact, info and always
+on, so `validate.fail_on: warning` stays green with all of them open. None changes an RTM
+status, a level or a gate.
+
+```sh
+lattice break          # writes breaks.json for this commit
+lattice validate       # BREAK_SURVIVED, BREAK_UNKNOWN_CAUSE
+```
+
+- **`BREAK_SURVIVED`**: one finding per feature listing each promise whose break
+  survived, with every verifier run and green. Each entry gives the promise, the enforcer
+  that was broken and the method (`early_return`, `scripted`). A partial run, where some
+  verifier did not run, is not survived: it is unknown.
+- **`BREAK_UNKNOWN_CAUSE`**: one finding per feature for its unknown runs, grouped by
+  cause with a count and the reason text: `setup failed`, `no runner`, `partial run`
+  or `other` (the reason says what, for instance a failing baseline). An unknown run says
+  nothing about the verifiers, and it never reads as a pass.
+- **No break evidence**: a `breaks.json` that is missing, of another schema, or of another
+  commit than the graph's is not evidence. `lattice validate` says "no break evidence" once,
+  as a `BREAK_UNKNOWN_CAUSE` finding with no feature, and raises nothing per feature from
+  the file. A stale `killed` never reads as a pass.
+
+### A failed setup
+
+A `break.setup` that fails (a database or container daemon that is down, say) leaves every
+promise unknown within seconds, which can look like a quick, real result. `lattice break`
+now says so once, under the counts:
+
+```
+0 killed, 0 survived, 902 unknown
+setup failed: 902 promises not run (docker compose up -d: Cannot connect to the Docker daemon)
+```
+
+`--json` carries the same fact as `summary.setup_failed`
+(`{"promises": 902, "runs": 902, "reason": "..."}`). In `lattice validate` the runs are
+one cause, `setup failed`, in `BREAK_UNKNOWN_CAUSE`. A setup that fails again after a failed
+`break.restore` or a failed baseline reads the same way.
+
+### Clear a finding
+
+- `BREAK_SURVIVED`: add or fix a verifier that fails when the enforcer is broken, then
+  break the feature again (`lattice break --feature <id>`).
+- `BREAK_UNKNOWN_CAUSE`: fix the cause the finding names (the setup command, a runner), then
+  break again. Or allowlist the finding for the feature with a reason.
+
+## 4z. Precision: which columns a promise is about, and who calls its enforcer
+
+Two findings are only as precise as what they are told. This section narrows both.
 
 **Declared columns.** `UNGUARDED_WRITER` ties a promise to every writer of the columns its
 enforcers write. A column every enforcer happens to write (`status`, `updated_at`,

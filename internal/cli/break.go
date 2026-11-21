@@ -256,6 +256,9 @@ func printBreakTable(io *IO, rep breaktest.Report, sum breakSummary) {
 		io.printf("  (dirty tree)")
 	}
 	io.printf("\n")
+	if line := setupFailedLine(sum.SetupFailed); line != "" {
+		io.printf("%s\n", line)
+	}
 	if line := nothingRanLine(sum); line != "" {
 		io.printf("%s\n", line)
 	}

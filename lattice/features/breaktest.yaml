@@ -47,3 +47,5 @@ invariants:
     statement: When a run used the SQL object swap, a failed break.restore re-runs break.setup, and a baseline that fails after a swap since the last setup is retried once after a fresh setup; the outcome of a run whose verifiers already ran is never changed.
   - id: INV-19
     statement: A hop is break-tested only by a verifier that failed with that hop's out-end key altered; an unknown hop, a hop whose out end is not a literal at a known position, and a computed key are never broken.
+  - id: INV-20
+    statement: When break.setup failed, or failed again after a failed restore or a failed baseline, lattice break says so once, in its text under the counts and in the JSON summary, naming how many promises were not run and the failing command and why; the runs stay unknown.
