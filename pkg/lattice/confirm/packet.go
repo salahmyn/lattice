@@ -31,6 +31,27 @@ type PromiseFacts struct {
 	Cases []string `json:"cases,omitempty"`
 }
 
+// CasesFor stamps the acceptance cases of each promise, as a decision
+// records them: one entry per ref, in order, an empty list for a promise
+// with no cases (or none the audit knows), so a reader can tell "had none"
+// from "not recorded".
+// @enforces confirm:INV-20
+func CasesFor(rows []audit.Row, refs []string) []schema.PromiseCases {
+	by := map[string]audit.Row{}
+	for _, r := range rows {
+		by[r.Promise] = r
+	}
+	out := make([]schema.PromiseCases, 0, len(refs))
+	for _, ref := range refs {
+		pc := schema.PromiseCases{Promise: ref, Cases: []schema.CaseStamp{}}
+		for _, c := range by[ref].Cases {
+			pc.Cases = append(pc.Cases, schema.NewCaseStamp(c.ID, schema.CaseKind(c.Kind), c.Statement, c.Enforcer, c.Retired))
+		}
+		out = append(out, pc)
+	}
+	return out
+}
+
 // PacketInput is everything a review packet hashes.
 type PacketInput struct {
 	BRD      schema.BRD

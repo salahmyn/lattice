@@ -22,6 +22,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
 // Decision actions.
@@ -95,7 +97,14 @@ type Decision struct {
 	Version    int    `yaml:"version"`
 	PacketHash string `yaml:"packet_hash"`
 	Rows       []Row  `yaml:"rows,omitempty"`
-	Reason     string `yaml:"reason,omitempty"`
+	// Cases records the acceptance cases of each row's promise as the packet
+	// held them (CasesFor): what the human confirms case by case. Every row
+	// is listed, a promise with no cases with an empty list. A decision
+	// prepared before cases were recorded has none, and its cases read
+	// unconfirmed. The packet hash already covers the cases; this list says
+	// which ones a later edit touched.
+	Cases  []schema.PromiseCases `yaml:"cases,omitempty"`
+	Reason string                `yaml:"reason,omitempty"`
 	// VotesHash pins the council votes behind an ack or overturn.
 	VotesHash string       `yaml:"votes_hash,omitempty"`
 	Since     *Since       `yaml:"since,omitempty"`

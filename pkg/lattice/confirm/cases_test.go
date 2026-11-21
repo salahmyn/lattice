@@ -2,6 +2,8 @@ package confirm
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
@@ -83,5 +85,66 @@ func TestCasesArePartOfThePacket(t *testing.T) {
 	}
 	if r := Compute(context.Background(), in).Records[0]; r.State != StateStale || r.Assurance.Code != "PACKET_MISMATCH" {
 		t.Errorf("an edited case must read stale: %+v", r)
+	}
+}
+
+// A decision records the cases of each of its promises, every promise listed
+// (one without cases with an empty list), and the verdict carries them into
+// confirm.json, where readers compare them with the cases now. A decision
+// file written before cases were recorded parses with none, and the packet
+// hash does not depend on the list.
+// @verifies confirm:INV-20
+func TestDecisionRecordsCases(t *testing.T) {
+	rows := []audit.Row{
+		{Promise: "f:INV-1", Cases: []audit.CaseRow{{ID: "a", Kind: "happy", Statement: "A 100.00 withdrawal pays at most 5.00."},
+			{ID: "b", Kind: "edge", Statement: "A 0.01 withdrawal pays no fee.", Enforcer: "f.Charge", Retired: true}}},
+		{Promise: "f:INV-2"},
+	}
+	got := CasesFor(rows, []string{"f:INV-1", "f:INV-2", "f:INV-3"})
+	if len(got) != 3 || len(got[0].Cases) != 2 || got[1].Cases == nil || len(got[1].Cases) != 0 || got[2].Cases == nil {
+		t.Fatalf("cases = %+v", got)
+	}
+	b := got[0].Cases[1]
+	if b.ID != "b" || b.Kind != schema.CaseEdge || b.Enforcer != "f.Charge" || !b.Retired ||
+		b.Hash != schema.CaseHash(schema.CaseEdge, "A 0.01 withdrawal pays no fee.", "f.Charge") {
+		t.Errorf("b = %+v", b)
+	}
+
+	d := decision(ActionApprove)
+	d.Rows = []Row{{Promise: "f:INV-1"}, {Promise: "f:INV-2"}}
+	d.Cases = got[:2]
+	data, err := d.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "cases: []") {
+		t.Errorf("a promise with no cases must be listed with an empty list:\n%s", data)
+	}
+	back, err := ParseDecision(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stamps, ok := schema.CasesOf(back.Cases, "f:INV-2"); !ok || len(stamps) != 0 {
+		t.Errorf("f:INV-2 must read recorded with none: %v %v", stamps, ok)
+	}
+	if stamps, ok := schema.CasesOf(back.Cases, "f:INV-1"); !ok || len(stamps) != 2 || stamps[0].Hash != got[0].Cases[0].Hash {
+		t.Errorf("f:INV-1 = %+v", stamps)
+	}
+
+	old, err := ParseDecision([]byte("action: brd.approve\nid: brd.x\nversion: 2\npacket_hash: sha256:aa\nrows:\n  - promise: f:INV-1\nprepared_by: d\nprepared_at: t\n"))
+	if err != nil || old.Cases != nil {
+		t.Fatalf("an old decision parses with no cases: %+v %v", old.Cases, err)
+	}
+
+	plat := &fake{pr: merged("dev", "h2"), reviews: []Review{approval("ana", "h2")}}
+	in := Input{Commit: "head1", Branch: "main", Found: foundOne(back), Platform: plat, Now: fixedNow}
+	in.Packet = func(Decision) (string, bool) { return back.PacketHash, true }
+	r := Compute(context.Background(), in).Records[0]
+	if r.State != StateConfirmed || len(r.Cases) != 2 || r.Cases[0].Promise != "f:INV-1" {
+		t.Errorf("record = %+v", r)
+	}
+	body, _ := json.Marshal(r)
+	if !strings.Contains(string(body), `"cases":[{"promise":"f:INV-1","cases":[{"id":"a"`) {
+		t.Errorf("confirm.json record = %s", body)
 	}
 }

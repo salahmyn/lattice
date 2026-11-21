@@ -52,6 +52,10 @@ type Record struct {
 	VerifiedAt  string `json:"verified_at,omitempty"`
 	// Rows are the promises a promise.confirm decision covers.
 	Rows []string `json:"rows,omitempty"`
+	// Cases are the acceptance cases the decision recorded for its promises,
+	// copied from the decision file. A reader compares them with the cases
+	// now to give each case its own confirmation state.
+	Cases []schema.PromiseCases `json:"cases,omitempty"`
 	// DecisionSHA is the commit that added the decision file on the default branch.
 	DecisionSHA string `json:"decision_sha,omitempty"`
 	// DecisionPath is the decision file a signature verdict is about, from
@@ -231,7 +235,7 @@ func Compute(ctx context.Context, in Input) File {
 	keys := signingKeys{platform: in.Platform, lists: map[string]keyList{}}
 	for _, fd := range in.Found {
 		d := fd.Decision
-		rec := Record{ID: d.ID, Version: d.Version, Action: d.Action, DecisionSHA: fd.AddedSHA}
+		rec := Record{ID: d.ID, Version: d.Version, Action: d.Action, DecisionSHA: fd.AddedSHA, Cases: d.Cases}
 		for _, r := range d.Rows {
 			if d.Action == ActionPromiseConfirm {
 				rec.Rows = append(rec.Rows, r.Promise)

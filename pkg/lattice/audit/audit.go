@@ -314,6 +314,7 @@ func Compute(src Sources) Report {
 		r := buildRow(ref, featureOf[ref], inv, rtmRows[ref], src, symbols, testFile, breaks, brdMap[ref])
 		r.Notes = notesBy[ref]
 		r.Cases = caseRows(ref, inv, tagged[ref], src.Results, rtmRows[ref].Enforcers, breaks[ref])
+		caseConfirmations(r.Cases, brdMap[ref], ref, src.Confirm, r.Signals.Confirmed)
 		rep.Rows = append(rep.Rows, r)
 	}
 	sortRows(rep.Rows)

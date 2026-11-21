@@ -505,3 +505,39 @@ func TestPrepareNeverOverwritesADecision(t *testing.T) {
 		t.Errorf("a same-named branch without this decision: %+v", ref)
 	}
 }
+
+// The decision file records each row's acceptance cases as the packet held
+// them, so a reader can tell later which case a human confirmed: a promise
+// with cases lists them with their hashes, one without lists none, and the
+// list leaves the packet hash as it was.
+// @verifies confirm:INV-20
+func TestPrepareRecordsCases(t *testing.T) {
+	f := newFixture(t)
+	plain, ref := Run(f.env(""), approveReq("brd.x", 1))
+	if ref != nil {
+		t.Fatalf("refused: %+v", ref)
+	}
+	f.kg.Features[0].Invariants[0].Cases = []schema.InvariantCase{
+		{ID: "a", Kind: schema.CaseHappy, Statement: "A 100.00 withdrawal pays at most 5.00."},
+		{ID: "b", Kind: schema.CaseEdge, Statement: "A 0.01 withdrawal pays no fee.", Enforcer: "f.EnfINV-1"},
+	}
+	res, ref := Run(f.env(""), approveReq("brd.x", 1))
+	if ref != nil {
+		t.Fatalf("refused: %+v", ref)
+	}
+	if res.PacketHash == plain.PacketHash {
+		t.Fatal("cases are part of the packet")
+	}
+	d, err := confirm.ParseDecision([]byte(f.git("show", res.Branch+":"+res.Files[0])))
+	if err != nil {
+		t.Fatal(err)
+	}
+	one, ok1 := schema.CasesOf(d.Cases, "f:INV-1")
+	two, ok2 := schema.CasesOf(d.Cases, "f:INV-2")
+	if !ok1 || !ok2 || len(one) != 2 || len(two) != 0 {
+		t.Fatalf("cases = %+v", d.Cases)
+	}
+	if one[1].ID != "b" || one[1].Enforcer != "f.EnfINV-1" || one[1].Hash != schema.CaseHash(schema.CaseEdge, "A 0.01 withdrawal pays no fee.", "f.EnfINV-1") {
+		t.Errorf("b = %+v", one[1])
+	}
+}

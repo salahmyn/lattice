@@ -94,7 +94,11 @@ names a paragraph, not a claim.
 - **B3.** `kind` is `happy`, `edge`, `error` or `security`.
 - **B5.** Agents may draft cases. Each case has its own confirmation state, so a
   case added or edited after confirmation reads unconfirmed. Editing a case is a
-  structural change.
+  structural change. *Built:* a decision records its promises' cases (id, kind,
+  statement, enforcer, retired, hash); the audit compares them with the cases now
+  and gives each `confirmed` or `unconfirmed` with a code (added, edited, retired
+  after confirmation; not recorded; never confirmed). The promise's own signal is
+  unchanged (confirm:INV-20).
 - Coverage per case is computed by the kernel, never typed:
   - `covered`: a tagged verifier passed, and breaking the enforcer killed it;
   - `partial`;

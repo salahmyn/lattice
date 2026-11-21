@@ -43,6 +43,9 @@ type ConfirmRecord struct {
 	PR            int      `json:"pr,omitempty"`
 	Rows          []string `json:"rows,omitempty"`
 	DecisionPath  string   `json:"decision_path,omitempty"`
+	// Cases are the acceptance cases the decision recorded for its
+	// promises: what the human confirmed case by case.
+	Cases []schema.PromiseCases `json:"cases,omitempty"`
 	// Note says why a signature verdict was set aside when it was re-verified.
 	Note string `json:"-"`
 }

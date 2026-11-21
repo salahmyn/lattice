@@ -1467,8 +1467,30 @@ promise, so a case added, edited or retired after confirmation makes the decisio
 and the promise reads unconfirmed until it is confirmed again. A promise with no cases
 hashes as it did before. An agent may draft cases (`lattice agent draft-proposal`); the
 schema has no field that records a confirmation or a coverage, so nothing an agent writes
-can mark a case confirmed or covered. Each case's own confirmation state is not computed
-yet: today the promise is confirmed or not as a whole.
+can mark a case confirmed or covered.
+
+Each case also has its own confirmation state. A decision that `lattice prepare` writes
+records the cases of each of its promises (`cases:` in the decision file: id, kind,
+statement, enforcer, retired, and a hash of kind, statement and enforcer), and `lattice
+confirm` carries them into `confirm.json`. The audit compares each case with the one the
+confirming decision recorded (the current version's confirmed decision, else its stale one,
+else the latest earlier version's):
+
+| Confirmation | Code | Means |
+|---|---|---|
+| `confirmed` | `CASE_CONFIRMED` | the case is as the decision recorded it |
+| `unconfirmed` | `CASE_ADDED_AFTER_CONFIRMATION` | the decision did not hold the case |
+| `unconfirmed` | `CASE_EDITED_AFTER_CONFIRMATION` | its kind, statement or enforcer changed, or it was restored; the reason names what, e.g. `kind edge->error` |
+| `unconfirmed` | `CASE_RETIRED_AFTER_CONFIRMATION` | it was retired since |
+| `unconfirmed` | `CASE_NOT_RECORDED` | the decision was prepared before decisions recorded their cases; prepare and confirm again |
+| `unconfirmed` | `CASE_NEVER_CONFIRMED` | no human confirmation covers the promise |
+
+The state is on each case of the audit row (`confirmation: {state, code, reason}`), under
+each case in `lattice feature show`, and in `/api/v2` `case_rows` (`confirmation`: `pass`
+only for a confirmed case, `drifted` for an edited or retired one, `unknown` otherwise). It
+never changes the promise's `confirmed` signal: any case change still makes the decision
+stale, as above. A case unchanged under a stale decision reads `confirmed` and says the
+promise needs confirming again as a whole.
 
 ### Second readers
 

@@ -333,6 +333,7 @@ func (env Env) brdDecision(d *confirm.Decision, req Request, rel, name, email st
 		row := known[r]
 		d.Rows = append(d.Rows, confirm.Row{Promise: r, Statement: row.Statement, Tier: row.Tier, Class: row.Class})
 	}
+	d.Cases = confirm.CasesFor(env.Report.Rows, refs)
 	d.PacketHash = env.packet(d, *b, rel, extra)
 	return nil
 }
@@ -595,6 +596,7 @@ func (env Env) promiseDecision(d *confirm.Decision, req Request, rel string) *Re
 		row := known[r]
 		d.Rows = append(d.Rows, confirm.Row{Promise: r, Statement: row.Statement, Tier: row.Tier, Class: row.Class})
 	}
+	d.Cases = confirm.CasesFor(env.Report.Rows, uniq(req.Refs))
 	d.PacketHash = env.packet(d, *b, rel, "")
 	return nil
 }

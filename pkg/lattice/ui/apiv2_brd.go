@@ -230,7 +230,8 @@ func casesOf(rows []audit.CaseRow) (contract.Assurance, []contract.CaseRow) {
 	live := 0
 	for _, c := range rows {
 		out = append(out, contract.CaseRow{ID: c.ID, Label: c.Label, Kind: c.Kind, Statement: c.Statement, Enforcer: c.Enforcer,
-			Retired: c.Retired, Coverage: c.Coverage, Reason: c.Reason, Verifiers: nonNil(c.Verifiers)})
+			Retired: c.Retired, Coverage: c.Coverage, Reason: c.Reason, Verifiers: nonNil(c.Verifiers),
+			Confirmation: caseConfirmation(c.Confirmation)})
 		if !c.Retired {
 			live++
 			n[c.Coverage]++
@@ -253,6 +254,26 @@ func casesOf(rows []audit.CaseRow) (contract.Assurance, []contract.CaseRow) {
 		a.Text = fmt.Sprintf("%d of %d cases covered (%d partial, %d uncovered)", n[audit.CaseCovered], live, n[audit.CasePartial], n[audit.CaseUncovered])
 	}
 	return a, out
+}
+
+// caseConfirmation carries the audit's confirmation state of one case into
+// the contract: pass only for a confirmed case, drifted for one edited or
+// retired after confirmation, unknown otherwise, always with the audit's
+// code. A row the audit gave no state reads unknown.
+func caseConfirmation(c audit.CaseConfirmation) contract.Assurance {
+	a := contract.Assurance{Honesty: contract.Proxy, Code: c.Code, Text: c.Reason, Params: map[string]interface{}{"state": c.State}}
+	switch {
+	case c.State == audit.CaseConfirmed && c.Code == audit.CaseCodeConfirmed:
+		a.State = contract.StatePass
+	case c.Code == audit.CaseCodeEdited || c.Code == audit.CaseCodeRetired:
+		a.State = contract.StateDrifted
+	default:
+		a.State = contract.StateUnknown
+		if a.Code == "" {
+			a.Code, a.Text = "CASE_CONFIRMATION_UNKNOWN", "the audit gave this case no confirmation state"
+		}
+	}
+	return a
 }
 
 // countsOf counts the promises of a scope by what the check's rules say.

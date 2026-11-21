@@ -41,6 +41,49 @@ type CaseRow struct {
 	Reason   string `json:"reason"`
 	// Verifiers are the tests tagged @verifies <promise>#<id>.
 	Verifiers []string `json:"verifiers"`
+	// Confirmation is the case's own confirmation state, read from the cases
+	// the confirming decision recorded (rnd/0010 §B5).
+	Confirmation CaseConfirmation `json:"confirmation"`
+}
+
+// Case confirmation states. Only confirmed is positive; it never changes the
+// promise's confirmed signal, which still reads the packet as a whole.
+const (
+	CaseConfirmed   = "confirmed"
+	CaseUnconfirmed = "unconfirmed"
+)
+
+// Case confirmation codes: why a case reads as it does.
+const (
+	// CaseCodeConfirmed: the case is as the confirming decision recorded it.
+	CaseCodeConfirmed = "CASE_CONFIRMED"
+	// CaseCodeAdded: the confirming decision did not hold the case.
+	CaseCodeAdded = "CASE_ADDED_AFTER_CONFIRMATION"
+	// CaseCodeEdited: its kind, statement or enforcer changed, or it was
+	// restored, since the decision recorded it.
+	CaseCodeEdited = "CASE_EDITED_AFTER_CONFIRMATION"
+	// CaseCodeRetired: it was retired since the decision recorded it.
+	CaseCodeRetired = "CASE_RETIRED_AFTER_CONFIRMATION"
+	// CaseCodeNotRecorded: the confirming decision was prepared before
+	// decisions recorded their cases.
+	CaseCodeNotRecorded = "CASE_NOT_RECORDED"
+	// CaseCodeNeverConfirmed: no human confirmation covers the promise.
+	CaseCodeNeverConfirmed = "CASE_NEVER_CONFIRMED"
+)
+
+// CaseConfirmation is one case's confirmation state, its code and why.
+type CaseConfirmation struct {
+	State  string `json:"state"`
+	Code   string `json:"code"`
+	Reason string `json:"reason"`
+}
+
+// ConfirmationLine is the case's confirmation in words, for one line.
+func (c CaseRow) ConfirmationLine() string {
+	if c.Confirmation.State == "" {
+		return ""
+	}
+	return c.Confirmation.State + ": " + c.Confirmation.Reason
 }
 
 // Line is the case on one line: label, coverage, kind and statement, and

@@ -48,3 +48,18 @@ invariants:
     statement: A signature verdict names a human login as its signer, never a bot or agent login, whoever opened the pull request; a pull request opened by a bot or agent account is named in the verdict's text.
   - id: INV-19
     statement: confirm --unsigned lists the current decisions that rest on a local note or a review, with the exact commands that re-confirm each by signature, and signs, prepares and writes nothing.
+  - id: INV-20
+    statement: Each acceptance case has its own confirmation state, read from the cases the confirming decision recorded, and the promise's confirmed signal keeps its meaning.
+    cases:
+      - id: a
+        kind: happy
+        statement: A case the confirming decision did not hold reads unconfirmed, added after confirmation.
+      - id: b
+        kind: edge
+        statement: A case whose kind, statement or enforcer changed, or that was retired, since the decision recorded it reads unconfirmed and names the change.
+      - id: c
+        kind: happy
+        statement: A case as the decision recorded it reads confirmed.
+      - id: d
+        kind: error
+        statement: A decision that recorded no cases, or no confirmation at all, leaves every case unconfirmed with the reason.

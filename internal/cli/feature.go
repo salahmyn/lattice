@@ -78,6 +78,9 @@ func newFeatureShowCommand(io *IO) *cobra.Command {
 					io.printf("  invariant   %s — %s\n", inv.ID, inv.Statement)
 					for _, c := range cases[m.ID+":"+inv.ID] {
 						io.printf("    case      %s\n", c.Line(true))
+						if l := c.ConfirmationLine(); l != "" {
+							io.printf("              confirmation %s\n", l)
+						}
 					}
 				}
 				for _, s := range kg.Surfaces {
