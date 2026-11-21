@@ -17,6 +17,15 @@ import (
 //	DUPLICATE_TRIGGER         (warning) — two EPs claim the same trigger
 //	PHANTOM_FLOW              (error)   — flow step names a non-existent feature
 //	HANDLER_MISSING           (warning) — handler FQN absent from the IR
+//
+// An entry point with status proposal is a suggestion, not a commitment: a
+// warning on it would turn a clean gate red though nobody changed anything.
+// So every rule above that can fire on one (UNCLASSIFIED_ENTRY_POINT,
+// DUPLICATE_TRIGGER, HANDLER_MISSING) reports it as info. A cron job that
+// only calls an edge function over HTTP, for instance, reaches no feature.
+// PHANTOM_FLOW stays an error: a flow naming a missing feature is wrong
+// whatever the status.
+// @enforces entrypoints:INV-7
 func checkEntryPoints(kg schema.KnowledgeGraph, r *reach.Result) []schema.Violation {
 	if len(kg.EntryPoints) == 0 {
 		return nil
@@ -30,9 +39,14 @@ func checkEntryPoints(kg schema.KnowledgeGraph, r *reach.Result) []schema.Violat
 		symbolFQNs[s.FQN] = true
 	}
 	triggerSeen := map[string]string{} // key -> first EP id that claimed it
+	proposalSeen := map[string]bool{}  // key -> the first claimant is a proposal
 
 	var out []schema.Violation
 	for _, ep := range kg.EntryPoints {
+		sev := schema.SeverityWarning
+		if ep.Status == schema.StatusProposal {
+			sev = schema.SeverityInfo
+		}
 		// HANDLER_MISSING — only fires when the IR actually has symbols
 		// (otherwise this would always fire in review mode).
 		// A runtime root's handler is a node of the call graph (a serve
@@ -41,7 +55,7 @@ func checkEntryPoints(kg schema.KnowledgeGraph, r *reach.Result) []schema.Violat
 			!(r != nil && r.Graph != nil && r.Graph.HasNode(ep.Handler.Symbol)) {
 			out = append(out, schema.Violation{
 				Code:     schema.CodeHandlerMissing,
-				Severity: schema.SeverityWarning,
+				Severity: sev,
 				Message:  fmt.Sprintf("entry point %q has handler %q that does not appear in the symbol index", ep.ID, ep.Handler.Symbol),
 			})
 		}
@@ -49,7 +63,7 @@ func checkEntryPoints(kg schema.KnowledgeGraph, r *reach.Result) []schema.Violat
 		if len(ep.Flow) == 0 {
 			out = append(out, schema.Violation{
 				Code:     schema.CodeUnclassifiedEntryPoint,
-				Severity: schema.SeverityWarning,
+				Severity: sev,
 				Message:  fmt.Sprintf("entry point %q reaches no feature — annotate the handler chain or accept it as a trampoline", ep.ID),
 			})
 		}
@@ -74,13 +88,18 @@ func checkEntryPoints(kg schema.KnowledgeGraph, r *reach.Result) []schema.Violat
 		}
 		key := ep.Kind + "|" + trigger
 		if prev, ok := triggerSeen[key]; ok {
+			dupSev := sev // a collision with a proposal is a suggestion too
+			if proposalSeen[key] {
+				dupSev = schema.SeverityInfo
+			}
 			out = append(out, schema.Violation{
 				Code:     schema.CodeDuplicateTrigger,
-				Severity: schema.SeverityWarning,
+				Severity: dupSev,
 				Message:  fmt.Sprintf("entry point %q shares its trigger with %q — routing collision", ep.ID, prev),
 			})
 		} else {
 			triggerSeen[key] = ep.ID
+			proposalSeen[key] = ep.Status == schema.StatusProposal
 		}
 	}
 	return out

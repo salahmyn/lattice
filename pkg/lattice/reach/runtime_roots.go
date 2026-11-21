@@ -4,6 +4,7 @@ package reach
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -39,6 +40,9 @@ type RuntimeRoot struct {
 	// Job and Schedule are a cron job's literals; Method and Path a route's.
 	Job, Schedule string
 	Method, Path  string
+	// Calls are the nodes a cron job's body calls directly (resolved
+	// edges), the SQL functions it runs.
+	Calls []string
 	// Blocked is empty for a root that can become an entry point; otherwise
 	// the reason it cannot (Blocked*).
 	Blocked string
@@ -69,10 +73,11 @@ func (g *Graph) RuntimeRoots() []RuntimeRoot {
 			switch {
 			case n.Kind == ir.NodeServe && n.Root == "serve":
 				out = append(out, RuntimeRoot{FQN: n.FQN, Source: RootServe, Kind: schema.EntryPointKindHTTP,
-					File: m.File, Line: n.Line})
+					File: m.File, Line: n.Line, Path: EdgeFunctionPath(m.File)})
 			case n.Kind == ir.NodeCron:
 				r := RuntimeRoot{FQN: n.FQN, Source: RootCron, Kind: schema.EntryPointKindCron,
-					File: m.File, Line: n.Line, Job: n.Job, Schedule: n.Schedule}
+					File: m.File, Line: n.Line, Job: n.Job, Schedule: n.Schedule,
+					Calls: append([]string(nil), g.out[n.FQN]...)}
 				if n.KeyComputed {
 					r.Blocked = BlockedKeyComputed
 				}
@@ -108,11 +113,40 @@ func (g *Graph) RuntimeRoots() []RuntimeRoot {
 	return out
 }
 
+// edgeFunctionRe finds the edge function a file is: the platform serves
+// supabase/functions/<name>/index.<ext> at /functions/v1/<name>. A directory
+// whose name starts with an underscore (_shared) holds code the functions
+// share, not a function.
+var edgeFunctionRe = regexp.MustCompile(`(?:^|/)supabase/functions/([^/_][^/]*)/index\.(?:ts|tsx|js|jsx|mts|mjs)$`)
+
+// EdgeFunctionPath is the path the platform serves the edge function in file
+// at: /functions/v1/<name>. Empty when file is not an edge function's entry
+// file. A Deno.serve handler answers every method, so no method goes with it.
+func EdgeFunctionPath(file string) string {
+	if m := edgeFunctionRe.FindStringSubmatch(file); m != nil {
+		return "/functions/v1/" + m[1]
+	}
+	return ""
+}
+
 // CoveredBy reports whether an entry point somebody declared or a detector
-// found already stands for the root: it names the root's handler, or it is
-// the same route (method and path) or the same named job. A proposal made
-// from a runtime root (DetectedBy set) does not cover anything: it is
-// recomputed from the roots on every extract.
+// found already stands for the root. A proposal made from a runtime root
+// (DetectedBy set) does not cover anything: it is recomputed from the roots
+// on every extract. Otherwise the entry point covers the root when any of
+// these holds:
+//
+//   - their handlers are equal;
+//   - the root is a detected route and the entry point is the same route
+//     (kind, method and path);
+//   - the root is a serve handler and the entry point is an http_route or a
+//     webhook whose handler symbol or handler file is in the serve handler's
+//     module: a manifest names the function the handler calls (or the file),
+//     not the serve node, which has no name of its own;
+//   - the root is a cron job and the entry point is a cron with the same job
+//     name; or, when the entry point names no job, with the same schedule and
+//     a handler the job's body calls directly. A different job name always
+//     keeps two jobs apart, and two jobs on one schedule that call different
+//     functions are not merged.
 func (r RuntimeRoot) CoveredBy(eps []schema.EntryPoint) bool {
 	for _, ep := range eps {
 		if ep.DetectedBy != "" {
@@ -124,8 +158,40 @@ func (r RuntimeRoot) CoveredBy(eps []schema.EntryPoint) bool {
 		case r.Source == RootSurface && ep.Kind == r.Kind && r.Path != "" &&
 			ep.Trigger.Path == r.Path && strings.EqualFold(ep.Trigger.Method, r.Method):
 			return true
+		case r.Source == RootServe && r.inServeModule(ep):
+			return true
 		case r.Source != RootServe && ep.Kind == schema.EntryPointKindCron && r.Kind == ep.Kind &&
 			r.Job != "" && ep.Trigger.Job == r.Job:
+			return true
+		case r.Source == RootCron && ep.Kind == schema.EntryPointKindCron && ep.Trigger.Job == "" &&
+			r.Schedule != "" && ep.Trigger.Schedule == r.Schedule && r.calls(ep.Handler.Symbol):
+			return true
+		}
+	}
+	return false
+}
+
+// inServeModule reports an http_route or webhook entry point whose handler
+// lies in the module of the serve root r.
+func (r RuntimeRoot) inServeModule(ep schema.EntryPoint) bool {
+	if ep.Kind != schema.EntryPointKindHTTP && ep.Kind != schema.EntryPointKindWebhook {
+		return false
+	}
+	if f := strings.TrimPrefix(strings.ReplaceAll(ep.Handler.File, "\\", "/"), "./"); f != "" && f == r.File {
+		return true
+	}
+	mod := strings.TrimSuffix(r.FQN, "<serve>") // "<module>."
+	sym := ep.Handler.Symbol
+	return mod != "" && mod != "." && sym != "" && strings.HasPrefix(sym, mod)
+}
+
+// calls reports that the root's body calls the node fqn directly.
+func (r RuntimeRoot) calls(fqn string) bool {
+	if fqn == "" {
+		return false
+	}
+	for _, c := range r.Calls {
+		if c == fqn {
 			return true
 		}
 	}

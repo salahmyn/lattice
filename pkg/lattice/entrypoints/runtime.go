@@ -71,6 +71,7 @@ func proposalOf(rt reach.RuntimeRoot) schema.EntryPoint {
 	switch rt.Source {
 	case reach.RootServe:
 		ep.DetectedBy = "runtime_root:serve"
+		ep.Trigger = schema.Trigger{Path: rt.Path} // an edge function's path; no method: it answers every one
 		ep.ID = "ep.http." + idPath(strings.TrimSuffix(rt.FQN, ".<serve>")) + ".serve"
 	case reach.RootCron:
 		ep.DetectedBy = "runtime_root:cron"

@@ -231,3 +231,152 @@ func TestProximityStepsAreLabelled(t *testing.T) {
 		t.Fatalf("flow = %+v, want one proximity step", flow)
 	}
 }
+
+// edgeFixture parses a small Supabase-shaped tree: three edge functions
+// (the shared directory holds no function), and a migration with three cron
+// jobs. Manifests name things the way people write them: the function the
+// serve handler calls, a file, a job name, or the SQL function a job runs.
+func edgeFixture(t *testing.T) (schema.KnowledgeGraph, *reach.Graph) {
+	t.Helper()
+	ts, pg := typescript.New(), postgres.New(nil, nil)
+	var mods []ir.Module
+	for _, f := range []struct{ path, src string }{
+		{"supabase/functions/feeds/index.ts", "// @module-feature feeds\nexport function handle(_r: Request): Response { return new Response('x'); }\nDeno.serve(handle);\n"},
+		{"supabase/functions/hook/index.ts", "// @module-feature feeds\nDeno.serve((_r: Request) => new Response('x'));\n"},
+		{"supabase/functions/fresh/index.ts", "// @module-feature feeds\nexport function run(): void {}\nDeno.serve(() => { run(); return new Response('x'); });\n"},
+		{"supabase/functions/_shared/util.ts", "// @module-feature feeds\nexport function util(): void {}\n"},
+	} {
+		m, err := ts.Parse(t.Context(), f.path, []byte(f.src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		mods = append(mods, m)
+	}
+	m, err := pg.Parse(t.Context(), "supabase/migrations/001_jobs.sql", []byte(`-- @module-feature feeds
+create function app.sweep() returns void language sql as $$ select 1; $$;
+create function app.tidy() returns void language sql as $$ select 1; $$;
+create function app.fresh_job() returns void language sql as $$ select 1; $$;
+
+select cron.schedule('sweep-job', '0 3 * * *', $$ select app.sweep() $$);
+select cron.schedule('tidy-job', '0 3 * * *', $$ select app.tidy() $$);
+select cron.schedule('fresh-job', '*/5 * * * *', $$ select app.fresh_job() $$);
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mods = pg.Resolve(append(mods, m))
+	manifests := []schema.Manifest{{ID: "feeds", Version: 1, Status: schema.StatusProduction, Purpose: "feeds",
+		SourcePath: "features/feeds.yaml"}}
+	kg := graph.Build(graph.Input{Manifests: manifests, Modules: mods}, graph.Options{})
+	return kg, reach.Build(mods, reach.Options{})
+}
+
+// Entry points declared the way people write them cover the runtime roots
+// they stand for, so none is proposed again: an http_route naming the
+// function the serve handler calls, a webhook naming only the function's file,
+// a cron naming the job, and a cron naming the schedule and the SQL function
+// its job calls. Two jobs on one schedule are not merged: tidy-job calls
+// another function, so it stays a proposal.
+// @verifies entrypoints:INV-5
+func TestDeclaredEntryPointsCoverRuntimeRoots(t *testing.T) {
+	kg, g := edgeFixture(t)
+	if all := proposals(kg, g, nil); len(all) != 6 {
+		t.Fatalf("with nothing declared want 6 proposals (3 serve, 3 cron), got %d: %+v", len(all), all)
+	}
+	declared := []schema.EntryPoint{
+		{ID: "ep.http.feeds", Kind: schema.EntryPointKindHTTP, Status: schema.StatusProduction,
+			Trigger: schema.Trigger{Method: "POST", Path: "/functions/v1/feeds"},
+			Handler: schema.Handler{Symbol: "supabase.functions.feeds.index.handle"}},
+		{ID: "ep.webhook.hook", Kind: schema.EntryPointKindWebhook, Status: schema.StatusProduction,
+			Handler: schema.Handler{Symbol: "onHook", File: "supabase/functions/hook/index.ts"}},
+		{ID: "ep.cron.sweep", Kind: schema.EntryPointKindCron, Status: schema.StatusProduction,
+			Trigger: schema.Trigger{Job: "sweep-job"}, Handler: schema.Handler{Symbol: "elsewhere"}},
+		{ID: "ep.cron.tidy", Kind: schema.EntryPointKindCron, Status: schema.StatusProduction,
+			Trigger: schema.Trigger{Schedule: "0 3 * * *"}, Handler: schema.Handler{Symbol: "sql.app.sweep"}},
+	}
+	got := proposals(kg, g, declared)
+	var ids []string
+	for _, ep := range got {
+		ids = append(ids, ep.ID)
+	}
+	// sweep-job is covered twice over; tidy-job shares the schedule but its
+	// body calls app.tidy, not the declared app.sweep.
+	if len(got) != 3 {
+		t.Fatalf("want 3 proposals (fresh serve, tidy-job, fresh-job), got %v", ids)
+	}
+	jobs, serves := map[string]bool{}, 0
+	for _, ep := range got {
+		if ep.Kind == schema.EntryPointKindCron {
+			jobs[ep.Trigger.Job] = true
+		} else {
+			serves++
+			if !strings.Contains(ep.Handler.File, "fresh") {
+				t.Errorf("a covered serve root was proposed: %+v", ep)
+			}
+		}
+	}
+	if serves != 1 || !jobs["tidy-job"] || !jobs["fresh-job"] {
+		t.Errorf("proposals %v: want the fresh function and jobs tidy-job and fresh-job", ids)
+	}
+
+	// Everything declared: nothing is proposed.
+	declared = append(declared,
+		schema.EntryPoint{ID: "ep.http.fresh", Kind: schema.EntryPointKindHTTP, Status: schema.StatusProduction,
+			Handler: schema.Handler{Symbol: "supabase.functions.fresh.index.run"}},
+		schema.EntryPoint{ID: "ep.cron.tidy2", Kind: schema.EntryPointKindCron, Status: schema.StatusProduction,
+			Trigger: schema.Trigger{Schedule: "0 3 * * *"}, Handler: schema.Handler{Symbol: "sql.app.tidy"}},
+		schema.EntryPoint{ID: "ep.cron.fresh", Kind: schema.EntryPointKindCron, Status: schema.StatusProduction,
+			Trigger: schema.Trigger{Job: "fresh-job", Schedule: "*/5 * * * *"}, Handler: schema.Handler{Symbol: "sql.app.fresh_job"}})
+	if got := proposals(kg, g, declared); len(got) != 0 {
+		t.Errorf("everything is declared, yet %d proposals: %+v", len(got), got)
+	}
+
+	// A cron whose name differs never covers another job, even on the same
+	// schedule with a handler the other job calls.
+	other := []schema.EntryPoint{{ID: "ep.cron.x", Kind: schema.EntryPointKindCron, Status: schema.StatusProduction,
+		Trigger: schema.Trigger{Job: "someone-else", Schedule: "0 3 * * *"}, Handler: schema.Handler{Symbol: "sql.app.sweep"}}}
+	if got := proposals(kg, g, other); len(got) != 6 {
+		t.Errorf("a differently named job covered a root: %d proposals", len(got))
+	}
+	// An http_route of another module does not cover a serve root.
+	elsewhere := []schema.EntryPoint{{ID: "ep.http.o", Kind: schema.EntryPointKindHTTP, Status: schema.StatusProduction,
+		Handler: schema.Handler{Symbol: "supabase.functions.other.index.handle", File: "supabase/functions/other/index.ts"}}}
+	if got := proposals(kg, g, elsewhere); len(got) != 6 {
+		t.Errorf("an entry point of another module covered a root: %d proposals", len(got))
+	}
+}
+
+// A serve proposal for an edge function carries the path the platform serves
+// it at and no method; a serve in the shared directory has no path.
+// @verifies entrypoints:INV-5
+func TestEdgeFunctionProposalPath(t *testing.T) {
+	kg, g := edgeFixture(t)
+	paths := map[string]string{}
+	for _, ep := range proposals(kg, g, nil) {
+		if ep.Kind == schema.EntryPointKindHTTP {
+			if ep.Trigger.Method != "" {
+				t.Errorf("%s: method %q, want none (Deno.serve answers every method)", ep.ID, ep.Trigger.Method)
+			}
+			paths[ep.Handler.File] = ep.Trigger.Path
+		}
+	}
+	for file, want := range map[string]string{
+		"supabase/functions/feeds/index.ts": "/functions/v1/feeds",
+		"supabase/functions/hook/index.ts":  "/functions/v1/hook",
+		"supabase/functions/fresh/index.ts": "/functions/v1/fresh",
+	} {
+		if paths[file] != want {
+			t.Errorf("%s: path %q, want %q", file, paths[file], want)
+		}
+	}
+	for file, want := range map[string]string{
+		"supabase/functions/_shared/index.ts": "",
+		"supabase/functions/a/b/index.ts":     "",
+		"api/index.ts":                        "",
+		"web/supabase/functions/x/index.mjs":  "/functions/v1/x",
+	} {
+		if got := reach.EdgeFunctionPath(file); got != want {
+			t.Errorf("EdgeFunctionPath(%q) = %q, want %q", file, got, want)
+		}
+	}
+}
