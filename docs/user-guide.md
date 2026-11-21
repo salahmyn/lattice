@@ -1943,8 +1943,12 @@ where trust started, so `confirm` and the readers need the full history
 (`fetch-depth: 0`).
 
 **Re-confirm by signature.** `lattice confirm --unsigned` lists the decisions a
-signature could re-confirm, and the exact commands for each. It reads only: it
-signs, prepares and writes nothing (`lattice.confirm-unsigned/1`).
+signature could confirm, and the exact commands for each: an approval or
+acknowledgement typed into a BRD file (by `brd approve`, `brd ack`, or written
+before Lattice marked such notes `local`), a council's approval that its
+delegating human has not acknowledged yet (`council`: read the council's decision
+first), and a confirmation by review. It reads only: it signs, prepares and
+writes nothing (`lattice.confirm-unsigned/1`).
 
 ```text
 local  brd.ack brd.refunds v3  (a local note typed as ana@example.com, not a confirmation; ...)
