@@ -4062,14 +4062,14 @@ A project can read green and still have a spec that has drifted from the code. T
 criteria figure of `lattice rtm` says "1/1 criteria verified, 100%" while two of the
 three declared invariants are required by nothing, a feature the spec calls a proposal
 sits on the flow of a production entry point, and another proposal has code that no
-flow and no root reaches. Three facts say so, each from the graph alone.
+flow and no root reaches. Four facts say so, each from the graph alone.
 
 ```sh
-lattice validate     # INVARIANT_UNREQUIRED, STATUS_DRIFT, FEATURE_UNREACHED (all info)
+lattice validate     # INVARIANT_UNREQUIRED, STATUS_DRIFT, FEATURE_UNREACHED, PROPOSAL_REACHED_BY_ROOT (all info)
 lattice rtm          # the header gains: invariants 1/3 required
 ```
 
-### The three facts
+### The four facts
 
 - **`INVARIANT_UNREQUIRED`**: a declared invariant that no criterion's
   `maps_to_invariant` names. One finding per feature, listing every such invariant
@@ -4088,6 +4088,19 @@ lattice rtm          # the header gains: invariants 1/3 required
   and is on no flow and reached by no root. The message states the status. A feature with
   no code in the graph stays silent, because nothing built is unreached. The finding for
   a production feature is unchanged.
+- **`PROPOSAL_REACHED_BY_ROOT`**: a `proposal` or `accepted` feature that no production
+  entry point's flow names, and that a runtime root reaches through the static call graph.
+  It uses the same reach as `FEATURE_UNREACHED` (a root reaches one of the feature's
+  non-test symbols), so the two never both fire. The roots are the ones the graph has:
+  `main`, triggers and policies, cron and serve handlers, entry files, `coverage.roots`
+  and the handlers of entry points of any status; a test is never a root. One finding per
+  feature; the message names up to three roots with the reason of each and one symbol each
+  reaches, for example `src.jobs.nightly (coverage.roots: the nightly job) through
+  src.digest.send`. It says "reachable in code", because Lattice cannot see runtime flags
+  and the finding says nothing about whether the code runs. It never fires for a feature
+  `STATUS_DRIFT` reports, nor for a `production` or `deprecated` feature. Its next action:
+  add the feature to the flow of the entry point that serves the root, then
+  `lattice feature promote <id>`; or allowlist it with a reason.
 
 ### What never fires them
 
@@ -4114,7 +4127,7 @@ changes. The line is omitted when no feature declares an invariant.
 
 ### Policy
 
-All three are info and always on, so `validate.fail_on: warning` stays green with them
+All four are info and always on, so `validate.fail_on: warning` stays green with them
 open. `validate.severity` can raise or drop them like any other code.
 
 ### Clear a finding
@@ -4135,6 +4148,9 @@ open. `validate.severity` can raise or drop them like any other code.
   allowlist the finding with a reason.
 - `FEATURE_UNREACHED` on an unpromoted feature: declare the entry point that reaches it,
   or allowlist the finding with a reason.
+- `PROPOSAL_REACHED_BY_ROOT`: add the feature to the flow of the entry point that serves
+  the named root, then `lattice feature promote <id>`; or allowlist the finding with a
+  reason.
 
 ## 4x. Promote: set a feature to production on evidence
 

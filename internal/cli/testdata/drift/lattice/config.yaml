@@ -1,1 +1,4 @@
-{}
+coverage:
+  roots:
+    - symbol: src.nightly.nightlyJob
+      reason: the nightly job, started by the scheduler

@@ -1,12 +1,18 @@
 package validate
 
 import (
+	"context"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
+	"github.com/salahmyn/lattice/pkg/lattice/adapters/typescript"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/graph"
+	"github.com/salahmyn/lattice/pkg/lattice/reach"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
+	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 )
 
 // driftGraph: feature fees (proposal, three invariants, one mapped, code in
@@ -217,5 +223,93 @@ func TestDriftFindingsNeverFailOnWarning(t *testing.T) {
 		if !seen[c] {
 			t.Errorf("%s did not fire on the fixture graph", c)
 		}
+	}
+}
+
+// rootReachGraph is a small TS workspace with two declared roots (job_a and
+// job_b, both calling the digest), a production route calling checkout, and a
+// test calling the audit code. Features: digest (proposal, two roots reach
+// it), checkout (proposal, on a production flow: STATUS_DRIFT), audit
+// (proposal, reached only from a test), billing (production, reached by a
+// root), legacy (deprecated, reached by a root), orphan (proposal, nothing
+// reaches it).
+func rootReachGraph(t *testing.T) (schema.KnowledgeGraph, *reach.Result) {
+	t.Helper()
+	files := map[string]string{
+		"src/digest.ts":   "// @module-feature digest\nexport function send() {}\n",
+		"src/checkout.ts": "// @module-feature checkout\nexport function place() {}\n",
+		"src/audit.ts":    "// @module-feature audit\nexport function record() {}\n",
+		"src/billing.ts":  "// @module-feature billing\nexport function charge() {}\n",
+		"src/legacy.ts":   "// @module-feature legacy\nexport function old() {}\n",
+		"src/orphan.ts":   "// @module-feature orphan\nexport function idle() {}\n",
+		"src/jobs.ts": "// @module-feature jobs\nimport { send } from './digest';\nimport { charge } from './billing';\nimport { old } from './legacy';\n" +
+			"export function jobA() { send(); charge(); old(); }\nexport function jobB() { send(); }\n",
+		"src/route.ts":      "// @module-feature jobs\nimport { place } from './checkout';\nexport function route() { place(); }\n",
+		"src/audit.test.ts": "// @module-feature jobs\nimport { record } from './audit';\nexport function auditTest() { record(); }\n",
+	}
+	order := []string{"src/audit.test.ts", "src/audit.ts", "src/billing.ts", "src/checkout.ts", "src/digest.ts", "src/jobs.ts", "src/legacy.ts", "src/orphan.ts", "src/route.ts"}
+	a := typescript.New()
+	var mods []ir.Module
+	for _, p := range order {
+		m, err := a.Parse(context.Background(), p, []byte(files[p]))
+		if err != nil {
+			t.Fatal(err)
+		}
+		mods = append(mods, m)
+	}
+	mods = a.Resolve(mods)
+	var manifests []schema.Manifest
+	for id, st := range map[string]schema.Status{"digest": schema.StatusProposal, "checkout": schema.StatusProposal,
+		"audit": schema.StatusProposal, "billing": schema.StatusProduction, "legacy": schema.StatusDeprecated,
+		"orphan": schema.StatusProposal, "jobs": schema.StatusProduction} {
+		manifests = append(manifests, schema.Manifest{ID: id, Version: 1, Status: st, Purpose: id, SourcePath: "features/" + id + ".yaml"})
+	}
+	sort.Slice(manifests, func(i, j int) bool { return manifests[i].ID < manifests[j].ID })
+	kg := graph.Build(graph.Input{Manifests: manifests, Modules: mods}, graph.Options{})
+	kg.EntryPoints = []schema.EntryPoint{{ID: "ep.route", Kind: schema.EntryPointKindHTTP, Status: schema.StatusProduction,
+		Handler: schema.Handler{Symbol: "src.route.route"}, Flow: []schema.FlowStep{{Feature: "jobs"}, {Feature: "checkout"}}}}
+	r := reach.Compute(reach.Input{Modules: mods, EntryPoints: kg.EntryPoints, Declared: []config.CoverageRoot{
+		{Symbol: "src.jobs.jobA", Reason: "job a"}, {Symbol: "src.jobs.jobB", Reason: "job b"},
+		{Symbol: "src.audit.test.auditTest", Reason: "a test"}}})
+	reach.Annotate(&kg, r)
+	return kg, r
+}
+
+// One finding per proposal or accepted feature that no production flow names
+// and a non-test root reaches, naming each root and a reached symbol and
+// saying "reachable in code". It never fires for a feature STATUS_DRIFT
+// reports, for a production or deprecated feature, for one reached only from
+// a test, or for one nothing reaches; a run that fails on warnings stays
+// green with it present.
+// @verifies validation:INV-25
+func TestProposalReachedByRoot(t *testing.T) {
+	kg, r := rootReachGraph(t)
+	v := Validate(kg, config.Default(), Options{Reach: r})
+	got := driftByCode(v, schema.CodeProposalReachedByRoot)
+	if len(got) != 1 || got[0].FeatureID != "digest" || got[0].Severity != schema.SeverityInfo {
+		t.Fatalf("PROPOSAL_REACHED_BY_ROOT = %+v", got)
+	}
+	m := got[0].Message
+	for _, want := range []string{"src.jobs.jobA (coverage.roots: job a) through src.digest.send", "src.jobs.jobB (coverage.roots: job b) through src.digest.send",
+		"reachable in code", "runtime flags"} {
+		if !strings.Contains(m, want) {
+			t.Errorf("message lacks %q: %s", want, m)
+		}
+	}
+	if !reflect.DeepEqual(got[0].Refs, []string{"src.jobs.jobA", "src.jobs.jobB"}) {
+		t.Errorf("refs = %v", got[0].Refs)
+	}
+	if d := driftByCode(v, schema.CodeStatusDrift); len(d) != 1 || d[0].FeatureID != "checkout" {
+		t.Errorf("STATUS_DRIFT = %+v", d)
+	}
+	for _, x := range v {
+		if x.Severity == schema.SeverityWarning && x.Code == schema.CodeProposalReachedByRoot {
+			t.Errorf("a warning: %+v", x)
+		}
+	}
+	// No roots: the rule stays quiet, which is unknown, not a pass.
+	kg2, _ := rootReachGraph(t)
+	if n := len(driftByCode(Validate(kg2, config.Default(), Options{}), schema.CodeProposalReachedByRoot)); n != 0 {
+		t.Errorf("without a reach result: %d findings", n)
 	}
 }

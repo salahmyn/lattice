@@ -20,7 +20,9 @@ import (
 //   - shop.checkout is still a proposal, yet the flow of a production entry
 //     point names it, and one of its two invariants is mapped by no criterion;
 //   - shop.refunds is a proposal with code that no flow and no root reaches,
-//     and its only invariant is mapped by no criterion.
+//     and its only invariant is mapped by no criterion;
+//   - shop.digest is a proposal with no invariant, on no flow, whose code a
+//     declared root (a nightly job) calls.
 func driftFixture(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -131,5 +133,50 @@ func TestDriftFindingsOnFixture(t *testing.T) {
 	}
 	if !strings.Contains(text.String(), "(1/1 criteria verified)") || !strings.Contains(text.String(), "invariants:                1/3 required") {
 		t.Errorf("rtm header:\n%s", text.String())
+	}
+}
+
+// A proposal on no flow that a declared root reaches gets one
+// PROPOSAL_REACHED_BY_ROOT, naming the root and a reached symbol. The feature
+// STATUS_DRIFT reports and the one FEATURE_UNREACHED reports keep only their
+// own finding, and a run that fails on warnings stays green.
+// @verifies validation:INV-25
+func TestProposalReachedByRootOnFixture(t *testing.T) {
+	dir := driftFixture(t)
+	by, ok, warnings := driftValidate(t, dir, "--fail-on", "warning")
+	if warnings != 0 || !ok {
+		t.Errorf("fail_on warning: ok=%v warnings=%d; the finding is info", ok, warnings)
+	}
+	got := by[schema.CodeProposalReachedByRoot]
+	if len(got) != 1 || got[0].FeatureID != "shop.digest" || got[0].Severity != schema.SeverityInfo {
+		t.Fatalf("PROPOSAL_REACHED_BY_ROOT = %+v", got)
+	}
+	msg := got[0].Message
+	for _, want := range []string{"src.nightly.nightlyJob", "the nightly job", "src.digest.sendDigest", "reachable in code", "runtime flags"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message lacks %q: %s", want, msg)
+		}
+	}
+	for _, banned := range []string{"live", "shipped", "deployed"} {
+		if strings.Contains(msg, banned) {
+			t.Errorf("message says %q: %s", banned, msg)
+		}
+	}
+	if d := got[0].NextAction.Detail; !strings.Contains(d, "lattice feature promote shop.digest") || !strings.Contains(d, "allowlist") {
+		t.Errorf("next action = %q", d)
+	}
+	for code, feature := range map[string]string{schema.CodeStatusDrift: "shop.checkout", schema.CodeFeatureUnreached: "shop.refunds"} {
+		var fs []string
+		for _, v := range by[code] {
+			fs = append(fs, v.FeatureID)
+		}
+		if len(fs) != 1 || fs[0] != feature {
+			t.Errorf("%s on %v, want only %s", code, fs, feature)
+		}
+	}
+	for _, v := range got {
+		if v.FeatureID == "shop.checkout" || v.FeatureID == "shop.refunds" {
+			t.Errorf("PROPOSAL_REACHED_BY_ROOT on %s", v.FeatureID)
+		}
 	}
 }
