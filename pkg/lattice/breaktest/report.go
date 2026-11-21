@@ -51,6 +51,10 @@ type Report struct {
 	// Baselines counts the baseline invocations the run that made this
 	// report started and reused. It is not part of breaks.json.
 	Baselines BaselineCounts `json:"-"`
+	// SetupRuns counts the times break.setup ran in the run that made this
+	// report: once, plus each re-run after a failed restore or a baseline
+	// healed. It is not part of breaks.json.
+	SetupRuns int `json:"-"`
 	// baselines are the passing baselines Write keeps for the tree, nil
 	// when none are kept (a dirty tree).
 	baselines *baselineFile

@@ -45,6 +45,14 @@ type runner struct {
 
 	setupDone bool
 	setupErr  error
+	// setupRuns counts the times break.setup ran: the first, and each one a
+	// failed restore or a suspicious baseline asked for.
+	setupRuns int
+	// swapInvokes counts the commands that ran with the SQL object files. A
+	// swap since the last setup (swapDirty) is how a database may have been
+	// left in a state setup would not have made.
+	swapInvokes int
+	swapDirty   bool
 }
 
 // Execute breaks each promise's enforcer on a temporary worktree and reports
@@ -106,6 +114,7 @@ func Execute(ctx context.Context, kg schema.KnowledgeGraph, opts Options) (Repor
 		rep.Runs = append(rep.Runs, run)
 	}
 	rep.Baselines = r.counts
+	rep.SetupRuns = r.setupRuns
 
 	// A filtered run keeps the other promises' runs from the same commit, so
 	// one promise can be re-broken without losing the rest of the file.
@@ -163,10 +172,11 @@ func (r *runner) configHash(groups []group, noRunner []results.Selector) string 
 	desc := struct {
 		Version  string
 		Setup    []string
+		Restore  []string `json:",omitempty"`
 		Link     bool
 		Groups   []grp
 		NoRunner []string
-	}{Version: GeneratorVersion, Setup: r.opts.Config.Break.Setup, Link: r.opts.Config.Break.LinksNodeModules()}
+	}{Version: GeneratorVersion, Setup: r.opts.Config.Break.Setup, Restore: r.opts.Config.Break.Restore, Link: r.opts.Config.Break.LinksNodeModules()}
 	for _, g := range groups {
 		d := grp{Name: g.name, Kind: g.kind.String(), Template: g.tmpl}
 		if g.kind == kindRunner {
@@ -317,8 +327,15 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 		return run, nil
 	}
 
-	// Baseline: the verifiers on the unbroken code.
+	// Baseline: the verifiers on the unbroken code. After a SQL swap since
+	// the last setup, a failing baseline may be a database the restore left
+	// wrong, so it is retried once on a fresh setup.
+	swapBefore, swapped := r.swapDirty, r.swapInvokes
 	base := r.baseline(ctx, groups, sw.asBaseline())
+	if base.status == BaselineFail && swapBefore {
+		base = r.healBaseline(ctx, groups, sw)
+	}
+	r.restoreSQL(ctx, sw.asBaseline(), r.swapInvokes > swapped)
 	run.Baseline = base.status
 	if base.status != BaselinePass {
 		run.Reason = base.reason
@@ -343,10 +360,14 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 	}
 
 	// Break, run, restore.
+	swapped = r.swapInvokes
 	res, err := r.broken(ctx, t, plan, patch, groups, sw)
 	if err != nil {
 		return run, err
 	}
+	// The worktree is back to the unbroken code, so a setup the restore asks
+	// for builds the original database. The outcome below is not changed.
+	r.restoreSQL(ctx, sw, r.swapInvokes > swapped)
 	note := ""
 	if base.unchecked || res.unchecked {
 		note = " (executed test count not checked: the runner has no {junit})"
@@ -641,6 +662,10 @@ func (r *runner) invoke(ctx context.Context, g group, sql sqlFiles) invocation {
 	if g.usesJUnit() {
 		r.junitSeq++
 		junit = filepath.Join(r.wt.tmp, fmt.Sprintf("junit-%d.xml", r.junitSeq))
+	}
+	if g.usesSQLFiles() {
+		r.swapInvokes++
+		r.swapDirty = true
 	}
 	dir, argv := render(g, r.wt.Dir, junit, sql)
 	inv := invocation{res: command(ctx, "", dir, r.opts.Timeout, argv[0], argv[1:]...), junit: junit != ""}

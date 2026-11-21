@@ -24,6 +24,8 @@ func (r *runner) ensureSetup(ctx context.Context) error {
 		return r.setupErr
 	}
 	r.setupDone = true
+	r.setupRuns++
+	r.swapDirty = false // a fresh setup leaves no swap behind
 	r.setupErr = r.setup(ctx)
 	return r.setupErr
 }
