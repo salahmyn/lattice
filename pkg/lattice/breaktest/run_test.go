@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
@@ -63,6 +64,36 @@ func TestClassify(t *testing.T) {
 	}
 	if got := classify("", 125, "Applying migration 001_init.sql...\nERROR: syntax error at or near \"OR\" (SQLSTATE 42601)\n", false); got.reason != `did not apply (runner exit 125): ERROR: syntax error at or near "OR" (SQLSTATE 42601)` {
 		t.Errorf("reason = %q", got.reason)
+	}
+}
+
+// A "did not apply" reason quotes the first ERROR:/error: line, else the last
+// non-empty line, and caps it at 120 runes.
+// @verifies breaktest:INV-3
+func TestApplyReasonTrim(t *testing.T) {
+	long := strings.Repeat("é", 300)
+	blob := `{"error":{"code":"x","message":"` + strings.Repeat("m", 400) + `"}}`
+	cases := []struct{ name, out, want string }{
+		{"error line wins over a later line", "reset\nERROR: relation \"a\" does not exist\n" + blob + "\n", `ERROR: relation "a" does not exist`},
+		{"lowercase error: marker", "step 1\nfatal error: boom\nstep 3\n", "fatal error: boom"},
+		{"first marker, not the last", "ERROR: first\nERROR: second\n", "ERROR: first"},
+		{"last non-empty line otherwise", "one\ntwo\n\n", "two"},
+		{"no output", "  \n", ""},
+		{"capped at 120 runes", "ERROR: " + long, "ERROR: " + strings.Repeat("é", 112) + "…"},
+		{"last line capped too", "start\n" + blob, blob[:119] + "…"},
+	}
+	for _, c := range cases {
+		got := classify("", 125, c.out, false).reason
+		want := "did not apply (runner exit 125)"
+		if c.want != "" {
+			want += ": " + c.want
+		}
+		if got != want {
+			t.Errorf("%s: reason %q, want %q", c.name, got, want)
+		}
+		if n := utf8.RuneCountInString(strings.TrimPrefix(got, "did not apply (runner exit 125): ")); n > 120 {
+			t.Errorf("%s: quoted %d runes, over the cap", c.name, n)
+		}
 	}
 }
 

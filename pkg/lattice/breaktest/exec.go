@@ -102,8 +102,8 @@ func classify(kind string, exit int, out string, timedOut bool) execResult {
 		return execResult{status: statusError, reason: "runner did not start: " + firstLine(out), output: out}
 	case exit == NotAppliedExit:
 		reason := "did not apply (runner exit 125)"
-		if l := lastLine(out); l != "" {
-			reason += ": " + clip(l)
+		if l := applyLine(out); l != "" {
+			reason += ": " + l
 		}
 		return execResult{status: statusBuild, reason: reason, output: out}
 	}
@@ -184,14 +184,36 @@ func firstLine(s string) string {
 	return clip(s)
 }
 
-// lastLine is the last non-empty line of s, where a failed setup step
-// usually says why.
-func lastLine(s string) string {
-	s = strings.TrimSpace(s)
-	if i := strings.LastIndexByte(s, '\n'); i >= 0 {
-		s = s[i+1:]
+// applyLineMax is the most runes a "did not apply" reason quotes.
+const applyLineMax = 120
+
+// applyLine picks the line of a failed setup step's output to quote in a
+// "did not apply" reason: the first line that holds "ERROR:" or "error:"
+// (Postgres and most command-line tools), else the last non-empty line. Either
+// way it is capped at applyLineMax runes with a trailing "…", so a tool that
+// prints its whole error as one JSON line stays readable in a results table.
+func applyLine(out string) string {
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	pick := ""
+	for _, l := range lines {
+		if strings.Contains(l, "ERROR:") || strings.Contains(l, "error:") {
+			pick = l
+			break
+		}
 	}
-	return clip(s)
+	if pick == "" {
+		for i := len(lines) - 1; i >= 0; i-- {
+			if strings.TrimSpace(lines[i]) != "" {
+				pick = lines[i]
+				break
+			}
+		}
+	}
+	pick = strings.TrimSpace(pick)
+	if r := []rune(pick); len(r) > applyLineMax {
+		return string(r[:applyLineMax-1]) + "…"
+	}
+	return pick
 }
 
 func clip(s string) string {
