@@ -42,6 +42,33 @@ func TestMatchesHeadSameTree(t *testing.T) {
 	}
 }
 
+// Without a same-tree fact, a stamp matches head only when the two agree or
+// either is unknown; a stamp of another commit does not.
+// @verifies audit:INV-9
+func TestMatchesHeadByStamp(t *testing.T) {
+	kg := graph(inv("INV-1"), []string{"INV-1"}, map[string][]string{"INV-1": {"f.TestOne"}})
+	for _, tc := range []struct {
+		name, stamp, head string
+		want             bool
+	}{
+		{"same commit", "abc123", "abc123", true},
+		{"unstamped results", "", "abc123", true},
+		{"graph with no commit", "older", "", true},
+		{"another commit", "older", "abc123", false},
+	} {
+		g := kg
+		g.GeneratedFromCommit = tc.head
+		rep := Compute(Sources{KG: g, Results: pass("f.TestOne"), Stamps: Inputs{
+			Results:  ResultsInput{Present: true, Commit: tc.stamp},
+			Coverage: CoverageInput{Present: true, Commit: tc.stamp},
+		}})
+		if rep.Inputs.Results.MatchesHead != tc.want || rep.Inputs.Coverage.MatchesHead != tc.want {
+			t.Errorf("%s: matches_head results=%v coverage=%v, want %v", tc.name,
+				rep.Inputs.Results.MatchesHead, rep.Inputs.Coverage.MatchesHead, tc.want)
+		}
+	}
+}
+
 func gitIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)...)
