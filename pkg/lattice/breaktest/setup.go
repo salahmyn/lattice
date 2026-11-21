@@ -12,6 +12,21 @@ import (
 	"time"
 )
 
+// SetupFailedPrefix starts the reason of every run that a failed break.setup
+// (or its re-run after a failed restore or a failed baseline) left unknown.
+// The audit reads breaks.json by the same text, in its own copy of it.
+const SetupFailedPrefix = "setup failed"
+
+// SetupFailure reports whether a run's reason is a failed setup, and the
+// reason without the lead: the command that failed and why.
+func SetupFailure(reason string) (string, bool) {
+	rest, ok := strings.CutPrefix(reason, SetupFailedPrefix)
+	if !ok {
+		return "", false
+	}
+	return strings.TrimSpace(strings.TrimPrefix(rest, ":")), true
+}
+
 // setupTimeout bounds each setup command, which may install dependencies.
 const setupTimeout = 10 * time.Minute
 

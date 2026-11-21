@@ -145,6 +145,13 @@ type Options struct {
 	// from; nil means none, and the rule does not fire.
 	Audit *audit.Report
 
+	// Breaks is lattice/.cache/results/breaks.json as the caller read it, nil
+	// when there is none. It is read only when BreaksRead is set: the caller
+	// says it looked, so a missing file or one of another commit reads "no
+	// break evidence" (BREAK_UNKNOWN_CAUSE, info) instead of nothing.
+	Breaks     *audit.BreaksFile
+	BreaksRead bool
+
 	// Reach is the classified call graph (rnd/0009, phase 2). nil means
 	// none was built: no reachability finding fires, and FEATURE_UNREACHED
 	// keeps its flow-based rule.
@@ -219,6 +226,7 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 			v = append(v, coverage.Findings(kg, c.opts.Coverage, cfg.CoverageConfig())...)
 			v = append(v, lines.Findings(c.opts.Lines, cfg.CoverageConfig().Floors.VerifiedLines, featureLocations(kg))...)
 			v = append(v, audit.EntryPointFindings(c.opts.Audit, featureLocations(kg))...)
+			v = append(v, c.checkBreakFacts()...)
 			// rnd/0009 phase 2 — reachability and suite overlap, off until
 			// enabled in validate.severity.
 			var ran reach.Executed

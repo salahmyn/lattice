@@ -46,3 +46,5 @@ invariants:
     statement: A line counts as reached by an invariant's verifiers only from the coverage of an invocation that ran those verifiers (or a verifier's own per-test run), and a line with no such data is unknown, never run, verified or counted toward a floor.
   - id: INV-11
     statement: A killed break counts as proven through an entry point only when a verifier that killed it ran a way in that reaches the enforcer (its own per-test run, or the line data of its unshared verifier group); a static path alone is never proof, it only reads unknown, and only a complete static graph in which no killer reaches a way in reads none, which raises BREAK_NO_ENTRYPOINT (info).
+  - id: INV-12
+    statement: Break facts are read from breaks.json by the rule that sets a file aside (another schema or another commit); a survived run is one with every verifier run, every other run that did not kill is unknown with its cause (setup failed, no runner, partial or other) read from its reason, and a file set aside yields no facts, never an empty set of survivors.

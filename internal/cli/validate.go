@@ -87,7 +87,8 @@ func newValidateCommand(io *IO) *cobra.Command {
 			// The entry-point proof reads break runs, so the audit is computed
 			// only when there is a breaks.json.
 			var auditRep *audit.Report
-			if _, present, _ := audit.LoadBreaks(ws.LatticeDir); present {
+			breaksFile, present, _ := audit.LoadBreaks(ws.LatticeDir)
+			if present {
 				ar := computeAudit(ws, kg, rr, dirty)
 				auditRep = &ar
 			}
@@ -103,6 +104,8 @@ func newValidateCommand(io *IO) *cobra.Command {
 				Coverage:      coverageIndex(ws, kg),
 				Lines:         linesRep,
 				Audit:         auditRep,
+				Breaks:        breaksFile,
+				BreaksRead:    true,
 				Reach:         rr,
 				Confirm:       confirm.LoadCache(ws.LatticeDir),
 				Tracked:       trackedDerived(ws.LatticeDir),

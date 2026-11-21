@@ -141,6 +141,9 @@ weakens enforcement silently.
 
 - `lattice break` breaks each promise's enforcer in a temporary worktree and
   runs only its verifiers. A test that still passes is a **fake**.
+  When `break.setup` fails, it prints `setup failed: N promises not run (<reason>)`,
+  and `lattice validate` states the break facts per feature as info:
+  `BREAK_SURVIVED`, `BREAK_UNKNOWN_CAUSE`, or "no break evidence".
 - `lattice break --fails-on-base <rev>` runs a change's new or edited tests on
   the old code. A fix's test should fail there.
 - `lattice audit` classifies every promise (fake, break-tested, exercised,
