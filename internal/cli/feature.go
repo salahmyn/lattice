@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
+	"github.com/salahmyn/lattice/pkg/lattice/graph"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
@@ -66,10 +67,18 @@ func newFeatureShowCommand(io *IO) *cobra.Command {
 				if m.ID != args[0] {
 					continue
 				}
+				layers := graph.FeatureLayers(kg)[m.ID]
 				if io.JSON {
-					return io.printJSON(m)
+					// the manifest as before, plus the computed layers
+					return io.printJSON(struct {
+						schema.Manifest
+						Layers []string `json:"layers,omitempty"`
+					}{m, layers})
 				}
 				io.printf("%s  [%s]  v%d\n%s\n\n", m.ID, m.Status, m.Version, strings.TrimSpace(m.Purpose))
+				if len(layers) > 0 {
+					io.printf("  layers      %s\n", strings.Join(layers, ", "))
+				}
 				for _, c := range m.Capabilities {
 					io.printf("  capability  %s — %s\n", c.ID, c.Summary)
 				}
@@ -96,8 +105,16 @@ func newFeatureShowCommand(io *IO) *cobra.Command {
 				for _, child := range m.Children {
 					io.printf("  sub-feature %s\n", child)
 				}
+				layerOf := map[string]string{}
+				for _, sym := range kg.Symbols {
+					layerOf[sym.FQN] = sym.Layer
+				}
 				for _, impl := range m.Implementations {
-					io.printf("  impl        %s (%s)\n", impl.Symbol, impl.Language)
+					layer := ""
+					if l := layerOf[impl.Symbol]; l != "" {
+						layer = " [" + l + "]"
+					}
+					io.printf("  impl        %s (%s)%s\n", impl.Symbol, impl.Language, layer)
 				}
 				return nil
 			}

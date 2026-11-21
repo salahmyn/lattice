@@ -23,6 +23,8 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"gopkg.in/yaml.v3"
+
+	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
 // Dir is the single directory that holds every Lattice-maintained artifact.
@@ -129,12 +131,13 @@ func (s Storage) check() error {
 
 // file is the on-disk workspace.yaml model.
 type file struct {
-	Mode      Mode       `yaml:"mode"`
-	CodeRoots []CodeRoot `yaml:"code_roots,omitempty"`
-	Exclude   []string   `yaml:"exclude,omitempty"`
-	Sources   []Source   `yaml:"sources,omitempty"`
-	Judgments string     `yaml:"judgments,omitempty"`
-	Storage   Storage    `yaml:"storage,omitempty"`
+	Mode      Mode               `yaml:"mode"`
+	CodeRoots []CodeRoot         `yaml:"code_roots,omitempty"`
+	Exclude   []string           `yaml:"exclude,omitempty"`
+	Layers    []schema.LayerRule `yaml:"layers,omitempty"`
+	Sources   []Source           `yaml:"sources,omitempty"`
+	Judgments string             `yaml:"judgments,omitempty"`
+	Storage   Storage            `yaml:"storage,omitempty"`
 }
 
 // Workspace is the resolved view of a project's Lattice setup.
@@ -150,6 +153,10 @@ type Workspace struct {
 	// directories never scanned for code, matched against paths relative to
 	// each code root. Git-ignored paths are skipped as well.
 	Exclude []string
+	// Layers are the declared path rules that give code a runtime layer, in
+	// order: the first whose glob matches a file wins. Their globs and layer
+	// names are checked by validate, not here.
+	Layers []schema.LayerRule
 	// Sources are the block-graph inputs declared in workspace.yaml.
 	Sources []Source
 	// judgments is the judgments directory as declared, resolved by ResolvePath.
@@ -222,6 +229,7 @@ func (w *Workspace) loadWorkspaceFile() error {
 	}
 	w.Exclude = f.Exclude
 	w.CodeRoots = f.CodeRoots
+	w.Layers = f.Layers
 	w.Sources = f.Sources
 	w.judgments = f.Judgments
 	w.Storage = f.Storage

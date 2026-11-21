@@ -19,6 +19,7 @@ type Block struct {
 	Attrs       map[string]string  `json:"attrs,omitempty"`
 	Overlays    map[string]Overlay `json:"overlays,omitempty"`   // initiative id -> its verdict on this block
 	Initiative  string             `json:"initiative,omitempty"` // set on blocks that exist only in a proposal
+	Layers      []string           `json:"layers,omitempty"`     // computed runtime layers the block spans, sorted (see LayerSet)
 }
 
 // Overlay is one initiative's verdict on a block: the top-ranked class of its

@@ -220,7 +220,7 @@ A complete, validating three-language example lives in
 | `lattice import scan\|review\|inscribe` | Brownfield import session |
 | `lattice analyze proposal <f>` | Conflict and impact analysis |
 | `lattice patch --from-file <f>` | Preview/apply a typed artifact edit |
-| `lattice serve` | Web UI (live updates, search); block map at `/map` (with an assurance lens), views at `/views` |
+| `lattice serve` | Web UI (live updates, search); block map at `/map` (with assurance and layer lenses), views at `/views` |
 | `lattice refresh` | Rebuild the block graph from the workspace's sources, judgments and features (`serve` and `export map` also rebuild it) |
 | `lattice record list\|get\|put` | Authored records (judgments, initiatives, evidence, BRDs) in the store |
 | `lattice store search\|relations\|export` | Query the stored block graph |

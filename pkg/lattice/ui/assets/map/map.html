@@ -14,6 +14,9 @@
   /* assurance lens: one colour per audit class, the Crystal severity pairs; only the two pass tokens are green */
   --as-fake: #c2412d; --as-unenforced: #c4600f; --as-unverified: #a87a06; --as-not-demonstrated: #6e5fc2;
   --as-unknown: #7a8496; --as-demonstrated-only: #2f6f9f; --as-pass-weak: #4f9e7c; --as-pass: #1f8a5b;
+  /* layer lens: one colour per runtime layer; several layers share a neutral slate, unknown has its own red */
+  --ly-ui: #0b7f8c; --ly-api: #3657c9; --ly-service: #7048bf; --ly-data: #a3368f; --ly-async: #a95400;
+  --ly-edge: #2e7d32; --ly-external: #8a6d1a; --ly-multi: #687284; --ly-unknown: #c2412d;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
@@ -26,6 +29,8 @@
     --k-api: #72c97e; --k-action: #f0a35a; --k-data: #b59af2; --k-rule: #f08374;
     --as-fake: #e07a75; --as-unenforced: #ea9a62; --as-unverified: #e5b66c; --as-not-demonstrated: #a899e0;
     --as-unknown: #8189a0; --as-demonstrated-only: #7fb6d0; --as-pass-weak: #a8dcc6; --as-pass: #6bc2a2;
+    --ly-ui: #4fc9d4; --ly-api: #8aa4ff; --ly-service: #b59af2; --ly-data: #e584d4; --ly-async: #f0a35a;
+    --ly-edge: #72c97e; --ly-external: #d8b85a; --ly-multi: #a7afbd; --ly-unknown: #ef7a66;
   }
 }
 :root[data-theme="dark"] {
@@ -179,7 +184,7 @@ pattern path.hl { stroke: color-mix(in srgb, var(--as-unknown) 50%, var(--panel)
 svg.mini rect.ml.asm { fill: var(--as-c); }
 svg.mini rect.ml.asm.as-unknown { opacity: .25; }
 #alegend .ak { gap: 4px; }
-#alegend .am { color: var(--muted); }
+#alegend .am, #llegend .am { color: var(--muted); }
 #alegend .rule { color: var(--ink); font-weight: 650; }
 /* while the lens is on, colour means assurance only: kind and wiring colours on the nodes go grey */
 body.as-on .gl { color: var(--muted) !important; }
@@ -1215,7 +1220,14 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
     drawn: false, run: 0, note: "", outside: false, lexp: new Set(), lpin: new Set(), clusters: new Map(), menuOpen: false };
   const P = { flow: null, path: [], i: 0, timer: 0 }; // the walkthrough: a flow's steps, or a way taken off them
   const edgeKinds = [...new Set(edges.map(e => e.kind))].sort();
-  const LENSES = { containment: "Containment", system: "System", owner: "Owner", kind: "Kind", tier: "Tier", truth: "Truth", verdict: "Proposal verdict" };
+  const LENSES = { containment: "Containment", system: "System", owner: "Owner", kind: "Kind", tier: "Tier", layer: "Layer", truth: "Truth", verdict: "Proposal verdict" };
+  // layers are computed by the kernel (block.layers); the page only groups and colours by them. A layer with no colour
+  // token (a name this page does not know) takes the neutral one.
+  const LAYER_ORDER = ["ui", "api", "service", "data", "async", "edge", "external"]; // the rest follow, sorted
+  const LAYER_MEANING = { ui: "runs in a browser or an app", api: "request handlers", service: "application logic and command-line programs", data: "database functions, policies and triggers",
+    async: "scheduled jobs and queue, event and webhook consumers", edge: "edge or serverless functions", external: "third-party integrations", unknown: "no adapter fact and no workspace.yaml layers rule says" };
+  const layerColor = k => getComputedStyle(document.documentElement).getPropertyValue("--ly-" + k).trim() ? `var(--ly-${k})` : "var(--ly-multi)";
+  function layerKey(b) { const ls = b.layers || []; return !ls.length ? "~" : ls.length > 1 ? "multi" : ls[0]; }
 
   function project() {
     const nodes = new Map();
@@ -1268,6 +1280,7 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
       case "owner": { const o = ownerOf(id); return { key: o || "~", label: o || "unowned", fam: "cluster" }; }
       case "kind": return { key: b.kind, label: b.kind, kind: b.kind };
       case "tier": { const t = tierOf(id); return { key: t || "~", label: t || "no tier", fam: "cluster" }; }
+      case "layer": { const k = layerKey(b); return { key: k, label: k === "~" ? "no layer" : k === "multi" ? "several layers" : k, fam: "cluster", color: k === "~" ? "" : layerColor(k) }; }
       case "truth": { const t = b.truth || "declared"; return { key: t, label: t, fam: "cluster", color: t === "wired" ? "var(--wired)" : "" }; }
       case "verdict": { const o = ov(b); return o ? { key: o.verdict, label: o.title || o.verdict, fam: "cluster", color: vcolor(o.verdict) } : { key: "~", label: "not judged", fam: "cluster" }; }
     }
@@ -1463,7 +1476,7 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
     D.key = key;
     const run = ++D.run;
     const pr = S.lens === "containment" ? project() : projectLens();
-    pane.innerHTML = `<div class="dbar" id="dbar"></div><svg id="dsvg" role="img" aria-label="Block diagram"><g id="vp"></g></svg>` + canvasChrome();
+    pane.innerHTML = `<div class="dbar" id="dbar"></div><div class="legend" id="llegend" aria-label="Layer legend" hidden></div><svg id="dsvg" role="img" aria-label="Block diagram"><g id="vp"></g></svg>` + canvasChrome();
     D.drawn = true;
     bar();
     const lay = await layout(pr);
@@ -1653,6 +1666,18 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
   }
   function showInside(n) { insideTo(n); if (S.tab === "diag") renderPane(); }
 
+  function layerLegend() { // each layer present with its block count; the colour is the group's
+    const el = document.getElementById("llegend");
+    if (!el) return;
+    el.hidden = S.lens !== "layer";
+    if (el.hidden) return;
+    const n = {};
+    for (const b of blocks) if (shown(b.id) && (!D.root || anc(b.id).includes(D.root))) n[layerKey(b)] = (n[layerKey(b)] || 0) + 1;
+    const item = (k, label, color, why) => n[k] ? `<span title="${esc(why)}"><i class="dot" style="background:${color}"></i><b>${esc(label)}</b> <span class="st">${n[k]}</span></span>` : "";
+    el.innerHTML = `<span class="lt">Layer</span>` + [...LAYER_ORDER, ...Object.keys(n).filter(k => !LAYER_ORDER.includes(k) && k !== "multi" && k !== "~").sort()].map(k => item(k, k, layerColor(k), LAYER_MEANING[k] || "a layer this page does not describe")).join("") +
+      item("multi", "several layers", "var(--ly-multi)", "the block spans more than one layer") + item("~", "no layer", "var(--line)", "the block holds no code of its own (a group, a system, a catalogue block)") +
+      `<span class="am">computed from adapter facts and workspace.yaml layers rules; unknown means neither says</span>`;
+  }
   function bar() {
     const el = document.getElementById("dbar");
     if (!el) return;
@@ -1667,6 +1692,7 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
       (D.root ? `<label><input type="checkbox" data-act="outside"${D.outside ? " checked" : ""}${cont ? "" : " disabled"}>outside${D.hidden && !D.outside ? ` (${D.hidden} links hidden)` : ""}</label>` : "") +
       (D.note ? `<span class="n">${esc(D.note)}</span>` : "");
     el.innerHTML = h;
+    layerLegend();
     const t = document.getElementById("ctool"); // the levels live in the canvas toolbar
     if (t) t.querySelectorAll("[data-depth]").forEach(b => b.classList.toggle("on", +b.dataset.depth === D.depth));
   }
@@ -2122,7 +2148,7 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
     for (const p of anc(b.id)) crumbs.unshift(`<a data-id="${esc(p)}">${esc(title(p))}</a>`);
     const owner = ownerOf(b.id), ownerAt = owner && !b.attrs?.owner ? anc(b.id).find(a => byId.get(a).attrs?.owner) : "";
     const sys = ctxOf(b.id);
-    const chips = [kindBadge(b.kind), b.tier && `<span class="chip">${esc(b.tier)}</span>`, sys !== b.id && `<span class="chip" title="${esc(sys)}">${esc(byId.get(sys).kind === "system" ? "system" : byId.get(sys).kind)} ${esc(title(sys))}</span>`,
+    const chips = [kindBadge(b.kind), b.tier && `<span class="chip">${esc(b.tier)}</span>`, (b.layers || []).length > 0 && `<span class="chip" title="runtime layers, computed from the code">layer ${esc(b.layers.join(", "))}</span>`, sys !== b.id && `<span class="chip" title="${esc(sys)}">${esc(byId.get(sys).kind === "system" ? "system" : byId.get(sys).kind)} ${esc(title(sys))}</span>`,
       `<span class="chip${b.truth === "wired" ? ' wd" style="color:var(--wired)"' : '"'}>${esc(b.truth)}</span>`,
       owner ? `<span class="chip" title="${ownerAt ? "from " + esc(title(ownerAt)) : "attrs.owner"}">owner ${esc(owner)}${ownerAt ? " ↑" : ""}</span>` : `<span class="chip unowned" title="No owner attribute here or above: set owner on the system, external or group judgment">unowned</span>`,
       b.initiative && `<span class="chip">proposal ${esc(b.initiative)}</span>`].filter(Boolean).join("");

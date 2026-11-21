@@ -4,6 +4,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -13,6 +14,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/blocks"
 	"github.com/salahmyn/lattice/pkg/lattice/entrypoints"
 	"github.com/salahmyn/lattice/pkg/lattice/extract"
+	"github.com/salahmyn/lattice/pkg/lattice/graph"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/store"
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
@@ -247,7 +249,26 @@ func buildBlockGraph(ctx context.Context, ws *workspace.Workspace, st store.Stor
 		}
 	}
 
-	return blocks.Build(in), report, in.Verified, nil
+	res := blocks.Build(in)
+	deriveLayers(ws, &res)
+	return res, report, in.Verified, nil
+}
+
+// deriveLayers sets the layers of res's blocks from the symbols of the graph
+// the last extract wrote. With no readable graph the blocks carry none: a
+// refresh invents no layer, and the next extract derives them.
+func deriveLayers(ws *workspace.Workspace, res *blocks.Result) {
+	data, err := os.ReadFile(ws.GraphPath())
+	if err != nil {
+		return
+	}
+	var kg schema.KnowledgeGraph
+	if json.Unmarshal(data, &kg) != nil {
+		return
+	}
+	kg.Blocks = res.Blocks
+	graph.DeriveBlockLayers(&kg)
+	res.Blocks = kg.Blocks
 }
 
 // loadFeatureManifests loads the manifests the knowledge graph holds, as

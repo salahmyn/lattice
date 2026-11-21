@@ -88,6 +88,11 @@ type GraphSymbol struct {
 	// the graph reaches nothing. Set on runtime symbols and interfaces: a
 	// type is reached when reached code names or builds it.
 	HandlerReach string `json:"handler_reach,omitempty"`
+	// Layer is the runtime kind of the symbol (the Layer* constants), set on
+	// production symbols once layers are assigned: unknown when nothing says.
+	// LayerSource says where it came from (adapter or rule), empty for unknown.
+	Layer       string `json:"layer,omitempty"`
+	LayerSource string `json:"layer_source,omitempty"`
 }
 
 // Reach classes (GraphSymbol.Reach).
