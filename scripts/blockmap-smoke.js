@@ -4,6 +4,7 @@
 //
 //   node scripts/blockmap-smoke.js <map.html> [--shots <dir>] [--perf <blocks>]
 //   node scripts/blockmap-smoke.js --served <base-url>
+//   node scripts/blockmap-smoke.js <map.html> --layers
 //
 // It loads the exported page, switches every tab and lens, turns the assurance
 // lens on and off, hides a kind from the legend, uses the canvas toolbar (zoom, minimap, Mermaid text, SVG/PNG/
@@ -24,6 +25,10 @@
 // --shots writes PNGs of each view in light and dark. --perf N swaps in a
 // generated graph of about N blocks and prints timings instead of the smoke run.
 //
+// --layers runs only the Layer lens checks, on a map whose blocks carry computed
+// layers: the lens groups blocks by layer, draws a data block and an unknown block
+// in different colours, and lists each layer in its legend.
+//
 // --served opens <base-url>/map from a running `lattice serve` instead, with
 // /api/graph intercepted: a slow graph must show the live load status (elapsed
 // seconds, then the first-load hint), a failed one an error naming the cause
@@ -37,7 +42,7 @@ const { chromium } = require('playwright');
 
 const args = process.argv.slice(2);
 const opt = name => { const i = args.indexOf('--' + name); return i >= 0 ? args[i + 1] || '' : ''; };
-const shots = opt('shots'), perf = parseInt(opt('perf'), 10) || 0, served = opt('served');
+const shots = opt('shots'), perf = parseInt(opt('perf'), 10) || 0, served = opt('served'), layers = args.includes('--layers');
 const file = served ? '' : path.resolve(args[0] || '');
 if (!served && (!args[0] || !fs.existsSync(file))) { console.error('usage: blockmap-smoke.js <map.html> [--shots dir] [--perf n] | --served <base-url>'); process.exit(2); }
 
@@ -69,6 +74,30 @@ const underMini = (page, sel) => page.evaluate(sel => { // the ids of the boxes 
   }).map(e => e.closest('[data-box], [data-f]')?.getAttribute('data-box') || e.closest('[data-f]')?.dataset.f).join(', ');
 }, sel);
 const graphOf = page => page.evaluate(() => JSON.parse(document.getElementById('graph').textContent));
+
+// the Layer lens: blocks grouped by the layers the kernel computed, one colour each
+async function layerLens(browser) {
+  const { page, errors } = await open(browser, 'file://' + file);
+  await diagramDrawn(page);
+  const g = await graphOf(page);
+  const withLayers = g.blocks.filter(b => (b.layers || []).length);
+  check(withLayers.length > 0, `the graph carries computed layers (${withLayers.length} blocks)`);
+  check((await page.$$eval('[data-act=lens] option', os => os.map(o => o.value))).includes('layer'), 'the Group by menu offers the Layer lens');
+  check(await page.$('#llegend:not([hidden])') === null, 'the layer legend is hidden while another lens is on');
+  await page.selectOption('[data-act=lens]', 'layer'); await diagramDrawn(page); await settle(page);
+  check((await hashParams(page)).lens === 'layer', 'a deep link names the layer lens');
+  const fill = key => page.$eval(`#vp .bx[data-box="grp:${key}"] rect[style*="fill"]`, r => getComputedStyle(r).fill).catch(() => '');
+  const data = await fill('data'), unknown = await fill('unknown'), ui = await fill('ui'), multi = await fill('multi');
+  check(!!data && !!unknown && data !== unknown, `a data block and an unknown block are drawn in different colours (${data} vs ${unknown})`);
+  check(!!ui && ui !== data && ui !== unknown, `a ui block has its own colour (${ui})`);
+  check(!!multi && ![data, unknown, ui].includes(multi), `a block spanning several layers has a neutral colour of its own (${multi})`);
+  const legend = await page.$eval('#llegend', e => e.hidden ? '' : e.innerText).catch(() => '');
+  check(/\bdata\b/.test(legend) && /\bunknown\b/.test(legend) && /several layers/.test(legend), 'the legend lists each layer present: ' + legend.replace(/\s+/g, ' ').slice(0, 120));
+  await page.click('#vp .bx[data-box="grp:data"]'); await settle(page);
+  check((await pageText(page)).includes('Layer · '), 'clicking a group lists its blocks');
+  check(errors.length === 0, 'no console errors' + (errors.length ? ': ' + errors.join('; ') : ''));
+  await page.close();
+}
 
 async function smoke(browser) {
   const url = 'file://' + file;
@@ -639,6 +668,7 @@ async function measure(browser) {
   const browser = await chromium.launch();
   try {
     if (served) await loading(browser);
+    else if (layers) await layerLens(browser);
     else if (perf) await measure(browser);
     else if (shots) await screenshots(browser);
     else await smoke(browser);
