@@ -331,6 +331,8 @@ func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOpt
 	kg.Violations = append(kg.Violations, graph.AssignLayers(&kg, ws.Layers)...)
 	kg.Violations = append(kg.Violations, graph.CheckHTTPOrigins(ws.HTTP.Origins)...)
 	kg.Violations = append(kg.Violations, graph.CheckHTTPSecrets(ws.HTTP.Secrets)...)
+	kg.Violations = append(kg.Violations, graph.CheckSQLConfig(ws.SQL.APIRoles, ws.SQL.DefaultExecute)...)
+	kg.Violations = append(kg.Violations, graph.CheckExposure(kg, res.Modules, ws.SQL.APIRoles, ws.SQL.DefaultExecute)...)
 	pubWrappers, conWrappers := ws.Channels.Wrappers()
 	kg.Violations = append(kg.Violations, graph.CheckChannelWrappers(pubWrappers, conWrappers)...)
 

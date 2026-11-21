@@ -7,7 +7,6 @@ package validate
 import (
 	"regexp"
 	"sort"
-	"strings"
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm"
@@ -239,10 +238,7 @@ func HasErrors(v []schema.Violation) bool {
 // resolveRef interprets an annotation reference. A qualified "feature:item"
 // ref returns its parts; a bare ref is scoped to fallbackFeature.
 func resolveRef(ref, fallbackFeature string) (feature, item string) {
-	if i := strings.LastIndex(ref, ":"); i > 0 {
-		return ref[:i], ref[i+1:]
-	}
-	return fallbackFeature, ref
+	return schema.ResolveRef(ref, fallbackFeature)
 }
 
 func sortViolations(v []schema.Violation) {

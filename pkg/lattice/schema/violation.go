@@ -190,6 +190,11 @@ const (
 	CodeImportUnresolved    = "IMPORT_UNRESOLVED"     // an import() or require() whose module is not a literal (info)
 	CodeSuiteOverlap        = "SUITE_OVERLAP"         // two test suites verify nearly the same targets (info)
 
+	// SQL exposure. Both are info and always on: an off code would hide an
+	// unknown. They never fail a gate unless validate.severity says so.
+	CodeEnforcerExposed = "ENFORCER_EXPOSED" // a SQL enforcer an API role can execute, with no security case that calls it as that role (info)
+	CodeExposureUnknown = "EXPOSURE_UNKNOWN" // who can execute a SQL enforcer cannot be told from the migrations, or no API roles are declared (info)
+
 	// Council approval (v0.12).
 	CodeBRDCouncilUnreviewed = "BRD_COUNCIL_UNREVIEWED" // a council approval its human has not acknowledged (info)
 	CodeBRDCouncilInvalid    = "BRD_COUNCIL_INVALID"
