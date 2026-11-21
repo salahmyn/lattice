@@ -1430,15 +1430,19 @@ a comma list) exit 1 when a shown run has a listed outcome, with code
 survived,unknown`). Shown means the `--promise` or `--feature` selection, so a
 survived run of another promise in `breaks.json` does not count. Any other value
 is a usage error (exit 2). With `--json` the output is one document: the report,
-a `summary` of the shown runs (`runs`, `killed`, `survived`, `unknown`, `ran`
-and the top `unknown_reasons`), and `error` and `code` when `--fail-on` matched.
+a `summary` of the shown runs (`runs`, `killed`, `survived`, `unknown`, `ran`,
+the top `unknown_reasons` and `missing_runners`), and `error` and `code` when
+`--fail-on` matched. Runs that lack a runner count under one reason, `no runner
+configured`, whatever languages each lacks; `missing_runners` counts, per
+language, the runs that need its runner (a run that needs two counts under
+both), so each runner to configure is named once.
 
 When no shown run was killed or survived, nothing was learned about the
-verifiers, and the text output ends with a line that says so and names the
-three most common reasons:
+verifiers, and the text output ends with a line that says so, names the three
+most common reasons and lists the missing runners:
 
 ```text
-no break ran: 651 of 651 runs unknown (no runner configured for typescript (set …) ×640, …); break_tested stays unknown
+no break ran: 651 of 651 runs unknown (no runner configured ×412, no generated break for php; add a script ×228, …); missing runners: typescript ×412, python ×68 (set break.runners or break.commands); break_tested stays unknown
 ```
 
 `lattice check --base` stays the merge gate: there an unknown `break_tested` is
