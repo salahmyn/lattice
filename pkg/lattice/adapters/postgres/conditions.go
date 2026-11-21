@@ -199,7 +199,7 @@ type condVar struct{ table, column string }
 // readConditions reads the condition reads of a function body that starts at
 // file line base. A read of NEW or OLD is on the table newTable, which Resolve
 // turns into the table of each trigger that runs the function.
-// @enforces adapters.postgres:INV-9
+// @enforces adapters.postgres:INV-12
 func readConditions(code string, base int, params map[string]bool) []ir.CondRead {
 	mask := maskCode(code)
 	isParam := paramVars(mask, params)
@@ -388,18 +388,18 @@ func checkReads(expr string, table string, line int) []ir.CondRead {
 }
 
 var (
-	reAssign   = regexp.MustCompile(`(?is)(?:^|[;\s(])(` + ident + `)\s*:=\s*([^;]*);`)
-	reDeclare  = regexp.MustCompile(`(?is)(?:\bdeclare|;)\s*(` + ident + `)\s+[A-Za-z_][A-Za-z0-9_.\[\]]*(?:\s*\(\s*\d+(?:\s*,\s*\d+)?\s*\))?\s*(?::=|=|\bdefault\b)\s*([^;]*);`)
-	reIntoVars = regexp.MustCompile(`(?is)\binto\s+(?:strict\s+)?([^;]*?)\s+from\b`)
-	reSelector = regexp.MustCompile(`(?is)^\s*((?:` + ident + `)(?:\s*\.\s*(?:` + ident + `))*)\s*(=|\bin\b)\s*(.+?)\s*$`)
-	reParamEq  = regexp.MustCompile(`(?is)^\s*(.+?)\s*=\s*((?:` + ident + `)(?:\s*\.\s*(?:` + ident + `))*)\s*$`)
-	reCastTail = regexp.MustCompile(`(?is)\s*::\s*[A-Za-z_][A-Za-z0-9_ .]*(?:\[\])?\s*$`)
+	reAssign       = regexp.MustCompile(`(?is)(?:^|[;\s(])(` + ident + `)\s*:=\s*([^;]*);`)
+	reDeclare      = regexp.MustCompile(`(?is)(?:\bdeclare|;)\s*(` + ident + `)\s+[A-Za-z_][A-Za-z0-9_.\[\]]*(?:\s*\(\s*\d+(?:\s*,\s*\d+)?\s*\))?\s*(?::=|=|\bdefault\b)\s*([^;]*);`)
+	reIntoVars     = regexp.MustCompile(`(?is)\binto\s+(?:strict\s+)?([^;]*?)\s+from\b`)
+	reSelector     = regexp.MustCompile(`(?is)^\s*((?:` + ident + `)(?:\s*\.\s*(?:` + ident + `))*)\s*(=|\bin\b)\s*(.+?)\s*$`)
+	reParamEq      = regexp.MustCompile(`(?is)^\s*(.+?)\s*=\s*((?:` + ident + `)(?:\s*\.\s*(?:` + ident + `))*)\s*$`)
+	reCondCastTail = regexp.MustCompile(`(?is)\s*::\s*[A-Za-z_][A-Za-z0-9_ .]*(?:\[\])?\s*$`)
 )
 
-// functionParams reads the parameter names of the CREATE FUNCTION statement in
+// condParamNames reads the parameter names of the CREATE FUNCTION statement in
 // text: the first word of each entry of the list after the name, past an IN,
 // OUT, INOUT or VARIADIC mode.
-func functionParams(text string) map[string]bool {
+func condParamNames(text string) map[string]bool {
 	m := reFunction.FindStringIndex(text)
 	if m == nil {
 		return nil
@@ -445,10 +445,10 @@ func paramVars(mask string, params map[string]bool) func(string) bool {
 	type assign struct{ name, rhs string }
 	var as []assign
 	for _, m := range reAssign.FindAllStringSubmatch(mask, -1) {
-		as = append(as, assign{unquote(m[1]), strings.TrimSpace(reCastTail.ReplaceAllString(strings.TrimSpace(m[2]), ""))})
+		as = append(as, assign{unquote(m[1]), strings.TrimSpace(reCondCastTail.ReplaceAllString(strings.TrimSpace(m[2]), ""))})
 	}
 	for _, m := range reDeclare.FindAllStringSubmatch(mask, -1) {
-		as = append(as, assign{unquote(m[1]), strings.TrimSpace(reCastTail.ReplaceAllString(strings.TrimSpace(m[2]), ""))})
+		as = append(as, assign{unquote(m[1]), strings.TrimSpace(reCondCastTail.ReplaceAllString(strings.TrimSpace(m[2]), ""))})
 	}
 	for _, a := range as {
 		if _, seen := vars[a.name]; !seen {
@@ -494,7 +494,7 @@ func splitAnd(s string) []string {
 // isParamExpr says whether e is one parameter (or a parameter variable), with
 // an optional cast, or a parenthesised list or ANY(...) of them.
 func isParamExpr(e string, isParam func(string) bool) bool {
-	e = strings.TrimSpace(reCastTail.ReplaceAllString(strings.TrimSpace(e), ""))
+	e = strings.TrimSpace(reCondCastTail.ReplaceAllString(strings.TrimSpace(e), ""))
 	if w, n := firstWord(e); w == "any" || w == "some" || w == "all" {
 		e = strings.TrimSpace(e[n:])
 	}

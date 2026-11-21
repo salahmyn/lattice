@@ -43,7 +43,7 @@ func hasRead(reads []string, want string) bool {
 // col; the WHERE of the function's own UPDATE and SELECT ... INTO is a read of
 // the columns it names, through the table's alias. A column that is only
 // assigned is not a read.
-// @verifies adapters.postgres:INV-9
+// @verifies adapters.postgres:INV-12
 func TestCondReadsFollowSelectInto(t *testing.T) {
 	mods := resolveModules(t, "m.sql", wTable+`create function public.fail_job(p_id bigint) returns text
 language plpgsql as $$
@@ -73,7 +73,7 @@ end $$;
 // CASE WHEN inside an UPDATE reads the updated table's bare columns; an IF
 // that tests a parameter or a function result reads no column; a NEW.col read
 // in a trigger function lands on the table of the trigger.
-// @verifies adapters.postgres:INV-9
+// @verifies adapters.postgres:INV-12
 func TestCondReadsCaseTriggerAndCheck(t *testing.T) {
 	mods := resolveModules(t, "m.sql", wTable+`create function public.bump(p_id bigint, p_ok boolean) returns void
 language plpgsql as $$
@@ -111,7 +111,7 @@ alter table public.jobs add constraint cap check (attempts <= 3 and status <> 'x
 // assigned only from parameters, selects the row the function acts on and is
 // not a condition read. Literals, other columns, other functions and the
 // ordering operators still count, and an IF is untouched.
-// @verifies adapters.postgres:INV-9
+// @verifies adapters.postgres:INV-12
 func TestCondReadsSkipRowSelectors(t *testing.T) {
 	mods := resolveModules(t, "m.sql", wTable+`create function public.a(p_id bigint, p_ids bigint[]) returns void
 language plpgsql as $$

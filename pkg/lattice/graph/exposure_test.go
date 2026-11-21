@@ -162,3 +162,57 @@ func TestExposureStatesCallerIdentity(t *testing.T) {
 		}
 	}
 }
+
+// ENFORCER_EXPOSED lists the findings in four ranks: reads no identity and
+// takes a boolean parameter, reads no identity, takes a boolean parameter, the
+// rest. A function that authenticates by a hash of a parameter reads an
+// identity of its own kind; each fact is stated, none is worded as a pass.
+// @verifies graph:INV-10
+func TestExposureFactsAndOrder(t *testing.T) {
+	open := []ir.ExecuteGrant{grant(ir.ExecPublic, ir.ExecGranted, 2)}
+	id := &ir.CallerIdentity{Via: "via public.is_admin() → auth.uid()", File: "m.sql", Line: 3}
+	syms := []ir.Symbol{
+		{FQN: "sql.public.a_rest", File: "m.sql", Line: 1, Execute: &ir.Execute{Roles: open, Identity: id}},
+		{FQN: "sql.public.b_bool_reads", File: "m.sql", Line: 2, Execute: &ir.Execute{Roles: open, Identity: id, BoolParams: []string{"p_ok"}}},
+		{FQN: "sql.public.c_none", File: "m.sql", Line: 3, Execute: &ir.Execute{Roles: open}},
+		{FQN: "sql.public.d_hash", File: "m.sql", Line: 4, Execute: &ir.Execute{Roles: open, HashAuth: &ir.HashAuth{Param: "p_token", File: "m.sql", Line: 9}}},
+		{FQN: "sql.public.e_none_bool", File: "m.sql", Line: 5, Execute: &ir.Execute{Roles: open, BoolParams: []string{"p_ok", "p_force"}}},
+		{FQN: "sql.public.f_hash_bool", File: "m.sql", Line: 6, Execute: &ir.Execute{Roles: open, BoolParams: []string{"p_ok"},
+			HashAuth: &ir.HashAuth{Param: "p_token", File: "m.sql", Line: 9}}},
+	}
+	mods := []ir.Module{{File: "m.sql", Symbols: syms}}
+	var kg schema.KnowledgeGraph
+	for _, s := range syms {
+		kg.Symbols = append(kg.Symbols, schema.GraphSymbol{FQN: s.FQN, Feature: "pay.cards", EnforcesInvariants: []string{"pay.cards:INV-1"}})
+	}
+	got := CheckExposure(kg, mods, []string{"authenticated"}, &[]string{})
+	var order []string
+	for _, f := range got {
+		order = append(order, strings.TrimPrefix(f.Subject, "sql.public."))
+	}
+	want := []string{"e_none_bool", "c_none", "b_bool_reads", "f_hash_bool", "a_rest", "d_hash"}
+	if strings.Join(order, ",") != strings.Join(want, ",") {
+		t.Fatalf("order = %v, want %v", order, want)
+	}
+	msg := map[string]string{}
+	for _, f := range got {
+		msg[strings.TrimPrefix(f.Subject, "sql.public.")] = f.Message
+		if f.Severity != schema.SeverityInfo || strings.Contains(f.Message, "safe") {
+			t.Errorf("finding = %+v: info, and never worded as a pass", f)
+		}
+	}
+	for fn, wants := range map[string][]string{
+		"e_none_bool":  {"reads no caller identity", "It takes boolean parameter(s): p_ok, p_force."},
+		"b_bool_reads": {"(via public.is_admin() → auth.uid() at m.sql:3)", "It takes boolean parameter(s): p_ok."},
+		"d_hash":       {"authenticates by a hash of parameter p_token (m.sql:9)"},
+	} {
+		for _, w := range wants {
+			if !strings.Contains(msg[fn], w) {
+				t.Errorf("%s: %q lacks %q", fn, msg[fn], w)
+			}
+		}
+	}
+	if strings.Contains(msg["a_rest"], "boolean") || strings.Contains(msg["c_none"], "hash") {
+		t.Errorf("a fact that does not hold is stated: %q / %q", msg["a_rest"], msg["c_none"])
+	}
+}

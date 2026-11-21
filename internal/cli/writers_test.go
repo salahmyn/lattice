@@ -698,7 +698,7 @@ func writersOwnerRepo(t *testing.T, configExtra string) string {
 // touch_job writes updated_at alone and renumber_job writes id, which the
 // enforcers only use as a row selector (WHERE id = p_id); neither is linked. Counted by
 // columns derived from writes (what the enforcers assign) and from conditions.
-// @verifies graph:INV-10
+// @verifies graph:INV-11
 func TestWritersColumnsFromConditionsExample(t *testing.T) {
 	got, _ := validateWriters(t, writersOwnerRepo(t, ""))
 	var pairs []string
@@ -730,7 +730,7 @@ func sorted(in []string) []string {
 
 // The finding is info and always on: a gate that fails on warnings stays green
 // with condition-derived columns.
-// @verifies graph:INV-10
+// @verifies graph:INV-11
 func TestColumnsFromConditionsStayInfo(t *testing.T) {
 	const failOnWarning = "validate:\n  fail_on: warning\n  severity:\n    FEATURE_NO_BRD: off\n"
 	got, rep := validateWriters(t, writersOwnerRepo(t, failOnWarning))
@@ -747,7 +747,7 @@ func TestColumnsFromConditionsStayInfo(t *testing.T) {
 // An enforcer whose only condition is a row selector (WHERE id = p_id) has no
 // condition read, so its columns are the ones it writes, and the message says
 // so; the id it selects by is not a column of the promise.
-// @verifies graph:INV-10
+// @verifies graph:INV-11
 func TestRowSelectorOnlyFallsBackToWrites(t *testing.T) {
 	const only = `-- @enforces queue.jobs:INV-2
 create function public.reassign_job(p_id bigint) returns void

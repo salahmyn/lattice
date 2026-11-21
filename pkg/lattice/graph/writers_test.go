@@ -352,7 +352,7 @@ var jobsTable = ir.TableColumns{Table: "public.jobs", Columns: []string{"attempt
 // reported with columns from conditions; a bookkeeping column that is only
 // assigned no longer links an unrelated writer. Without condition reads the
 // columns are what the enforcers write, as before.
-// @verifies graph:INV-10
+// @verifies graph:INV-11
 func TestColumnsFromConditions(t *testing.T) {
 	enforcer := fn("sql.public.fail_job", 5, upd("public.jobs", 7, "status", "updated_at"))
 	enforcer.CondReads = reads("attempts", "id")
@@ -390,7 +390,7 @@ func TestColumnsFromConditions(t *testing.T) {
 // An enforcer whose condition reads are empty, unknown, on a table it does not
 // write, or a bare name its table lacks, falls back to the columns it writes:
 // the set never shrinks to nothing. The message says which enforcer fell back.
-// @verifies graph:INV-10
+// @verifies graph:INV-11
 func TestColumnsFallBackToWrites(t *testing.T) {
 	other := ir.CondRead{Table: "public.audit", Column: "attempts", Qualified: true, Line: 6}
 	param := ir.CondRead{Table: "public.jobs", Column: "p_id", Line: 6}
@@ -422,7 +422,7 @@ func TestColumnsFallBackToWrites(t *testing.T) {
 
 // A CHECK enforcer writes nothing; its condition columns count on the tables
 // the invariant's other enforcers write. Declared columns still win.
-// @verifies graph:INV-10
+// @verifies graph:INV-11
 func TestCheckConditionColumns(t *testing.T) {
 	check := ir.Symbol{FQN: "sql.check.public.jobs.cap", File: "m.sql", Line: 3, CondReads: []ir.CondRead{{Table: "public.jobs", Column: "attempts", Line: 3}}}
 	enforcer := fn("sql.public.fail_job", 5, upd("public.jobs", 7, "status"))
@@ -444,7 +444,7 @@ func TestCheckConditionColumns(t *testing.T) {
 }
 
 // The writers report says where the columns came from.
-// @verifies graph:INV-10
+// @verifies graph:INV-11
 func TestReportColumnsFromConditions(t *testing.T) {
 	e := fn("sql.public.fail_job", 5, upd("public.jobs", 7, "status"))
 	e.CondReads = reads("attempts")

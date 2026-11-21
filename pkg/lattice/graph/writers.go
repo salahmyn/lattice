@@ -323,7 +323,7 @@ func BuildWriterIndex(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []str
 // nothing (a CHECK) contributes its condition reads on the tables the
 // invariant's other enforcers write. A bare name in a condition is a column
 // only if the table is known to have it.
-// @enforces graph:INV-10
+// @enforces graph:INV-11
 func (ix *WriterIndex) deriveColumns(iw *invWrites, syms map[string]ir.Symbol) {
 	enforcers := setList(iw.enforcers)
 	invTables := map[string]bool{}

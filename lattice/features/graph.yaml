@@ -27,4 +27,6 @@ invariants:
   - id: INV-9
     statement: Each ENFORCER_EXPOSED states whether the function body reads the caller's identity, citing the first read, or that it reads none; the finding fires either way and those that read none come first.
   - id: INV-10
+    statement: Each ENFORCER_EXPOSED states the identity the function reads directly or through a helper, the parameter it hashes to authenticate and its boolean parameters, each only when it holds; findings are ordered reads no identity and takes a boolean parameter, reads no identity, takes a boolean parameter, the rest, and stay info.
+  - id: INV-11
     statement: Without declared columns, an invariant's columns are the columns its enforcers read in a condition on a table they write; an enforcer with no known condition read falls back to the columns it writes, never to an empty set, and the source is stated as conditions, writes or declared.
