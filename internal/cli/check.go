@@ -9,10 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/salahmyn/lattice/internal/preflight"
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/check"
-	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/impact"
 )
 
@@ -79,15 +77,17 @@ anything else reads unknown (EVIDENCE_NOT_CI). That includes confirm.json:
 under --ci a confirm file of a local run or of another commit confirms
 nothing. Only CI's verdict counts.
 
-When break.runners is declared, a preflight runs first, before the graph is
-built: each runner's executable is on PATH, its dir exists, a Node minimum
-declared in package.json engines.node is met, and the Docker daemon answers
-for a runner that runs docker. It lists every problem at once (code, config
-key, fix) and exits 2. --no-preflight skips it.
+When break.runners is declared, check runs its preflight: each runner's
+executable is on PATH, its dir exists, a Node minimum declared in
+package.json engines.node is met, and the Docker daemon answers for a runner
+that runs docker. check runs no test, so a problem is a note, never a
+refusal: the report carries it as preflight (code, config key, fix) and the
+verdict, merge_allowed and the exit code stay as they are. --no-preflight
+skips it.
 
 Exit codes: 0 for ASSURED or an allowed UNPROVEN; 1 for BROKEN or a
-disallowed UNPROVEN; 2 for a usage error or a failed preflight. --json is
-lattice.check/1; --markdown is a PR comment starting with ` + check.Marker + `.`,
+disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
+--markdown is a PR comment starting with ` + check.Marker + `.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if markdown && io.JSON {
@@ -103,15 +103,6 @@ lattice.check/1; --markdown is a PR comment starting with ` + check.Marker + `.`
 			top, err := impact.TopLevel(ws.LatticeDir)
 			if err != nil {
 				return usageError(io, "NOT_A_REPO", err.Error())
-			}
-			// The test listing names break.runners' commands: check that they
-			// can run before the graph is built.
-			if !snapshot && !noPreflight {
-				if cfg, cerr := config.Load(ws.LatticeDir); cerr == nil && len(cfg.Break.Runners) > 0 {
-					if err := runPreflight(cmd.Context(), io, "check", preflight.Runners(cfg.Break, filepath.Dir(ws.LatticeDir))); err != nil {
-						return err
-					}
-				}
 			}
 			kg, calls, err := readOnlyGraphCalls(cmd, ws)
 			if err != nil {
@@ -145,7 +136,7 @@ lattice.check/1; --markdown is a PR comment starting with ` + check.Marker + `.`
 				return nil
 			}
 
-			rep, err := check.Run(cmd.Context(), ws, kg, check.RunOptions{Base: base, CI: ci, SaveSnapshot: true, Calls: calls})
+			rep, err := check.Run(cmd.Context(), ws, kg, check.RunOptions{Base: base, CI: ci, SaveSnapshot: true, Calls: calls, NoPreflight: noPreflight})
 			if err != nil {
 				var re *check.RunError
 				if errors.As(err, &re) {

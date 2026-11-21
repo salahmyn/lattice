@@ -227,7 +227,7 @@ A complete, validating three-language example lives in
 | `lattice view <name>` | Render developer / product / business / c4 views |
 | `lattice journey <brd>` \| `lattice actor list` | Journey and actor views |
 | `lattice rtm` | Requirements traceability matrix with attestation header |
-| `lattice check --base <rev>` | One verdict for a change (ASSURED / UNPROVEN / BROKEN) and the merge rule. Preflight first when `break.runners` is declared |
+| `lattice check --base <rev>` | One verdict for a change (ASSURED / UNPROVEN / BROKEN) and the merge rule; notes `break.runners` preflight problems without changing the verdict |
 | `lattice impact --since <rev> [--tests]` | What a change touches, the acceptance cases included; `--tests` lists the verifier tests to run, by runner |
 | `lattice break [--promise f:INV-n[#case]] [--fails-on-base <rev>]` | Break each enforcer and see whether its verifiers notice; `--promise f:INV-n#a` breaks one case against its tagged tests; `--fails-on-base` runs a change's new or edited tests on the old code. Preflight first |
 | `lattice audit [--promise f:INV-n]` | Classify every promise: fake, break-tested, exercised, a gap; each case covered, partial, failing or uncovered |
@@ -258,11 +258,13 @@ executables of the `runtime:` and `break:` commands are on PATH, each runner's
 `dir` exists, a Node minimum in `package.json` `engines.node` is met, the
 Docker daemon answers for a command that runs `docker`, each
 `runtime.services` / `break.services` address (`host:port`) answers on TCP,
-and, for `break`, the tree is clean. `check` does the same for
-`break.runners` alone, when it is declared. It lists every problem at once,
-each with a code, the config key and a fix (`--json`: `PREFLIGHT_FAILED` with
+and, for `break`, the tree is clean. It lists every problem at once, each
+with a code, the config key and a fix (`--json`: `PREFLIGHT_FAILED` with
 `problems`), and exits 2, the setup-error code, before any step runs.
-`--no-preflight` skips it; `lattice doctor` lists the same checks.
+`check` runs no test, so it only notes the problems of `break.runners` (the
+report's `preflight` field, in text and Markdown too) and keeps its verdict,
+`merge_allowed` and exit code. `--no-preflight` skips the checks;
+`lattice doctor` lists the same checks.
 
 ## Block maps (0.9, preview)
 

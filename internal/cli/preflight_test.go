@@ -214,27 +214,95 @@ func TestRunsCleanPreflightNeedsTheDockerDaemon(t *testing.T) {
 	}
 }
 
-// check lists the touched verifiers by break.runners, so a runner whose
-// executable or dir is missing is refused before the graph is built, with
-// exit 2, not a verdict. --no-preflight gives the verdict, and a config with
-// no runner needs no preflight.
+// checkRun is the part of lattice.check/1 the preflight note touches.
+type checkRun struct {
+	Verdict struct {
+		State string `json:"state"`
+	} `json:"verdict"`
+	MergeAllowed *bool `json:"merge_allowed"`
+	Preflight    *struct {
+		Text     string             `json:"text"`
+		Problems []preflightProblem `json:"problems"`
+	} `json:"preflight"`
+}
+
+// runCheck runs lattice check and returns its exit code and the output.
+func runCheck(t *testing.T, dir string, asJSON bool, args ...string) (int, string) {
+	t.Helper()
+	var out strings.Builder
+	io := &IO{Repo: dir, JSON: asJSON, Out: &out, Err: &out, Actor: "test"}
+	cmd := newCheckCommand(io)
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	cmd.SetArgs(args)
+	err := cmd.Execute()
+	var ec exitCodeError
+	switch {
+	case err == nil:
+		return 0, out.String()
+	case errors.As(err, &ec):
+		return ec.code, out.String()
+	}
+	t.Fatalf("check %v: %v\n%s", args, err, out.String())
+	return 0, ""
+}
+
+// check runs no test: it only lists the touched verifiers by break.runners.
+// A runner whose executable or dir is missing is a note in the JSON, text and
+// Markdown reports, and the verdict, merge_allowed and the exit code are
+// those of the same check with --no-preflight, which carries no note.
 // @verifies cli:INV-4
-func TestCheckPreflightRefusesMissingRunner(t *testing.T) {
+func TestCheckPreflightNotesMissingRunner(t *testing.T) {
 	f := newCheckFixture(t)
 	f.write("lattice/config.yaml", "agentic:\n  llm:\n    enabled: false\nbreak:\n"+
 		"  runners:\n    - name: web\n      match: [\"**/*.test.ts\"]\n      command: [\"no-such-runner-7f3a\", \"{files}\"]\n"+
 		"      dir: no-such-dir\n")
 	f.commit("runner config")
 
-	out, err := run(t, f.dir, newCheckCommand, "--base", "HEAD")
-	r := refusal(t, out, err)
-	if !hasProblem(r, "EXEC_NOT_FOUND", "break.runners[0].command") || !hasProblem(r, "PATH_NOT_FOUND", "break.runners[0].dir") {
-		t.Fatalf("want the runner and its dir together: %+v", r.Problems)
+	decode := func(out string) checkRun {
+		t.Helper()
+		var r checkRun
+		if err := json.Unmarshal([]byte(out), &r); err != nil || r.MergeAllowed == nil {
+			t.Fatalf("not a check report: %v\n%s", err, out)
+		}
+		return r
+	}
+	quietCode, quietOut := runCheck(t, f.dir, true, "--base", "HEAD", "--no-preflight")
+	quiet := decode(quietOut)
+	if quiet.Preflight != nil {
+		t.Errorf("--no-preflight still carries the note: %+v", quiet.Preflight)
 	}
 
-	rep, code := f.check("--base", "HEAD", "--no-preflight")
-	if code == 2 || rep.Contract == "" {
-		t.Fatalf("--no-preflight should give a verdict: exit %d, %+v", code, rep)
+	code, out := runCheck(t, f.dir, true, "--base", "HEAD")
+	if code == 2 {
+		t.Fatalf("check refused instead of giving its verdict:\n%s", out)
+	}
+	r := decode(out)
+	if code != quietCode || r.Verdict.State != quiet.Verdict.State || *r.MergeAllowed != *quiet.MergeAllowed {
+		t.Errorf("the note changed the outcome: exit %d %s merge %v, want exit %d %s merge %v",
+			code, r.Verdict.State, *r.MergeAllowed, quietCode, quiet.Verdict.State, *quiet.MergeAllowed)
+	}
+	if r.Preflight == nil || r.Preflight.Text == "" {
+		t.Fatalf("no preflight note:\n%s", out)
+	}
+	note := preflightRefusal{Problems: r.Preflight.Problems}
+	if !hasProblem(note, "EXEC_NOT_FOUND", "break.runners[0].command") || !hasProblem(note, "PATH_NOT_FOUND", "break.runners[0].dir") {
+		t.Fatalf("want the runner and its dir together: %+v", r.Preflight.Problems)
+	}
+	for _, p := range r.Preflight.Problems {
+		if p.Code == "" || p.Key == "" || p.Detail == "" || p.Next == "" {
+			t.Errorf("a problem lacks its code, key, detail or next: %+v", p)
+		}
+	}
+
+	for _, args := range [][]string{{"--base", "HEAD"}, {"--base", "HEAD", "--markdown"}} {
+		c, out := runCheck(t, f.dir, false, args...)
+		if c != quietCode || !strings.Contains(out, "no-such-runner-7f3a is not on PATH") || !strings.Contains(out, "break.runners[0].dir") {
+			t.Errorf("check %v: exit %d (want %d), note missing:\n%s", args, c, quietCode, out)
+		}
+		_, quietOut := runCheck(t, f.dir, false, append(args, "--no-preflight")...)
+		if strings.Contains(quietOut, "no-such-runner-7f3a") {
+			t.Errorf("check %v --no-preflight still shows the note:\n%s", args, quietOut)
+		}
 	}
 }
 

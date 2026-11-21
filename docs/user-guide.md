@@ -1327,10 +1327,12 @@ Nothing blocks on it yet: it is evidence for `lattice audit`.
 
 ### Preflight: refuse in seconds, before a long run
 
-`lattice break`, `lattice runs-clean` (`v0`), `lattice demonstrate` (when V0
-runs) and `lattice check` (when `break.runners` is declared) first check, in
-seconds and without running a test, what their config declares. Nothing is
-guessed from the stack: a command the config does not name is not checked.
+`lattice break`, `lattice runs-clean` (`v0`) and `lattice demonstrate` (when V0
+runs) first check, in seconds and without running a test, what their config
+declares, and refuse when a check fails. `lattice check` runs the checks of
+`break.runners` when it is declared, and only notes a failure (see below).
+Nothing is guessed from the stack: a command the config does not name is not
+checked.
 
 | Check | `break` | `runs-clean`, `demonstrate` | `check` |
 |---|---|---|---|
@@ -1360,8 +1362,9 @@ break:
     - { name: postgres, address: "localhost:54322" }
 ```
 
-A failure refuses the command before any step runs, lists every problem at
-once, and exits 2, the setup-error code, never a verdict code:
+In `break`, `runs-clean` and `demonstrate`, a failure refuses the command
+before any step runs, lists every problem at once, and exits 2, the
+setup-error code, never a verdict code:
 
 ```text
 error: break preflight failed: 2 problems found; nothing was run
@@ -1374,9 +1377,19 @@ fix each problem, or pass --no-preflight to skip these checks
 
 With `--json` it is one error, `{"error", "code": "PREFLIGHT_FAILED",
 "next_action", "problems": [{"code", "key", "detail", "next"}]}`.
-`--no-preflight` skips the checks. `lattice doctor` runs the same checks (all
-but the dirty tree) under the `preflight` category, and a failed one makes its
-`ok` false.
+
+`lattice check` runs no test: it only lists the verifiers to run by
+`break.runners`, and a verdict-only CI job may not have the runners'
+toolchain. So it never refuses on a preflight problem. The report carries
+the problems as an informational `preflight` field, `{"text", "problems":
+[{"code", "key", "detail", "next"}]}` (absent when every check passes), and
+shows them under `PREFLIGHT` in text and `### Preflight` in Markdown. The
+verdict, `merge_allowed` and the exit code are those of the same check
+without it. `GET /api/v2/check` carries the same field.
+
+`--no-preflight` skips the checks, and check's note with them. `lattice doctor`
+runs the same checks (all but the dirty tree) under the `preflight` category,
+and a failed one makes its `ok` false.
 
 ### Prove a new test fails on the old code
 
@@ -1717,7 +1730,10 @@ not already in `untraced` (reached only by an entry point, or removed).
 `lattice.check/1` also carries `tests`: the verifier tests of the touched
 promises grouped by `break.runners`, the listing of `lattice impact --tests`
 (see [Run only the tests a change touches](#run-only-the-tests-a-change-touches)).
-It is for a script and never changes the verdict.
+It is for a script and never changes the verdict. When `break.runners` is
+declared and a runner may not run here, the report also carries a
+[`preflight`](#preflight-refuse-in-seconds-before-a-long-run) note, which
+never changes the verdict either.
 
 ### The base audit, and how CI gets it
 
@@ -1766,9 +1782,9 @@ Only CI's verdict counts; a local run is advice.
 ### Exit codes
 
 `0` for `ASSURED` or an allowed `UNPROVEN`; `1` for `BROKEN` or a disallowed
-`UNPROVEN`; `2` for a usage error (no `--base`, a base that is not a commit) or
-a failed [preflight](#preflight-refuse-in-seconds-before-a-long-run) of
-`break.runners`.
+`UNPROVEN`; `2` for a usage error (no `--base`, a base that is not a commit).
+A [preflight](#preflight-refuse-in-seconds-before-a-long-run) problem of
+`break.runners` is a note in the report and never changes the exit code.
 
 ## 4l. Confirmation: `lattice prepare`, `lattice confirm` and `lattice sign`
 
