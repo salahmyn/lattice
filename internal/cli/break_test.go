@@ -698,3 +698,21 @@ func TestBreakFailOnWithFailsOnBase(t *testing.T) {
 		t.Errorf("without --fail-on the exit code must be 0, got %d", res.code)
 	}
 }
+
+// Counts of 100 runs or more print in full: a real project had 651 runs,
+// and the line read "651 of q1 runs" through a two-digit helper.
+// @verifies breaktest:INV-12
+func TestBreakNothingRanLineLargeCounts(t *testing.T) {
+	runs := make([]breaktest.Run, 651)
+	for i := range runs {
+		runs[i] = breaktest.Run{Outcome: breaktest.Unknown, Reason: "no runner"}
+	}
+	if got, want := nothingRanLine(summarize(runs)), "no break ran: 651 of 651 runs unknown (no runner ×651); break_tested stays unknown"; got != want {
+		t.Errorf("line =\n%s\nwant\n%s", got, want)
+	}
+	for n, want := range map[int]string{1: "1 run", 9: "9 runs", 10: "10 runs", 100: "100 runs", 1234: "1234 runs"} {
+		if got := plural(n, "run"); got != want {
+			t.Errorf("plural(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
