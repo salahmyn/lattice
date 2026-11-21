@@ -1641,6 +1641,14 @@ break:
   statement that cannot be isolated does not run: the break reads `unknown`
   ("{patched_sql} not available for this break"), never `survived`.
 
+  When only some of a promise's runner groups name the placeholders, only those
+  groups are left out: their verifiers are not run (reason `needs {patched_sql},
+  which a typescript break does not have`), they are left out of the baseline
+  too, and the other groups run. The run is `killed` when a group that ran fails
+  after the break; otherwise it is `unknown` with a `partial:` reason that names
+  the verifiers that did not run, never `survived`. The reason above is kept
+  only when every group needs the swap.
+
   The swap is offered only when the broken statement is the last one that
   touches the object. Restoring an earlier statement would otherwise undo the
   later ones for every run after it. When the break is an `ALTER POLICY` that
