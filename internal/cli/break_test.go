@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -577,7 +578,7 @@ func TestBreakFailOnUnknownWhenNothingRan(t *testing.T) {
 	if res.code != 0 {
 		t.Fatalf("without --fail-on the exit code must be 0, got %d\n%s%s", res.code, res.out, res.err)
 	}
-	want := "no break ran: 1 of 1 run unknown (no runner configured for typescript (set break.runners or break.commands in config.yaml) ×1); break_tested stays unknown\n"
+	want := "no break ran: 1 of 1 run unknown (no runner configured ×1); missing runners: typescript ×1 (set break.runners or break.commands); break_tested stays unknown\n"
 	if !strings.HasSuffix(res.out, want) || !strings.Contains(res.out, "0 killed, 0 survived, 1 unknown\n") {
 		t.Errorf("text output must keep the counts and end with the no-break line:\n%s", res.out)
 	}
@@ -593,7 +594,8 @@ func TestBreakFailOnUnknownWhenNothingRan(t *testing.T) {
 		t.Errorf("--json --fail-on unknown: exit %d, code %q, error %q", res.code, res.doc.Code, res.doc.Error)
 	}
 	if s.Runs != 1 || s.Unknown != 1 || s.Killed != 0 || s.Survived != 0 || s.Ran ||
-		len(s.UnknownReasons) != 1 || s.UnknownReasons[0].Count != 1 || !strings.HasPrefix(s.UnknownReasons[0].Reason, "no runner configured") {
+		len(s.UnknownReasons) != 1 || s.UnknownReasons[0] != (reasonCount{"no runner configured", 1}) ||
+		len(s.MissingRunners) != 1 || s.MissingRunners[0] != (reasonCount{"typescript", 1}) {
 		t.Errorf("summary = %+v", s)
 	}
 }
@@ -714,5 +716,42 @@ func TestBreakNothingRanLineLargeCounts(t *testing.T) {
 		if got := plural(n, "run"); got != want {
 			t.Errorf("plural(%d) = %q, want %q", n, got, want)
 		}
+	}
+}
+
+// Runs that lack runners for different sets of languages count under one
+// reason, and the summary names each missing runner once with the runs that
+// need it, so one fix is never listed twice.
+// @verifies breaktest:INV-12
+func TestBreakSummaryGroupsMissingRunners(t *testing.T) {
+	reason := func(langs string) string {
+		return "no runner configured for " + langs + " (set break.runners or break.commands in config.yaml)"
+	}
+	var runs []breaktest.Run
+	add := func(n int, r string) {
+		for i := 0; i < n; i++ {
+			runs = append(runs, breaktest.Run{Outcome: breaktest.Unknown, Reason: r})
+		}
+	}
+	add(344, reason("typescript"))
+	add(68, reason("postgres, typescript"))
+	add(228, "no generated break for postgres; add a script")
+	add(11, "constructor: no generated break; add a script")
+	s := summarize(runs)
+	if want := []reasonCount{{"no runner configured", 412}, {"no generated break for postgres; add a script", 228}, {"constructor: no generated break; add a script", 11}}; !reflect.DeepEqual(s.UnknownReasons, want) {
+		t.Errorf("unknown reasons = %v, want %v", s.UnknownReasons, want)
+	}
+	if want := []reasonCount{{"typescript", 412}, {"postgres", 68}}; !reflect.DeepEqual(s.MissingRunners, want) {
+		t.Errorf("missing runners = %v, want %v", s.MissingRunners, want)
+	}
+	want := "no break ran: 651 of 651 runs unknown (no runner configured ×412, no generated break for postgres; add a script ×228, constructor: no generated break; add a script ×11); missing runners: typescript ×412, postgres ×68 (set break.runners or break.commands); break_tested stays unknown"
+	if got := nothingRanLine(s); got != want {
+		t.Errorf("line =\n%s\nwant\n%s", got, want)
+	}
+	if langs, ok := breaktest.NoRunnerLanguages(reason("postgres, typescript")); !ok || !reflect.DeepEqual(langs, []string{"postgres", "typescript"}) {
+		t.Errorf("NoRunnerLanguages = %v, %v", langs, ok)
+	}
+	if _, ok := breaktest.NoRunnerLanguages("no generated break for postgres; add a script"); ok {
+		t.Error("another reason read as a missing runner")
 	}
 }
