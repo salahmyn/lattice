@@ -114,7 +114,7 @@ func (c *corpus) checkStatusDrift() []schema.Violation {
 				Kind:  "edit_manifest",
 				Field: "status",
 				Detail: "see the evidence with `lattice feature promote " + f.ID + "` (without --by it prints and writes nothing), " +
-					"then set the status by hand, or allowlist this finding with a reason",
+					"then a human runs it with --by <email> to set the status, or allowlist this finding with a reason",
 			},
 		})
 	}

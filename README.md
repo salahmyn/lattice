@@ -222,6 +222,7 @@ A complete, validating three-language example lives in
 | `lattice brd decide <id>` | Council decision; its summary states criteria with no pinned tier (`CRITERION_TIER_UNSET` in `validate`); a mandate's `require_pinned_tiers` is an owner opt-in that refuses them |
 | `lattice feature show <id>` | Show one feature + reverse links, with each invariant's cases, their coverage and their confirmation |
 | `lattice feature spec <id>` | Emit the ≤500-word `.ai-spec.md` loading contract |
+| `lattice feature promote <id>` | Print the production entry points that name a feature (writes nothing); with `--by <email>`, a human sets `status: production` and the ledger records it |
 | `lattice ep list\|show\|accept\|reject` | Manage entry points, including the proposals `extract` makes from `serve` handlers, cron jobs and detected routes |
 | `lattice initiative list\|show\|kanban\|critical-path` | Inspect work in flight |
 | `lattice initiative add\|evidence\|status` | Record a proposal, attach its `evidence/v1`, move its status |

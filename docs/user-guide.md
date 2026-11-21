@@ -4126,12 +4126,54 @@ open. `validate.severity` can raise or drop them like any other code.
       subject: "fees:INV-3"
       reason: an internal detail no business criterion states
   ```
-- `STATUS_DRIFT`: promote the status by hand once you know the feature is production
-  (edit its manifest), or allowlist the finding with a reason.
+- `STATUS_DRIFT`: once you know the feature is production, run
+  `lattice feature promote <id> --by <email>` (section 4x), or edit its manifest, or
+  allowlist the finding with a reason.
 - `FEATURE_UNREACHED` on an unpromoted feature: declare the entry point that reaches it,
   or allowlist the finding with a reason.
 
-## 4x. Break facts: what did breaking the code show?
+## 4x. Promote: set a feature to production on evidence
+
+`STATUS_DRIFT` says a proposal or accepted feature sits on the flow of a production
+entry point. `lattice feature promote <id>` shows that evidence, and lets a human act on
+it.
+
+```sh
+lattice feature promote shop.checkout                    # prints; writes nothing
+lattice feature promote shop.checkout --by sal@example.com   # sets status: production
+```
+
+Without `--by` it prints, and writes nothing, so an agent may run it:
+
+```
+shop.checkout  [proposal]
+  production entry point  shop.orders_route  handler src.route.ordersRoute  src/route.ts
+  criterion  brd.shop.orders SC-1  demonstrated
+  Lattice cannot see runtime flags.
+  Nothing was written. A human sets the status with: lattice feature promote shop.checkout --by <email>
+```
+
+It lists the production entry points whose flow names the feature, their handler paths,
+and the level of each criterion that maps to the feature. The levels are context; they
+never decide anything. The last line is a caveat: the graph holds no runtime state, so a
+production entry point is a declaration, not proof of rollout. `--json` prints the same
+as one object.
+
+With `--by <email>` it writes. Only the `status` key changes, to `production`; every
+other key, and any comment, stays as written. One ledger entry (event `gate`) records
+`by`, the actor, the transition `proposal→production` and the entry points printed.
+
+It refuses, and writes nothing, when:
+
+- `--by` or `--actor` names an agent (`PROMOTE_HUMAN_ONLY`);
+- the feature's status is not `proposal` or `accepted` (`PROMOTE_STATUS`);
+- no production entry point's flow names the feature (`PROMOTE_NO_EVIDENCE`). Declare the
+  entry point, or edit the manifest by hand.
+
+No mandate covers it and no grant exists for it. It never touches a BRD, so it causes no
+`BRD_DRIFT`.
+
+## 4y. Break facts: what did breaking the code show?
 
 `lattice validate` reads `lattice/.cache/results/breaks.json`, which `lattice break`
 writes, and states what it shows per feature. Each finding is a fact, info and always
