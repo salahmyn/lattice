@@ -23,7 +23,11 @@ func sliceBuilder(ws *workspace.Workspace) func(context.Context) (schema.Knowled
 		if err != nil {
 			return kg, nil, err
 		}
-		return kg, slice.NewGraph(rr, kg, ws.Layers), nil
+		sg := slice.NewGraph(rr, kg, ws.Layers)
+		if ix := coverageIndex(ws, kg); ix != nil { // a nil *Index must not become a non-nil Coverage
+			sg = sg.WithCoverage(ix)
+		}
+		return kg, sg, nil
 	}
 }
 
@@ -53,6 +57,13 @@ order:
   unknown_from_hop  every enforcer has a path, and a path has an unknown hop
   complete          every enforcer has a path and every hop is resolved
 
+A hop is exercised when one verifier's own per-test run executed symbols on both
+sides of it (a node that is no symbol, such as a table, is stood for by the
+nearest symbol on its side of the path). It prints =kind=> instead of -kind->,
+each path says how many of its hops are exercised, and the verifiers are listed
+with the layers their own runs covered. Without ingested per-test coverage the
+slice says so once and no hop reads exercised; this never changes the reading.
+
 A slice with an unknown hop is never complete. At most 50 paths are listed
 (unknown ones first); the rest are counted. --json prints lattice.slice/1.
 An unknown id is a usage error (exit 2).`,
@@ -79,6 +90,7 @@ An unknown id is a usage error (exit 2).`,
 				}
 			}
 			rec := slice.Compute(sg, id, slice.EnforcersOf(row))
+			slice.Exercise(&rec, sg, slice.VerifiersOf(row))
 			rec.Commit = kg.GeneratedFromCommit
 			if io.JSON {
 				return io.printJSON(rec)

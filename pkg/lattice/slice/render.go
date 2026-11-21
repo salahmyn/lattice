@@ -10,7 +10,8 @@ import (
 
 // WriteText prints a record: the reading first, the enforcers, then one line
 // per path, root to enforcer, with the layer of each node in brackets and the
-// edge kind between nodes. An unknown hop reads kind? instead of kind.
+// edge kind between nodes. An unknown hop reads kind? instead of kind, and an
+// exercised hop is drawn =kind=> instead of -kind->.
 func WriteText(w io.Writer, r Record) {
 	fmt.Fprintf(w, "slice %s\n", r.Invariant)
 	fmt.Fprintf(w, "reading: %s", r.Reading)
@@ -28,14 +29,45 @@ func WriteText(w io.Writer, r Record) {
 	fmt.Fprintf(w, "\npaths (%d)\n", shown+r.Truncated)
 	for _, p := range r.Paths {
 		fmt.Fprintf(w, "  %s\n", PathLine(p))
-		fmt.Fprintf(w, "      root: %s; carried by %s; %s\n", rootLabel(p.Root), strings.Join(p.CarriedBy, " -> "), hopCount(len(p.Hops)))
+		fmt.Fprintf(w, "      root: %s; carried by %s; %s", rootLabel(p.Root), strings.Join(p.CarriedBy, " -> "), hopCount(len(p.Hops)))
+		if p.ExercisedHops != nil {
+			fmt.Fprintf(w, "; exercised %d of %d", *p.ExercisedHops, len(p.Hops))
+		}
+		fmt.Fprintln(w)
 	}
 	if r.Truncated > 0 {
 		fmt.Fprintf(w, "  ... %d more path(s) not shown\n", r.Truncated)
 	}
 	if len(r.Paths) > 0 {
 		fmt.Fprintln(w, "\nkind? marks an unknown hop: an ambiguous reference followed to one of its candidates.")
+		fmt.Fprintln(w, "=kind=> marks an exercised hop: one verifier's own run executed symbols on both sides of it; -kind-> is a hop no verifier showed.")
 		fmt.Fprintln(w, "--json lists every hop of every path.")
+	}
+	writeExercise(w, r)
+}
+
+// writeExercise prints the verifiers with the layers their own runs covered,
+// or says once that no per-test coverage was ingested.
+func writeExercise(w io.Writer, r Record) {
+	switch r.Exercised {
+	case ExercisedUnknown:
+		fmt.Fprintf(w, "\nexercised: unknown, no per-test coverage (no hop is shown exercised)\n")
+	case ExercisedMeasured:
+		fmt.Fprintln(w)
+	default:
+		return
+	}
+	if len(r.Verifiers) > 0 {
+		fmt.Fprintf(w, "verifiers (%d)\n", len(r.Verifiers))
+		for _, v := range r.Verifiers {
+			span := strings.Join(v.Layers, ", ")
+			if span == "" {
+				span = "ran no known symbol"
+			}
+			fmt.Fprintf(w, "  %s  [%s]\n", v.ID, span)
+		}
+	} else if r.Exercised == ExercisedMeasured {
+		fmt.Fprintln(w, "verifiers (0)")
 	}
 }
 
@@ -81,6 +113,10 @@ func PathLine(p Path) string {
 		}
 		if i > 0 && !show[i] {
 			fmt.Fprintf(&b, " -> %s [%s]", h.To, h.ToLayer)
+			continue
+		}
+		if h.Exercised {
+			fmt.Fprintf(&b, " =%s=> %s [%s]", kind, h.To, h.ToLayer)
 			continue
 		}
 		fmt.Fprintf(&b, " -%s-> %s [%s]", kind, h.To, h.ToLayer)

@@ -80,6 +80,12 @@ type Hop struct {
 	FromLayer string `json:"from_layer"`
 	ToLayer   string `json:"to_layer"`
 	Truth     string `json:"truth"`
+	// Exercised is set only when one verifier's own run executed symbols on
+	// both sides of the hop (see Exercise); absent means not shown, never
+	// that it did not happen. ExercisedBy lists those verifiers, sorted and
+	// capped at MaxExercisedBy.
+	Exercised   bool     `json:"exercised,omitempty"`
+	ExercisedBy []string `json:"exercised_by,omitempty"`
 }
 
 // Path is one shortest path from a root to an enforcer.
@@ -90,6 +96,9 @@ type Path struct {
 	// CarriedBy is the layers along the path in order, a run of the same
 	// layer counted once.
 	CarriedBy []string `json:"carried_by"`
+	// ExercisedHops counts the hops marked exercised, out of len(Hops). It is
+	// absent when the record has no per-test coverage to count from.
+	ExercisedHops *int `json:"exercised_hops,omitempty"`
 }
 
 // Record is the slice of one invariant: lattice.slice/1.
@@ -111,6 +120,14 @@ type Record struct {
 	Paths []Path `json:"paths"`
 	// Truncated counts the paths left out of Paths.
 	Truncated int `json:"truncated,omitempty"`
+	// Exercised is "measured" when per-test coverage was read for the hops
+	// and "unknown" when there is none; ExercisedWhy says so. Both are absent
+	// until Exercise runs. This never changes Reading, which is structure.
+	Exercised    string `json:"exercised,omitempty"`
+	ExercisedWhy string `json:"exercised_why,omitempty"`
+	// Verifiers are the promise's verifiers with the layers their own runs
+	// executed, or ["unknown"] when a verifier has no per-test coverage.
+	Verifiers []Verifier `json:"verifiers,omitempty"`
 }
 
 // step is one outgoing edge of a node.
@@ -128,6 +145,8 @@ type Graph struct {
 	revOK map[string][]string // to -> from, over resolved steps only
 	roots []reach.Root
 	layer map[string]string // symbol FQN -> layer, as the graph assigned it
+	isSym map[string]bool   // every symbol of the knowledge graph: a node coverage can speak of
+	cov   Coverage          // ingested per-test coverage, nil when none
 	rules []schema.LayerRule
 	info  func(string) (reach.NodeInfo, bool)
 }
@@ -140,7 +159,9 @@ func NewGraph(rr *reach.Result, kg schema.KnowledgeGraph, rules []schema.LayerRu
 		return nil
 	}
 	layers := map[string]string{}
+	syms := map[string]bool{}
 	for _, s := range kg.Symbols {
+		syms[s.FQN] = true
 		if s.Layer != "" {
 			layers[s.FQN] = s.Layer
 		}
@@ -149,13 +170,18 @@ func NewGraph(rr *reach.Result, kg schema.KnowledgeGraph, rules []schema.LayerRu
 	// a method passed as a value reaches no entry point.
 	g := rr.Graph
 	info := func(fqn string) (reach.NodeInfo, bool) { return g.NodeInfo(fqn) }
-	return newGraph(rr.Roots, g.Edges, g.Unresolved, layers, rules, info)
+	sg := newGraph(rr.Roots, g.Edges, g.Unresolved, layers, rules, info)
+	sg.isSym = syms
+	return sg
 }
 
 func newGraph(roots []reach.Root, edges []reach.Edge, unresolved []reach.Unresolved, layers map[string]string,
 	rules []schema.LayerRule, info func(string) (reach.NodeInfo, bool)) *Graph {
 	g := &Graph{succ: map[string][]step{}, rev: map[string][]string{}, revOK: map[string][]string{},
-		roots: append([]reach.Root(nil), roots...), layer: layers, rules: rules, info: info}
+		roots: append([]reach.Root(nil), roots...), layer: layers, rules: rules, info: info, isSym: map[string]bool{}}
+	for fqn := range layers {
+		g.isSym[fqn] = true
+	}
 	for _, e := range edges {
 		g.succ[e.From] = append(g.succ[e.From], step{to: e.To, kind: e.Kind})
 	}
