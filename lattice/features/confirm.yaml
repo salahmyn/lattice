@@ -47,4 +47,4 @@ invariants:
   - id: INV-18
     statement: A signature verdict names a human login as its signer, never a bot or agent login, whoever opened the pull request; a pull request opened by a bot or agent account is named in the verdict's text.
   - id: INV-19
-    statement: confirm --unsigned lists the current decisions that rest on a local note or a review, with the exact commands that re-confirm each by signature, and signs, prepares and writes nothing.
+    statement: confirm --unsigned lists the current decisions that rest on a typed note (marked local or not), a council approval awaiting its human, or a review, with the exact commands that confirm each by signature, and signs, prepares and writes nothing.

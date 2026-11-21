@@ -19,6 +19,9 @@ const (
 	RestsLocal = "local"
 	// RestsReview is an approving review on the merged pull request.
 	RestsReview = "review"
+	// RestsCouncil is a council's approval its delegating human has not
+	// acknowledged yet: the acknowledgement itself is what to sign.
+	RestsCouncil = "council"
 )
 
 // Unsigned is a decision on a BRD's current version that rests on a local
@@ -27,7 +30,7 @@ type Unsigned struct {
 	ID      string `json:"id"`
 	Version int    `json:"version"`
 	Action  string `json:"action"`
-	// Rests is "local" or "review".
+	// Rests is "local", "review" or "council".
 	Rests string `json:"rests"`
 	// By is the typed name of a local note, or the reviewer's login.
 	By string `json:"by,omitempty"`
@@ -64,10 +67,12 @@ type UnsignedInput struct {
 	Stem func(b schema.BRD, action string) (stem string, ok bool)
 }
 
-// ListUnsigned lists the decisions that could be re-confirmed by signature:
-// a BRD's current version approved or acknowledged by a local command and
-// not confirmed since, and each confirmed review-route record of a current
-// version that no signature confirms. For each it gives the exact commands.
+// ListUnsigned lists the decisions that could be confirmed by signature: a
+// BRD's current version approved or acknowledged by a typed note (a local
+// command, or a file written before the local mark existed) and not
+// confirmed since; a council's approval its delegating human has not
+// acknowledged; and each confirmed review-route record of a current version
+// that no signature confirms. For each it gives the exact commands.
 // It reads only; it signs, prepares and writes nothing.
 // @enforces confirm:INV-19
 func ListUnsigned(in UnsignedInput) UnsignedList {
@@ -124,18 +129,30 @@ func ListUnsigned(in UnsignedInput) UnsignedList {
 
 	for _, b := range in.BRDs {
 		a := b.Approval
-		if a == nil || !a.Local || b.Status != schema.BRDApproved || (a.ApprovedVersion > 0 && a.ApprovedVersion != b.Version) ||
+		// Any approval written in the BRD file that no confirmed record backs
+		// is a typed note, whether or not it carries the local mark: files
+		// approved or acknowledged before that mark existed have none.
+		if a == nil || b.Status != schema.BRDApproved || (a.ApprovedVersion > 0 && a.ApprovedVersion != b.Version) ||
 			human[b.ID+"|"+strconv.Itoa(b.Version)] {
 			continue
 		}
-		action, by, prep := ActionApprove, a.ApprovedBy, "lattice prepare brd approve "+b.ID+" --version "+strconv.Itoa(b.Version)
+		council := a.Mandate != "" || strings.HasPrefix(strings.ToLower(strings.TrimSpace(a.ApprovedBy)), "council")
+		action, by, rests := ActionApprove, a.ApprovedBy, RestsLocal
+		prep := "lattice prepare brd approve " + b.ID + " --version " + strconv.Itoa(b.Version)
+		text := "a local note typed as " + by + ", not a confirmation; prepare the decision, sign it, then commit the .sig on the decision branch and merge it"
 		switch {
 		case a.HumanReview == schema.HumanReviewAcknowledged:
 			action, by, prep = ActionAck, a.ReviewedBy, "lattice prepare brd ack "+b.ID
-		case a.Mandate != "" || strings.HasPrefix(strings.ToLower(strings.TrimSpace(a.ApprovedBy)), "council") || schema.IsAgentActor(a.ApprovedBy):
-			continue // a council's or an agent's approval: a human acks it first
+			text = "a local note typed as " + by + ", not a confirmation; prepare the decision, sign it, then commit the .sig on the decision branch and merge it"
+		case council:
+			// A council approved it and its delegating human has not acked
+			// it: the ack is theirs to make, after reading the decision.
+			action, by, rests, prep = ActionAck, a.DelegatedBy, RestsCouncil, "lattice prepare brd ack "+b.ID
+			text = "approved by a council, not yet acknowledged by its delegating human; read the council's decision, then prepare the acknowledgement, sign it, commit the .sig on the decision branch and merge it"
+		case schema.IsAgentActor(a.ApprovedBy):
+			continue // an agent's approval is never a human's to re-sign
 		}
-		u := Unsigned{ID: b.ID, Version: b.Version, Action: action, Rests: RestsLocal, By: by}
+		u := Unsigned{ID: b.ID, Version: b.Version, Action: action, Rests: rests, By: by}
 		if in.Stem != nil {
 			if stem, ok := in.Stem(b, action); ok {
 				u.Commands = []string{prep, "git switch decision/" + stem, "lattice sign " + stem}
@@ -144,7 +161,7 @@ func ListUnsigned(in UnsignedInput) UnsignedList {
 		if u.Commands == nil {
 			u.Commands = []string{prep, "git switch <the branch prepare prints>", "lattice sign <that branch>"}
 		}
-		u.Text = "a local note typed as " + by + ", not a confirmation; prepare the decision, sign it, then commit the .sig on the decision branch and merge it"
+		u.Text = text
 		out.Decisions = append(out.Decisions, u)
 	}
 	sort.SliceStable(out.Decisions, func(i, j int) bool {
