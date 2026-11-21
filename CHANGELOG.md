@@ -2,6 +2,44 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.22.1] — 2026-11-21
+
+`lattice break --edges` now breaks a client's call to an edge function. A cron job that reads its
+target URL from Supabase Vault joins the function it calls. A break whose verifiers include a SQL
+swap runner still runs its other tests.
+
+### Fixed
+
+- **An edge function and the declared route that covers it are one http end.**
+  - **What went wrong.** Both matched a `functions.invoke` call, so the reference read as ambiguous,
+    and `lattice break --edges` skipped every client-to-function hop.
+  - **What still reads ambiguous.** Different handlers on one path.
+- **A runner group that needs the SQL swap no longer blocks the others.**
+  - **Non-SQL and edge breaks.** Only the group whose command uses `{patched_sql}` or
+    `{original_sql}` is left out, both from the run and from its baseline. Its verifiers read not
+    run, and the other groups run.
+  - **The outcome.** Killed when a group that ran fails. Otherwise `unknown` with a `partial:`
+    reason, never survived.
+- **A cron job that runs a function posting to an edge function** now reaches that function's
+  handler. A declared cron entry point on its schedule covers it.
+
+### Added
+
+- **`http.secrets` in `lattice/workspace.yaml`** maps a Vault secret name to a route path.
+  - **What joins.** A SQL function that reads a URL whole from Vault and posts to it through
+    `net.http_*` joins that route. The URL may be the plain variable, or the variable with a literal
+    suffix (`v || '/suffix'`). The read can be written as
+    `select decrypted_secret into v from vault.decrypted_secrets where name = '<lit>'`, or with
+    `:=`.
+  - **What stays `dynamic`.** An undeclared secret, and `HTTP_CALL_DYNAMIC` names the secret to
+    declare.
+- **An object swap for a named CHECK inside `CREATE TABLE`.**
+  - **Patched.** `ALTER TABLE … DROP CONSTRAINT IF EXISTS c, ADD CONSTRAINT c CHECK (true OR (…)) NOT
+    VALID`.
+  - **Restored.** The original expression, then `VALIDATE CONSTRAINT c`.
+  - **When it is not offered.** Any later statement that touches the constraint makes the swap
+    unavailable.
+
 ## [0.22.0] — 2026-11-21
 
 Lattice now follows a promise through queues and events. It can break the hops between layers as
