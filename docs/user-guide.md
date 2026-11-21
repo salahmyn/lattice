@@ -1420,6 +1420,15 @@ runner configuration (the resolved runner commands, the setup commands and the
 generator version) all match, so a config change runs again; `unknown` is never
 reused, so a timeout is always tried again.
 
+A baseline runs once per distinct command: promises whose verifiers render the
+same invocation (a runner that takes whole `{files}`, such as `pg_prove`, given
+two tests of one file) share it, and each promise still reads its own verifiers
+from its output. A passing baseline is also kept for the HEAD tree in
+`lattice/.cache/results/break-baselines.json` and reused by the next `lattice
+break` at that tree; a new commit, a dirty tree, a failure, a timeout or an
+error runs it again. The summary line says `baselines: 12 run, 40 reused`, and
+`--json` has `summary.baselines` (`run`, `reused`).
+
 `--promise` and `--feature` print only the runs they selected; `breaks.json`
 still keeps the rest of the commit's runs.
 
@@ -1431,7 +1440,8 @@ survived,unknown`). Shown means the `--promise` or `--feature` selection, so a
 survived run of another promise in `breaks.json` does not count. Any other value
 is a usage error (exit 2). With `--json` the output is one document: the report,
 a `summary` of the shown runs (`runs`, `killed`, `survived`, `unknown`, `ran`,
-the top `unknown_reasons` and `missing_runners`), and `error` and `code` when
+the top `unknown_reasons` and `missing_runners`, and the invocation's
+`baselines`), and `error` and `code` when
 `--fail-on` matched. Runs that lack a runner count under one reason, `no runner
 configured`, whatever languages each lacks; `missing_runners` counts, per
 language, the runs that need its runner (a run that needs two counts under

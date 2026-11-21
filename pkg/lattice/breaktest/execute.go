@@ -21,22 +21,21 @@ import (
 
 // runner carries the state of one `lattice break` invocation.
 type runner struct {
-	opts      Options
-	repo      Repo
-	wt        *Worktree
-	prior     map[[5]string]Run
-	baselines map[string]baseline // by verifier set, shared by promises
-	junitSeq  int
+	opts  Options
+	repo  Repo
+	wt    *Worktree
+	prior map[[5]string]Run
+	// shared are this run's baseline invocations by invocationKey, shared by
+	// the promises whose groups render the same command.
+	shared map[string]invocation
+	// store keeps passing baselines across runs at the same tree; nil on a
+	// dirty tree.
+	store    *baselineFile
+	counts   BaselineCounts
+	junitSeq int
 
 	setupDone bool
 	setupErr  error
-}
-
-type baseline struct {
-	status    string // pass, fail, error
-	reason    string
-	ran       []string
-	unchecked bool
 }
 
 // Execute breaks each promise's enforcer on a temporary worktree and reports
@@ -61,10 +60,18 @@ func Execute(ctx context.Context, kg schema.KnowledgeGraph, opts Options) (Repor
 
 	targets := plan(kg, opts)
 	prior := Read(opts.LatticeDir)
-	r := &runner{opts: opts, repo: repo, prior: map[[5]string]Run{}, baselines: map[string]baseline{}}
+	r := &runner{opts: opts, repo: repo, prior: map[[5]string]Run{}, shared: map[string]invocation{}}
 	for _, p := range prior.Runs {
 		if p.cacheable() {
 			r.prior[p.cacheKey()] = p
+		}
+	}
+	// Baselines are kept by HEAD's tree, which a dirty tree is not: it
+	// neither reuses nor replaces them.
+	if !repo.Dirty {
+		if tree, err := git(ctx, repo.Top, "rev-parse", "HEAD^{tree}"); err == nil {
+			r.store = loadBaselines(opts.LatticeDir, tree, baselineStamp(tree, repo.Prefix, opts.Config.Break))
+			rep.baselines = r.store
 		}
 	}
 	if len(targets) > 0 {
@@ -83,6 +90,7 @@ func Execute(ctx context.Context, kg schema.KnowledgeGraph, opts Options) (Repor
 		}
 		rep.Runs = append(rep.Runs, run)
 	}
+	rep.Baselines = r.counts
 
 	// A filtered run keeps the other promises' runs from the same commit, so
 	// one promise can be re-broken without losing the rest of the file.
@@ -443,35 +451,6 @@ func groupVerifiers(cfg config.Break, sels []results.Selector) ([]group, []resul
 	return out, none
 }
 
-// baseline runs the verifiers unbroken once per distinct set.
-func (r *runner) baseline(ctx context.Context, groups []group) baseline {
-	var key []string
-	for _, g := range groups {
-		for _, t := range g.tests {
-			key = append(key, t.Test)
-		}
-	}
-	sort.Strings(key)
-	k := strings.Join(key, "\x00")
-	if b, ok := r.baselines[k]; ok {
-		return b
-	}
-	res := r.runGroups(ctx, groups)
-	b := baseline{status: BaselinePass, ran: res.ran, unchecked: res.unchecked}
-	switch res.status {
-	case statusFail:
-		b = baseline{status: BaselineFail, reason: "baseline fails: " + res.reason}
-	case statusOK:
-	default:
-		b = baseline{status: BaselineError, reason: "baseline " + res.reason}
-	}
-	// A timeout or an interrupt says nothing about the next run.
-	if res.status != statusTimeout && res.status != statusError {
-		r.baselines[k] = b
-	}
-	return b
-}
-
 // runGroups runs every group and combines the results. The verifiers fail
 // together: one group failing is enough, and every group must pass for the
 // run to pass.
@@ -532,30 +511,43 @@ func nameList(names []string) string {
 }
 
 func (r *runner) runGroup(ctx context.Context, g group) execResult {
+	return r.invoke(ctx, g).result(g)
+}
+
+// invoke runs a group's command once and keeps its result and its JUnit
+// report, before they are accounted for any promise's verifiers.
+func (r *runner) invoke(ctx context.Context, g group) invocation {
 	if g.kind == kindGo {
-		return r.runGo(ctx, g)
+		return invocation{res: r.runGo(ctx, g)}
 	}
-	files, filter := templateRaw(g)
 	junit := ""
 	if g.usesJUnit() {
 		r.junitSeq++
 		junit = filepath.Join(r.wt.tmp, fmt.Sprintf("junit-%d.xml", r.junitSeq))
 	}
-	var res execResult
-	if g.kind == kindRunner {
-		dir := filepath.Join(r.wt.Dir, filepath.FromSlash(g.runner.Dir))
-		argv := expandArgv(g.runner.Command, relativeTo(r.wt.Dir, g.runner.Dir, files), filter, junit)
-		res = command(ctx, "", dir, r.opts.Timeout, argv[0], argv[1:]...)
-	} else {
-		var quoted []string
-		for _, f := range files {
-			quoted = append(quoted, shellQuote(f))
-		}
-		cmd := strings.NewReplacer("{files}", strings.Join(quoted, " "), "{filter}", shellQuote(filter),
-			"{junit}", shellQuote(junit)).Replace(g.tmpl)
-		res = command(ctx, "", r.wt.Dir, r.opts.Timeout, "sh", "-c", cmd)
+	dir, argv := render(g, r.wt.Dir, junit)
+	inv := invocation{res: command(ctx, "", dir, r.opts.Timeout, argv[0], argv[1:]...), junit: junit != ""}
+	if inv.junit {
+		inv.report, inv.reportErr = os.ReadFile(junit)
 	}
-	return account(g, res, junit)
+	return inv
+}
+
+// render builds the directory and the argument list a runner or template
+// group runs, in a worktree at root and with the JUnit report at junit.
+func render(g group, root, junit string) (dir string, argv []string) {
+	files, filter := templateRaw(g)
+	if g.kind == kindRunner {
+		return filepath.Join(root, filepath.FromSlash(g.runner.Dir)),
+			expandArgv(g.runner.Command, relativeTo(root, g.runner.Dir, files), filter, junit)
+	}
+	var quoted []string
+	for _, f := range files {
+		quoted = append(quoted, shellQuote(f))
+	}
+	cmd := strings.NewReplacer("{files}", strings.Join(quoted, " "), "{filter}", shellQuote(filter),
+		"{junit}", shellQuote(junit)).Replace(g.tmpl)
+	return root, []string{"sh", "-c", cmd}
 }
 
 // usesJUnit reports whether the group's command asks for a JUnit report.
@@ -612,6 +604,19 @@ func relativeTo(root, dir string, files []string) []string {
 // marked unchecked.
 func account(g group, res execResult, junit string) execResult {
 	if junit == "" {
+		return accountReport(g, res, false, nil, nil)
+	}
+	data, err := os.ReadFile(junit)
+	return accountReport(g, res, true, data, err)
+}
+
+// accountReport is account for a report already read: data is its content
+// and readErr the error reading it, when the command asked for one. It does
+// not change what res holds, so one invocation can be accounted for several
+// promises' verifiers.
+func accountReport(g group, res execResult, junit bool, data []byte, readErr error) execResult {
+	res.ran, res.failed = nil, nil
+	if !junit {
 		res.unchecked = true
 		res.executed = len(g.tests)
 		if res.status == statusOK || res.status == statusFail {
@@ -621,7 +626,7 @@ func account(g group, res execResult, junit string) execResult {
 		}
 		return res
 	}
-	data, err := os.ReadFile(junit)
+	err := readErr
 	var set results.Set
 	if err == nil {
 		set, err = results.ParseJUnit(data)
