@@ -63,6 +63,25 @@ type Symbol struct {
 	// caller in the code: "main" (Go's func main in package main),
 	// "trigger" or "policy" (the database runs them). Empty for others.
 	Root string `json:"root,omitempty"`
+	// Altered lists the later statements of a change history that touch
+	// this symbol's object after the statement that is its effective
+	// definition (a SQL ALTER POLICY, ALTER FUNCTION, ...), in the order
+	// they apply. A later full redefinition is not one: it replaces the
+	// symbol and starts a new list.
+	Altered []Alteration `json:"altered,omitempty"`
+	// DeclaredAs is the name the symbol's own statement gave it, set only
+	// when a later rename changed Name (SQL ALTER ... RENAME TO).
+	DeclaredAs string `json:"declared_as,omitempty"`
+}
+
+// Alteration is one statement that changes an object after its definition.
+type Alteration struct {
+	File    string `json:"file"`
+	Line    int    `json:"line"`
+	EndLine int    `json:"end_line,omitempty"`
+	// Sets says what the statement changes: "using" and "with_check" (the
+	// policy expressions it sets), "to" (the roles), "rename", or "other".
+	Sets []string `json:"sets,omitempty"`
 }
 
 // Reference kinds (Ref.Kind).

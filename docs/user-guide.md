@@ -511,6 +511,12 @@ attributes the symbol to that feature; `@feature` overrides it.
 **Migrations are applied in filename order.**
 - The last `create or replace` is the effective definition, and a
   `drop` removes the symbol.
+- An `alter policy`, `alter function` or `alter trigger` after it is recorded
+  on the symbol (which clauses it sets, and where), a `rename to` gives the
+  symbol its new name, and a later `create` or a `drop` discards the
+  alterations before it. This is how `lattice break` finds the statement that
+  sets the current definition (see SQL breaks). A tag above an `alter`
+  statement still attaches to nothing: tags count on the `create`.
 - Tags count only on the effective definition. A redefinition that loses
   a tag raises `SQL_TAG_DROPPED`, naming the older file, so a reader of an
   outdated definition is not misled.
@@ -1424,6 +1430,30 @@ bodies, `INSTEAD OF` triggers (which allow no `WHEN`) and anything the
 generator cannot place exactly read unknown with the reason, never a break
 that would fail for the wrong reason.
 
+A break goes on the statement that sets the object's **effective** definition.
+Migrations apply by file name, then by position in the file, and an object a
+later migration changes would shrug off a break in its `CREATE`: a full reset
+replays the later statement over it. So for a policy the break goes on the last
+`ALTER POLICY` that sets `USING`, else on the `CREATE`, and the same for `WITH
+CHECK`, in whichever file that statement is (the run's `enforcer_file` is that
+file):
+
+```sql
+-- 001_init.sql
+-- @enforces library:INV-9
+create policy "own rows" on public.feeds for all using (owner = auth.uid());
+
+-- 005_family.sql: the break goes here, not on the CREATE
+alter policy "own rows" on public.feeds using (owner = auth.uid() or is_family(owner));
+```
+
+A policy renamed by `ALTER POLICY … RENAME TO` is followed under its new name.
+A `DROP POLICY` followed by a `CREATE POLICY` of the same name makes the later
+`CREATE` the one that counts; a lone `DROP` removes the symbol (its tags are no
+longer enforced by anything). A function takes the break in its last `CREATE OR
+REPLACE`, and a trigger in its last `CREATE TRIGGER`. When `USING` and `WITH
+CHECK` were last set by different statements, each is broken where it is set.
+
 **A scripted break** is a patch at `lattice/breaks/<feature>/<INV>.patch`
 (made with `git diff`), applied with `git apply` in the worktree. It
 replaces the generated break for that promise, and is the way to break
@@ -1535,6 +1565,18 @@ break:
   SQL, for a SQL break with a patch script (`lattice/breaks/...`), or for a
   statement that cannot be isolated does not run: the break reads `unknown`
   ("{patched_sql} not available for this break"), never `survived`.
+
+  The swap is offered only when the broken statement is the last one that
+  touches the object. Restoring an earlier statement would otherwise undo the
+  later ones for every run after it. When the break is an `ALTER POLICY` that
+  sets the broken expression, `{patched_sql}` and `{original_sql}` are that
+  statement, broken and unbroken, with no `DROP`: it can be applied again as it
+  is. When the broken statement is a `CREATE` and a later statement touches the
+  object (an `ALTER POLICY … TO …`, a rename, an `ALTER FUNCTION`), or the break
+  edits two statements, the swap is not available and the reason says why, for
+  example `{patched_sql} not available for this break: altered later in
+  db/migrations/005_roles.sql:1`. Use the full reset for those; it replays the
+  migrations in order and never needs this rule.
 
   The full reset stays the safe default. Swapping one object is not safe when
   other objects depend on its definition in a way that replacing it does not

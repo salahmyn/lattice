@@ -344,38 +344,72 @@ func generateSQL(src []byte, sym Symbol) (Break, error) {
 // locateSQL finds the CREATE statement of an enforcer symbol: the one that
 // starts on its line and has its name. It returns the statement, its kind and
 // the index of the token after its name (after the table, for a policy or
-// trigger).
+// trigger). A symbol renamed by a later ALTER is found by the name its CREATE
+// gave it.
 func locateSQL(src []byte, sym Symbol) (sqlStmt, sqlEnforcer, int, error) {
 	toks, err := sqlLex(src, 0, len(src), 1)
 	if err != nil {
 		return sqlStmt{}, 0, 0, noBreak("SQL does not scan: %v; add a script", err)
+	}
+	want := sym.Name
+	if sym.DeclaredAs != "" {
+		want = sym.DeclaredAs
 	}
 	for _, st := range sqlStatements(src, toks) {
 		if st.toks[0].line != sym.Line {
 			continue
 		}
 		kind, name, next, ok := st.header()
-		if !ok || name != sym.Name {
+		if !ok || name != want {
 			continue
 		}
 		return st, kind, next, nil
 	}
-	return sqlStmt{}, 0, 0, noBreak("no SQL function, policy or trigger %s at line %d", sym.Name, sym.Line)
+	return sqlStmt{}, 0, 0, noBreak("no SQL function, policy or trigger %s at line %d", want, sym.Line)
 }
+
+// locateAlterPolicy finds the ALTER POLICY statement that starts on line and
+// returns it with the index of the token after its table. The policy's name
+// is not compared: a rename may have changed it between the CREATE and here.
+func locateAlterPolicy(src []byte, line int) (sqlStmt, int, error) {
+	toks, err := sqlLex(src, 0, len(src), 1)
+	if err != nil {
+		return sqlStmt{}, 0, noBreak("SQL does not scan: %v; add a script", err)
+	}
+	for _, st := range sqlStatements(src, toks) {
+		if st.toks[0].line != line || !st.is(0, "alter") || !st.is(1, "policy") || !st.is(3, "on") {
+			continue
+		}
+		if _, _, next, ok := st.qname(4); ok {
+			return st, next, nil
+		}
+	}
+	return sqlStmt{}, 0, noBreak("no ALTER POLICY statement at line %d", line)
+}
+
+// noPolicyExpr is the reason a policy statement has nothing to break.
+const noPolicyExpr = "policy has no USING or WITH CHECK expression; add a script"
 
 // policyBreak turns USING (expr) and WITH CHECK (expr) into
 // USING (true OR (expr)): a permissive policy then admits every row, and a
 // restrictive one stops restricting, while expr stays in place and still
-// has to resolve.
+// has to resolve. It works the same on an ALTER POLICY statement, which
+// sets the expressions it names.
 func (s sqlStmt) policyBreak(from int) (Break, error) {
+	return s.policyBreakOf(from, true, true)
+}
+
+// policyBreakOf is policyBreak for the clauses asked for: USING when using
+// is set, WITH CHECK when check is.
+func (s sqlStmt) policyBreakOf(from int, using, check bool) (Break, error) {
 	var ins []Break
 	var bad string
 	balanced := s.topLevel(from, func(j int) bool {
 		open := -1
 		switch {
-		case s.is(j, "using") && s.punct(j+1, '('):
+		case using && s.is(j, "using") && s.punct(j+1, '('):
 			open = j + 1
-		case s.is(j, "with") && s.is(j+1, "check") && s.punct(j+2, '('):
+		case check && s.is(j, "with") && s.is(j+1, "check") && s.punct(j+2, '('):
 			open = j + 2
 		default:
 			return true
@@ -399,7 +433,7 @@ func (s sqlStmt) policyBreak(from int) (Break, error) {
 	case bad != "":
 		return Break{}, noBreak("%s; add a script", bad)
 	case len(ins) == 0:
-		return Break{}, noBreak("policy has no USING or WITH CHECK expression; add a script")
+		return Break{}, noBreak(noPolicyExpr)
 	}
 	return Break{Offset: ins[0].Offset, Text: ins[0].Text, More: ins[1:]}, nil
 }

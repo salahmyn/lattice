@@ -19,6 +19,7 @@ import (
 	tsgrammar "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
 
 	"github.com/salahmyn/lattice/pkg/lattice/adapters/astutil"
+	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
 // Symbol names the function a break is generated for. Line is the 1-based
@@ -27,6 +28,12 @@ type Symbol struct {
 	Name string
 	Kind string
 	Line int
+	// DeclaredAs is the name a SQL symbol's CREATE gave it, when a later
+	// rename changed Name.
+	DeclaredAs string
+	// Altered lists the SQL statements that change the symbol's object after
+	// its CREATE, in the order they apply (see schema.GraphSymbol.Altered).
+	Altered []schema.GraphAlteration
 }
 
 // Break is an insertion into a source file: Text goes in at byte Offset and

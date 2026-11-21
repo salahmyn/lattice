@@ -108,8 +108,11 @@ type Run struct {
 // GeneratorVersion stamps the generators, the runner logic and the outcome
 // rules. It is part of the cache key, so a change to any of them invalidates
 // cached outcomes. 3: a break that left the verifiers that ran green while
-// others did not run reads unknown, not survived.
-const GeneratorVersion = "3"
+// others did not run reads unknown, not survived. 4: a SQL break edits the
+// statement that sets the object's effective definition (the last ALTER
+// POLICY that sets an expression, not the CREATE a later one overrides), and
+// the object swap is offered only when no later statement touches the object.
+const GeneratorVersion = "4"
 
 // cacheKey is what makes an earlier outcome valid again: the same enforcer
 // source, the same verifier source, the same way of breaking it, the same

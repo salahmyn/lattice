@@ -182,6 +182,20 @@ func (r *runner) configHash(groups []group, noRunner []results.Selector) string 
 	return sha(b)
 }
 
+// planFor generates the break of an enforcer from the worktree's sources. The
+// file actually edited is plan.edits[0].file: a SQL break goes where the
+// object's effective definition is set, which may not be the file of its
+// CREATE, and that is the file a run reports as its enforcer's.
+func (r *runner) planFor(enf schema.GraphSymbol) (breakPlan, error) {
+	src, err := os.ReadFile(filepath.Join(r.wt.Dir, enf.File))
+	if err != nil {
+		return breakPlan{}, fmt.Errorf("enforcer source unreadable: %w", err)
+	}
+	return planBreak(enf.Language, enf.File, src, symbolOf(enf), func(f string) ([]byte, error) {
+		return os.ReadFile(filepath.Join(r.wt.Dir, f))
+	})
+}
+
 // @enforces breaktest:INV-4, breaktest:INV-16
 func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 	enf := t.enforcers[0]
@@ -205,6 +219,16 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 			return run, nil
 		}
 		parts = append(parts, h)
+		// A SQL object's effective definition may be in a later statement,
+		// so those statements are part of what the break edits.
+		for _, a := range e.Altered {
+			h, err := r.spanHash(schema.GraphSymbol{File: a.File, Line: a.Line, EndLine: a.EndLine})
+			if err != nil {
+				run.Reason = "enforcer source unreadable: " + err.Error()
+				return run, nil
+			}
+			parts = append(parts, h)
+		}
 	}
 	run.EnforcerHash = parts[0]
 	if len(parts) > 1 {
@@ -237,6 +261,11 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 	// A cached outcome is not taken over a baseline known to fail at this
 	// tree: it is run, which shows what the tree does now.
 	if hit, ok := r.prior[run.cacheKey()]; ok && len(t.tests) > 0 && !r.baselineKnownFailing(groups) {
+		if t.script == "" {
+			if plan, err := r.planFor(enf); err == nil {
+				run.EnforcerFile = plan.edits[0].file
+			}
+		}
 		run.Baseline, run.Outcome, run.Reason, run.Cached = hit.Baseline, hit.Outcome, hit.Reason, true
 		run.RanVerifiers, run.NotRunVerifiers, run.FailedTests = hit.RanVerifiers, hit.NotRunVerifiers, hit.FailedTests
 		return run, nil
@@ -247,19 +276,14 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 	}
 
 	// The break. A generated one needs a generator for the enforcer's kind.
-	var brk Break
-	var src []byte
+	var plan breakPlan
 	if t.script == "" {
 		var err error
-		if src, err = os.ReadFile(filepath.Join(r.wt.Dir, enf.File)); err != nil {
-			run.Reason = "enforcer source unreadable: " + err.Error()
-			return run, nil
-		}
-		brk, err = Generate(enf.Language, enf.File, src, Symbol{Name: enf.Name, Kind: enf.Kind, Line: enf.Line})
-		if err != nil {
+		if plan, err = r.planFor(enf); err != nil {
 			run.Reason = err.Error()
 			return run, nil
 		}
+		run.EnforcerFile = plan.edits[0].file
 	}
 
 	notRunWhy := map[string]string{}
@@ -271,13 +295,14 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 	// runs, baseline included.
 	var sw sqlFiles
 	if anyUsesSQLFiles(groups) {
+		var why string
 		var err error
-		if sw, err = r.swapFiles(enf.Language, t.script != "", brk, src, Symbol{Name: enf.Name, Kind: enf.Kind, Line: enf.Line}); err != nil {
+		if sw, why, err = r.swapFiles(enf.Language, t.script != "", plan, symbolOf(enf)); err != nil {
 			run.Reason = "SQL object files: " + err.Error()
 			return run, nil
 		}
 		if !sw.ok() {
-			run.Reason = sqlUnavailable
+			run.Reason = sqlUnavailable + why
 			return run, nil
 		}
 	}
@@ -318,7 +343,7 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 	}
 
 	// Break, run, restore.
-	res, err := r.broken(ctx, t, brk, src, patch, groups, sw)
+	res, err := r.broken(ctx, t, plan, patch, groups, sw)
 	if err != nil {
 		return run, err
 	}
@@ -433,8 +458,7 @@ func notRunReason(notRun []string, why map[string]string) string {
 }
 
 // broken applies the break, runs the verifiers and undoes the break, always.
-func (r *runner) broken(ctx context.Context, t target, brk Break, src, patch []byte, groups []group, sw sqlFiles) (execResult, error) {
-	enf := t.enforcers[0]
+func (r *runner) broken(ctx context.Context, t target, plan breakPlan, patch []byte, groups []group, sw sqlFiles) (execResult, error) {
 	if t.script != "" {
 		if err := r.wt.ApplyPatch(ctx, t.script, false); err != nil {
 			return execResult{status: statusError, reason: "script does not apply: " + firstLine(err.Error())}, nil
@@ -452,15 +476,29 @@ func (r *runner) broken(ctx context.Context, t target, brk Break, src, patch []b
 		}
 		return res, nil
 	}
-	file := filepath.Join(r.wt.Dir, enf.File)
-	if err := os.WriteFile(file, brk.Apply(src), 0o644); err != nil {
-		return execResult{}, err
+	// Write every edit, run, and put every file back, whatever happened.
+	var wrote []fileEdit
+	var werr error
+	for _, e := range byFile(plan.edits) {
+		if werr = os.WriteFile(filepath.Join(r.wt.Dir, e.file), e.brk.Apply(e.src), 0o644); werr != nil {
+			break
+		}
+		wrote = append(wrote, e)
 	}
-	res := r.runGroups(ctx, groups, sw)
-	if err := os.WriteFile(file, src, 0o644); err != nil {
-		return res, fmt.Errorf("%w: %v", errWorktree, err)
+	var res execResult
+	if werr == nil {
+		res = r.runGroups(ctx, groups, sw)
 	}
-	return res, nil
+	var rerr error
+	for _, e := range wrote {
+		if err := os.WriteFile(filepath.Join(r.wt.Dir, e.file), e.src, 0o644); err != nil && rerr == nil {
+			rerr = err
+		}
+	}
+	if rerr != nil {
+		return res, fmt.Errorf("%w: %v", errWorktree, rerr)
+	}
+	return res, werr
 }
 
 // groupKind says how a group of verifiers is run.

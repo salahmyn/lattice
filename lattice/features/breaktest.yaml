@@ -41,3 +41,5 @@ invariants:
     statement: For a SQL break the runner may name {patched_sql} and {original_sql}, files holding only the broken object's statement and the same statement unbroken (a policy or trigger preceded by its DROP ... IF EXISTS), the baseline gets the original for both, a command that names either for a break with no such statement does not run and reads unknown, and the temporary paths never enter a baseline key.
   - id: INV-16
     statement: A cached break outcome is reused only for the same enforcer, verifiers, break, runner configuration and inputs (by default, the same tree), and never over a baseline that failed at this tree.
+  - id: INV-17
+    statement: A SQL break edits the statement that sets the object's effective definition (for a policy, the last ALTER POLICY that sets USING or WITH CHECK, else its CREATE, in whichever file that statement is), and the object swap is offered only when no later statement touches the object.
