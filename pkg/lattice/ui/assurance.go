@@ -43,6 +43,24 @@ const LensKeyNone = "none"
 type MapData struct {
 	store.Graph
 	Assurance AssuranceLens `json:"assurance"`
+	// Refresh says whether the graph was rebuilt from the workspace's inputs
+	// for this page; nil when nothing tried.
+	Refresh *MapRefresh `json:"refresh,omitempty"`
+}
+
+// MapRefresh is the rebuild of the block graph that preceded a page, as
+// lattice refresh would have run it.
+type MapRefresh struct {
+	// Rebuilt is true when the stored graph differed from the one its inputs
+	// give, and the page draws the rebuilt graph; Summary says what changed.
+	Rebuilt bool   `json:"rebuilt"`
+	Summary string `json:"summary,omitempty"`
+	// Saved is true when the rebuilt graph was written to the store.
+	Saved bool `json:"saved"`
+	// Note says, when set, why the page does not draw a graph rebuilt from
+	// the current inputs, or why it was not saved, and how to fix it.
+	Note     string   `json:"note,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // AssuranceLens is the audit as the map draws it.

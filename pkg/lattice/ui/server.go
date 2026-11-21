@@ -68,6 +68,11 @@ type Options struct {
 	// Store serves the block graph behind /map and /api/graph, /api/search
 	// and /api/relations/{id}. Nil leaves those answering 503.
 	Store store.Store
+	// BlockGraph, when set, is the graph /api/graph draws instead of the
+	// stored one: rebuilt from the workspace's inputs (and saved to Store
+	// when it changed), or the stored graph with a note saying why not. It
+	// runs under the store lock.
+	BlockGraph func(ctx context.Context, st store.Store) (store.Graph, *MapRefresh, error)
 }
 
 // Server is the HTTP entry point. It is safe for concurrent use.

@@ -14,3 +14,5 @@ invariants:
     statement: Reading a source at a git ref reads the committed tree, not the working tree.
   - id: INV-3
     statement: A block id declared in two catalogue files is an error naming the first file.
+  - id: INV-4
+    statement: Every feature and invariant becomes a block, and a dotted feature sits in the block of its id's prefix, or in a group block for the prefix when no feature declares it.
