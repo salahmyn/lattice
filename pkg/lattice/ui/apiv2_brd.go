@@ -15,6 +15,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/confirm"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm/signature"
 	"github.com/salahmyn/lattice/pkg/lattice/contract"
+	"github.com/salahmyn/lattice/pkg/lattice/graph"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
@@ -180,7 +181,7 @@ func (w *v2world) promiseOf(row audit.Row, criteria []string) contract.Promise {
 	}
 	p := contract.Promise{
 		ID: row.Promise, Feature: row.Feature, Statement: row.Statement, Tier: row.Tier,
-		Class: row.Class, Kind: row.Kind, Reason: row.Reason,
+		Class: row.Class, Kind: row.Kind, Reason: row.Reason, Layers: row.Layers,
 		Verdict: fromVerdict(check.HeadVerdict(row)), Criteria: criteria, Signals: signals,
 		Gaps: []contract.Gap{}, Enforcers: []contract.Enforcer{}, Verifiers: []contract.Verifier{},
 		Cases: contract.NotComputed("cases (happy, edge, error)"),
@@ -201,7 +202,7 @@ func (w *v2world) promiseOf(row audit.Row, criteria []string) contract.Promise {
 		p.NextAction = gaps[0].NextAction
 	}
 	for _, e := range row.Evidence.Enforcers {
-		p.Enforcers = append(p.Enforcers, contract.Enforcer{FQN: e.FQN, File: e.File, Line: e.Line, Live: liveOf(e.Reach)})
+		p.Enforcers = append(p.Enforcers, contract.Enforcer{FQN: e.FQN, File: e.File, Line: e.Line, Live: liveOf(e.Reach), Layer: e.Layer})
 	}
 	for _, v := range row.Evidence.Verifiers {
 		p.Verifiers = append(p.Verifiers, contract.Verifier{FQN: v.FQN, File: v.File, Result: v.Result, Coverage: v.Coverage, RanEnforcer: v.RanEnforcer})
@@ -563,6 +564,7 @@ func (s *Server) v2Feature(wr http.ResponseWriter, r *http.Request) {
 	rows := w.featureRows(id)
 	page := contract.FeaturePage{
 		Header: w.header(contract.BRDV1), ID: m.ID, Status: string(m.Status), Purpose: strings.TrimSpace(m.Purpose),
+		Layers: graph.FeatureLayers(w.kg)[m.ID],
 		Owners: map[string]string{}, Origin: contract.NotComputed("origin"),
 		Promises:  []contract.Promise{},
 		BlindSpot: contract.NotComputed("the blind spot (untraced touched lines are measured per change: lattice check)"),

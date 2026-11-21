@@ -99,6 +99,9 @@ type EnforcerEvidence struct {
 	File  string `json:"file,omitempty"`
 	Line  int    `json:"line,omitempty"`
 	Reach string `json:"reach,omitempty"`
+	// Layer is the enforcer's runtime layer (the schema.Layer* values), as
+	// the graph assigned it; empty when layers were not assigned.
+	Layer string `json:"layer,omitempty"`
 }
 
 // VerifierEvidence is one verifying test and what ran.
@@ -155,6 +158,9 @@ type Row struct {
 	Class  string `json:"class"`
 	Kind   string `json:"kind,omitempty"`
 	Reason string `json:"reason"`
+	// Layers are the runtime layers of the promise's enforcers, sorted and
+	// without repeats: where the promise is kept. Computed, never declared.
+	Layers []string `json:"layers,omitempty"`
 
 	Signals  Signals  `json:"signals"`
 	Evidence Evidence `json:"evidence"`
@@ -390,8 +396,10 @@ func buildRow(ref, feature string, inv schema.Invariant, rr rtm.Row, src Sources
 	for _, fqn := range enf {
 		s := symbols[fqn]
 		r.Evidence.Enforcers = append(r.Evidence.Enforcers,
-			EnforcerEvidence{FQN: fqn, File: s.File, Line: s.Line, Reach: s.Reach})
+			EnforcerEvidence{FQN: fqn, File: s.File, Line: s.Line, Reach: s.Reach, Layer: s.Layer})
+		r.Layers = append(r.Layers, s.Layer)
 	}
+	r.Layers = schema.LayerSet(r.Layers)
 
 	cov := exercise(src.Coverage, ver, enf)
 	for _, fqn := range ver {

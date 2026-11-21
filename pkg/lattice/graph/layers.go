@@ -90,6 +90,22 @@ func layerRuleError(i int, msg string) schema.Violation {
 	}
 }
 
+// FeatureLayers returns, per feature id, the sorted set of the layers of the
+// symbols that implement it (the symbols of its Implementations). A feature
+// with no layered implementation is absent.
+func FeatureLayers(kg schema.KnowledgeGraph) map[string][]string {
+	by := map[string][]string{}
+	for _, s := range kg.Symbols {
+		if s.Layer != "" && s.Feature != "" && isImplementationEdge(s) {
+			by[s.Feature] = append(by[s.Feature], s.Layer)
+		}
+	}
+	for f, ls := range by {
+		by[f] = schema.LayerSet(ls)
+	}
+	return by
+}
+
 // DeriveBlockLayers sets Layers on the blocks of kg from the layers of its
 // symbols: a feature block takes the set of its implementation symbols'
 // layers, an invariant block the set of its enforcers', and an entry-point
@@ -97,14 +113,11 @@ func layerRuleError(i int, msg string) schema.Violation {
 // symbol in the graph gets none. Blocks are matched by their id (feat:<id>,
 // inv:<feature>.<INV-n>, ep:<id>), the form the block graph builds them in.
 func DeriveBlockLayers(kg *schema.KnowledgeGraph) {
-	feat := map[string][]string{}
+	feat := FeatureLayers(*kg)
 	inv := map[string][]string{}
 	for _, s := range kg.Symbols {
 		if s.Layer == "" {
 			continue
-		}
-		if s.Feature != "" && isImplementationEdge(s) {
-			feat["feat:"+s.Feature] = append(feat["feat:"+s.Feature], s.Layer)
 		}
 		for _, ref := range s.EnforcesInvariants {
 			f, item := s.Feature, ref
@@ -125,7 +138,7 @@ func DeriveBlockLayers(kg *schema.KnowledgeGraph) {
 		var ls []string
 		switch {
 		case strings.HasPrefix(b.ID, "feat:"):
-			ls = feat[b.ID]
+			ls = feat[strings.TrimPrefix(b.ID, "feat:")]
 		case strings.HasPrefix(b.ID, "inv:"):
 			ls = inv[b.ID]
 		case strings.HasPrefix(b.ID, "ep:"):
