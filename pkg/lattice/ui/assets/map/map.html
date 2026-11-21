@@ -294,6 +294,18 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
 .cmenu button { border: 0; background: none; text-align: left; padding: 5px 8px; border-radius: 5px; cursor: pointer; }
 .cmenu button:hover, .cmenu button:focus-visible { background: var(--soft); }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 30; padding: 6px 12px; border-radius: 8px; background: var(--ink); color: var(--bg); font-size: 12px; }
+/* the load status while serve builds the graph (an exported map has its graph inline and never shows it) */
+.gload { display: flex; align-items: flex-start; gap: 10px; max-width: 520px; margin: 48px auto; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 4px 16px rgb(0 0 0 / .08); }
+.gload .ld-msg { font-weight: 600; }
+.gload .ld-sec { margin-left: 6px; color: var(--muted); font: 11.5px var(--mono); font-variant-numeric: tabular-nums; }
+.gload .ld-hint { margin-top: 4px; color: var(--muted); font-size: 12px; }
+.gload .ld-hint code { font: 11.5px var(--mono); }
+.gload button { margin-top: 10px; cursor: pointer; }
+.gload.err { border-color: var(--v0); }
+.gload.err .ld-msg { color: var(--v0); }
+.gload .ld-spin { flex: none; width: 14px; height: 14px; margin-top: 2px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: ld-spin .8s linear infinite; }
+@keyframes ld-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .gload .ld-spin { animation: none; } }
 @media (max-width: 900px) {
   main { grid-template-columns: 1fr; grid-auto-rows: minmax(260px, auto); overflow: auto; }
   #tree, #detail { border: 0; border-bottom: 1px solid var(--line); max-height: 45vh; }
@@ -324,7 +336,7 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
     <div class="legend" id="legend" hidden></div>
     <div class="legend" id="klegend" hidden></div>
     <div class="legend" id="alegend" aria-label="Assurance legend" hidden></div>
-    <div id="pane"></div>
+    <div id="pane"><div id="gload" class="gload" role="status" aria-live="polite" hidden></div></div>
   </section>
   <section id="detail" aria-label="Block details"></section>
 </main>
@@ -340,12 +352,50 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
     s.src = lib.src + location.search; s.integrity = lib.integrity; s.onload = s.onerror = done;
     document.head.appendChild(s);
   });
+  const gload = document.getElementById("gload");
   let G;
   try {
-    G = inline ? JSON.parse(inline) : await fetch("api/graph" + location.search).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
+    G = inline ? JSON.parse(inline) : await loadGraph(gload);
   } catch (e) {
     document.getElementById("pane").innerHTML = `<p class="empty">Could not load the block graph (${esc(String(e))}). Run <code>lattice refresh</code>.</p>`;
     return;
+  }
+  gload.remove(); // the graph is in hand: the diagram (or the grid fallback) draws in its place
+
+  // served: fetch the graph with a live status, since the first load builds the knowledge graph and the audit and can
+  // take seconds; a failed load shows its cause and a retry, and the page waits for it rather than giving up
+  async function loadGraph(el) {
+    for (;;) {
+      const t0 = Date.now();
+      el.className = "gload";
+      el.innerHTML = `<span class="ld-spin" aria-hidden="true"></span><div><div class="ld-msg">Building the block graph…` +
+        `<span class="ld-sec" aria-hidden="true">0 s</span></div>` +
+        `<div class="ld-hint" hidden>The first load builds the graph and the audit; later loads are cached.</div></div>`;
+      el.hidden = false;
+      const sec = el.querySelector(".ld-sec"), hint = el.querySelector(".ld-hint");
+      const tick = setInterval(() => {
+        const s = Math.floor((Date.now() - t0) / 1000);
+        sec.textContent = s + " s";
+        if (s >= 3) hint.hidden = false;
+      }, 1000);
+      let why;
+      try {
+        const r = await fetch("api/graph" + location.search);
+        if (r.ok) return await r.json();
+        let msg = "";
+        try { msg = (await r.json()).error || ""; } catch { /* not JSON: the status says enough */ }
+        why = `HTTP ${r.status}${r.statusText ? " " + r.statusText : ""}${msg ? ": " + msg : ""}`;
+      } catch (e) {
+        why = e && e.message ? e.message : String(e);
+      } finally {
+        clearInterval(tick);
+      }
+      el.className = "gload err";
+      el.innerHTML = `<div><div class="ld-msg">Could not load the block graph (${esc(why)}).</div>` +
+        `<div class="ld-hint">If the graph was never built, run <code>lattice refresh</code>, then retry.</div>` +
+        `<button type="button" data-retry>Retry</button></div>`;
+      await new Promise(again => el.querySelector("[data-retry]").addEventListener("click", again, { once: true }));
+    }
   }
   const blocks = G.blocks || [], edges = G.block_edges || [], flows = G.flows || [], sources = G.sources || [];
   const byId = new Map(blocks.map(b => [b.id, b]));
