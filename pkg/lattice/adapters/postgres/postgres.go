@@ -314,18 +314,22 @@ func parseDefinitions(mod *ir.Module, stmts []statement, o refOpts) {
 			sym = &ir.Symbol{Name: s + "." + n, FQN: functionFQN(s, n)}
 			sym.Execute = headerExecute(mod.File, st, strings.ToLower(m[1]))
 			scanDynamicPriv(mod, st)
+			scanDynamicTableGrant(mod, st)
+			scanDynamicRLS(mod, st)
 		case rePolicy.MatchString(st.text):
 			m := rePolicy.FindStringSubmatch(st.text)
 			s, t := qualify(m[2], m[3])
 			name := unquote(m[1])
 			sym = &ir.Symbol{Name: "policy " + name + " on " + s + "." + t, FQN: policyFQN(s, t, name)}
 			kind, tSchema, table = "policy", s, t
+			sym.Guard = policyGuard(st.text, s, t)
 		case reTrigger.MatchString(st.text):
 			m := reTrigger.FindStringSubmatch(st.text)
 			s, t := qualify(m[2], m[3])
 			name := unquote(m[1])
 			sym = &ir.Symbol{Name: "trigger " + name + " on " + s + "." + t, FQN: triggerFQN(s, t, name)}
 			kind, tSchema, table = "trigger", s, t
+			sym.Guard = triggerGuard(st.text, s, t)
 		case reAlterPolicy.MatchString(st.text):
 			m := reAlterPolicy.FindStringSubmatch(st.text)
 			s, t := qualify(m[2], m[3])
@@ -361,6 +365,14 @@ func parseDefinitions(mod *ir.Module, stmts []statement, o refOpts) {
 		}
 		if sym == nil {
 			readPrivileges(mod, st)
+			readTables(mod, st)
+			if !readTableGrants(mod, st) {
+				scanDynamicTableGrant(mod, st)
+			}
+			scanDynamicRLS(mod, st)
+			if mod.ChangeHistory {
+				readMigrationWrites(mod, st)
+			}
 			used := parseConstraints(mod, st, anns)
 			if n, ok := cronNode(mod, st, o); ok {
 				mod.Nodes = append(mod.Nodes, n)
@@ -379,6 +391,9 @@ func parseDefinitions(mod *ir.Module, stmts []statement, o refOpts) {
 		// rewrites the violating case, so they share the function kind.
 		sym.Kind, sym.File, sym.Line, sym.EndLine = ir.KindFunction, mod.File, st.line, st.endLine
 		sym.Exported, sym.Annotations = true, withImpliedFeature(anns)
+		if sym.Execute != nil {
+			readFunctionWrites(mod, sym, st)
+		}
 		linkRefs(mod, sym, st, kind, tSchema, table, o)
 		mod.Symbols = append(mod.Symbols, *sym)
 	}
@@ -601,9 +616,12 @@ func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 		drop  string
 		alter *ir.Annotation
 		priv  *ir.Annotation
+		tbl   *ir.Annotation
 		sym   int
 	}
 	fold := newExecFold()
+	tfold := newTableFold()
+	var pending []pendingGap
 	effective := map[string]def{}
 	removed := map[def]bool{}
 	for _, mi := range order {
@@ -627,6 +645,15 @@ func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 				events = append(events, event{line: an.Line, priv: &a, sym: -1})
 				continue
 			}
+			switch an.Kind {
+			case tableKind, tgrantKind, tgrantUnknownKind, tdefaultKind:
+				a := m.ModuleAnnotations[ai]
+				events = append(events, event{line: an.Line, tbl: &a, sym: -1})
+				continue
+			case gapKind:
+				pending = append(pending, pendingGap{mod: mi, an: an})
+				continue
+			}
 			if an.Kind == alterKind {
 				if len(an.Args) > 0 {
 					a := m.ModuleAnnotations[ai]
@@ -642,6 +669,10 @@ func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 		for _, e := range events {
 			if e.priv != nil {
 				fold.apply(*e.priv, m.File)
+				continue
+			}
+			if e.tbl != nil {
+				tfold.applyTableEvent(*e.tbl, m.File)
 				continue
 			}
 			if e.alter != nil {
@@ -701,6 +732,11 @@ func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 			sym.Execute = fold.final(fqn)
 		}
 	}
+	eff := make(map[string][2]int, len(effective))
+	for fqn, d := range effective {
+		eff[fqn] = [2]int{d.mod, d.sym}
+	}
+	resolveWrites(mods, order, eff, pending, tfold)
 
 	for mi := range mods {
 		syms := mods[mi].Symbols[:0]

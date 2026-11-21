@@ -76,6 +76,104 @@ type Symbol struct {
 	// ALTER DEFAULT PRIVILEGES statements of the migrations (SQL functions
 	// only; nil for every other symbol).
 	Execute *Execute `json:"execute,omitempty"`
+	// Writes are the table writes in the body of a SQL function, procedure
+	// or DO block, as the adapter parsed them (SQL only; nil for every other
+	// symbol). A write it could not read is not here: it is a WriterGap.
+	Writes []TableWrite `json:"writes,omitempty"`
+	// Guard says which table and commands a SQL policy or trigger applies
+	// to (nil for every other symbol).
+	Guard *Guard `json:"guard,omitempty"`
+}
+
+// Write ops for TableWrite.Op.
+const (
+	WriteInsert = "insert"
+	WriteUpdate = "update"
+	WriteDelete = "delete"
+)
+
+// WriteAll stands for every column of a table in TableWrite.Columns and
+// WriterGap.Columns: a write whose columns the adapter could not list, such
+// as an INSERT with no column list on a table whose columns are not known.
+// It is never read as "no column".
+const WriteAll = "*"
+
+// TableWrite is one write to a table: INSERT, UPDATE, DELETE, or a trigger
+// function's assignment to NEW.<column>.
+type TableWrite struct {
+	// Table is "<schema>.<table>", folded as PostgreSQL folds names.
+	Table string `json:"table"`
+	// Columns are the columns written, sorted, or WriteAll. A DELETE has none.
+	Columns []string `json:"columns,omitempty"`
+	Op      string   `json:"op"`
+	Line    int      `json:"line"`
+}
+
+// Guard kinds.
+const (
+	GuardPolicy  = "policy"
+	GuardTrigger = "trigger"
+)
+
+// Guard is the table and commands a policy or trigger applies to.
+type Guard struct {
+	Kind  string `json:"kind"` // GuardPolicy or GuardTrigger
+	Table string `json:"table"`
+	// Commands are the commands it applies to (WriteInsert, WriteUpdate,
+	// WriteDelete, and "select" or "truncate", which write no column). A
+	// policy FOR ALL lists all three writes.
+	Commands []string `json:"commands,omitempty"`
+	// Columns, for a trigger fired only by UPDATE OF <columns>, are those
+	// columns; empty means every update fires it.
+	Columns []string `json:"columns,omitempty"`
+	// Function is the FQN of the function a trigger executes.
+	Function string `json:"function,omitempty"`
+	// Roles, for a policy, are the roles its TO clause names (ExecPublic for
+	// PUBLIC); empty means PUBLIC.
+	Roles []string `json:"roles,omitempty"`
+	// Restrictive marks a policy AS RESTRICTIVE: it narrows what permissive
+	// policies allow and never allows a command on its own.
+	Restrictive bool `json:"restrictive,omitempty"`
+}
+
+// TableRLS is whether row-level security is enabled on a table, as the
+// migrations leave it, and the statement that decided it.
+type TableRLS struct {
+	Table   string `json:"table"`
+	Enabled bool   `json:"enabled"`
+	Forced  bool   `json:"forced,omitempty"`
+	File    string `json:"file,omitempty"`
+	Line    int    `json:"line,omitempty"`
+}
+
+// TableGrant is the state of one table privilege of one role, with the
+// statement that decided it, as the migrations leave it.
+type TableGrant struct {
+	// Table is "<schema>.<table>".
+	Table string `json:"table"`
+	// Role is the role named, or ExecPublic.
+	Role string `json:"role"`
+	// Op is WriteInsert, WriteUpdate or WriteDelete.
+	Op string `json:"op"`
+	// Columns are the columns of a column-level privilege; empty is the
+	// whole table.
+	Columns []string `json:"columns,omitempty"`
+	State   string   `json:"state"` // ExecGranted, ExecRevoked or ExecUnknown
+	File    string   `json:"file,omitempty"`
+	Line    int      `json:"line,omitempty"`
+	Reason  string   `json:"reason,omitempty"`
+}
+
+// WriterGap says why the writers of a table, or of some of its columns, are
+// not completely known: a write the adapter cannot read, never an absent one.
+type WriterGap struct {
+	// Table is "<schema>.<table>", or WriteAll for every table.
+	Table string `json:"table"`
+	// Columns narrows the gap to these columns; empty is the whole table.
+	Columns []string `json:"columns,omitempty"`
+	Reason  string   `json:"reason"`
+	File    string   `json:"file,omitempty"`
+	Line    int      `json:"line,omitempty"`
 }
 
 // Execute states for ExecuteGrant.State.
@@ -334,6 +432,14 @@ type Module struct {
 	// function, so it sits on the module, not on Symbol.Execute; the SQL
 	// adapter writes the whole set on one module and the others carry none.
 	Memberships []Membership `json:"memberships,omitempty"`
+	// Writes are the top-level DML statements of a migration (and the DML
+	// of its DO blocks): writes the migration itself makes when applied.
+	Writes []TableWrite `json:"writes,omitempty"`
+	// TableGrants and WriterGaps are, like Memberships, folded across the
+	// whole change history and written on one module.
+	TableGrants []TableGrant `json:"table_grants,omitempty"`
+	RLS         []TableRLS   `json:"rls,omitempty"`
+	WriterGaps  []WriterGap  `json:"writer_gaps,omitempty"`
 
 	// The fields below feed the call graph (docs/rnd/0009). An adapter
 	// that does not extract references leaves them empty and RefsKnown

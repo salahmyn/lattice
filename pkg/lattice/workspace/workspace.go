@@ -182,6 +182,16 @@ type SQL struct {
 	// pointer tells the two apart. Entries are lower-case SQL identifiers;
 	// validate checks them.
 	DefaultExecute *[]string `yaml:"default_execute,omitempty"`
+	// DefaultWrite are the roles the platform grants INSERT, UPDATE and
+	// DELETE on every new table directly, such as [anon, authenticated,
+	// service_role]. It decides an API role that no statement names on a
+	// table once PUBLIC (which holds nothing on a table by default) is
+	// passed over: listed means granted, declared without the role means
+	// revoked, and unset (nil) means unknown, which leaves the table's
+	// writers incomplete (WRITERS_UNKNOWN). An empty list means the platform
+	// grants none. A pointer tells the two apart. Entries are lower-case SQL
+	// identifiers; validate checks them.
+	DefaultWrite *[]string `yaml:"default_write,omitempty"`
 }
 
 // Channels is the channels: block of workspace.yaml: the project's own

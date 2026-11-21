@@ -151,6 +151,9 @@ type buildOptions struct {
 	// points (whose labels are persisted to lattice/entry-points/) and no
 	// indexer run.
 	readOnly bool
+	// onModules, when set, receives the resolved modules the graph was
+	// built from, for a command that reads facts the graph does not carry.
+	onModules func([]ir.Module)
 }
 
 // buildGraph runs extraction and graph building without writing the graph
@@ -224,6 +227,10 @@ func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOpt
 	res, err := extract.Extract(ctx, ws, reg, extract.Options{})
 	if err != nil {
 		return schema.KnowledgeGraph{}, nil, err
+	}
+
+	if opts.onModules != nil {
+		opts.onModules(res.Modules)
 	}
 
 	// Merge the brownfield sidecar map: features link to code without
@@ -331,8 +338,9 @@ func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOpt
 	kg.Violations = append(kg.Violations, graph.AssignLayers(&kg, ws.Layers)...)
 	kg.Violations = append(kg.Violations, graph.CheckHTTPOrigins(ws.HTTP.Origins)...)
 	kg.Violations = append(kg.Violations, graph.CheckHTTPSecrets(ws.HTTP.Secrets)...)
-	kg.Violations = append(kg.Violations, graph.CheckSQLConfig(ws.SQL.APIRoles, ws.SQL.DefaultExecute)...)
+	kg.Violations = append(kg.Violations, graph.CheckSQLConfig(ws.SQL.APIRoles, ws.SQL.DefaultExecute, ws.SQL.DefaultWrite)...)
 	kg.Violations = append(kg.Violations, graph.CheckExposure(kg, res.Modules, ws.SQL.APIRoles, ws.SQL.DefaultExecute)...)
+	kg.Violations = append(kg.Violations, graph.CheckWriters(kg, res.Modules, ws.SQL.APIRoles, ws.SQL.DefaultWrite)...)
 	pubWrappers, conWrappers := ws.Channels.Wrappers()
 	kg.Violations = append(kg.Violations, graph.CheckChannelWrappers(pubWrappers, conWrappers)...)
 

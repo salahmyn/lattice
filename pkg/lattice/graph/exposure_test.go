@@ -60,17 +60,20 @@ func TestExecutableBy(t *testing.T) {
 // @verifies adapters.postgres:INV-6
 func TestCheckSQLConfig(t *testing.T) {
 	ok := []string{"anon", "service_role", "_x1"}
-	if v := CheckSQLConfig(ok, &ok); len(v) != 0 {
+	if v := CheckSQLConfig(ok, &ok, &ok); len(v) != 0 {
 		t.Errorf("valid entries: %+v", v)
 	}
 	bad := []string{"Authenticated", "has space", ""}
-	v := CheckSQLConfig(bad[:1], &bad)
+	v := CheckSQLConfig(bad[:1], &bad, nil)
 	var subjects []string
 	for _, f := range v {
 		if f.Code != schema.CodeValidatePolicy || f.Severity != schema.SeverityError {
 			t.Errorf("finding = %+v", f)
 		}
 		subjects = append(subjects, f.Subject)
+	}
+	if v := CheckSQLConfig(nil, nil, &bad); len(v) != 3 || v[0].Subject != "sql.default_write[0]" {
+		t.Errorf("default_write: %+v", v)
 	}
 	want := "sql.api_roles[0] sql.default_execute[0] sql.default_execute[1] sql.default_execute[2]"
 	if strings.Join(subjects, " ") != want {
