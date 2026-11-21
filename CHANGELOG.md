@@ -2,6 +2,75 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.23.0] — 2026-11-21
+
+Four checks for promises that pass every gate and still do not hold. One finds an enforcer that a
+client can call directly. One finds a second writer of a promise's columns. One shows, line by line,
+what each promise's own verifiers run. One flags a promise whose breaks were killed only by tests
+that never entered through a way in. Every new finding is info and always on, so a `fail_on: warning`
+gate stays green after upgrading. Anything Lattice cannot resolve reads as unknown, never as safe.
+
+### Added
+
+- **Who can call a SQL enforcer** (user guide 4s).
+  - **What the adapter reads.** The postgres adapter now reads `GRANT`/`REVOKE` on functions
+    (including `ALL … IN SCHEMA`), `ALTER DEFAULT PRIVILEGES`, `SECURITY DEFINER`, and role
+    membership (`GRANT role TO role`, `CREATE ROLE … IN ROLE | ROLE | USER | ADMIN`, `[NO]INHERIT`).
+    It folds them in migration order, and each one cites the statement that decided it.
+  - **Config.** Declare roles in `workspace.yaml`:
+    - `sql.api_roles`: the roles a client reaches the database as;
+    - `sql.default_execute`: the roles the platform grants `EXECUTE` on new functions. Unset means
+      unknown.
+  - **`ENFORCER_EXPOSED`** (info): an API role can execute an enforcer, and no verified `security`
+    case naming it exists.
+  - **`EXPOSURE_UNKNOWN`** (info): a role's state cannot be told from the migrations, or no API
+    roles are declared.
+- **Who else writes the columns a promise is about** (4t).
+  - **What the adapter records.** The writes of each SQL symbol: `INSERT`, including `ON CONFLICT DO
+    UPDATE`; `UPDATE`; `DELETE`; `MERGE`; and trigger `NEW.col` assignments. It also records table
+    grants and row-level security.
+  - **Config.** `sql.default_write` holds the platform's default table privileges. With RLS on, a
+    role writes only through a permissive policy that reaches it.
+  - **`UNGUARDED_WRITER`** (info): a writer of the columns an invariant's enforcers write that is
+    not an enforcer of it and not under an enforcing trigger or policy.
+  - **`WRITERS_UNKNOWN`** (info): dynamic SQL, a view, a foreign-key action or an unresolved role
+    leaves a table's writers incomplete.
+  - **`lattice writers <table>[.<column>]`** lists each writer and what guards it. `--json` gives
+    `lattice.writers/1`.
+- **Lines: what is each block for, and do its verifiers reach it?** (4u)
+  - **`lattice break --lines`** records which lines each promise's own verifiers run, by turning
+    coverage on for the baseline runs.
+    - Runner commands take `{coverage}`. Go's built-in command gets `-coverprofile`.
+    - Data is kept per tree in `verifier-lines.json`.
+  - **`lattice audit --lines`** gives each block an intent: `enforces`, `serves`, `shared` or
+    `none`. It gives each instrumented line a level: `checked`, `run`, `run_shared`, `other`,
+    `not_run` or `unknown`. Verified lines are always printed beside the unknown count.
+    - **Early-return kills.** A killed early return checks a block as a whole, never a line.
+    - **SQL bodies** read unknown at line level.
+  - **`coverage.floors.verified_lines`** opts in to `VERIFIED_LINES_BELOW_FLOOR`.
+- **Entry-point proof** (4v).
+  - **What is checked.** For each break-tested promise, the audit asks whether a verifier that
+    killed a break ran an entry point's handler that reaches the enforcer.
+  - **What counts as proof.** Per-test coverage of the handler itself, or line data from an unshared
+    group whose tests all killed the break. A static path alone is never proof.
+  - **`BREAK_NO_ENTRYPOINT`** (info): every killer's complete call graph reaches no way in.
+  - **Audit output.** `lattice audit` prints an `entry-point proof:` line and a note on each row.
+    `lattice.audit/1` gains `rows[].entrypoint` and `summary.entrypoint`.
+
+### Behaviour changes to plan for
+
+- **New info findings on workspaces with SQL enforcers.** Expect `EXPOSURE_UNKNOWN` until
+  `sql.api_roles` is declared, and `WRITERS_UNKNOWN` until `sql.default_write` is declared. They are
+  info and change no gate. Raise any of them in `validate.severity` to gate on it.
+- **`lattice validate` computes the audit** when `breaks.json` is present.
+- **Plain `lattice break` is unchanged:** commands, cache keys and cached outcomes are the same as
+  in 0.22.3.
+
+### Fixed
+
+- **The graph determinism test no longer depends on the clock.** It built twice with the wall-clock
+  generation stamp, so two builds a second apart differed in `generated_at` alone.
+
 ## [0.22.3] — 2026-11-21
 
 A cached break outcome could be handed to the wrong enforcer.
