@@ -2,6 +2,60 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.18.0] — 2026-11-21
+
+Lattice now works offline and fails fast. The block map and `lattice serve` load nothing from
+the network, the map covers every feature and promise, commands that run tests check their
+setup first, and a red verifier no longer hides behind a clean `validate`.
+
+### Added
+
+- **A fail-fast preflight** for `lattice break`, `runs-clean`, and `demonstrate` when it runs
+  tests. In seconds and without running a test, each command checks what its config declares:
+  - executables on `PATH` and runner directories;
+  - the Node minimum from `package.json` `engines.node`;
+  - the Docker daemon, for a command that runs docker;
+  - TCP reachability of `runtime.services` and `break.services`;
+  - a clean tree, for `break`.
+
+  Every problem is listed in one refusal that exits 2 (`PREFLIGHT_FAILED` in `--json`) before
+  any step runs. `--no-preflight` skips the check, and `lattice doctor` lists the same checks.
+  `lattice check` runs no test, so it only adds a `preflight` note, which never changes the
+  verdict, `merge_allowed` or the exit code.
+- **`lattice results ingest` lists the failed tests** after the totals, up to ten, with their
+  `@verifies` refs. `--json` adds `failed`.
+
+### Fixed
+
+- **`VERIFIER_FAILING` for every invariant with a red verifier.** It used to be raised only per
+  BRD criterion and per scenario, so a red test of an invariant that no criterion maps left
+  `validate` clean. It is now raised per invariant from the ingested results of the graph's
+  commit, naming up to three failing tests; case verifiers count for their invariant. A
+  criterion that already reports the invariant names the same tests instead, and results
+  stamped with another commit raise nothing.
+- **The block map shows every feature and invariant.** `refresh` loads the manifests `extract`
+  loads, nested directories included, so workspaces with nested features no longer get blocks
+  for only a handful of them.
+  - A dotted feature's block sits inside the block of its id's prefix, or inside a feature-group
+    block when no feature declares the prefix. Block ids are unchanged.
+  - `export map` and `serve` rebuild the block graph as `refresh` would, and say so when they
+    cannot. `export map --no-refresh` draws the stored graph as it is.
+- **The block map works offline.** elkjs 0.9.3 is vendored and embedded in the binary.
+  `export map` inlines it, and `serve` serves it with an SRI hash, so a map opened from
+  `file://` is laid out.
+- **`lattice serve` pages load nothing from the network.** The styles are a committed Tailwind
+  stylesheet. The Geist, JetBrains Mono and IBM Plex Serif fonts and Mermaid 10.9.8 are
+  embedded and served from `/vendor/`. `THIRD_PARTY_NOTICES.md` lists every vendored file and
+  ships in release archives.
+- The page footer shows the running version; it said 0.5.0 on every page.
+
+### Behaviour changes to plan for
+
+- **`break`, `runs-clean` and `demonstrate` refuse with exit 2** when their declared setup is
+  missing or unreachable. Pass `--no-preflight` to keep the old behaviour.
+- **`VERIFIER_FAILING` can appear on invariants that were silent before.** It is a warning, so
+  it fails a gate only with `fail_on: warning`.
+
 ## [0.17.0] — 2026-11-21
 
 Confirmation by signature that holds whatever the merge style, per-case confirmation for
