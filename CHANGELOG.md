@@ -2,6 +2,69 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.24.0] — 2026-11-21
+
+This release catches a spec that has drifted from the code.
+
+- **Features marked `proposal` that production already reaches.**
+- **Invariants that no criterion requires.**
+- **Criteria with no pinned tier.**
+- **Break results**, which now reach `validate`.
+
+0.23.0's writer and exposure findings are also more precise.
+
+Every new finding is info and always on, so a `fail_on: warning` gate stays green after upgrading.
+Nothing writes a status or a tier on a person's behalf.
+
+### Added
+
+- **Drift between the spec and the code** (user guide 4w).
+  - **`INVARIANT_UNREQUIRED`** (info): one finding per feature, listing the invariants that no
+    criterion of any BRD maps. An allowlist entry accepts one `feature:INV` at a time.
+  - **`STATUS_DRIFT`** (info): a `proposal` or `accepted` feature that is named in the flow of a
+    production entry point. Root reach alone never fires it, and a demonstrated criterion alone
+    never fires it either.
+  - **`FEATURE_UNREACHED`** now also covers `proposal` and `accepted` features that have code but
+    are not reached.
+  - **`lattice rtm`** shows a second figure, `invariants N/M required`. `--json` adds
+    `invariant_coverage`. The criteria figure is unchanged.
+- **Unpinned tiers.** An absent or out-of-range tier reads as tier 1 everywhere, including in
+  council mandates.
+  - **`CRITERION_TIER_UNSET`** (info): one finding per BRD.
+  - The council summary and `lattice brd decide` now state how many criteria have no pinned tier.
+  - The opt-in mandate field **`require_pinned_tiers`** is off by default. When set, the council
+    refuses BRDs with unpinned tiers and re-checks existing approvals.
+- **`lattice feature promote <id>`** (4x).
+  - Without `--by`, it prints the production entry points that name the feature, their handlers, the
+    criterion levels and a note that runtime flags are invisible to Lattice. It writes nothing.
+  - With `--by <email>`, a person sets `status: production`. Only that key changes, and a ledger
+    entry records who made the change.
+  - It refuses agent identities, statuses other than `proposal` or `accepted`, and features that no
+    production entry point's flow names.
+- **Break facts** (4y).
+  - **`BREAK_SURVIVED`** (info): survived runs per feature.
+  - **`BREAK_UNKNOWN_CAUSE`** (info): unknown runs per feature, grouped by cause.
+  - A missing `breaks.json`, or one from another commit, reads "no break evidence" once and never
+    counts as a pass.
+  - **`lattice break`** prints `setup failed: N promises not run (<reason>)` when `break.setup`
+    fails, and `--json` adds `summary.setup_failed`.
+- **Precision** (4z).
+  - **Declared columns.** An invariant may declare `columns: [<schema>.<table>.<column>]`. When
+    declared, those are exactly its columns for `UNGUARDED_WRITER`, so shared bookkeeping columns no
+    longer link unrelated promises. An entry that names a table or column the migrations do not
+    create is a `VALIDATE_POLICY` error.
+  - **`ENFORCER_EXPOSED`** states whether the function's body reads the caller's identity
+    (`auth.uid()`, `auth.jwt()`, a `request.jwt` claim, `current_user`, `session_user`) and cites
+    the first read. Findings that read no identity are listed first. This is a fact, not a pass.
+
+### Behaviour changes to plan for
+
+- **New standing info findings.**
+  - Expect one `CRITERION_TIER_UNSET` per BRD until its tiers are pinned.
+  - Expect one `INVARIANT_UNREQUIRED` per feature that has unmapped invariants.
+  - Expect one "no break evidence" until `lattice break` has run at the current commit.
+- **`Violation.refs`** is a new, additive JSON field on rolled-up findings.
+
 ## [0.23.0] — 2026-11-21
 
 Four checks for promises that pass every gate and still do not hold. One finds an enforcer that a
