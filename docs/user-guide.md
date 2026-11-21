@@ -2143,7 +2143,7 @@ its lines its own verifiers ran (section 4u).
 
 Each break-tested row also says whether a verifier that killed a break ran the
 promise through an entry point's handler (`entrypoint`, `none`, `unknown`; section
-4t). It never changes the class.
+4v). It never changes the class.
 
 `inputs.results.matches_head` and `inputs.coverage.matches_head` say whether
 the evidence is of the graph's commit, by the rule validate uses for
@@ -3956,7 +3956,7 @@ below it. A feature with only unknown lines has nothing to compare: it reports "
 line data" as info. Unknown lines never count as verified. Without the floor the
 code does not exist for validate, and no line data is read.
 
-## 4t. Entry-point proof: did a verifier run the promise through a way in?
+## 4v. Entry-point proof: did a verifier run the promise through a way in?
 
 A promise can be break-tested and still not hold in production. Its verifiers may
 call the enforcer directly, with a stub that throws, while the deployed entry point
