@@ -3,6 +3,7 @@ package graph
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
@@ -100,9 +101,12 @@ func TestBuildSurfacesAndErrors(t *testing.T) {
 	}
 }
 
+// The same input builds the same bytes. The generation stamp is an input: left
+// zero it is the wall clock, so two builds a second apart would differ in it
+// alone.
 // @verifies graph:INV-1
 func TestBuildIsDeterministic(t *testing.T) {
-	opts := Options{}
+	opts := Options{GeneratedAt: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)}
 	a, err := Marshal(Build(sampleInput(), opts))
 	if err != nil {
 		t.Fatal(err)
