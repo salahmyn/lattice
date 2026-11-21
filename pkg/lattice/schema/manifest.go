@@ -124,6 +124,11 @@ type Invariant struct {
 	ID           string         `yaml:"id"` // format "INV-N"
 	Statement    string         `yaml:"statement"`
 	VerifiableBy []VerifiableBy `yaml:"verifiable_by,omitempty"` // default ["test"]
+	// Columns are the database columns the invariant is about, as
+	// "<schema>.<table>.<column>". When declared they are the invariant's
+	// columns exactly, and the columns its enforcers write are not used to
+	// decide which writers are unguarded for it.
+	Columns []string `yaml:"columns,omitempty" json:"columns,omitempty"`
 	// Cases are the acceptance cases of the invariant: one claim each, so a
 	// failing test names a claim, not a paragraph (docs/rnd/0010 §B). A test
 	// verifies one with `@verifies <feature>:INV-N#<case>`. Their coverage

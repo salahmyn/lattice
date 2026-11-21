@@ -606,7 +606,50 @@ func headerExecute(file string, st statement, routine string) *ir.Execute {
 		ex.SecurityDefiner = strings.EqualFold(mask[loc[2]:loc[3]], "definer")
 		ex.DefinerFile, ex.DefinerLine = file, st.line+strings.Count(mask[:loc[0]], "\n")
 	}
+	ex.Identity = callerIdentity(file, st)
 	return ex
+}
+
+var (
+	reIdentityCode = regexp.MustCompile(`(?i)\bauth\s*\.\s*(uid|jwt)\s*\(\s*\)|\b(current_user|session_user)\b`)
+	reIdentitySet  = regexp.MustCompile(`(?is)\bcurrent_setting\s*\(\s*'(request\.jwt[^']*)'`)
+	reBodyStart    = regexp.MustCompile(`(?i)\bas\s*(\$|')`)
+)
+
+// callerIdentity finds the first place a function body reads the caller's
+// identity: auth.uid(), auth.jwt(), current_setting('request.jwt...'),
+// current_user or session_user. Comments and string literals are not code, so
+// a mention in either is not a read. A default value in the argument list is
+// not the body, and a caller can override it. It returns nil when the body
+// reads none.
+// @enforces adapters.postgres:INV-8
+func callerIdentity(file string, st statement) *ir.CallerIdentity {
+	code := maskSQL(st.text, false)
+	withStrings := maskSQL(st.text, true)
+	from := 0
+	if loc := reBodyStart.FindStringIndex(withStrings); loc != nil {
+		from = loc[0]
+	}
+	best, via := -1, ""
+	if loc := reIdentityCode.FindStringIndex(code[from:]); loc != nil {
+		best = from + loc[0]
+		via = strings.Join(strings.Fields(strings.ToLower(code[best:from+loc[1]])), "")
+	}
+	for _, loc := range reIdentitySet.FindAllStringSubmatchIndex(withStrings[from:], -1) {
+		at := from + loc[0]
+		// The call itself must be code, not text inside a string.
+		if code[at:at+len("current_setting")] != withStrings[at:at+len("current_setting")] {
+			continue
+		}
+		if best < 0 || at < best {
+			best, via = at, "current_setting('"+withStrings[from+loc[2]:from+loc[3]]+"')"
+		}
+		break
+	}
+	if best < 0 {
+		return nil
+	}
+	return &ir.CallerIdentity{Via: via, File: file, Line: st.line + strings.Count(st.text[:best], "\n")}
 }
 
 // normalizeSignature folds an argument list so the same list written twice
@@ -658,6 +701,7 @@ type execState struct {
 	definer   bool
 	defFile   string
 	defLine   int
+	identity  *ir.CallerIdentity
 	roles     map[string]ir.ExecuteGrant
 	unknown   string
 }
@@ -690,7 +734,7 @@ func grantState(verb string) string {
 func (f *execFold) create(fqn, schemaName string, sym ir.Symbol) {
 	raw := sym.Execute
 	st := &execState{schema: schemaName, procedure: raw.Procedure, sig: raw.Signature,
-		definer: raw.SecurityDefiner, defFile: raw.DefinerFile, defLine: raw.DefinerLine}
+		definer: raw.SecurityDefiner, defFile: raw.DefinerFile, defLine: raw.DefinerLine, identity: raw.Identity}
 	if prev := f.state[fqn]; prev != nil {
 		st.roles, st.unknown = prev.roles, prev.unknown
 		if prev.sig != st.sig {
@@ -820,7 +864,7 @@ func (f *execFold) final(fqn string) *ir.Execute {
 	if st == nil {
 		return nil
 	}
-	ex := &ir.Execute{SecurityDefiner: st.definer, Signature: st.sig, Procedure: st.procedure, Unknown: st.unknown}
+	ex := &ir.Execute{SecurityDefiner: st.definer, Signature: st.sig, Procedure: st.procedure, Unknown: st.unknown, Identity: st.identity}
 	if st.definer {
 		ex.DefinerFile, ex.DefinerLine = st.defFile, st.defLine
 	}

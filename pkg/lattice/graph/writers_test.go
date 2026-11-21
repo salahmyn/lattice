@@ -269,3 +269,70 @@ func TestWriterReport(t *testing.T) {
 		t.Errorf("incomplete = %+v", rep.Incomplete)
 	}
 }
+
+func manifestWithColumns(columns ...string) schema.KnowledgeGraph {
+	kg := enforcing("sql.public.fail_job")
+	kg.Features = []schema.Manifest{{ID: "queue.jobs", SourcePath: "lattice/features/jobs.yaml",
+		Invariants: []schema.Invariant{{ID: "INV-1", Columns: columns}}}}
+	return kg
+}
+
+// A declared column set is the invariant's columns exactly: the enforcer's
+// other writes are not used, and a column no enforcer writes still counts.
+// @verifies graph:INV-8
+func TestDeclaredColumnsAreExact(t *testing.T) {
+	mods := []ir.Module{{File: "m.sql",
+		Tables: []ir.TableColumns{{Table: "public.jobs", Columns: []string{"attempts", "note", "status", "updated_at"}}},
+		Symbols: []ir.Symbol{
+			fn("sql.public.fail_job", 5, upd("public.jobs", 7, "status", "updated_at")),
+			fn("sql.public.claim", 10, upd("public.jobs", 12, "attempts", "status", "updated_at")),
+		}}}
+	if v := CheckWriters(manifestWithColumns("public.jobs.note"), mods, nil, noDefault); len(v) != 0 {
+		t.Errorf("claim never writes note: %v", codesOf(v))
+	}
+	v := CheckWriters(manifestWithColumns("public.jobs.attempts"), mods, nil, noDefault)
+	if len(v) != 1 || v[0].Subject != "sql.public.claim" || !strings.Contains(v[0].Message, "declares") || strings.Contains(v[0].Message, "status") {
+		t.Errorf("findings = %+v", v)
+	}
+	v = CheckWriters(enforcing("sql.public.fail_job"), mods, nil, noDefault)
+	if len(v) != 1 || !strings.Contains(v[0].Message, "derived") || !strings.Contains(v[0].Message, "status") {
+		t.Errorf("without a declaration the columns are derived: %+v", v)
+	}
+}
+
+// Each declared column must name a column the migrations leave. A table whose
+// columns are not all known accepts any column, and a table a statement names
+// but no CREATE shows is not an error either, since its columns cannot be told.
+// @verifies graph:INV-8
+func TestDeclaredColumnErrors(t *testing.T) {
+	mods := []ir.Module{{File: "m.sql",
+		Tables: []ir.TableColumns{{Table: "public.jobs", Columns: []string{"status"}},
+			{Table: "public.copy", Unknown: "created LIKE another table"}},
+		Symbols: []ir.Symbol{fn("sql.public.fail_job", 5, upd("public.jobs", 7, "status"), upd("public.legacy", 8, "x"))}}}
+	cases := []struct{ entry, want string }{
+		{"public.jobs", "is not <schema>.<table>.<column>"},
+		{"a.b.c.d", "is not <schema>.<table>.<column>"},
+		{"public..status", "is not <schema>.<table>.<column>"},
+		{"public.nope.status", "which the migrations do not create"},
+		{"public.jobs.nope", "which table public.jobs does not have"},
+		{"public.copy.anything", ""},
+		{"public.legacy.anything", ""},
+		{`"public"."jobs"."status"`, ""},
+		{`public.jobs."Status"`, "which table public.jobs does not have"},
+	}
+	for _, tc := range cases {
+		v := CheckWriters(manifestWithColumns(tc.entry), mods, nil, noDefault)
+		var errs []schema.Violation
+		for _, f := range v {
+			if f.Severity == schema.SeverityError {
+				errs = append(errs, f)
+			}
+		}
+		switch {
+		case tc.want == "" && len(errs) != 0:
+			t.Errorf("%q: unexpected %+v", tc.entry, errs)
+		case tc.want != "" && (len(errs) != 1 || errs[0].Code != schema.CodeValidatePolicy || !strings.Contains(errs[0].Message, tc.want) || errs[0].Location.File != "lattice/features/jobs.yaml"):
+			t.Errorf("%q: want a VALIDATE_POLICY error containing %q, got %+v", tc.entry, tc.want, errs)
+		}
+	}
+}

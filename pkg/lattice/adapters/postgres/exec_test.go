@@ -355,3 +355,79 @@ func TestMembershipUnknown(t *testing.T) {
 		t.Errorf("object grant read as membership: %v", got)
 	}
 }
+
+// The caller's identity is read from the function body only: auth.uid(),
+// auth.jwt(), a request.jwt claim, current_user and session_user count, with
+// the first one's line; a comment, a string, an argument default and a longer
+// name do not.
+// @verifies adapters.postgres:INV-8
+func TestCallerIdentityRead(t *testing.T) {
+	fn := func(body string) string {
+		return "create function public.f(p uuid default auth.uid()) returns int\nlanguage plpgsql as $$\nbegin\n" + body + "\nreturn 1; end $$;\n"
+	}
+	for _, tc := range []struct {
+		name, body, via string
+		line            int
+	}{
+		{"uid", "  perform 1 where auth.uid() = p;", "auth.uid()", 4},
+		{"spaced", "  perform 1;\n  perform auth . jwt ( );", "auth.jwt()", 5},
+		{"claim", "  perform current_setting('request.jwt.claims', true);", "current_setting('request.jwt.claims')", 4},
+		{"claim sub", "  perform current_setting('request.jwt.claim.sub');", "current_setting('request.jwt.claim.sub')", 4},
+		{"current_user", "  perform 1 where current_user = 'x';", "current_user", 4},
+		{"session_user", "  perform session_user;", "session_user", 4},
+		{"comment, then code", "  -- auth.uid() is not read here\n  perform session_user;", "session_user", 5},
+		{"none: comment", "  -- auth.uid()\n  /* current_user */", "", 0},
+		{"none: string", "  perform 'auth.uid() current_user';", "", 0},
+		{"none: other setting", "  perform current_setting('app.tenant');", "", 0},
+		{"none: longer names", "  perform my_auth.uid(), current_user_id;", "", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			syms := resolveSymbols(t, m1, fn(tc.body))
+			ex := syms["sql.public.f"].Execute
+			if ex == nil {
+				t.Fatal("no Execute fact")
+			}
+			if tc.via == "" {
+				if ex.Identity != nil {
+					t.Fatalf("Identity = %+v, want none", ex.Identity)
+				}
+				return
+			}
+			if ex.Identity == nil || ex.Identity.Via != tc.via || ex.Identity.Line != tc.line || ex.Identity.File != m1 {
+				t.Fatalf("Identity = %+v, want %s at %s:%d", ex.Identity, tc.via, m1, tc.line)
+			}
+		})
+	}
+}
+
+// A later CREATE OR REPLACE decides what the body reads.
+// @verifies adapters.postgres:INV-8
+func TestCallerIdentityFollowsReplace(t *testing.T) {
+	first := "create function public.f() returns int language sql as $$ select 1 where auth.uid() is not null $$;\n"
+	second := "create or replace function public.f() returns int language sql as $$ select 1 $$;\n"
+	if ex := resolveSymbols(t, m1, first)["sql.public.f"].Execute; ex.Identity == nil {
+		t.Fatal("the first body reads auth.uid()")
+	}
+	if ex := resolveSymbols(t, m1, first, m2, second)["sql.public.f"].Execute; ex.Identity != nil {
+		t.Errorf("the replacing body reads none, got %+v", ex.Identity)
+	}
+}
+
+// The tables the migrations leave, with their columns, are recorded once, with
+// a column added, dropped and renamed folded in. Declared columns are checked
+// against them (graph:INV-8).
+// @verifies graph:INV-8
+func TestTablesRecordedWithColumns(t *testing.T) {
+	a := New(nil, nil)
+	mods := []ir.Module{
+		parse(t, a, m1, "create table public.jobs (id int, status text, note text);\ncreate table public.copy (like public.jobs);\n"),
+		parse(t, a, m2, "alter table public.jobs add column attempts int;\nalter table public.jobs drop column note;\nalter table public.jobs rename column status to state;\n"),
+	}
+	var got []ir.TableColumns
+	for _, m := range a.Resolve(mods) {
+		got = append(got, m.Tables...)
+	}
+	if len(got) != 2 || got[1].Table != "public.jobs" || strings.Join(got[1].Columns, ",") != "attempts,id,state" || got[0].Unknown == "" {
+		t.Errorf("tables = %+v", got)
+	}
+}

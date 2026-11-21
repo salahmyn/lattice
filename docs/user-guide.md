@@ -3579,7 +3579,7 @@ FOR` removes no privilege.
 run unless you set it in `validate.severity`:
 
 ```
-info  ENFORCER_EXPOSED  sql.public.finish_submission enforces review.submissions:INV-1 and is executable by authenticated (supabase/migrations/20260101000000_submissions.sql:27); it is SECURITY DEFINER (supabase/migrations/20260101000000_submissions.sql:11): a client can call it directly, so its inputs are the client's
+info  ENFORCER_EXPOSED  sql.public.finish_submission enforces review.submissions:INV-1 and is executable by authenticated (supabase/migrations/20260101000000_submissions.sql:27); it is SECURITY DEFINER (supabase/migrations/20260101000000_submissions.sql:11): a client can call it directly, so its inputs are the client's. Its body reads no caller identity (auth.uid(), auth.jwt(), a request.jwt claim, current_user or session_user).
 info  EXPOSURE_UNKNOWN  who can execute sql.public.finish_submission is not known from the migrations: service_role: no statement names service_role and PUBLIC is revoked at supabase/migrations/20260101000000_submissions.sql:26, so it holds what the platform grants new functions, and sql.default_execute is not declared
 ```
 
@@ -3696,7 +3696,7 @@ block, a function body or an `EXECUTE` string leaves that table's role writers u
 unless you set it in `validate.severity`; `fail_on: warning` still passes:
 
 ```
-info  UNGUARDED_WRITER  sql.public.claim_jobs writes columns that queue.jobs:INV-1's enforcers write, and is neither an enforcer of queue.jobs:INV-1 nor under a trigger or policy that enforces it, so no break ever targets it. public.jobs by update: status (supabase/migrations/20260101000000_jobs.sql:12), updated_at (supabase/migrations/20260101000000_jobs.sql:12)
+info  UNGUARDED_WRITER  sql.public.claim_jobs writes columns that queue.jobs:INV-1's enforcers write (derived; declare columns: on the invariant to narrow them), and is neither an enforcer of queue.jobs:INV-1 nor under a trigger or policy that enforces it, so no break ever targets it. public.jobs by update: status (supabase/migrations/20260101000000_jobs.sql:12), updated_at (supabase/migrations/20260101000000_jobs.sql:12)
 info  WRITERS_UNKNOWN   the writers of queue.jobs:INV-1's columns (public.jobs.attempts,run_after,status,updated_at) are not completely known, so an unguarded writer may exist: an EXECUTE at supabase/migrations/20260301000000_dyn.sql:2 runs a write statement that names no table literally, so it may write any table
 ```
 
@@ -3706,6 +3706,9 @@ fires on a writer that is itself an enforcer. `WRITERS_UNKNOWN` is one per invar
 columns lie on a table with an incomplete writer set, with the reasons. Both go through the
 allowlist like any finding; the subject of a function writer is its FQN, of a role
 `sql.role.<role>`, of a migration its file.
+
+On a project where every enforcer writes `status` or `updated_at`, the derived columns link
+unrelated promises. Declare the columns the promise is about; see 4z.
 
 **To clear `UNGUARDED_WRITER`**, do one of:
 
@@ -4220,6 +4223,53 @@ one cause, `setup failed`, in `BREAK_UNKNOWN_CAUSE`. A setup that fails again af
   break the feature again (`lattice break --feature <id>`).
 - `BREAK_UNKNOWN_CAUSE`: fix the cause the finding names (the setup command, a runner), then
   break again. Or allowlist the finding for the feature with a reason.
+
+## 4z. Precision: which columns a promise is about, and who calls its enforcer
+
+Two findings are only as precise as what they are told. This section narrows both.
+
+**Declared columns.** `UNGUARDED_WRITER` ties a promise to every writer of the columns its
+enforcers write. A column every enforcer happens to write (`status`, `updated_at`,
+`attempts`) then links the promise to writers of unrelated promises. Declare the columns the
+promise is about on the invariant, as `<schema>.<table>.<column>`:
+
+```yaml
+invariants:
+  - id: INV-1
+    statement: A job is tried at most 3 times.
+    verifiable_by:
+      - test
+    columns:
+      - public.jobs.attempts
+```
+
+- When `columns:` is declared, the promise's columns are exactly those. The columns its
+  enforcers write are not used, so a writer of `status` alone is no longer reported, and a
+  writer of `attempts` is reported even if no enforcer writes it. When it is not declared,
+  nothing changes.
+- Names fold as PostgreSQL folds them: lower case unless a part is in double quotes.
+- Each entry must name a column the migrations leave. A malformed entry, a table the
+  migrations do not create and a column a known table does not have are
+  `VALIDATE_POLICY` errors, so a typo cannot silently match nothing. A table whose columns
+  the adapter cannot list (`LIKE`, inheritance) accepts any column.
+- `lattice writers` prints `(columns declared)` or `(columns derived)` after each promise a
+  writer is guarded or unguarded for, and `--json` adds `columns_from` to each writer. The
+  `UNGUARDED_WRITER` message says `declares (columns: in its feature YAML)` or `derived`.
+- It applies to an invariant that has SQL enforcers; the field stays in canonical order,
+  after `verifiable_by` and before `cases`, and `lattice fmt` keeps it there.
+
+**Caller identity on `ENFORCER_EXPOSED`.** Each finding now says whether the function's body
+reads the caller's identity: `auth.uid()`, `auth.jwt()`, `current_setting('request.jwt...')`,
+`current_user` or `session_user`, found in code only (not a comment, a string or an argument
+default), citing the first read by file and line, or that it reads none:
+
+```
+info  ENFORCER_EXPOSED  sql.public.finish_submission enforces review.submissions:INV-1 and is executable by authenticated (...:27); it is SECURITY DEFINER (...:11): a client can call it directly, so its inputs are the client's. Its body reads the caller's identity (auth.uid() at supabase/migrations/20260101000000_submissions.sql:14); a caller-supplied parameter can still decide the outcome.
+```
+
+This is a fact, never a pass: the finding fires either way, and a function that reads the
+caller's identity can still let a parameter decide. Findings whose body reads none are listed
+first. The finding stays info and always on, so `fail_on: warning` stays green.
 
 ## 5. Day-to-day commands
 

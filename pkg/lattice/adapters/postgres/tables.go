@@ -845,6 +845,12 @@ func resolveWrites(mods []ir.Module, order []int, eff map[string][2]int, pending
 		}
 		sort.Slice(rls, func(i, j int) bool { return rls[i].Table < rls[j].Table })
 		first.RLS = rls
+		var tables []ir.TableColumns
+		for name, t := range tf.tables {
+			tables = append(tables, ir.TableColumns{Table: name, Columns: uniqueSorted(t.cols), Unknown: t.unknown})
+		}
+		sort.Slice(tables, func(i, j int) bool { return tables[i].Table < tables[j].Table })
+		first.Tables = tables
 		first.WriterGaps = uniq
 	}
 }
