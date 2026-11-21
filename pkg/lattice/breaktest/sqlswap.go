@@ -179,7 +179,7 @@ func (s sqlStmt) dropStatement(kind sqlEnforcer, next int) (string, bool) {
 // object swap is offered only when the broken statement is the last one that
 // touches the object, because the original would otherwise undo the later
 // statements.
-// @enforces breaktest:INV-16
+// @enforces breaktest:INV-17
 func (r *runner) swapFiles(language string, scripted bool, plan breakPlan, sym Symbol) (f sqlFiles, why string, err error) {
 	if scripted || (language != "postgres" && language != "sql") || len(plan.edits) == 0 {
 		return sqlFiles{}, "", nil

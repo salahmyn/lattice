@@ -24,16 +24,24 @@ type runner struct {
 	opts  Options
 	repo  Repo
 	wt    *Worktree
-	prior map[[5]string]Run
+	prior map[[6]string]Run
 	// shared are this run's baseline invocations by invocationKey, shared by
 	// the promises whose groups render the same command.
 	shared map[string]invocation
 	// store keeps passing baselines across runs at the same tree; nil on a
 	// dirty tree.
-	store    *baselineFile
-	counts   BaselineCounts
-	junitSeq int
-	sqlSeq   int
+	store *baselineFile
+	// tree is HEAD's tree, "" on a dirty tree. It names what a cached
+	// outcome was measured on.
+	tree string
+	// listing is HEAD's files with their blob shas, read once for the runs
+	// whose runners declare inputs.
+	listing    []treeFile
+	listingErr error
+	listed     bool
+	counts     BaselineCounts
+	junitSeq   int
+	sqlSeq     int
 
 	setupDone bool
 	setupErr  error
@@ -61,7 +69,7 @@ func Execute(ctx context.Context, kg schema.KnowledgeGraph, opts Options) (Repor
 
 	targets := plan(kg, opts)
 	prior := Read(opts.LatticeDir)
-	r := &runner{opts: opts, repo: repo, prior: map[[5]string]Run{}, shared: map[string]invocation{}}
+	r := &runner{opts: opts, repo: repo, prior: map[[6]string]Run{}, shared: map[string]invocation{}}
 	for _, p := range prior.Runs {
 		if p.cacheable() {
 			r.prior[p.cacheKey()] = p
@@ -71,6 +79,7 @@ func Execute(ctx context.Context, kg schema.KnowledgeGraph, opts Options) (Repor
 	// neither reuses nor replaces them.
 	if !repo.Dirty {
 		if tree, err := git(ctx, repo.Top, "rev-parse", "HEAD^{tree}"); err == nil {
+			r.tree = tree
 			r.store = loadBaselines(opts.LatticeDir, tree, baselineStamp(tree, repo.Prefix, opts.Config.Break))
 			rep.baselines = r.store
 		}
@@ -187,7 +196,7 @@ func (r *runner) planFor(enf schema.GraphSymbol) (breakPlan, error) {
 	})
 }
 
-// @enforces breaktest:INV-4
+// @enforces breaktest:INV-4, breaktest:INV-16
 func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 	enf := t.enforcers[0]
 	run := Run{Promise: t.promise, Enforcer: enf.FQN, EnforcerFile: enf.File,
@@ -199,6 +208,7 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 
 	groups, noRunner := r.groups(t.verifiers)
 	run.ConfigHash = r.configHash(groups, noRunner)
+	run.InputsHash = r.inputsHash(ctx, t, groups)
 
 	// Hashes first: they key the cache and tell a stale break from a fresh one.
 	var parts []string
@@ -248,7 +258,9 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 		run.ScriptHash = sha(patch)
 	}
 
-	if hit, ok := r.prior[run.cacheKey()]; ok && len(t.tests) > 0 {
+	// A cached outcome is not taken over a baseline known to fail at this
+	// tree: it is run, which shows what the tree does now.
+	if hit, ok := r.prior[run.cacheKey()]; ok && len(t.tests) > 0 && !r.baselineKnownFailing(groups) {
 		if t.script == "" {
 			if plan, err := r.planFor(enf); err == nil {
 				run.EnforcerFile = plan.edits[0].file

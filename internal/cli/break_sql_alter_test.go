@@ -40,7 +40,7 @@ func fullResetRunner() string {
 // one is broken in the ALTER, so a full reset, which applies the ALTER after
 // the CREATE, runs the broken policy: the break is killed, not a false
 // survived, and the run reports the file that was edited.
-// @verifies breaktest:INV-16
+// @verifies breaktest:INV-17
 func TestBreakSQLPolicyAlteredLater(t *testing.T) {
 	dir := sqlFixtureWithConfig(t, fullResetRunner())
 	addMigration(t, dir, alterMigration, familyPolicy)
@@ -67,7 +67,7 @@ func TestBreakSQLPolicyAlteredLater(t *testing.T) {
 // that changes only the roles) it is not offered, and the run reads unknown
 // without running the command.
 // @verifies breaktest:INV-15
-// @verifies breaktest:INV-16
+// @verifies breaktest:INV-17
 func TestBreakSQLObjectSwapAfterAlter(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "applied.sql")
 	dir := sqlFixtureWithConfig(t, swapRunnerConfig(out))

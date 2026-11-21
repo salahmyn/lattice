@@ -81,6 +81,12 @@ const (
 	// key is computed (info).
 	CodeRuntimeRootUnproposed = "RUNTIME_ROOT_UNPROPOSED"
 
+	// The http join (info, always on). A literal request that no route
+	// extracted from code serves, and, one per file, the requests whose URL
+	// or method is computed.
+	CodeHTTPCallUnserved = "HTTP_CALL_UNSERVED"
+	CodeHTTPCallDynamic  = "HTTP_CALL_DYNAMIC"
+
 	// BRD integrity (v0.5.0)
 	//
 	// All BRD rules are deliberately conservative — adoption is opt-in.

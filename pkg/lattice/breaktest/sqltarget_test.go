@@ -77,7 +77,7 @@ const (
 // file it is in: that is the statement whose USING the database ends up
 // with. Breaking the CREATE would be overwritten by the ALTER on every full
 // reset.
-// @verifies breaktest:INV-16
+// @verifies breaktest:INV-17
 func TestPolicyBreakGoesOnTheEffectiveAlter(t *testing.T) {
 	plan, _, out := planOf(t, feedsFQN,
 		migration{"db/migrations/001_init.sql", initFeeds},
@@ -97,7 +97,7 @@ func TestPolicyBreakGoesOnTheEffectiveAlter(t *testing.T) {
 }
 
 // The last ALTER that sets USING is the target, not the first.
-// @verifies breaktest:INV-16
+// @verifies breaktest:INV-17
 func TestPolicyBreakGoesOnTheLastAlter(t *testing.T) {
 	plan, _, _ := planOf(t, feedsFQN,
 		migration{"db/migrations/001_init.sql", initFeeds},
@@ -122,7 +122,7 @@ func TestPolicyBreakGoesOnTheLastAlter(t *testing.T) {
 
 // An ALTER that changes only TO leaves the break on the CREATE, and the swap
 // of the CREATE would lose that ALTER, so it is not offered.
-// @verifies breaktest:INV-16
+// @verifies breaktest:INV-17
 func TestPolicyAlterToOnlyKeepsBreakOnCreate(t *testing.T) {
 	plan, _, out := planOf(t, feedsFQN,
 		migration{"db/migrations/001_init.sql", initFeeds},
@@ -146,7 +146,7 @@ func TestPolicyAlterToOnlyKeepsBreakOnCreate(t *testing.T) {
 // A policy renamed and then altered under its new name is still found: the
 // ALTER of the new name is the target, and the CREATE is located by the
 // name it gave.
-// @verifies breaktest:INV-16
+// @verifies breaktest:INV-17
 func TestPolicyRenamedThenAltered(t *testing.T) {
 	plan, sym, out := planOf(t, "sql.policy.public.feeds.family_rows",
 		migration{"db/migrations/001_init.sql", initFeeds},
@@ -173,7 +173,7 @@ func TestPolicyRenamedThenAltered(t *testing.T) {
 
 // A policy dropped and created again in a later migration is that migration's
 // CREATE: the earlier one is not the symbol and nothing breaks it.
-// @verifies breaktest:INV-16
+// @verifies breaktest:INV-17
 func TestPolicyDroppedAndRecreated(t *testing.T) {
 	plan, _, out := planOf(t, feedsFQN,
 		migration{"db/migrations/001_init.sql", initFeeds},
@@ -191,7 +191,7 @@ func TestPolicyDroppedAndRecreated(t *testing.T) {
 
 // A function defined by two CREATE OR REPLACE is broken in the last one, and
 // a trigger dropped and created again in the last CREATE.
-// @verifies breaktest:INV-16
+// @verifies breaktest:INV-17
 func TestFunctionAndTriggerBreakOnLastDefinition(t *testing.T) {
 	fn := func(body string) string {
 		return "create or replace function public.check_total() returns trigger language plpgsql as $$\nbegin\n" + body + "\n  return new;\nend $$;\n"
@@ -226,7 +226,7 @@ func TestFunctionAndTriggerBreakOnLastDefinition(t *testing.T) {
 
 // USING set by one statement and WITH CHECK by another: both are broken, each
 // where it is set, and a swap of two statements is not offered.
-// @verifies breaktest:INV-16
+// @verifies breaktest:INV-17
 func TestPolicyBreakInTwoStatements(t *testing.T) {
 	create := "create policy \"own rows\" on public.feeds for all using (owner = auth.uid()) with check (owner = auth.uid());\n"
 	plan, _, out := planOf(t, feedsFQN,
@@ -248,7 +248,7 @@ func TestPolicyBreakInTwoStatements(t *testing.T) {
 // For a break in an ALTER the swap files are that statement, broken and
 // unbroken, with no DROP: it sets the expression on a policy that exists.
 // @verifies breaktest:INV-15
-// @verifies breaktest:INV-16
+// @verifies breaktest:INV-17
 func TestSwapOfAlterTarget(t *testing.T) {
 	plan, _, _ := planOf(t, feedsFQN,
 		migration{"db/migrations/001_init.sql", initFeeds},
@@ -281,7 +281,7 @@ func TestSwapOfAlterTarget(t *testing.T) {
 
 // Statements of a policy that is not altered are planned exactly as before: one
 // edit of its own file, swappable.
-// @verifies breaktest:INV-16
+// @verifies breaktest:INV-17
 func TestPlainSQLPlanUnchanged(t *testing.T) {
 	plan, _, out := planOf(t, feedsFQN, migration{"db/migrations/001_init.sql", initFeeds})
 	if len(plan.edits) != 1 || plan.edits[0].alter || plan.swapWhy != "" || !strings.Contains(out["db/migrations/001_init.sql"], "using (true OR (") {
@@ -291,7 +291,7 @@ func TestPlainSQLPlanUnchanged(t *testing.T) {
 
 // Two edits in one file are written together: USING set by an ALTER and WITH
 // CHECK by the CREATE above it, in the same migration.
-// @verifies breaktest:INV-16
+// @verifies breaktest:INV-17
 func TestPolicyBreakInTwoStatementsOfOneFile(t *testing.T) {
 	src := "create policy \"own rows\" on public.feeds for all using (owner = auth.uid()) with check (owner = auth.uid());\n" + familyAlter
 	plan, _, _ := planOf(t, feedsFQN, migration{"db/migrations/001.sql", src})

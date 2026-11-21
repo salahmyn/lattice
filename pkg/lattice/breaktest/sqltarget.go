@@ -46,7 +46,7 @@ func symbolOf(s schema.GraphSymbol) Symbol {
 // planBreak generates the break for the enforcer symbol sym, whose own
 // statement is in file (src is its text); read gives any other file of the
 // worktree. Only a SQL object that later statements changed leaves its file.
-// @enforces breaktest:INV-16
+// @enforces breaktest:INV-17
 func planBreak(language, file string, src []byte, sym Symbol, read func(file string) ([]byte, error)) (breakPlan, error) {
 	if language != "postgres" && language != "sql" {
 		brk, err := Generate(language, file, src, sym)

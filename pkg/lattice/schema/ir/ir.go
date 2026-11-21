@@ -90,8 +90,13 @@ const (
 	RefNew   = "new"   // a construction: new C(), T{} in Go
 	RefRPC   = "rpc"   // a database function by name: .rpc('name')
 	RefTable = "table" // a database table by name: .from('table')
-	RefJSX   = "jsx"   // a JSX component: <Component />
-	RefValue = "ref"   // a function, type or value named without being called (a callback, a type)
+	// RefHTTP is a request a client sends: fetch('/api/x'), axios.get('/api/x'),
+	// supabase.functions.invoke('x'). Name is the key, "METHOD /path": the
+	// method upper-case, the path with no origin, query or trailing slash
+	// (see HTTPKey). Name is "" when the URL or the method is not a literal.
+	RefHTTP  = "http"
+	RefJSX   = "jsx" // a JSX component: <Component />
+	RefValue = "ref" // a function, type or value named without being called (a callback, a type)
 	// RefImport is a module loaded at run time: import('./x'), require('./x')
 	// where no binding says which exports are used. Name is the specifier,
 	// "" when it is not a literal; the module's Import of that specifier
@@ -101,8 +106,8 @@ const (
 
 // Ref is one raw reference in a symbol's body or a module's top-level code.
 type Ref struct {
-	// Name is the referenced name; "" for an .rpc() whose argument is not
-	// a literal.
+	// Name is the referenced name; "" for an .rpc() or a request whose
+	// argument is not a literal.
 	Name string `json:"name"`
 	// Qualifier is what the name is reached through: an import binding
 	// ("results" in results.Lookup()), "this" for the enclosing type (this,

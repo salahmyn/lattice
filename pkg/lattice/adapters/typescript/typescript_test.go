@@ -675,3 +675,70 @@ func TestParameterizedTestOrphans(t *testing.T) {
 		t.Errorf("production file: symbols %+v, diagnostics %+v, want none", mod.Symbols, mod.Diagnostics)
 	}
 }
+
+// TestRecordsHTTPRefs: a literal request is a ref of kind http keyed by
+// method and path; a computed URL or method is one with an empty key; and an
+// axios call sends a request without registering a route.
+// @verifies reachability:INV-11
+func TestRecordsHTTPRefs(t *testing.T) {
+	src := "export function calls(base: string, m: string) {\n" +
+		"  fetch('/api/orders');\n" +
+		"  fetch('https://svc.example.com/api/orders/?x=1', { method: 'post' });\n" +
+		"  fetch(`/api/plain`);\n" +
+		"  fetch(`${base}/api/orders`);\n" +
+		"  fetch('/api/orders', { method: m });\n" +
+		"  fetch('/api/orders', { ...opts });\n" +
+		"  axios.delete('/api/orders/1');\n" +
+		"  axios({ url: '/api/x', method: 'patch' });\n" +
+		"  axios.get('/api/axios');\n" +
+		"  supabase.functions.invoke('charge');\n" +
+		"  cache.get('/not-a-request');\n" +
+		"}\n"
+	mod, err := New().Parse(context.Background(), "web/calls.ts", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, s := range mod.Symbols {
+		for _, r := range s.Refs {
+			if r.Kind == "http" {
+				got = append(got, r.Name+"|"+r.Qualifier)
+			}
+		}
+	}
+	want := []string{
+		"GET /api/orders|",
+		"POST /api/orders|https://svc.example.com",
+		"GET /api/plain|",
+		"|", "|", "|", // computed URL, computed method, a spread that may set the method
+		"DELETE /api/orders/1|",
+		"PATCH /api/x|",
+		"GET /api/axios|",
+		"POST /functions/v1/charge|",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("http refs %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("ref %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+	for _, s := range mod.Surfaces {
+		t.Errorf("a request registers no route: %+v", s)
+	}
+}
+
+// A top-level axios.get('/path', config) sends a request; it is not a route
+// registration, though app.get('/path', handler) is.
+// @verifies adapters.typescript:INV-3
+func TestAxiosCallIsNotARoute(t *testing.T) {
+	src := "const config = {};\naxios.get('/api/orders', config);\napp.get('/api/orders', config);\n"
+	mod, err := New().Parse(context.Background(), "src/x.ts", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mod.Surfaces) != 1 || mod.Surfaces[0].Method != "GET" || mod.Surfaces[0].Line != 3 {
+		t.Errorf("surfaces = %+v, want only the app.get on line 3", mod.Surfaces)
+	}
+}

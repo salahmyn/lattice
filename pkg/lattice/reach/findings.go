@@ -150,8 +150,8 @@ func Findings(kg schema.KnowledgeGraph, r *Result, ran Executed) []schema.Violat
 func (r *Result) dynamicRPC() []schema.Violation {
 	var v []schema.Violation
 	for _, u := range r.Graph.Unresolved {
-		if u.Why != "dynamic" {
-			continue
+		if u.Why != "dynamic" || u.Kind == ir.RefHTTP {
+			continue // a computed request URL is HTTP_CALL_DYNAMIC (see HTTPFindings)
 		}
 		if u.Kind == ir.RefImport {
 			v = append(v, schema.Violation{
