@@ -70,3 +70,5 @@ invariants:
     statement: BREAK_SURVIVED is raised once per feature for the break-tested promises whose break survived with every verifier run, naming each promise, enforcer and method, and BREAK_UNKNOWN_CAUSE once per feature for its unknown runs grouped by cause with a count and the reason text; both are info and always on, and neither changes a status, a level or a gate.
   - id: INV-24
     statement: A breaks.json that is missing, of another schema or of another commit than the graph reads as "no break evidence", raised once as BREAK_UNKNOWN_CAUSE (info); it is never counted as a pass and raises no per-feature finding.
+  - id: INV-25
+    statement: PROPOSAL_REACHED_BY_ROOT is an info finding, always on, one per proposal or accepted feature that no production entry-point flow names and that a non-test root reaches by the call graph FEATURE_UNREACHED reads; it names the roots and a reached symbol, says "reachable in code", and never fires for a production or deprecated feature or one STATUS_DRIFT reports.

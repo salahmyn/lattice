@@ -4,6 +4,7 @@ package reach
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
@@ -230,4 +231,54 @@ func head(list []string, n int) []string {
 	}
 	out := append([]string(nil), list[:n]...)
 	return append(out, fmt.Sprintf("and %d more", len(list)-n))
+}
+
+// RootReach is one root that reaches a symbol of a feature, with the first
+// such symbol in sorted order.
+type RootReach struct {
+	Root   Root   `json:"root"`
+	Symbol string `json:"symbol"`
+}
+
+// RootsReaching names, for each feature with entry-class symbols in targets
+// (feature id to symbol FQNs), the roots whose own walk reaches one of them.
+// It runs the walk Classify uses, once per root, so a root reaches exactly
+// what the class says it does; a test never counts, because a root whose node
+// is a test is skipped. It is meant for a handful of features: nothing is
+// computed for an empty targets. Roots are sorted by FQN.
+// @enforces reachability:INV-7
+func (r *Result) RootsReaching(targets map[string][]string) map[string][]RootReach {
+	out := map[string][]RootReach{}
+	if !r.HasRoots() || len(targets) == 0 || r.Graph == nil {
+		return out
+	}
+	roots := append([]Root(nil), r.Roots...)
+	sort.Slice(roots, func(i, j int) bool {
+		if roots[i].FQN != roots[j].FQN {
+			return roots[i].FQN < roots[j].FQN
+		}
+		return roots[i].Reason < roots[j].Reason
+	})
+	feats := make([]string, 0, len(targets))
+	for f := range targets {
+		feats = append(feats, f)
+	}
+	sort.Strings(feats)
+	for _, rt := range roots {
+		if n := r.Graph.nodes[rt.FQN]; n == nil || n.isTest {
+			continue
+		}
+		must, _ := r.Graph.walk([]string{rt.FQN})
+		for _, f := range feats {
+			syms := append([]string(nil), targets[f]...)
+			sort.Strings(syms)
+			for _, s := range syms {
+				if must[s] {
+					out[f] = append(out[f], RootReach{Root: rt, Symbol: s})
+					break
+				}
+			}
+		}
+	}
+	return out
 }
