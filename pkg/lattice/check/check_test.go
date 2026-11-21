@@ -839,8 +839,9 @@ func TestSnapshotRoundTrip(t *testing.T) {
 	if got == nil || len(got.Rows) != 1 {
 		t.Fatalf("load: %v %q", got, why)
 	}
-	if got, why := LoadSnapshot(dir, "def456"); got != nil || !strings.Contains(why, "no base audit") {
-		t.Errorf("missing snapshot: %v %q", got, why)
+	if got, why := LoadSnapshot(dir, "def456"); got != nil || !strings.Contains(why, "no base audit") ||
+		!strings.Contains(why, "a job on the base branch") || !strings.Contains(why, "lattice check --snapshot") {
+		t.Errorf("missing snapshot: %v %q (it must say how CI and a local run get it)", got, why)
 	}
 	// A snapshot named for one commit but holding another is not used.
 	data, _ := os.ReadFile(path)
