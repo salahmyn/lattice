@@ -312,7 +312,27 @@ func noRunnerReason(sels []results.Selector) string {
 		}
 	}
 	sort.Strings(langs)
-	return "no runner configured for " + strings.Join(langs, ", ") + " (set break.runners or break.commands in config.yaml)"
+	return noRunnerPrefix + strings.Join(langs, ", ") + noRunnerSuffix
+}
+
+const (
+	noRunnerPrefix = "no runner configured for "
+	noRunnerSuffix = " (set break.runners or break.commands in config.yaml)"
+)
+
+// NoRunnerLanguages returns the languages a "no runner configured" reason
+// names, and whether the reason is one. A summary groups such runs by the
+// runner each one lacks, so one missing runner is reported once.
+func NoRunnerLanguages(reason string) ([]string, bool) {
+	rest, ok := strings.CutPrefix(reason, noRunnerPrefix)
+	if !ok {
+		return nil, false
+	}
+	rest, ok = strings.CutSuffix(rest, noRunnerSuffix)
+	if !ok || rest == "" {
+		return nil, false
+	}
+	return strings.Split(rest, ", "), true
 }
 
 // notRunReason names up to three verifiers that did not run, and why.
