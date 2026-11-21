@@ -68,6 +68,15 @@ func pathSegments(p string) (segs []string, ok bool) {
 // each edge function's serve handler, at the path the platform gives it. A
 // route whose handler is not a node of the graph is left out: there is
 // nothing to draw an edge to.
+//
+// An edge function is one endpoint however it is described: when a declared
+// route covers its serve root (RuntimeRoot.CoveredBy), the route's end names
+// the serve node, the same target as the platform's end, so a call that
+// matches both has one candidate. Declared routes that cover one root with
+// different handlers on one key are different routes: they stay apart.
+// It runs after the calls are resolved, because coverage reads the serve
+// node's callees.
+// @enforces reachability:INV-11
 func (g *Graph) collectHTTPEnds(eps []schema.EntryPoint) httpEnds {
 	var ends httpEnds
 	add := func(method, path, handler string) {
@@ -82,6 +91,7 @@ func (g *Graph) collectHTTPEnds(eps []schema.EntryPoint) httpEnds {
 		}
 		ends = append(ends, httpEnd{method: method, segs: segs, handler: handler})
 	}
+	var serves []RuntimeRoot
 	for mi := range g.modules {
 		m := &g.modules[mi]
 		if isTestFile(m) {
@@ -96,16 +106,42 @@ func (g *Graph) collectHTTPEnds(eps []schema.EntryPoint) httpEnds {
 			for _, n := range m.Nodes {
 				if n.Kind == ir.NodeServe && n.Root == "serve" && !n.IsTest {
 					add(anyMethod, fnPath, n.FQN)
+					serves = append(serves, RuntimeRoot{FQN: n.FQN, Source: RootServe, File: m.File, Path: fnPath,
+						Calls: append([]string(nil), g.out[n.FQN]...)})
 				}
 			}
 		}
 	}
 	for _, ep := range eps {
 		if ep.Kind == schema.EntryPointKindHTTP && ep.DetectedBy == "" {
-			add(ep.Trigger.Method, ep.Trigger.Path, ep.Handler.Symbol)
+			add(ep.Trigger.Method, ep.Trigger.Path, g.endHandler(ep, serves, eps))
 		}
 	}
 	return ends
+}
+
+// endHandler returns the handler the end of the declared route ep names: the
+// serve node of the edge function that ep covers, or the route's own handler
+// when it covers no serve root or the routes that cover the root on the same
+// key do not agree on one handler.
+func (g *Graph) endHandler(ep schema.EntryPoint, serves []RuntimeRoot, eps []schema.EntryPoint) string {
+	key := func(e schema.EntryPoint) string { return strings.ToUpper(e.Trigger.Method) + " " + e.Trigger.Path }
+	for _, root := range serves {
+		if !root.CoveredBy([]schema.EntryPoint{ep}) {
+			continue
+		}
+		handlers := map[string]bool{}
+		for _, o := range eps {
+			if o.Kind == schema.EntryPointKindHTTP && o.DetectedBy == "" && key(o) == key(ep) &&
+				root.CoveredBy([]schema.EntryPoint{o}) {
+				handlers[o.Handler.Symbol] = true
+			}
+		}
+		if len(handlers) == 1 {
+			return root.FQN
+		}
+	}
+	return ep.Handler.Symbol
 }
 
 // match returns the handlers of every end the key "METHOD /path" equals, once

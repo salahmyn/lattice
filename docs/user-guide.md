@@ -3192,6 +3192,13 @@ platform serves at `/functions/v1/<name>` for supabase/functions/<name>/index.ts
 which answers every method. A route whose handler is not a symbol of the graph has no
 node to draw an edge to and is left out. An axios call is a request, never a route.
 
+An edge function is one end, however it is described. When a declared `http_route` covers
+its serve call (the rules under [What counts as covered](#4b-entry-points--flows-v030)),
+the declared route and the platform's end name the same target, the serve node, so a call
+to `POST /functions/v1/<name>` has one candidate and resolves. Two different handlers on
+one key are two routes, not one: declared routes that name different handlers for the
+same function, or a route another module registers at its path, stay ambiguous.
+
 **Matching** normalises path parameters on both sides, so `/orders/:id`,
 `/orders/{id}` and `/orders/[id]` are one shape. The method must match (an `ANY` end
 answers every method), the segment counts must agree, and two literal segments must

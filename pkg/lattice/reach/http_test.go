@@ -326,3 +326,69 @@ func TestDeclaredOriginsJoinEdgeFunctions(t *testing.T) {
 		t.Errorf("the two undeclared origins stay dynamic:%s", joined(h))
 	}
 }
+
+// edgeFunctionLayout is an edge function the way a real project lays it out:
+// index.ts serves a handler built in handler.ts, and a client invokes it by
+// name.
+func edgeFunctionLayout(name string) map[string]string {
+	return map[string]string{
+		"supabase/functions/" + name + "/index.ts":   "import { createHandler } from './handler.ts';\nDeno.serve(createHandler({}));\n",
+		"supabase/functions/" + name + "/handler.ts": "export function createHandler(deps: unknown) { return async (req: Request) => new Response('ok'); }\n",
+	}
+}
+
+func declaredRoute(name string) schema.EntryPoint {
+	return schema.EntryPoint{ID: "ep." + name, Kind: schema.EntryPointKindHTTP, Status: schema.StatusProduction,
+		Trigger: schema.Trigger{Method: "POST", Path: "/functions/v1/" + name},
+		Handler: schema.Handler{Symbol: "supabase.functions." + name + ".handler.createHandler"}}
+}
+
+// An edge function is one endpoint: the declared route whose handler the
+// serve call builds and the serve node itself are a single end, so a client
+// call resolves to it instead of staying ambiguous.
+// @verifies reachability:INV-11
+func TestHTTPEdgeFunctionWithDeclaredRouteIsOneEnd(t *testing.T) {
+	files := edgeFunctionLayout("x")
+	files["web/call.ts"] = "export function run() { return supabase.functions.invoke('x'); }\n"
+	g := httpGraph(t, files, declaredRoute("x"))
+	got := edges(g, "http")
+	if len(got) != 1 {
+		t.Errorf("want one resolved http edge, got:%s", joined(got))
+	}
+	if h := httpUnresolved(g); len(h) != 0 {
+		t.Errorf("nothing should stay unresolved:%s", joined(h))
+	}
+}
+
+// Two different handlers on one key stay ambiguous: a route another module
+// registers at the function's path, and two declared routes that name
+// different handlers for it, are not the function's own end.
+// @verifies reachability:INV-11
+func TestHTTPDistinctHandlersOnOnePathStayAmbiguous(t *testing.T) {
+	ambiguous := func(g *reach.Graph) bool {
+		for _, u := range g.Unresolved {
+			if u.Kind == "http" && u.Why == "ambiguous" {
+				return true
+			}
+		}
+		return false
+	}
+	call := "export function run() { return supabase.functions.invoke('x'); }\n"
+
+	files := edgeFunctionLayout("x")
+	files["web/call.ts"] = call
+	files["api/other.ts"] = "function other() {}\napp.post('/functions/v1/x', other);\n"
+	if g := httpGraph(t, files, declaredRoute("x")); !ambiguous(g) {
+		t.Errorf("a route in another module on the same path keeps the join ambiguous:%s", joined(edges(g, "http")))
+	}
+
+	files = edgeFunctionLayout("x")
+	files["web/call.ts"] = call
+	files["other/elsewhere.ts"] = "export function elsewhere() { return 1; }\n"
+	second := declaredRoute("x")
+	second.ID = "ep.x.second"
+	second.Handler.Symbol = "other.elsewhere.elsewhere"
+	if g := httpGraph(t, files, declaredRoute("x"), second); !ambiguous(g) {
+		t.Errorf("two declared handlers on one key stay ambiguous:%s", joined(edges(g, "http")))
+	}
+}
