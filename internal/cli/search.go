@@ -4,6 +4,7 @@ package cli
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -141,16 +142,8 @@ func epTriggerText(ep schema.EntryPoint) string {
 	return ep.ID
 }
 
-// itoa keeps the index stringification local — avoids pulling strconv
-// just for the goal-numbering footnote.
-func itoa(i int) string {
-	if i < 10 {
-		return string(rune('0' + i))
-	}
-	// Two digits is plenty for goal numbering; BRDs with 100+ goals
-	// will get truncated ids, which is the lesser evil over an extra import.
-	return string(rune('0'+i/10)) + string(rune('0'+i%10))
-}
+// itoa formats a count or an index in decimal, whatever its size.
+func itoa(i int) string { return strconv.Itoa(i) }
 
 func lexicalSearch(kg schema.KnowledgeGraph, query string) []searchHit {
 	q := strings.ToLower(query)
