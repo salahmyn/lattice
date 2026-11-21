@@ -33,6 +33,7 @@ type runner struct {
 	store    *baselineFile
 	counts   BaselineCounts
 	junitSeq int
+	sqlSeq   int
 
 	setupDone bool
 	setupErr  error
@@ -253,6 +254,21 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 	for _, s := range noRunner {
 		notRunWhy[s.Test] = "no runner matches " + s.File
 	}
+	// A command that names the SQL object files runs only where there are
+	// some: a break with no isolated statement reads unknown, and nothing
+	// runs, baseline included.
+	var sw sqlFiles
+	if anyUsesSQLFiles(groups) {
+		var err error
+		if sw, err = r.swapFiles(enf.Language, t.script != "", brk, src, Symbol{Name: enf.Name, Kind: enf.Kind, Line: enf.Line}); err != nil {
+			run.Reason = "SQL object files: " + err.Error()
+			return run, nil
+		}
+		if !sw.ok() {
+			run.Reason = sqlUnavailable
+			return run, nil
+		}
+	}
 	if len(groups) == 0 {
 		run.Baseline = BaselineError
 		run.NotRunVerifiers = run.Verifiers
@@ -265,7 +281,7 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 	}
 
 	// Baseline: the verifiers on the unbroken code.
-	base := r.baseline(ctx, groups)
+	base := r.baseline(ctx, groups, sw.asBaseline())
 	run.Baseline = base.status
 	if base.status != BaselinePass {
 		run.Reason = base.reason
@@ -290,7 +306,7 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 	}
 
 	// Break, run, restore.
-	res, err := r.broken(ctx, t, brk, src, patch, groups)
+	res, err := r.broken(ctx, t, brk, src, patch, groups, sw)
 	if err != nil {
 		return run, err
 	}
@@ -405,13 +421,13 @@ func notRunReason(notRun []string, why map[string]string) string {
 }
 
 // broken applies the break, runs the verifiers and undoes the break, always.
-func (r *runner) broken(ctx context.Context, t target, brk Break, src, patch []byte, groups []group) (execResult, error) {
+func (r *runner) broken(ctx context.Context, t target, brk Break, src, patch []byte, groups []group, sw sqlFiles) (execResult, error) {
 	enf := t.enforcers[0]
 	if t.script != "" {
 		if err := r.wt.ApplyPatch(ctx, t.script, false); err != nil {
 			return execResult{status: statusError, reason: "script does not apply: " + firstLine(err.Error())}, nil
 		}
-		res := r.runGroups(ctx, groups)
+		res := r.runGroups(ctx, groups, sw)
 		if err := r.wt.ApplyPatch(context.Background(), t.script, true); err != nil {
 			if rerr := r.wt.Reset(context.Background()); rerr != nil {
 				return res, fmt.Errorf("%w: %v", errWorktree, rerr)
@@ -428,7 +444,7 @@ func (r *runner) broken(ctx context.Context, t target, brk Break, src, patch []b
 	if err := os.WriteFile(file, brk.Apply(src), 0o644); err != nil {
 		return execResult{}, err
 	}
-	res := r.runGroups(ctx, groups)
+	res := r.runGroups(ctx, groups, sw)
 	if err := os.WriteFile(file, src, 0o644); err != nil {
 		return res, fmt.Errorf("%w: %v", errWorktree, err)
 	}
@@ -499,10 +515,10 @@ func groupVerifiers(cfg config.Break, sels []results.Selector) ([]group, []resul
 // runGroups runs every group and combines the results. The verifiers fail
 // together: one group failing is enough, and every group must pass for the
 // run to pass.
-func (r *runner) runGroups(ctx context.Context, groups []group) execResult {
+func (r *runner) runGroups(ctx context.Context, groups []group, sql sqlFiles) execResult {
 	var all []execResult
 	for _, g := range groups {
-		res := r.runGroup(ctx, g)
+		res := r.runGroup(ctx, g, sql)
 		all = append(all, res)
 		if res.status == statusTimeout || ctx.Err() != nil {
 			break
@@ -555,22 +571,28 @@ func nameList(names []string) string {
 	return strings.Join(names[:3], "; ") + fmt.Sprintf("; and %d more", len(names)-3)
 }
 
-func (r *runner) runGroup(ctx context.Context, g group) execResult {
-	return r.invoke(ctx, g).result(g)
+func (r *runner) runGroup(ctx context.Context, g group, sql sqlFiles) execResult {
+	return r.invoke(ctx, g, sql).result(g)
 }
 
 // invoke runs a group's command once and keeps its result and its JUnit
-// report, before they are accounted for any promise's verifiers.
-func (r *runner) invoke(ctx context.Context, g group) invocation {
+// report, before they are accounted for any promise's verifiers. A command
+// that names the SQL object files is never run without them.
+// @enforces breaktest:INV-15
+func (r *runner) invoke(ctx context.Context, g group, sql sqlFiles) invocation {
 	if g.kind == kindGo {
 		return invocation{res: r.runGo(ctx, g)}
+	}
+	if g.usesSQLFiles() && !sql.ok() {
+		// Never run a command with its placeholders unfilled.
+		return invocation{res: execResult{status: statusError, reason: sqlUnavailable}}
 	}
 	junit := ""
 	if g.usesJUnit() {
 		r.junitSeq++
 		junit = filepath.Join(r.wt.tmp, fmt.Sprintf("junit-%d.xml", r.junitSeq))
 	}
-	dir, argv := render(g, r.wt.Dir, junit)
+	dir, argv := render(g, r.wt.Dir, junit, sql)
 	inv := invocation{res: command(ctx, "", dir, r.opts.Timeout, argv[0], argv[1:]...), junit: junit != ""}
 	if inv.junit {
 		inv.report, inv.reportErr = os.ReadFile(junit)
@@ -579,19 +601,23 @@ func (r *runner) invoke(ctx context.Context, g group) invocation {
 }
 
 // render builds the directory and the argument list a runner or template
-// group runs, in a worktree at root and with the JUnit report at junit.
-func render(g group, root, junit string) (dir string, argv []string) {
+// group runs, in a worktree at root, with the JUnit report at junit and the
+// SQL object files of a SQL break in sql.
+func render(g group, root, junit string, sql sqlFiles) (dir string, argv []string) {
 	files, filter := templateRaw(g)
 	if g.kind == kindRunner {
 		return filepath.Join(root, filepath.FromSlash(g.runner.Dir)),
-			expandArgv(g.runner.Command, relativeTo(root, g.runner.Dir, files), filter, junit)
+			expandArgvSQL(g.runner.Command, relativeTo(root, g.runner.Dir, files), filter, junit, sql)
 	}
 	var quoted []string
 	for _, f := range files {
 		quoted = append(quoted, shellQuote(f))
 	}
-	cmd := strings.NewReplacer("{files}", strings.Join(quoted, " "), "{filter}", shellQuote(filter),
-		"{junit}", shellQuote(junit)).Replace(g.tmpl)
+	pairs := []string{"{files}", strings.Join(quoted, " "), "{filter}", shellQuote(filter), "{junit}", shellQuote(junit)}
+	if sql.ok() {
+		pairs = append(pairs, patchedSQLToken, shellQuote(sql.patched), originalSQLToken, shellQuote(sql.original))
+	}
+	cmd := strings.NewReplacer(pairs...).Replace(g.tmpl)
 	return root, []string{"sh", "-c", cmd}
 }
 
@@ -612,13 +638,23 @@ func (g group) usesJUnit() bool {
 // element becomes one argument per file; elsewhere the files are joined with
 // spaces.
 func expandArgv(cmd, files []string, filter, junit string) []string {
+	return expandArgvSQL(cmd, files, filter, junit, sqlFiles{})
+}
+
+// expandArgvSQL is expandArgv with the SQL object files of a SQL break.
+// {patched_sql} and {original_sql} are left as written when there are none.
+func expandArgvSQL(cmd, files []string, filter, junit string, sql sqlFiles) []string {
 	var out []string
 	for _, a := range cmd {
 		if a == "{files}" {
 			out = append(out, files...)
 			continue
 		}
-		a = strings.NewReplacer("{files}", strings.Join(files, " "), "{filter}", filter, "{junit}", junit).Replace(a)
+		pairs := []string{"{files}", strings.Join(files, " "), "{filter}", filter, "{junit}", junit}
+		if sql.ok() {
+			pairs = append(pairs, patchedSQLToken, sql.patched, originalSQLToken, sql.original)
+		}
+		a = strings.NewReplacer(pairs...).Replace(a)
 		out = append(out, a)
 	}
 	return out
