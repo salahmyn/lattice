@@ -2,6 +2,66 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.17.0] — 2026-11-21
+
+Confirmation by signature that holds whatever the merge style, per-case confirmation for
+acceptance cases, an assurance lens on the block map, and a fast `lattice serve`.
+
+### Added
+
+- **Endorsed changes to `lattice/allowed_signers`.** A commit that adds a signer counts only
+  with `lattice/allowed_signers.sig`, signed by an sk- key trusted before the change. The first
+  file is the root of trust (`ROOT_SIGNERS`, with its commit); removals need nothing; a key added
+  otherwise reads `SIGNER_NOT_ENDORSED`, and a shallow clone reads `SIGNERS_NO_HISTORY`. This
+  closes the rebase-merge gap of 0.16.0, whatever the merge style.
+- **`lattice sign --signers`** endorses the working tree's change to `allowed_signers`, with the
+  same refusals as `lattice sign`.
+- **`lattice confirm --unsigned`** lists the decisions a signature could confirm, with the exact
+  commands: typed approvals and acknowledgements (with or without the `local` mark), a council's
+  approval its delegating human has not acknowledged yet (`council`), and confirmations by review.
+  It writes nothing.
+- **A signer must be a human login** (`SIGNER_NOT_HUMAN`); signature records name the PR author
+  and whether a bot or agent opened it.
+- **Per-case confirmation.** Decisions record their promises' acceptance cases, and
+  `lattice confirm` binds that list to the packet it pinned (`cases_check`). A case reads
+  confirmed only under a current, confirmed decision with a verified list; otherwise unconfirmed
+  as added, edited or retired after confirmation, `CASE_DECISION_STALE`, `CASE_STAMP_MISMATCH`,
+  unverified, not recorded, or never confirmed. Shown in the audit, `feature show`, `/api/v2`
+  `case_rows` and the `/audit` page. The promise's confirmed signal and packet hashes are
+  unchanged.
+- **The review diff names case edits** (`case 1b of f:INV-1 edited: kind edge->error`); packets
+  gain `diff.friction` (`full` for any structural change, `light` only for text-only drift).
+- **`lattice impact`** gains `touched_cases`; **`lattice break --promise f:INV-n#a`** breaks one
+  case against its tagged tests.
+- **An assurance lens on the block map** (`a`, `as=1`, in `lattice serve` and
+  `lattice export map`). Each block is coloured by the weakest audit class of its promises, in
+  the kernel's order; only break-tested and exercised are green, and unknown is hatched grey.
+  `/api/graph` and the export add an `assurance` object.
+
+### Fixed
+
+- **`INVARIANT_BROAD`** names very long statements however they are punctuated (70 words or
+  more), and needs 60 words for the sentence and claim rule; it now names the genuinely omnibus
+  invariants on a real project (every statement over 400 characters) and stays quiet on short
+  two-sentence rules.
+- The missing-base-audit note says how CI keeps the base snapshot, and that a local one takes a
+  full suite run.
+
+### Changed
+
+- **`lattice serve` reuses the knowledge graph and audit** behind `/api/graph` and `/api/v2`
+  while nothing they read has changed (git HEAD, every changed or untracked file's identity,
+  everything under `lattice/` including `.cache/`, the files detectors read). Any change
+  recomputes; inputs it cannot identify bypass the cache. `X-Lattice-Cache: hit|miss|bypass`
+  shows which. A repeated map load drops from about 0.7 s to 0.05 s on Lattice's own repository.
+
+### Behaviour changes to plan for
+
+- **A signer added to `allowed_signers` after the first version needs an endorsement** by an
+  already-trusted key (`lattice sign --signers`); until then its signatures read unknown.
+- **Decisions prepared now carry a `cases:` list.** Older decisions read their cases as
+  not recorded until re-confirmed.
+
 ## [0.16.0] — 2026-11-20
 
 Assurance done right on real projects: a human confirmation that works on a single-maintainer
