@@ -4,7 +4,9 @@ package validate
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/salahmyn/lattice/pkg/lattice/reach"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
@@ -15,7 +17,7 @@ import (
 //	DUPLICATE_TRIGGER         (warning) — two EPs claim the same trigger
 //	PHANTOM_FLOW              (error)   — flow step names a non-existent feature
 //	HANDLER_MISSING           (warning) — handler FQN absent from the IR
-func checkEntryPoints(kg schema.KnowledgeGraph) []schema.Violation {
+func checkEntryPoints(kg schema.KnowledgeGraph, r *reach.Result) []schema.Violation {
 	if len(kg.EntryPoints) == 0 {
 		return nil
 	}
@@ -33,7 +35,10 @@ func checkEntryPoints(kg schema.KnowledgeGraph) []schema.Violation {
 	for _, ep := range kg.EntryPoints {
 		// HANDLER_MISSING — only fires when the IR actually has symbols
 		// (otherwise this would always fire in review mode).
-		if len(symbolFQNs) > 0 && ep.Handler.Symbol != "" && !symbolFQNs[ep.Handler.Symbol] {
+		// A runtime root's handler is a node of the call graph (a serve
+		// handler, a cron job) that holds no symbol of its own.
+		if len(symbolFQNs) > 0 && ep.Handler.Symbol != "" && !symbolFQNs[ep.Handler.Symbol] &&
+			!(r != nil && r.Graph != nil && r.Graph.HasNode(ep.Handler.Symbol)) {
 			out = append(out, schema.Violation{
 				Code:     schema.CodeHandlerMissing,
 				Severity: schema.SeverityWarning,
@@ -63,7 +68,11 @@ func checkEntryPoints(kg schema.KnowledgeGraph) []schema.Violation {
 			}
 		}
 		// DUPLICATE_TRIGGER — two EPs that share (kind, method, path/etc).
-		key := ep.Kind + "|" + ep.Trigger.Method + " " + ep.Trigger.Path + ep.Trigger.Schedule + ep.Trigger.Queue + ep.Trigger.Event + ep.Trigger.Command
+		trigger := ep.Trigger.Method + " " + ep.Trigger.Path + ep.Trigger.Schedule + ep.Trigger.Job + ep.Trigger.Queue + ep.Trigger.Event + ep.Trigger.Command
+		if strings.TrimSpace(trigger) == "" {
+			trigger += ep.Handler.Symbol // no trigger to compare: the handler tells entry points apart
+		}
+		key := ep.Kind + "|" + trigger
 		if prev, ok := triggerSeen[key]; ok {
 			out = append(out, schema.Violation{
 				Code:     schema.CodeDuplicateTrigger,

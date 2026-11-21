@@ -1,0 +1,204 @@
+package reach
+
+// @module-feature reachability
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/salahmyn/lattice/pkg/lattice/schema"
+	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
+)
+
+// Sources of a RuntimeRoot (RuntimeRoot.Source).
+const (
+	RootServe   = "serve"   // a request handler passed to serve / Deno.serve
+	RootCron    = "cron"    // a cron.schedule job
+	RootSurface = "surface" // a route (or other trigger) an adapter detected in source
+)
+
+// Why a RuntimeRoot cannot become an entry point (RuntimeRoot.Blocked).
+const (
+	BlockedHandlerMissing = "handler_missing" // no symbol of the graph is the handler
+	BlockedKeyComputed    = "key_computed"    // the job's name or schedule is an expression
+)
+
+// RuntimeRoot is code the runtime invokes by itself, as an adapter read it
+// from source: a serve handler, a scheduled job, a detected route. Each is a
+// candidate entry point.
+type RuntimeRoot struct {
+	// FQN is the handler: the root node of a serve handler or cron job, or
+	// the symbol a route names. Empty when a route names none.
+	FQN    string
+	Source string // RootServe, RootCron or RootSurface
+	// Kind is the entry-point kind the root takes (schema.EntryPointKind*).
+	Kind string
+	File string
+	Line int
+	// Job and Schedule are a cron job's literals; Method and Path a route's.
+	Job, Schedule string
+	Method, Path  string
+	// Blocked is empty for a root that can become an entry point; otherwise
+	// the reason it cannot (Blocked*).
+	Blocked string
+}
+
+// surfaceKinds maps a detected surface type to its entry-point kind.
+var surfaceKinds = map[string]string{
+	"http":            schema.EntryPointKindHTTP,
+	"webhook_receive": schema.EntryPointKindWebhook,
+	"event_consume":   schema.EntryPointKindEventConsumer,
+	"scheduled":       schema.EntryPointKindCron,
+}
+
+// RuntimeRoots lists the roots the runtime invokes by itself, in file and
+// line order: serve handlers and cron.schedule bodies from the adapters'
+// nodes, and the routes they detected in source. Test files hold none.
+// Roots a person declares (entry points, coverage.roots) and roots that
+// are not triggers (func main, entry files, SQL policies) are not listed.
+// @enforces entrypoints:INV-5
+func (g *Graph) RuntimeRoots() []RuntimeRoot {
+	var out []RuntimeRoot
+	for mi := range g.modules {
+		m := &g.modules[mi]
+		for _, n := range m.Nodes {
+			if n.IsTest || g.nodes[n.FQN] == nil {
+				continue
+			}
+			switch {
+			case n.Kind == ir.NodeServe && n.Root == "serve":
+				out = append(out, RuntimeRoot{FQN: n.FQN, Source: RootServe, Kind: schema.EntryPointKindHTTP,
+					File: m.File, Line: n.Line})
+			case n.Kind == ir.NodeCron:
+				r := RuntimeRoot{FQN: n.FQN, Source: RootCron, Kind: schema.EntryPointKindCron,
+					File: m.File, Line: n.Line, Job: n.Job, Schedule: n.Schedule}
+				if n.KeyComputed {
+					r.Blocked = BlockedKeyComputed
+				}
+				out = append(out, r)
+			}
+		}
+		for _, s := range m.Surfaces {
+			kind, ok := surfaceKinds[s.Type]
+			if !ok || !s.Detected || isTestFile(m) {
+				continue
+			}
+			r := RuntimeRoot{FQN: s.Symbol, Source: RootSurface, Kind: kind, File: m.File, Line: s.Line,
+				Method: s.Method, Path: s.Path}
+			if kind == schema.EntryPointKindCron {
+				r.Job = s.Name
+			}
+			if n := g.nodes[s.Symbol]; s.Symbol == "" || n == nil || !n.symbol || n.isTest {
+				r.Blocked = BlockedHandlerMissing
+			}
+			out = append(out, r)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.File != b.File {
+			return a.File < b.File
+		}
+		if a.Line != b.Line {
+			return a.Line < b.Line
+		}
+		return a.FQN < b.FQN
+	})
+	return out
+}
+
+// CoveredBy reports whether an entry point somebody declared or a detector
+// found already stands for the root: it names the root's handler, or it is
+// the same route (method and path) or the same named job. A proposal made
+// from a runtime root (DetectedBy set) does not cover anything: it is
+// recomputed from the roots on every extract.
+func (r RuntimeRoot) CoveredBy(eps []schema.EntryPoint) bool {
+	for _, ep := range eps {
+		if ep.DetectedBy != "" {
+			continue
+		}
+		switch {
+		case r.FQN != "" && ep.Handler.Symbol == r.FQN:
+			return true
+		case r.Source == RootSurface && ep.Kind == r.Kind && r.Path != "" &&
+			ep.Trigger.Path == r.Path && strings.EqualFold(ep.Trigger.Method, r.Method):
+			return true
+		case r.Source != RootServe && ep.Kind == schema.EntryPointKindCron && r.Kind == ep.Kind &&
+			r.Job != "" && ep.Trigger.Job == r.Job:
+			return true
+		}
+	}
+	return false
+}
+
+// isTestFile reports a module that holds only test code: every symbol and
+// node in it is a test's.
+func isTestFile(m *ir.Module) bool {
+	if len(m.Symbols) == 0 {
+		return false
+	}
+	for _, s := range m.Symbols {
+		if !s.IsTest {
+			return false
+		}
+	}
+	return true
+}
+
+// Reached returns the nodes the call graph reaches from handler through
+// resolved edges, handler included. A reference left ambiguous does not
+// count: a flow step built on it would be a guess. Empty when the graph has
+// no such node.
+func (g *Graph) Reached(handler string) map[string]bool {
+	if g.nodes[handler] == nil {
+		return map[string]bool{}
+	}
+	must, _ := g.walk([]string{handler})
+	return must
+}
+
+// HasNode reports whether fqn is a node of the graph: a symbol, or a root
+// node such as a serve handler or a cron job.
+func (g *Graph) HasNode(fqn string) bool { return g.nodes[fqn] != nil }
+
+// RuntimeRootFindings raises RUNTIME_ROOT_UNPROPOSED for every runtime root
+// that cannot become an entry point, so no root the runtime invokes is
+// silent: it is an entry point (declared, detected or proposed) or it is
+// named here. Info severity: a proposal is not an error, and neither is a
+// root the graph cannot name.
+// @enforces entrypoints:INV-5
+func RuntimeRootFindings(kg schema.KnowledgeGraph, r *Result) []schema.Violation {
+	if r == nil || r.Graph == nil {
+		return nil
+	}
+	var out []schema.Violation
+	for _, rt := range r.Graph.RuntimeRoots() {
+		if rt.Blocked == "" || rt.CoveredBy(kg.EntryPoints) {
+			continue
+		}
+		var msg, detail string
+		switch rt.Blocked {
+		case BlockedHandlerMissing:
+			msg = fmt.Sprintf("%s %s %s has no handler symbol in the graph (an inline function, or a name the module does not define), so it cannot be proposed as an entry point",
+				rt.Kind, rt.Method, rt.Path)
+			detail = "name the handler as a function of its own, or declare the entry point in lattice/entry-points/"
+		case BlockedKeyComputed:
+			msg = fmt.Sprintf("the cron job at %s:%d has a computed name or schedule, so it has no stable key and cannot be proposed as an entry point", rt.File, rt.Line)
+			detail = "write the job name and schedule as string literals, or declare the entry point in lattice/entry-points/"
+		default:
+			continue
+		}
+		subject := rt.FQN
+		if subject == "" {
+			subject = fmt.Sprintf("%s:%d", rt.File, rt.Line)
+		}
+		out = append(out, schema.Violation{
+			Code: schema.CodeRuntimeRootUnproposed, Severity: schema.SeverityInfo,
+			Subject: subject, Message: msg,
+			Location:   &schema.Location{File: rt.File, Line: rt.Line},
+			NextAction: &schema.NextAction{Kind: "edit_entry_point", Detail: detail},
+		})
+	}
+	return out
+}

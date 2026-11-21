@@ -105,6 +105,7 @@ func traceOne(ep schema.EntryPoint, indexes []featureIndex) ([]schema.FlowStep, 
 		capID := bestCapability(via, ix.caps)
 		steps = append(steps, schema.FlowStep{
 			Feature: ix.feature, Capability: capID, ViaSymbols: via,
+			Basis: schema.FlowBasisProximity,
 		})
 	}
 	sort.Slice(steps, func(i, j int) bool { return steps[i].Feature < steps[j].Feature })

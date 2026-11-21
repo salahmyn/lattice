@@ -65,9 +65,9 @@ func TraceWithSCIP(eps []schema.EntryPoint, features []schema.Manifest, corpus *
 			continue
 		}
 		// Merge SCIP hits into existing flow, deduping by feature.
-		existing := map[string]bool{}
-		for _, s := range ep.Flow {
-			existing[s.Feature] = true
+		existing := map[string]int{}
+		for si, s := range ep.Flow {
+			existing[s.Feature] = si + 1
 		}
 		for _, callee := range reached {
 			// Match the SCIP moniker back to a Lattice symbol via
@@ -87,15 +87,21 @@ func TraceWithSCIP(eps []schema.EntryPoint, features []schema.Manifest, corpus *
 					}
 				}
 			}
-			if lookup.feature == "" || existing[lookup.feature] {
+			if lookup.feature == "" {
 				continue
 			}
-			existing[lookup.feature] = true
+			if si := existing[lookup.feature]; si > 0 {
+				// The call graph confirms a feature module proximity found.
+				ep.Flow[si-1].Basis = schema.FlowBasisReach
+				continue
+			}
 			ep.Flow = append(ep.Flow, schema.FlowStep{
 				Feature:    lookup.feature,
 				Capability: lookup.capability,
 				ViaSymbols: []string{fqn},
+				Basis:      schema.FlowBasisReach,
 			})
+			existing[lookup.feature] = len(ep.Flow)
 		}
 		sort.Slice(ep.Flow, func(a, b int) bool { return ep.Flow[a].Feature < ep.Flow[b].Feature })
 	}

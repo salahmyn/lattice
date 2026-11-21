@@ -196,7 +196,8 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 			v = append(v, c.checkVerification()...)
 			v = append(v, c.checkSurfaces()...)
 			v = append(v, c.checkErrors()...)
-			v = append(v, checkEntryPoints(kg)...)
+			v = append(v, checkEntryPoints(kg, c.opts.Reach)...)
+			v = append(v, reach.RuntimeRootFindings(kg, c.opts.Reach)...)
 			v = append(v, c.checkAMA()...)     // v0.7 — AMA structural checks
 			v = append(v, c.checkMeaning()...) // v0.8 δ — meaning fidelity
 			// rnd/0009 — coverage findings, only on ingested data.

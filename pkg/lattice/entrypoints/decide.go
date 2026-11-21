@@ -53,7 +53,7 @@ func Decide(entryPointsDir, id, decision string) (DecideResult, error) {
 			return res, fmt.Errorf("parse %s: %w", path, err)
 		}
 		ep.Status = schema.StatusProduction
-		out, err := yaml.Marshal(ep)
+		out, err := schema.MarshalCanonical(ep)
 		if err != nil {
 			return res, err
 		}
