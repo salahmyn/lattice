@@ -2,6 +2,48 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.19.0] — 2026-11-21
+
+Break-testing for PostgreSQL, a workspace switch that requires hardware-key signatures, and a
+validator that says when results are of another commit.
+
+### Added
+
+- **Generated breaks for PostgreSQL enforcers.** `lattice break` now breaks SQL guards instead
+  of reading them `unknown`: a policy's `USING` and `WITH CHECK` expressions become
+  `(true OR (expr))`; a trigger gets ` WHEN (false)` (or `WHEN (false AND (cond))`); a PL/pgSQL
+  function or procedure returns early after its top-level `BEGIN`, with a return that fits its
+  result (`RETURN COALESCE(NEW, OLD)` for a trigger function, `RETURN true` for a boolean guard,
+  `RETURN;` for void, set-returning or OUT-parameter functions, `RETURN NULL` otherwise). Other
+  function languages, event triggers and `INSTEAD OF` triggers stay `unknown` with a reason. The
+  verifiers run under a Postgres runner in `break.runners`; the user guide has a pgTAP example.
+- **`confirm.routes`** in `lattice/config.yaml` (`review`, `signature`; default both) narrows
+  which routes make a decision read `human`. Under `routes: [signature]` a confirmation by review
+  alone reads `pending` (`ROUTE_NOT_ACCEPTED`) in `confirm` and in every reader (the audit,
+  `check`, `validate`, `feature show`, `/api/v2`), and `confirm --unsigned` lists it. An unknown
+  route is a `VALIDATE_POLICY` error.
+- **`SOLE_HUMAN_APPROVER` note.** `lattice confirm` notes, without changing the verdict, when a
+  bot or agent opened the decision PR and the approver is the repository's only human with write
+  access, so the review route proves only that another account approved. Review records carry
+  `pr_author` and `pr_author_bot`.
+- **`RESULTS_STALE` (info).** `lattice validate` names ingested test results of another commit
+  than the graph's: criteria and scenarios still read DEMONSTRATED from them, while the
+  per-invariant `VERIFIER_FAILING` and the audit ignore them. It changes no level; raise it with
+  `validate.severity: {RESULTS_STALE: warning}`.
+
+### Fixed
+
+- Counts of 100 or more print in full: the "no break ran" line read `651 of q1 runs`, and search
+  ids for a BRD's 100th goal and later were garbled.
+
+### Behaviour changes to plan for
+
+- **A `config.yaml` that exists but cannot be parsed makes confirmed decisions read `unknown`**
+  (`CONFIRM_ROUTES_UNREADABLE`) and `lattice confirm` refuse with `BAD_CONFIG`, since the accepted
+  routes cannot be known. A missing `config.yaml` still means the default.
+- **SQL enforcers that read `unknown` ("no generated break for postgres") now get a break.** With
+  no Postgres runner configured they stay `unknown`, now with "no runner configured".
+
 ## [0.18.1] — 2026-11-21
 
 A CI-ready `lattice break`, and a block map that loads visibly and uses the screen.
