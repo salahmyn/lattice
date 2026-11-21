@@ -79,6 +79,7 @@ The same rows back the BRD_CRITERION_* validation rules and the
 			})
 			coverage := rtm.ComputeCoverage(matrix)
 			journey := rtm.ComputeJourneyCoverage(matrix)
+			invariants, _ := rtm.ComputeInvariantCoverage(kg)
 			attestation := cfg.Autonomy.AttestationLevel()
 
 			// Apply filters in-place — we rebuild slices so JSON output
@@ -100,19 +101,22 @@ The same rows back the BRD_CRITERION_* validation rules and the
 					"attestation":      attestation,
 					"coverage":         coverage,
 					"journey_coverage": journey,
-					"matrix":           matrix,
+					// invariant_coverage is the second figure: declared
+					// invariants some criterion's maps_to_invariant names.
+					"invariant_coverage": invariants,
+					"matrix":             matrix,
 				})
 			}
 
 			if summaryOnly || len(matrix.Rows) == 0 {
-				renderRTMSummary(io, attestation, coverage, journey, matrix)
+				renderRTMSummary(io, attestation, coverage, journey, invariants, matrix)
 				if len(matrix.Rows) == 0 && filterStatus == "" && filterBRD == "" {
 					io.printf("\n(no BRDs have success_criteria yet — `lattice brd new` or `lattice brd from-code`)\n")
 				}
 				return nil
 			}
 
-			renderRTMSummary(io, attestation, coverage, journey, matrix)
+			renderRTMSummary(io, attestation, coverage, journey, invariants, matrix)
 			cases := caseCoverage(ws.LatticeDir, kg)
 			io.printf("\n")
 			io.printf("%-32s %-6s %-2s %-12s %-25s %-8s %-8s\n",
@@ -176,7 +180,7 @@ The same rows back the BRD_CRITERION_* validation rules and the
 // the row table is the expandable detail below it. An RTM without an
 // attestation header is invalid — claims must never exceed who actually
 // ran the checks.
-func renderRTMSummary(io *IO, attestation string, c rtm.Coverage, j rtm.JourneyCoverage, m rtm.Matrix) {
+func renderRTMSummary(io *IO, attestation string, c rtm.Coverage, j rtm.JourneyCoverage, inv rtm.InvariantCoverage, m rtm.Matrix) {
 	if attestation == "self" {
 		io.printf("attestation: self — SELF-ATTESTED RUN, governance simulated\n")
 	} else {
@@ -184,6 +188,10 @@ func renderRTMSummary(io *IO, attestation string, c rtm.Coverage, j rtm.JourneyC
 	}
 	io.printf("BRD verification coverage: %.1f%%  (%d/%d criteria verified)\n",
 		c.Ratio*100, c.VerifiedCriteria, c.TotalCriteria)
+	if inv.TotalInvariants > 0 {
+		io.printf("invariants:                %d/%d required  (%d mapped by no criterion)\n",
+			inv.RequiredInvariants, inv.TotalInvariants, inv.TotalInvariants-inv.RequiredInvariants)
+	}
 	if ex, dem, ok := exercisedCount(m); ok {
 		io.printf("exercised:                 %d/%d demonstrated criteria (a verifier's per-test run executed an enforcer)\n", ex, dem)
 	}

@@ -21,7 +21,7 @@ import (
 // makes that visible; it suggests no tier, because choosing one is a human
 // judgment. An owner who wants the council to refuse such BRDs sets
 // require_pinned_tiers on the mandate.
-// @enforces validation:INV-18
+// @enforces validation:INV-22
 func (c *corpus) checkTierUnset() []schema.Violation {
 	var v []schema.Violation
 	for i := range c.kg.BRDs {

@@ -188,6 +188,7 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 	v = append(v, c.checkCouncil()...)
 	v = append(v, c.checkTierUnset()...)
 	v = append(v, c.checkScenarios()...) // v0.8 α/β — scenario + reach
+	v = append(v, c.checkDrift()...)     // spec and code drift: unmapped invariants, status
 	v = append(v, c.checkRequiredLevel()...)
 	v = append(v, checkConfirmRoutes(cfg)...)
 	v = append(v, c.checkDependencies()...)

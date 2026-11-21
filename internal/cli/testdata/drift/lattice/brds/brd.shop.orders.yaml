@@ -1,0 +1,18 @@
+id: brd.shop.orders
+version: 1
+status: proposed
+title: Customers place small orders and get refunds
+business_problem: |
+  Customers need to place orders of a sensible size.
+business_goals:
+  - A customer places an order of 1 to 10 items.
+stakeholders:
+  business_owner: product
+success_criteria:
+  - id: SC-1
+    statement: An order of 1 to 10 items is placed.
+    maps_to_invariant: shop.checkout:INV-1
+implements_via:
+  - shop
+  - shop.checkout
+  - shop.refunds

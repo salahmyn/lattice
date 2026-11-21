@@ -1,0 +1,23 @@
+id: shop.checkout
+version: 1
+status: proposal
+purpose: |
+  Still `proposal`, yet the flow of a production entry point names it, its code runs, and its criterion is demonstrated.
+owners:
+  business: product
+  engineering: web
+implements_brd: brd.shop.orders
+capabilities:
+  - id: place_order
+    summary: Places an order of 1 to 10 items.
+    rules:
+      - Quantity must be 1 to 10.
+invariants:
+  - id: INV-1
+    statement: An order of 1 to 10 items is placed.
+    verifiable_by:
+      - test
+  - id: INV-2
+    statement: An order of 0 items or more than 10 items is refused.
+    verifiable_by:
+      - test

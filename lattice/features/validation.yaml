@@ -57,4 +57,12 @@ invariants:
   - id: INV-17
     statement: Validate names ingested results that are of another commit than the graph's (RESULTS_STALE, info by default) and never lets them change a level; a commit that git shows differs only in Lattice's own ledger and cache is not another, and one git cannot compare is.
   - id: INV-18
+    statement: INVARIANT_UNREQUIRED is raised once per feature for every declared invariant, with or without a block, that no criterion of any BRD maps, says it is mapped by no criterion, and an allowlist entry accepts one feature:INV at a time.
+  - id: INV-19
+    statement: STATUS_DRIFT is raised for a proposal or accepted feature that the flow of a production entry point names, and for nothing else; root reach, a demonstrated criterion and a non-production entry point never raise it.
+  - id: INV-20
+    statement: FEATURE_UNREACHED also covers a proposal or accepted feature that has non-test code in the graph and is on no flow and reached by no root, states its status, and leaves the message for a production feature unchanged.
+  - id: INV-21
+    statement: INVARIANT_UNREQUIRED, STATUS_DRIFT and the findings of FEATURE_UNREACHED for unpromoted features are info and always on, so a run that fails on warnings stays green with all of them present.
+  - id: INV-22
     statement: CRITERION_TIER_UNSET is an info finding, always on, one per BRD listing every criterion whose tier is not 1, 2 or 3; it never suggests a tier.

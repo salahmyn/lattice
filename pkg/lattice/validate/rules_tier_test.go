@@ -13,7 +13,7 @@ func tierFindings(kg schema.KnowledgeGraph) []schema.Violation {
 
 // An absent tier and an out-of-range one are both unpinned; the finding
 // lists each, quotes the out-of-range value and suggests no number.
-// @verifies validation:INV-18
+// @verifies validation:INV-22
 func TestCriterionTierUnset(t *testing.T) {
 	kg := councilApprovedKG(schema.HumanReviewAcknowledged)
 	kg.BRDs[0].SuccessCriteria = []schema.BRDCriterion{
@@ -44,7 +44,7 @@ func TestCriterionTierUnset(t *testing.T) {
 
 // A BRD with pinned and unpinned criteria lists only the unpinned ones; a
 // fully pinned BRD raises nothing; a BRD with no approval says so.
-// @verifies validation:INV-18
+// @verifies validation:INV-22
 func TestCriterionTierUnsetMixedBRD(t *testing.T) {
 	kg := councilApprovedKG(schema.HumanReviewAcknowledged)
 	kg.BRDs[0].Approval = nil
@@ -68,7 +68,7 @@ func TestCriterionTierUnsetMixedBRD(t *testing.T) {
 
 // The finding is info and always on, so a run that fails on warnings stays
 // green with it open; an allowlist entry with a reason accepts it.
-// @verifies validation:INV-18
+// @verifies validation:INV-22
 func TestCriterionTierUnsetStaysGreen(t *testing.T) {
 	kg := councilApprovedKG(schema.HumanReviewAcknowledged)
 	got := tierFindings(kg)

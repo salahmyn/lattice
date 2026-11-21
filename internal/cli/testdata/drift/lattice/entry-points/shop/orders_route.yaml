@@ -1,0 +1,17 @@
+id: shop.orders_route
+version: 1
+status: production
+kind: http_route
+purpose: |
+  The orders page.
+owners:
+  business: product
+  engineering: web
+trigger:
+  method: GET
+  path: /orders
+handler:
+  symbol: src.route.ordersRoute
+flow:
+  - feature: shop
+  - feature: shop.checkout

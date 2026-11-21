@@ -250,6 +250,12 @@ const (
 	CodeCaseEnforcerUnknown  = "CASE_ENFORCER_UNKNOWN"  // a case's enforcer is not a symbol that enforces its invariant (error)
 	CodeInvariantBroad       = "INVARIANT_BROAD"        // an invariant with no cases reads as several claims (info)
 
+	// Drift between the spec and the code. Both are info and always on: they
+	// state a fact the graph holds and never fail a gate unless
+	// validate.severity says so.
+	CodeInvariantUnrequired = "INVARIANT_UNREQUIRED" // a declared invariant that no criterion's maps_to_invariant names (info)
+	CodeStatusDrift         = "STATUS_DRIFT"         // a proposal or accepted feature on the flow of a production entry point (info)
+
 	// Workspace hygiene: derived files git should not track (warning).
 	CodeGraphTracked = "GRAPH_TRACKED" // lattice/lattice.json is tracked, so every extract dirties the tree
 	CodeCacheTracked = "CACHE_TRACKED" // files under lattice/.cache/ are tracked
@@ -300,6 +306,11 @@ type Violation struct {
 	// allowlist entry can match: "brd.<id>:SC-N", a module file, a symbol
 	// FQN. Empty when the rule does not set one.
 	Subject string `json:"subject,omitempty"`
+
+	// Refs lists the items one rolled-up finding covers, each a Subject an
+	// allowlist entry can match on its own (INVARIANT_UNREQUIRED lists
+	// "<feature>:<INV-N>"). Empty for a finding about one thing.
+	Refs []string `json:"refs,omitempty"`
 
 	Location   *Location   `json:"location,omitempty"`
 	NextAction *NextAction `json:"next_action,omitempty"`

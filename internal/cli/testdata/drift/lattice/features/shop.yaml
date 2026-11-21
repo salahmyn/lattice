@@ -1,0 +1,9 @@
+id: shop
+version: 1
+status: production
+purpose: |
+  Umbrella feature of the shop.
+owners:
+  business: product
+  engineering: web
+implements_brd: brd.shop.orders
