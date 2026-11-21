@@ -185,6 +185,9 @@
       "tier": 1,
       "class": "break_tested",
       "reason": "breaking f.Second (early_return) made the verifiers fail",
+      "layers": [
+        "data"
+      ],
       "signals": {
         "declared": {
           "value": "yes",
@@ -238,7 +241,8 @@
             "fqn": "f.Second",
             "file": "f/second.go",
             "line": 4,
-            "reach": "entry"
+            "reach": "entry",
+            "layer": "data"
           }
         ],
         "verifiers": [
@@ -268,7 +272,8 @@
           "file": "f/second.go",
           "line": 4,
           "outcome": "killed",
-          "reason": "breaking it (early_return) made the verifiers fail"
+          "reason": "breaking it (early_return) made the verifiers fail",
+          "layer": "data"
         }
       ]
     }

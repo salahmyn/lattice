@@ -242,6 +242,10 @@ type EnforcerOutcome struct {
 	Line    int    `json:"line,omitempty"`
 	Outcome string `json:"outcome"` // killed | survived | unknown | not_run
 	Reason  string `json:"reason,omitempty"`
+	// Layer is the enforcer's runtime layer, the same as evidence.enforcers[]
+	// carries; empty when layers were not assigned or the graph does not list
+	// the symbol as an enforcer.
+	Layer string `json:"layer,omitempty"`
 }
 
 // enforcerOutcomes reads one outcome per enforcer from the promise's break
@@ -260,7 +264,7 @@ func enforcerOutcomes(enf []EnforcerEvidence, runs []BreakRun) []EnforcerOutcome
 	for _, e := range enf {
 		listed[e.FQN] = true
 		o := readEnforcer(byEnf[e.FQN])
-		o.Symbol, o.File, o.Line = e.FQN, e.File, e.Line
+		o.Symbol, o.File, o.Line, o.Layer = e.FQN, e.File, e.Line, e.Layer
 		out = append(out, o)
 	}
 	var extra []string

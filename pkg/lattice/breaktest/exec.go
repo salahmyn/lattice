@@ -187,17 +187,23 @@ func firstLine(s string) string {
 // applyLineMax is the most runes a "did not apply" reason quotes.
 const applyLineMax = 120
 
-// applyLine picks the line of a failed setup step's output to quote in a
-// "did not apply" reason: the first line that holds "ERROR:" or "error:"
-// (Postgres and most command-line tools), else the last non-empty line. Either
-// way it is capped at applyLineMax runes with a trailing "…", so a tool that
-// prints its whole error as one JSON line stays readable in a results table.
+// applyLine picks what to quote of a failed setup step's output in a "did
+// not apply" reason: the text of the first line that holds "ERROR:" or
+// "error:" (Postgres and most command-line tools), from that token on, so a
+// line that is a JSON blob with the token in the middle quotes the message
+// and not the blob's opening; else the last non-empty line. Either way it is
+// capped at applyLineMax runes with a trailing "…", so a tool that prints its
+// whole error as one line stays readable in a results table.
 func applyLine(out string) string {
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	pick := ""
 	for _, l := range lines {
-		if strings.Contains(l, "ERROR:") || strings.Contains(l, "error:") {
-			pick = l
+		i := strings.Index(l, "ERROR:")
+		if j := strings.Index(l, "error:"); j >= 0 && (i < 0 || j < i) {
+			i = j
+		}
+		if i >= 0 {
+			pick = l[i:]
 			break
 		}
 	}
