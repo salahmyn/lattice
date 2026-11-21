@@ -2906,7 +2906,8 @@ paths (2)
 ```
 
 Each hop is an edge of the reach graph (`call`, `new`, `rpc`, `table`, `http`, `jsx`,
-`ref`, and the structural `import`, `member`, `use`) with the layer of both ends
+`ref`, `publish` and `consume` through a [channel](#4r-async-hops-and-channels), and the structural `import`,
+`member`, `use`) with the layer of both ends
 (see [Layers](#4o-layers-what-kind-of-runtime-is-this-code)); a node that is not
 a symbol (a module's top-level code, a table) takes `data` from the Postgres
 adapter, else the layer a `layers:` rule gives its file. `carried_by` lists the
@@ -3084,6 +3085,114 @@ An empty `truth` means no rule computed it, never that it passed. Today the engi
 sets `declared`; edges read from a catalogue or derived from an entry point's flow
 carry none. The reach graph's `http` edges are the `wired` ones: they exist only on
 equal keys.
+
+## 4r. Async hops and channels
+
+A handler that enqueues a job and the worker that runs it are two facts. Lattice models
+the queue (or the `NOTIFY` channel, or the event) as a **channel node**
+`chan.<kind>.<name>`, the way a table is a node, and joins the two ends through it.
+**Nothing is guessed: an async hop exists only through a channel both ends name with a
+literal.** A publisher's reference reaches the channel; the channel reaches every consumer
+that names it.
+
+**Out ends (publishers)** are references of kind `publish`, keyed `<kind>:<name>`:
+
+| Code | Channel |
+|---|---|
+| SQL `pg_notify('c', ...)`, `NOTIFY c` | `notify:c` |
+| SQL `pgmq.send('q', ...)`, `pgmq.send_batch('q', ...)` | `queue:q` |
+| TypeScript `supabase.rpc('pgmq_send', { queue_name: 'q' })` (also `pgmq_send_batch`, and `send` through `.schema('pgmq_public')`) | `queue:q` |
+| BullMQ `queue.add(...)` / `queue.addBulk(...)` where `queue` is bound in the same module to `new Queue('q')`, and `new Queue('q').add(...)` | `queue:q` |
+| a call of a declared wrapper (below) | the declared kind and the literal argument |
+
+**In ends (consumers)** are references of kind `consume`, or entry points:
+
+| Code | Consumer |
+|---|---|
+| a `queue` entry point with `trigger.queue`, an `event_consumer` one with `trigger.event` | its handler, on `queue:<q>` or `event:<e>` |
+| SQL `pgmq.read('q', ...)`, `pgmq.read_with_poll`, `pgmq.pop('q')` | the function that holds the call, on `queue:q` |
+| TypeScript `supabase.rpc('pgmq_read' \| 'pgmq_pop', { queue_name: 'q' })` | the function that holds the call |
+| BullMQ `new Worker('q', handler)` | `handler` when it is a named function in scope or imported; the module's top-level code when it is an inline function |
+| a call of a declared wrapper | the declared handler argument when it is a named function, else the code that holds the call |
+
+SQL `LISTEN c` names a channel but no handler, so it is not a consumer. A queue or
+event name must be a string literal (or a template with no `${}`); a computed one is an
+unresolved reference, `why: dynamic`, and makes no node and no edge. The BullMQ binding
+analysis stays inside one module and follows only a plain identifier bound by
+`const q = new Queue('name')` (const, let or var); a queue in a property (`this.queue`),
+a parameter or another module's export is not followed, and `Queue` and `Worker` are read
+only when the module imports them from `bullmq` or `bull`. An entry point whose handler
+is not a symbol of the graph is left out, as for HTTP.
+
+**Declared wrappers.** Most code wraps its queue client. Say so in `lattice/workspace.yaml`:
+
+```yaml
+channels:
+  publish:
+    - call: "jobs.enqueue"   # the callee as written, compared by its trailing segments
+      arg: 0                 # the zero-based argument that names the channel
+      kind: queue            # queue, event, notify or topic
+  consume:
+    - call: "jobs.register"
+      arg: 0
+      handler_arg: 1         # the argument that is the handler, if any
+      kind: queue
+```
+
+A literal at that argument is a publish or consume end of `chan.<kind>.<name>`; a computed
+one, or a call with too few arguments, is unresolved (`dynamic`). `jobs.enqueue` matches
+`jobs.enqueue(...)` and `app.jobs.enqueue(...)`; a bare `enqueue` matches any callee that
+ends in `enqueue`. A call imported under another name (`import { enqueue }`) does not match
+`jobs.enqueue`, so declare each spelling the code uses. Declared wrappers are read in
+TypeScript and JavaScript. An entry that cannot be read (an empty `call`, a negative `arg`,
+a `kind` outside the four) is a `VALIDATE_POLICY` error and is ignored.
+
+**In the graph**, a publisher gets an edge of kind `publish` to the channel node and the
+channel gets an edge of kind `consume` to each consumer (`via: channel`). A channel node
+exists for every name that at least one end names. Both edge kinds are kept apart from the
+synchronous ones: the call graph's reach walk never crosses a channel.
+
+**Async reach is reported apart from synchronous reach, and never upgrades it.**
+`lattice.json` symbols keep `reach` exactly as the synchronous walk gave it. A symbol that
+no root reaches synchronously, and some root reaches through channels, also carries
+`async_hops`: the fewest channels such a path crosses. The audit's `live` signal reads
+`reach` only, so an enforcer reached only through a channel stays `unreached` (or
+`test_only`) there, with `async_hops: 1` beside it in the enforcer evidence, in
+`lattice slice` and in the audit's markdown (`reach unreached, 1 async hop`). The
+`SYMBOL_UNREACHED` finding says when a root reaches the symbol only through channels. Fix a
+real gap by declaring the consumer an entry point (a root), not by hoping a channel counts.
+
+```
+enforcers (1)
+  sql.public.charge_fee  [data]  reach: unreached (async: 1 channel(s) crossed)
+
+paths (1)
+  api.server.signup [api] -rpc-> sql.public.enqueue_email [data] -publish-> chan.queue.emails [async] -consume-> sql.public.work_emails [data] -call-> sql.public.charge_fee [data]
+      root: coverage.roots: the route; carried by api -> data -> async -> data; 4 hops; 1 async hop(s), through a channel
+```
+
+**In `lattice slice`**, a path may cross channel nodes. Its hops have kind `publish` and
+`consume`, `truth: resolved`, and the path reports `async_hops: N` (absent means none).
+A channel node's layer is `async`, so `carried_by` shows where the path left the request.
+A path with no channel is preferred to a shorter one with a channel, and a resolved
+path through a channel to one with an unknown hop, so `async_hops` appears only when the
+promise is reached no other way. The exercised rule is unchanged: a channel is no symbol, so
+each side of a hop is stood for by the nearest symbol on that side (the publisher before
+it, the consumer after it).
+
+Three findings (info, always on) show what the join could not do:
+
+```
+info  CHANNEL_NO_CONSUMER   sql.public.enqueue_email publishes to queue "emails" (db/emails.sql:3), and no consumer in the workspace names it
+info  CHANNEL_NO_PUBLISHER  sql.public.work_emails consumes queue "mails" (db/emails.sql:9), and no publisher in the workspace names it
+info  CHANNEL_DYNAMIC       db/emails.sql has 2 queue or event end(s) whose channel name is computed (lines 3, 4)
+```
+
+`CHANNEL_NO_CONSUMER` is a literal publish nothing in the workspace consumes: a typo at one
+end, or a consumer the extraction does not see (declare an entry point or a `channels.consume`
+wrapper). `CHANNEL_NO_PUBLISHER` is a consumer whose channel nothing publishes to; that is
+fine for a queue fed from outside the workspace, but it is named. Renaming the queue at one
+end gives no edge and both findings. `CHANNEL_DYNAMIC` is one per file. Test code raises none.
 
 ## 5. Day-to-day commands
 

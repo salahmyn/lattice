@@ -21,6 +21,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/reach"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
+	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 )
 
 // Contract is the version tag of the JSON record.
@@ -51,6 +52,11 @@ const (
 	TruthUnknown  = "unknown"  // an ambiguous reference that lists this target among its candidates
 )
 
+// channelKind is the node kind of a channel: the node a publish hop ends at
+// and a consume hop starts from. Its layer is async, the layer of queue
+// workers and event consumers, since it is where the path leaves the request.
+const channelKind = "channel"
+
 // postgresLanguage is the language the Postgres adapter reports; its nodes
 // are data, the same rule graph.AssignLayers applies to its symbols.
 const postgresLanguage = "postgres"
@@ -60,6 +66,9 @@ type Enforcer struct {
 	FQN   string `json:"fqn"`
 	Layer string `json:"layer,omitempty"`
 	Reach string `json:"reach,omitempty"`
+	// AsyncHops is the audit's count: the channels the shortest path from a
+	// root crosses, set only when no root reaches the enforcer synchronously.
+	AsyncHops int `json:"async_hops,omitempty"`
 }
 
 // Root is where a path starts, and why the runtime starts there.
@@ -75,7 +84,8 @@ type Hop struct {
 	From string `json:"from"`
 	To   string `json:"to"`
 	// Kind is the edge kind of the reach graph: call, new, rpc, table, http,
-	// jsx, ref, and the structural ones (import, member, use, scip).
+	// jsx, ref, publish and consume (the two hops through a channel), and the
+	// structural ones (import, member, use, scip).
 	Kind      string `json:"kind"`
 	FromLayer string `json:"from_layer"`
 	ToLayer   string `json:"to_layer"`
@@ -96,6 +106,10 @@ type Path struct {
 	// CarriedBy is the layers along the path in order, a run of the same
 	// layer counted once.
 	CarriedBy []string `json:"carried_by"`
+	// AsyncHops counts the channels the path crosses; absent means none. A
+	// path through a channel is listed only when no path without one reaches
+	// the enforcer from the same root.
+	AsyncHops int `json:"async_hops,omitempty"`
 	// ExercisedHops counts the hops marked exercised, out of len(Hops). It is
 	// absent when the record has no per-test coverage to count from.
 	ExercisedHops *int `json:"exercised_hops,omitempty"`
@@ -134,15 +148,26 @@ type Record struct {
 type step struct {
 	to, kind string
 	unknown  bool
+	async    bool // a publish or consume edge: it crosses a channel
 }
+
+// The search modes of paths, as bits: a mode allows unknown hops (modeUnknown)
+// and hops through channels (modeAsync). Modes are tried in the order
+// searchOrder, so a path of resolved synchronous hops beats one through a
+// channel, which beats one with an unknown hop.
+const (
+	modeUnknown = 1
+	modeAsync   = 2
+)
+
+var searchOrder = [...]int{0, modeAsync, modeUnknown, modeUnknown | modeAsync}
 
 // Graph is the part of the reach result a slice reads: the edges, the roots
 // and the layer of every node. It is built once and never written to, so
 // requests may share it.
 type Graph struct {
 	succ  map[string][]step
-	rev   map[string][]string // to -> from, over every step
-	revOK map[string][]string // to -> from, over resolved steps only
+	rev   [4]map[string][]string // per search mode: to -> from, over the steps the mode allows
 	roots []reach.Root
 	layer map[string]string // symbol FQN -> layer, as the graph assigned it
 	isSym map[string]bool   // every symbol of the knowledge graph: a node coverage can speak of
@@ -177,13 +202,16 @@ func NewGraph(rr *reach.Result, kg schema.KnowledgeGraph, rules []schema.LayerRu
 
 func newGraph(roots []reach.Root, edges []reach.Edge, unresolved []reach.Unresolved, layers map[string]string,
 	rules []schema.LayerRule, info func(string) (reach.NodeInfo, bool)) *Graph {
-	g := &Graph{succ: map[string][]step{}, rev: map[string][]string{}, revOK: map[string][]string{},
+	g := &Graph{succ: map[string][]step{},
 		roots: append([]reach.Root(nil), roots...), layer: layers, rules: rules, info: info, isSym: map[string]bool{}}
 	for fqn := range layers {
 		g.isSym[fqn] = true
 	}
+	for m := range g.rev {
+		g.rev[m] = map[string][]string{}
+	}
 	for _, e := range edges {
-		g.succ[e.From] = append(g.succ[e.From], step{to: e.To, kind: e.Kind})
+		g.succ[e.From] = append(g.succ[e.From], step{to: e.To, kind: e.Kind, async: e.Kind == ir.RefPublish || e.Kind == ir.RefConsume})
 	}
 	// An ambiguous reference is followed to every candidate it recorded, as
 	// unknown. A missing or dynamic one records none and is not followed.
@@ -208,9 +236,10 @@ func newGraph(roots []reach.Root, edges []reach.Edge, unresolved []reach.Unresol
 		})
 		g.succ[from] = steps
 		for _, st := range steps {
-			g.rev[st.to] = append(g.rev[st.to], from)
-			if !st.unknown {
-				g.revOK[st.to] = append(g.revOK[st.to], from)
+			for m := range g.rev {
+				if (!st.unknown || m&modeUnknown != 0) && (!st.async || m&modeAsync != 0) {
+					g.rev[m][st.to] = append(g.rev[m][st.to], from)
+				}
 			}
 		}
 	}
@@ -232,6 +261,8 @@ func (g *Graph) layerOf(fqn string) string {
 	switch {
 	case !ok:
 		return schema.LayerUnknown
+	case n.Kind == channelKind:
+		return schema.LayerAsync
 	case n.Language == postgresLanguage:
 		return schema.LayerData
 	}
@@ -242,7 +273,7 @@ func (g *Graph) layerOf(fqn string) string {
 func EnforcersOf(row audit.Row) []Enforcer {
 	out := make([]Enforcer, 0, len(row.Evidence.Enforcers))
 	for _, e := range row.Evidence.Enforcers {
-		out = append(out, Enforcer{FQN: e.FQN, Layer: e.Layer, Reach: e.Reach})
+		out = append(out, Enforcer{FQN: e.FQN, Layer: e.Layer, Reach: e.Reach, AsyncHops: e.AsyncHops})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].FQN < out[j].FQN })
 	return out
@@ -295,32 +326,36 @@ func reading(rec *Record, g *Graph) {
 
 // paths finds, for each root and each enforcer it reaches, one shortest path,
 // and lists the enforcers no root reaches. A path over resolved edges only
-// wins over a shorter one that crosses an unknown hop; the unknown one is
-// used only when the pair has no resolved path. Neighbours are visited in
+// wins over a shorter one that crosses an unknown hop, and one that crosses no
+// channel wins over a shorter one that does; the longer kind is used only when
+// the pair has no better path. Neighbours are visited in
 // sorted order, so the path is the same on every run.
 func (g *Graph) paths(enforcers []Enforcer) (paths []Path, unreached []string) {
 	targets := map[string]bool{}
 	for _, e := range enforcers {
 		targets[e.FQN] = true
 	}
-	canResolved := g.upstream(targets, g.revOK)
-	canAny := g.upstream(targets, g.rev)
+	var can [4]map[string]bool
+	for m := range can {
+		can[m] = g.upstream(targets, g.rev[m])
+	}
 
 	reached := map[string]bool{}
 	for _, root := range g.roots {
-		if !canAny[root.FQN] {
+		if !can[modeUnknown|modeAsync][root.FQN] {
 			continue
 		}
 		found := map[string]bool{}
-		if canResolved[root.FQN] {
-			for t, hops := range g.bfs(root.FQN, targets, false, canResolved) {
-				found[t] = true
-				paths = append(paths, g.pathOf(root, t, hops))
+		for _, mode := range searchOrder {
+			if len(found) == len(targets) {
+				break
 			}
-		}
-		if len(found) < len(targets) {
-			for t, hops := range g.bfs(root.FQN, targets, true, canAny) {
+			if !can[mode][root.FQN] {
+				continue
+			}
+			for t, hops := range g.bfs(root.FQN, targets, mode, can[mode]) {
 				if !found[t] {
+					found[t] = true
 					paths = append(paths, g.pathOf(root, t, hops))
 				}
 			}
@@ -384,9 +419,10 @@ type parent struct {
 }
 
 // bfs walks from root in breadth-first order, neighbours sorted, inside
-// allowed, over resolved edges only unless withUnknown, and returns the
-// shortest path to each target it reaches (the root itself is at distance 0).
-func (g *Graph) bfs(root string, targets map[string]bool, withUnknown bool, allowed map[string]bool) map[string][]Hop {
+// allowed, over the steps the mode allows (resolved ones, synchronous ones,
+// unless the mode says otherwise), and returns the shortest path to each
+// target it reaches (the root itself is at distance 0).
+func (g *Graph) bfs(root string, targets map[string]bool, mode int, allowed map[string]bool) map[string][]Hop {
 	par := map[string]parent{}
 	seen := map[string]bool{root: true}
 	queue := []string{root}
@@ -398,7 +434,7 @@ func (g *Graph) bfs(root string, targets map[string]bool, withUnknown bool, allo
 			out[cur] = g.hopsTo(root, cur, par)
 		}
 		for _, st := range g.succ[cur] {
-			if st.unknown && !withUnknown || seen[st.to] || !allowed[st.to] {
+			if st.unknown && mode&modeUnknown == 0 || st.async && mode&modeAsync == 0 || seen[st.to] || !allowed[st.to] {
 				continue
 			}
 			seen[st.to] = true
@@ -440,6 +476,9 @@ func (g *Graph) pathOf(root reach.Root, enforcer string, hops []Hop) Path {
 	}
 	p.CarriedBy = []string{g.layerOf(root.FQN)}
 	for _, h := range hops {
+		if h.Kind == ir.RefConsume {
+			p.AsyncHops++ // each channel is crossed by one publish hop and one consume hop
+		}
 		if p.CarriedBy[len(p.CarriedBy)-1] != h.ToLayer {
 			p.CarriedBy = append(p.CarriedBy, h.ToLayer)
 		}

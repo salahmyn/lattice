@@ -102,6 +102,14 @@ const (
 	// "" when it is not a literal; the module's Import of that specifier
 	// (Dynamic) carries its resolution.
 	RefImport = "import"
+	// RefPublish is the out end of a channel: a job enqueued, a message sent,
+	// a NOTIFY. Name is the key "<kind>:<name>" (see ChannelKey), "" when the
+	// channel name is not a literal.
+	RefPublish = "publish"
+	// RefConsume is the in end of a channel: the code that owns the reference
+	// (or the function Handler names) runs when a message arrives. Name is
+	// the key, "" when the channel name is not a literal.
+	RefConsume = "consume"
 )
 
 // Ref is one raw reference in a symbol's body or a module's top-level code.
@@ -119,6 +127,11 @@ type Ref struct {
 	Target string `json:"target,omitempty"`
 	Kind   string `json:"kind"`
 	Line   int    `json:"line"`
+	// Handler, on a consume ref, is the bare name of the function the call
+	// registers as the handler (new Worker('q', handler)); the core resolves
+	// it in the owner's scope. Empty when the handler is not a named
+	// function, and then the owner of the reference is the consumer.
+	Handler string `json:"handler,omitempty"`
 }
 
 // Import is one import (or re-export) of a module.

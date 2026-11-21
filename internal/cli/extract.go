@@ -23,6 +23,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/importer"
 	"github.com/salahmyn/lattice/pkg/lattice/reach"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
+	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 	"github.com/salahmyn/lattice/pkg/lattice/scip"
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
@@ -178,6 +179,14 @@ func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOpt
 		return schema.KnowledgeGraph{}, nil, err
 	}
 	reg := all.Registry(adCfg)
+	// Declared queue and event wrappers: the adapters that read call
+	// arguments turn a call of one into a channel end.
+	wrappers := ws.Channels.ValidWrappers()
+	for _, a := range reg.Adapters() {
+		if c, ok := a.(ir.ChannelConfigurable); ok {
+			c.SetChannelWrappers(wrappers)
+		}
+	}
 
 	if withCodeGraph && !ws.Review {
 		cfg, _ := config.Load(ws.LatticeDir)
@@ -312,6 +321,8 @@ func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOpt
 	// entry point's.
 	kg.Violations = append(kg.Violations, graph.AssignLayers(&kg, ws.Layers)...)
 	kg.Violations = append(kg.Violations, graph.CheckHTTPOrigins(ws.HTTP.Origins)...)
+	pubWrappers, conWrappers := ws.Channels.Wrappers()
+	kg.Violations = append(kg.Violations, graph.CheckChannelWrappers(pubWrappers, conWrappers)...)
 
 	var rr *reach.Result
 	if !ws.Review && !res.Review {

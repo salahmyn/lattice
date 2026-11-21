@@ -14,7 +14,10 @@ import (
 )
 
 // Adapter implements adapters.LanguageAdapter for TypeScript/JavaScript.
-type Adapter struct{}
+type Adapter struct {
+	// wrappers are the declared queue and event wrappers (SetChannelWrappers).
+	wrappers []ir.ChannelWrapper
+}
 
 // New returns a TypeScript adapter.
 func New() *Adapter { return &Adapter{} }

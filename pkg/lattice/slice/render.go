@@ -22,7 +22,11 @@ func WriteText(w io.Writer, r Record) {
 
 	fmt.Fprintf(w, "\nenforcers (%d)\n", len(r.Enforcers))
 	for _, e := range r.Enforcers {
-		fmt.Fprintf(w, "  %s  [%s]  reach: %s\n", e.FQN, orDash(e.Layer), orDash(e.Reach))
+		fmt.Fprintf(w, "  %s  [%s]  reach: %s", e.FQN, orDash(e.Layer), orDash(e.Reach))
+		if e.AsyncHops > 0 {
+			fmt.Fprintf(w, " (async: %d channel(s) crossed)", e.AsyncHops)
+		}
+		fmt.Fprintln(w)
 	}
 
 	shown := len(r.Paths)
@@ -30,6 +34,9 @@ func WriteText(w io.Writer, r Record) {
 	for _, p := range r.Paths {
 		fmt.Fprintf(w, "  %s\n", PathLine(p))
 		fmt.Fprintf(w, "      root: %s; carried by %s; %s", rootLabel(p.Root), strings.Join(p.CarriedBy, " -> "), hopCount(len(p.Hops)))
+		if p.AsyncHops > 0 {
+			fmt.Fprintf(w, "; %d async hop(s), through a channel", p.AsyncHops)
+		}
 		if p.ExercisedHops != nil {
 			fmt.Fprintf(w, "; exercised %d of %d", *p.ExercisedHops, len(p.Hops))
 		}
