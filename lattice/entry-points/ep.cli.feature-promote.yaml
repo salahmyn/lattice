@@ -1,0 +1,16 @@
+id: ep.cli.feature-promote
+version: 1
+status: production
+kind: cli
+purpose: Show the evidence that a feature is in production, and let a human set its status
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: lattice feature promote
+handler:
+  symbol: internal.cli.newFeaturePromoteCommand
+  file: internal/cli/feature_promote.go
+flow:
+  - feature: cli
+  - feature: ledger
