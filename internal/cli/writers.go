@@ -59,7 +59,7 @@ public. --json prints lattice.writers/1. Read-only.`,
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
-			ix := graph.BuildWriterIndex(kg, mods, ws.SQL.APIRoles)
+			ix := graph.BuildWriterIndex(kg, mods, ws.SQL.APIRoles, ws.SQL.DefaultWrite)
 			table, column := ix.ResolveTable(args[0])
 			rep := ix.Report(table, column)
 			if io.JSON {
@@ -106,7 +106,11 @@ func writeWriters(io *IO, rep graph.WriterReport) {
 	}
 	io.printf("\n")
 	if len(rep.Incomplete) == 0 {
-		io.printf("writer set complete (from the migrations; platform default table privileges are not read)\n")
+		if rep.RolesChecked {
+			io.printf("writer set complete (from the migrations and sql.default_write)\n")
+		} else {
+			io.printf("writer set complete, but sql.api_roles is not declared, so roles that no statement names were not checked\n")
+		}
 		return
 	}
 	io.printf("writer set incomplete:\n")

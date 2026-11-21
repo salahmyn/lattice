@@ -77,6 +77,8 @@ var (
 	reSetSchemaTo = regexp.MustCompile(`(?is)^set\s+schema\s+(` + ident + `)`)
 	reInherit     = regexp.MustCompile(`(?is)^(?:no\s+)?inherit\b`)
 	reTableOpts   = regexp.MustCompile(`(?is)\b(?:inherits|partition\s+of)\b`)
+	reRLS         = regexp.MustCompile(`(?is)^(enable|disable|force|no\s+force)\s+row\s+level\s+security\b`)
+	reDynRLS      = regexp.MustCompile(`(?is)\b(?:(?:create|alter|drop)\s+policy\b(?:\s+if\s+exists)?\s+(?:` + ident + `)\s+on|alter\s+table\s+(?:only\s+)?(?:if\s+exists\s+)?)\s*` + qname)
 	reCtorKind    = regexp.MustCompile(`(?is)^(?:constraint|primary|unique|check|exclude|foreign|like)\b`)
 	reDynGrant    = regexp.MustCompile(`(?is)\b(?:grant|revoke)\s+(?:insert|update|delete|all)\b[^;]{0,300}?\bon\s+(?:all\s+tables\s+in\s+schema\b|(?:table\s+)?` + qname + `)`)
 
@@ -250,6 +252,14 @@ func alterTable(mod *ir.Module, st statement, mask string) {
 		a := strings.TrimSpace(item)
 		off := m[1] + sp[0] + len(item) - len(strings.TrimLeft(item, " \t\r\n"))
 		word, _ := firstWord(a)
+		if r := reRLS.FindStringSubmatch(a); r != nil {
+			op := map[string]string{"enable": "rlson", "disable": "rlsoff", "force": "rlsforce"}[strings.ToLower(r[1])]
+			if op == "" {
+				op = "rlsunforce"
+			}
+			tableEventOf(mod, st, tableEvent{op: op, table: table})
+			continue
+		}
 		switch word {
 		case "add":
 			after := strings.TrimSpace(a[3:])
@@ -463,6 +473,7 @@ type tableFold struct {
 	grants map[tgKey]*tgState
 	rules  []tgRule
 	gaps   []ir.WriterGap
+	rls    map[string]*ir.TableRLS
 }
 
 type tableCols struct {
@@ -471,7 +482,7 @@ type tableCols struct {
 }
 
 func newTableFold() *tableFold {
-	return &tableFold{tables: map[string]*tableCols{}, views: map[string]tableEvent{}, grants: map[tgKey]*tgState{}}
+	return &tableFold{tables: map[string]*tableCols{}, views: map[string]tableEvent{}, grants: map[tgKey]*tgState{}, rls: map[string]*ir.TableRLS{}}
 }
 
 func (f *tableFold) hasCol(t *tableCols, c string) bool {
@@ -525,6 +536,7 @@ func (f *tableFold) apply(ev tableEvent) {
 		}
 	case "drop":
 		delete(f.tables, ev.table)
+		delete(f.rls, ev.table)
 		for k := range f.grants {
 			if k.table == ev.table {
 				delete(f.grants, k)
@@ -534,6 +546,11 @@ func (f *tableFold) apply(ev tableEvent) {
 		if t := f.tables[ev.table]; t != nil {
 			delete(f.tables, ev.table)
 			f.tables[ev.to] = t
+		}
+		if r := f.rls[ev.table]; r != nil {
+			delete(f.rls, ev.table)
+			r.Table = ev.to
+			f.rls[ev.to] = r
 		}
 		for k, v := range f.grants {
 			if k.table == ev.table {
@@ -550,6 +567,22 @@ func (f *tableFold) apply(ev tableEvent) {
 	case "inherit":
 		if t := f.tables[ev.table]; t != nil {
 			t.unknown = ev.unknown
+		}
+	case "rlson", "rlsoff", "rlsforce", "rlsunforce":
+		r := f.rls[ev.table]
+		if r == nil {
+			r = &ir.TableRLS{Table: ev.table}
+			f.rls[ev.table] = r
+		}
+		switch ev.op {
+		case "rlson":
+			r.Enabled, r.File, r.Line = true, ev.file, ev.line
+		case "rlsoff":
+			r.Enabled, r.File, r.Line = false, ev.file, ev.line
+		case "rlsforce":
+			r.Forced = true
+		default:
+			r.Forced = false
 		}
 	case "view":
 		f.views[ev.table] = ev
@@ -806,6 +839,31 @@ func resolveWrites(mods []ir.Module, order []int, eff map[string][2]int, pending
 	if len(order) > 0 {
 		first := &mods[order[0]]
 		first.TableGrants = grants
+		var rls []ir.TableRLS
+		for _, r := range tf.rls {
+			rls = append(rls, *r)
+		}
+		sort.Slice(rls, func(i, j int) bool { return rls[i].Table < rls[j].Table })
+		first.RLS = rls
 		first.WriterGaps = uniq
+	}
+}
+
+// scanDynamicRLS finds a policy or row-level security statement inside a
+// statement that is not one (a DO block, a function body, an EXECUTE string):
+// the table it names literally has unknown role writers.
+func scanDynamicRLS(mod *ir.Module, st statement) {
+	if reAlterTable.MatchString(st.text) || rePolicy.MatchString(st.text) || reAlterPolicy.MatchString(st.text) || reDropPolicy.MatchString(st.text) {
+		return
+	}
+	tailRLS := regexp.MustCompile(`(?is)^[^;]{0,120}?\brow\s+level\s+security\b`)
+	for _, loc := range reDynRLS.FindAllStringSubmatchIndex(st.text, -1) {
+		table := tableOf(st.text[loc[2]:loc[3]], optGroup(st.text, loc, 2))
+		if strings.HasPrefix(strings.ToLower(st.text[loc[0]:loc[1]]), "alter") && !tailRLS.MatchString(st.text[loc[1]:]) {
+			continue
+		}
+		line := st.line + strings.Count(st.text[:loc[0]], "\n")
+		gapEvent(mod, ir.WriterGap{Table: table, File: mod.File, Line: line,
+			Reason: fmt.Sprintf("a policy or row-level security statement for %s inside the statement at %s:%d is not a plain statement the adapter reads, so which roles can write it is unknown", table, mod.File, line)}, "", 0)
 	}
 }

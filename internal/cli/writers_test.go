@@ -267,7 +267,7 @@ create policy jobs_update_capped on public.jobs for update to authenticated usin
 // policy FOR UPDATE guards it.
 // @verifies graph:INV-7
 func TestRoleWriterFromGrant(t *testing.T) {
-	roles := "sql:\n  api_roles: [anon, authenticated]\n"
+	roles := "sql:\n  api_roles: [anon, authenticated]\n  default_write: []\n"
 	fix := map[string]string{"supabase/migrations/20260201000000_fix.sql": "-- @enforces queue.jobs:INV-1\n" + writersFix}
 	with := func(extra map[string]string) map[string]string {
 		out := map[string]string{"supabase/migrations/20260301000000_grant.sql": writersGrant}
@@ -378,5 +378,108 @@ begin execute format('update %I set updated_at = now()', t); end $$;
 	out, err = run(t, repo, newWritersCommand, "public.jobs")
 	if err != nil || !strings.Contains(out, `"complete": false`) || !strings.Contains(out, "builds its statement") && !strings.Contains(out, "names no table literally") {
 		t.Errorf("incomplete: %v\n%s", err, out)
+	}
+}
+
+// roleFiles is the example with claim_jobs an enforcer and the migrations in
+// extra, applied after it in the order of their names.
+func roleFiles(extra map[string]string) map[string]string {
+	out := map[string]string{"supabase/migrations/20260201000000_fix.sql": "-- @enforces queue.jobs:INV-1\n" + writersFix}
+	for k, v := range extra {
+		out["supabase/migrations/"+k] = v
+	}
+	return out
+}
+
+func roleSubjects(got []schema.Violation) string {
+	var out []string
+	for _, f := range got {
+		out = append(out, f.Code+" "+f.Subject)
+	}
+	return strings.Join(out, ", ")
+}
+
+const (
+	apiDeclared = "sql:\n  api_roles: [anon, authenticated]\n"
+	rlsOn       = "alter table public.jobs enable row level security;\n"
+	updPolicy   = "create policy jobs_update on public.jobs for update to authenticated using (true);\n"
+)
+
+// Row-level security decides role writes: a role that holds the privilege
+// still needs a permissive policy for the command that reaches it.
+// @verifies graph:INV-7
+func TestRoleWriterRowLevelSecurity(t *testing.T) {
+	roles := apiDeclared + "  default_write: []\n"
+	run := func(extra map[string]string) string {
+		got, _ := validateWriters(t, writersRepo(t, roles, "", roleFiles(extra)))
+		return roleSubjects(got)
+	}
+	grant := map[string]string{"20260301000000_grant.sql": writersGrant}
+
+	if got := run(grant); got != "UNGUARDED_WRITER sql.role.authenticated" {
+		t.Errorf("privilege alone: %q", got)
+	}
+	if got := run(map[string]string{"20260301000000_grant.sql": writersGrant + rlsOn}); got != "" {
+		t.Errorf("RLS enabled with no policy: %q, want no role writer", got)
+	}
+	if got := run(map[string]string{"20260301000000_grant.sql": writersGrant + rlsOn + updPolicy}); got != "UNGUARDED_WRITER sql.role.authenticated" {
+		t.Errorf("RLS with an untagged update policy: %q", got)
+	}
+	tagged := "-- @enforces queue.jobs:INV-1\n" + updPolicy
+	if got := run(map[string]string{"20260301000000_grant.sql": writersGrant + rlsOn + tagged}); got != "" {
+		t.Errorf("the same policy tagged: %q, want none", got)
+	}
+	// A policy for another command, or only a restrictive one, allows no update.
+	insertPolicy := "create policy jobs_insert on public.jobs for insert to authenticated with check (true);\n" +
+		"create policy jobs_cap on public.jobs as restrictive for update to authenticated using (true);\n"
+	if got := run(map[string]string{"20260301000000_grant.sql": writersGrant + rlsOn + insertPolicy}); got != "" {
+		t.Errorf("insert and restrictive policies: %q, want no role writer", got)
+	}
+	// A policy for another role allows nothing for this one; PUBLIC allows all.
+	other := "create policy jobs_update on public.jobs for update to anon using (true);\n"
+	if got := run(map[string]string{"20260301000000_grant.sql": writersGrant + rlsOn + other}); got != "" {
+		t.Errorf("a policy for another role: %q", got)
+	}
+	pub := "create policy jobs_update on public.jobs for all using (true);\n"
+	if got := run(map[string]string{"20260301000000_grant.sql": writersGrant + rlsOn + pub}); got != "UNGUARDED_WRITER sql.role.authenticated" {
+		t.Errorf("a policy to PUBLIC: %q", got)
+	}
+	// A later DISABLE re-opens the table to the privilege alone.
+	files := map[string]string{"20260301000000_grant.sql": writersGrant + rlsOn, "20260401000000_off.sql": "alter table public.jobs disable row level security;\n"}
+	if got := run(files); got != "UNGUARDED_WRITER sql.role.authenticated" {
+		t.Errorf("RLS disabled later: %q", got)
+	}
+	// A policy created in dynamic SQL leaves the table's role writers unknown.
+	dyn := "create function public.mk() returns void language plpgsql as $$ begin execute 'create policy p on public.jobs for update using (true)'; end $$;\n"
+	if got := run(map[string]string{"20260301000000_grant.sql": writersGrant + rlsOn, "20260401000000_dyn.sql": dyn}); !strings.Contains(got, "WRITERS_UNKNOWN") {
+		t.Errorf("a dynamic policy: %q, want WRITERS_UNKNOWN", got)
+	}
+}
+
+// sql.default_write decides an API role no statement names: unset is unknown,
+// [] is none, and a listed role is a writer that RLS can still block.
+// @verifies graph:INV-7
+func TestDefaultWrite(t *testing.T) {
+	files := roleFiles(nil)
+	got, _ := validateWriters(t, writersRepo(t, apiDeclared, "", files))
+	if len(got) != 1 || got[0].Code != schema.CodeWritersUnknown || got[0].Subject != "queue.jobs:INV-1" ||
+		!strings.Contains(got[0].Message, "no statement names authenticated on public.jobs, and sql.default_write is not declared") {
+		t.Fatalf("default_write unset: %+v", got)
+	}
+	if got, _ := validateWriters(t, writersRepo(t, apiDeclared+"  default_write: []\n", "", files)); len(got) != 0 {
+		t.Errorf("default_write: []: %+v, want no role writer", got)
+	}
+	got, _ = validateWriters(t, writersRepo(t, apiDeclared+"  default_write: [authenticated]\n", "", files))
+	if len(got) != 1 || got[0].Subject != "sql.role.authenticated" || !strings.Contains(got[0].Message, "granted by the platform default (sql.default_write)") {
+		t.Errorf("default_write listing the role: %+v", got)
+	}
+	blocked := roleFiles(map[string]string{"20260301000000_rls.sql": rlsOn})
+	if got, _ := validateWriters(t, writersRepo(t, apiDeclared+"  default_write: [authenticated]\n", "", blocked)); len(got) != 0 {
+		t.Errorf("RLS with no policy blocks the default: %+v", got)
+	}
+	// The writers command never calls an unknown set complete.
+	out, err := run(t, writersRepo(t, apiDeclared, "", files), newWritersCommand, "public.jobs")
+	if err != nil || !strings.Contains(out, `"complete": false`) || !strings.Contains(out, "sql.default_write is not declared") {
+		t.Errorf("writers: %v\n%s", err, out)
 	}
 }

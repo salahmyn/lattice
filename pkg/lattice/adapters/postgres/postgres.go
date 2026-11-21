@@ -315,6 +315,7 @@ func parseDefinitions(mod *ir.Module, stmts []statement, o refOpts) {
 			sym.Execute = headerExecute(mod.File, st, strings.ToLower(m[1]))
 			scanDynamicPriv(mod, st)
 			scanDynamicTableGrant(mod, st)
+			scanDynamicRLS(mod, st)
 		case rePolicy.MatchString(st.text):
 			m := rePolicy.FindStringSubmatch(st.text)
 			s, t := qualify(m[2], m[3])
@@ -368,6 +369,7 @@ func parseDefinitions(mod *ir.Module, stmts []statement, o refOpts) {
 			if !readTableGrants(mod, st) {
 				scanDynamicTableGrant(mod, st)
 			}
+			scanDynamicRLS(mod, st)
 			if mod.ChangeHistory {
 				readMigrationWrites(mod, st)
 			}

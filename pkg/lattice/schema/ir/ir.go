@@ -128,6 +128,22 @@ type Guard struct {
 	Columns []string `json:"columns,omitempty"`
 	// Function is the FQN of the function a trigger executes.
 	Function string `json:"function,omitempty"`
+	// Roles, for a policy, are the roles its TO clause names (ExecPublic for
+	// PUBLIC); empty means PUBLIC.
+	Roles []string `json:"roles,omitempty"`
+	// Restrictive marks a policy AS RESTRICTIVE: it narrows what permissive
+	// policies allow and never allows a command on its own.
+	Restrictive bool `json:"restrictive,omitempty"`
+}
+
+// TableRLS is whether row-level security is enabled on a table, as the
+// migrations leave it, and the statement that decided it.
+type TableRLS struct {
+	Table   string `json:"table"`
+	Enabled bool   `json:"enabled"`
+	Forced  bool   `json:"forced,omitempty"`
+	File    string `json:"file,omitempty"`
+	Line    int    `json:"line,omitempty"`
 }
 
 // TableGrant is the state of one table privilege of one role, with the
@@ -422,6 +438,7 @@ type Module struct {
 	// TableGrants and WriterGaps are, like Memberships, folded across the
 	// whole change history and written on one module.
 	TableGrants []TableGrant `json:"table_grants,omitempty"`
+	RLS         []TableRLS   `json:"rls,omitempty"`
 	WriterGaps  []WriterGap  `json:"writer_gaps,omitempty"`
 
 	// The fields below feed the call graph (docs/rnd/0009). An adapter

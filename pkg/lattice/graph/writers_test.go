@@ -9,6 +9,9 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 )
 
+// noDefault is sql.default_write: [], the platform grants no role a table privilege.
+var noDefault = &[]string{}
+
 const wRef = "queue.jobs:INV-1"
 
 func upd(table string, line int, cols ...string) ir.TableWrite {
@@ -55,7 +58,7 @@ func TestUnguardedWriterSharedColumns(t *testing.T) {
 		fn("sql.public.claim", 10, upd("public.jobs", 12, "attempts", "status", "updated_at")),
 		fn("sql.public.touch", 20, upd("public.jobs", 22, "note")),
 	}}}
-	v := CheckWriters(enforcing("sql.public.fail_job"), mods, nil)
+	v := CheckWriters(enforcing("sql.public.fail_job"), mods, nil, noDefault)
 	if len(v) != 1 || v[0].Code != schema.CodeUnguardedWriter || v[0].Subject != "sql.public.claim" || v[0].Severity != schema.SeverityInfo {
 		t.Fatalf("findings = %v", codesOf(v))
 	}
@@ -72,7 +75,7 @@ func TestUnguardedWriterSharedColumns(t *testing.T) {
 	}
 	// Once claim is an enforcer too, it writes the columns the invariant is
 	// about and is guarded.
-	if v := CheckWriters(enforcing("sql.public.fail_job", "sql.public.claim"), mods, nil); len(v) != 0 {
+	if v := CheckWriters(enforcing("sql.public.fail_job", "sql.public.claim"), mods, nil, noDefault); len(v) != 0 {
 		t.Errorf("an enforcer is never an unguarded writer: %v", codesOf(v))
 	}
 }
@@ -91,7 +94,7 @@ func TestWriterGuardedByTriggerOrPolicy(t *testing.T) {
 		return mods, enforcing("sql.public.fail_job", g.FQN)
 	}
 	got := func(mods []ir.Module, kg schema.KnowledgeGraph) string {
-		return strings.Join(codesOf(CheckWriters(kg, mods, []string{"authenticated"})), ", ")
+		return strings.Join(codesOf(CheckWriters(kg, mods, []string{"authenticated"}, noDefault)), ", ")
 	}
 
 	mods, kg := base(guardSym("sql.trigger.public.jobs.t", ir.GuardTrigger, "public.jobs", []string{"update"}))
@@ -133,7 +136,7 @@ func TestRoleWriterFromTableGrant(t *testing.T) {
 		return []ir.Module{{File: "m.sql", TableGrants: grants, Symbols: syms}}, kg
 	}
 	mods, kg := build(nil)
-	v := CheckWriters(kg, mods, []string{"anon", "authenticated"})
+	v := CheckWriters(kg, mods, []string{"anon", "authenticated"}, noDefault)
 	if len(v) != 1 || v[0].Subject != "sql.role.authenticated" {
 		t.Fatalf("findings = %v", codesOf(v))
 	}
@@ -142,24 +145,24 @@ func TestRoleWriterFromTableGrant(t *testing.T) {
 	}
 	p := guardSym("sql.policy.public.jobs.p", ir.GuardPolicy, "public.jobs", []string{"update"})
 	mods, kg = build(&p)
-	if v := CheckWriters(kg, mods, []string{"authenticated"}); len(v) != 0 {
+	if v := CheckWriters(kg, mods, []string{"authenticated"}, noDefault); len(v) != 0 {
 		t.Errorf("a FOR UPDATE policy that enforces the invariant guards the role: %v", codesOf(v))
 	}
 	p = guardSym("sql.policy.public.jobs.p", ir.GuardPolicy, "public.jobs", []string{"insert"})
 	mods, kg = build(&p)
-	if v := CheckWriters(kg, mods, []string{"authenticated"}); len(v) != 1 {
+	if v := CheckWriters(kg, mods, []string{"authenticated"}, noDefault); len(v) != 1 {
 		t.Errorf("a FOR INSERT policy does not guard an update: %v", codesOf(v))
 	}
 	// A grant of another column writes nothing the invariant is about.
 	grants = []ir.TableGrant{grantOf("authenticated", "update", ir.ExecGranted, 30, "note")}
 	mods, kg = build(nil)
-	if v := CheckWriters(kg, mods, nil); len(v) != 0 {
+	if v := CheckWriters(kg, mods, nil, noDefault); len(v) != 0 {
 		t.Errorf("UPDATE (note) is not a writer of status: %v", codesOf(v))
 	}
 	// A whole-table grant writes every column.
 	grants = []ir.TableGrant{grantOf("authenticated", "update", ir.ExecGranted, 30)}
 	mods, kg = build(nil)
-	if v := CheckWriters(kg, mods, nil); len(v) != 1 || !strings.Contains(v[0].Message, "status") {
+	if v := CheckWriters(kg, mods, nil, noDefault); len(v) != 1 || !strings.Contains(v[0].Message, "status") {
 		t.Errorf("a whole-table UPDATE grant writes status: %v", codesOf(v))
 	}
 }
@@ -175,7 +178,7 @@ func TestRoleWriterResolution(t *testing.T) {
 	kg := enforcing("sql.public.fail_job")
 	roles := func(m []ir.Module) string {
 		var out []string
-		for _, f := range CheckWriters(kg, m, []string{"authenticated"}) {
+		for _, f := range CheckWriters(kg, m, []string{"authenticated"}, noDefault) {
 			out = append(out, f.Subject)
 		}
 		return strings.Join(out, ",")
@@ -206,7 +209,7 @@ func TestWritersUnknown(t *testing.T) {
 			fn("sql.public.fail_job", 5, upd("public.jobs", 7, "status"))}}}
 	}
 	kg := enforcing("sql.public.fail_job")
-	run := func(gaps ...ir.WriterGap) []schema.Violation { return CheckWriters(kg, build(gaps...), nil) }
+	run := func(gaps ...ir.WriterGap) []schema.Violation { return CheckWriters(kg, build(gaps...), nil, noDefault) }
 
 	v := run(ir.WriterGap{Table: ir.WriteAll, Reason: "an EXECUTE at m.sql:9 builds its statement at run time", File: "m.sql", Line: 9})
 	if len(v) != 1 || v[0].Code != schema.CodeWritersUnknown || v[0].Subject != wRef || v[0].Severity != schema.SeverityInfo ||
@@ -226,7 +229,7 @@ func TestWritersUnknown(t *testing.T) {
 	m := build()
 	m[0].TableGrants = []ir.TableGrant{grantOf("app_writer", "update", ir.ExecGranted, 3)}
 	m[0].Memberships = []ir.Membership{{Member: "authenticated", Role: "app_writer", State: ir.ExecUnknown, File: "m.sql", Line: 4, Reason: "WITH INHERIT FALSE"}}
-	got := CheckWriters(kg, m, []string{"authenticated"})
+	got := CheckWriters(kg, m, []string{"authenticated"}, noDefault)
 	found := false
 	for _, f := range got {
 		found = found || f.Code == schema.CodeWritersUnknown && strings.Contains(f.Message, "whether authenticated can update public.jobs")
@@ -246,7 +249,7 @@ func TestWriterReport(t *testing.T) {
 			fn("sql.public.fail_job", 5, upd("public.jobs", 7, "status")),
 			fn("sql.public.claim", 10, upd("public.jobs", 12, "attempts")),
 		}}}
-	ix := BuildWriterIndex(enforcing("sql.public.fail_job"), mods, nil)
+	ix := BuildWriterIndex(enforcing("sql.public.fail_job"), mods, nil, noDefault)
 	if table, col := ix.ResolveTable("jobs.status"); table != "public.jobs" || col != "status" {
 		t.Errorf("ResolveTable = %q %q", table, col)
 	}

@@ -12,7 +12,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 )
 
-// sqlRole is a role entry of sql.api_roles or sql.default_execute: a
+// sqlRole is a role entry of sql.api_roles, sql.default_execute or sql.default_write: a
 // lower-case SQL identifier.
 var sqlRole = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
 
@@ -20,7 +20,7 @@ var sqlRole = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
 // is not a lower-case SQL identifier as a VALIDATE_POLICY error. A role that
 // is not one can never match a statement's role, so it would silently hide
 // an exposure.
-func CheckSQLConfig(apiRoles []string, defaultExecute *[]string) []schema.Violation {
+func CheckSQLConfig(apiRoles []string, defaultExecute, defaultWrite *[]string) []schema.Violation {
 	var out []schema.Violation
 	check := func(key string, roles []string) {
 		for i, r := range roles {
@@ -40,6 +40,9 @@ func CheckSQLConfig(apiRoles []string, defaultExecute *[]string) []schema.Violat
 	check("api_roles", apiRoles)
 	if defaultExecute != nil {
 		check("default_execute", *defaultExecute)
+	}
+	if defaultWrite != nil {
+		check("default_write", *defaultWrite)
 	}
 	return out
 }

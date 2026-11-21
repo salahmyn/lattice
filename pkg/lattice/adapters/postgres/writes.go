@@ -827,10 +827,12 @@ func readMigrationWrites(mod *ir.Module, st statement) {
 }
 
 var (
-	rePolicyFor  = regexp.MustCompile(`(?is)\bfor\s+(all|select|insert|update|delete)\b`)
-	reTrigEvents = regexp.MustCompile(`(?is)^create\s+(?:or\s+replace\s+)?(?:constraint\s+)?trigger\s+(?:` + ident + `)\s+(?:before|after|instead\s+of)\s+(.*?)\s+on\s+` + qname)
-	reTrigExec   = regexp.MustCompile(`(?is)\bexecute\s+(?:function|procedure)\s+` + qname)
-	reRule       = regexp.MustCompile(`(?is)^create\s+(?:or\s+replace\s+)?rule\s+(?:` + ident + `)\s+as\s+on\s+(?:insert|update|delete|select)\s+to\s+` + qname)
+	rePolicyRestrictive = regexp.MustCompile(`(?is)\bas\s+restrictive\b`)
+	rePolicyTo          = regexp.MustCompile(`(?is)\bto\s+(.+?)(?:\s+using\b|\s+with\s+check\b|\s*$)`)
+	rePolicyFor         = regexp.MustCompile(`(?is)\bfor\s+(all|select|insert|update|delete)\b`)
+	reTrigEvents        = regexp.MustCompile(`(?is)^create\s+(?:or\s+replace\s+)?(?:constraint\s+)?trigger\s+(?:` + ident + `)\s+(?:before|after|instead\s+of)\s+(.*?)\s+on\s+` + qname)
+	reTrigExec          = regexp.MustCompile(`(?is)\bexecute\s+(?:function|procedure)\s+` + qname)
+	reRule              = regexp.MustCompile(`(?is)^create\s+(?:or\s+replace\s+)?rule\s+(?:` + ident + `)\s+as\s+on\s+(?:insert|update|delete|select)\s+to\s+` + qname)
 )
 
 // policyGuard reads the commands a policy applies to.
@@ -844,6 +846,11 @@ func policyGuard(text, schemaName, table string) *ir.Guard {
 		g.Commands = []string{ir.WriteInsert, ir.WriteUpdate, ir.WriteDelete}
 	} else {
 		g.Commands = []string{cmd}
+	}
+	blanked := blankNested(text)
+	g.Restrictive = rePolicyRestrictive.MatchString(blanked)
+	if m := rePolicyTo.FindStringSubmatch(blanked); m != nil {
+		g.Roles, _ = readRoles(&tokens{t: privTokens(m[1])})
 	}
 	return g
 }

@@ -104,7 +104,15 @@ func TestParseMigration(t *testing.T) {
 	if len(mod.Symbols[3].Annotations) != 0 {
 		t.Error("a comment separated by a blank line does not attach")
 	}
-	if len(mod.ModuleAnnotations) != 1 || mod.ModuleAnnotations[0].Kind != "module_feature" {
+	// The sql_* annotations are events Resolve consumes (here the ALTER TABLE
+	// of row-level security); the tags are what is left.
+	var tagsOnly []ir.Annotation
+	for _, a := range mod.ModuleAnnotations {
+		if !strings.HasPrefix(a.Kind, "sql_") {
+			tagsOnly = append(tagsOnly, a)
+		}
+	}
+	if len(tagsOnly) != 1 || tagsOnly[0].Kind != "module_feature" {
 		t.Errorf("module annotations = %+v", mod.ModuleAnnotations)
 	}
 	if len(mod.Diagnostics) != 1 || mod.Diagnostics[0].Code != schema.CodeAnnotationOrphaned {

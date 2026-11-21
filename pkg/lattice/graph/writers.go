@@ -69,6 +69,9 @@ type WriterReport struct {
 	Writers []WriterEntry `json:"writers"`
 	// Incomplete says why the writer set is not complete; empty when it is.
 	Incomplete []ir.WriterGap `json:"incomplete,omitempty"`
+	// RolesChecked is true when sql.api_roles is declared, so roles that no
+	// statement names were resolved too.
+	RolesChecked bool `json:"roles_checked"`
 }
 
 // writeGuard is a trigger or policy that enforces an invariant.
@@ -96,6 +99,14 @@ type WriterIndex struct {
 	gaps    []ir.WriterGap
 	invs    map[string]*invWrites
 	tables  map[string]bool
+
+	apiRoles     []string
+	defaultWrite *[]string
+	mem          []ir.Membership
+	grants       map[string][]ir.TableGrant
+	rls          map[string]ir.TableRLS
+	policies     map[string][]policyFact
+	rolesDone    map[string]bool
 }
 
 const wildcard = ir.WriteAll
@@ -141,29 +152,53 @@ func setList(m map[string]bool) []string {
 	return out
 }
 
+// policyFact is a policy as the row-level security check reads it.
+type policyFact struct {
+	fqn         string
+	commands    []string
+	roles       []string
+	restrictive bool
+	altered     bool // an ALTER POLICY changed its roles: any role may be allowed
+}
+
 // BuildWriterIndex builds the index from the adapter's facts. apiRoles are the
 // roles a client reaches the database as (workspace sql.api_roles); a role a
 // table privilege names is a writer whether or not it is listed.
 //
-// A role no statement names holds what the platform grants new tables. That is
-// not read: sql.default_execute is the platform's default for functions, not
-// for tables, so a table's writers through a platform default privilege are not
-// in the index (see the user guide).
+// A role's write privilege on a table is decided, in order, by the statement
+// that names it, by what PUBLIC holds (nothing on a table, by default), and by
+// the platform default, defaultWrite (sql.default_write): listed is granted,
+// declared without the role is revoked, unset is unknown, which leaves the
+// table's writers incomplete. With row-level security enabled on the table, a
+// role that holds the privilege still needs a permissive policy for the
+// command whose TO list reaches it.
 // @enforces graph:INV-7
-func BuildWriterIndex(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string) *WriterIndex {
-	ix := &WriterIndex{invs: map[string]*invWrites{}, tables: map[string]bool{}}
+func BuildWriterIndex(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string, defaultWrite *[]string) *WriterIndex {
+	ix := &WriterIndex{invs: map[string]*invWrites{}, tables: map[string]bool{}, apiRoles: apiRoles, defaultWrite: defaultWrite,
+		grants: map[string][]ir.TableGrant{}, rls: map[string]ir.TableRLS{}, policies: map[string][]policyFact{}, rolesDone: map[string]bool{}}
 	syms := map[string]ir.Symbol{}
-	var mem []ir.Membership
-	var grants []ir.TableGrant
 	for _, m := range mods {
-		mem = append(mem, m.Memberships...)
-		grants = append(grants, m.TableGrants...)
+		ix.mem = append(ix.mem, m.Memberships...)
+		for _, g := range m.TableGrants {
+			ix.grants[g.Table] = append(ix.grants[g.Table], g)
+		}
+		for _, r := range m.RLS {
+			ix.rls[r.Table] = r
+		}
 		ix.gaps = append(ix.gaps, m.WriterGaps...)
 		for _, s := range m.Symbols {
 			if s.IsTest {
 				continue
 			}
 			syms[s.FQN] = s
+			if g := s.Guard; g != nil && g.Kind == ir.GuardPolicy {
+				altered := false
+				for _, al := range s.Altered {
+					altered = altered || contains(al.Sets, "to")
+				}
+				ix.policies[g.Table] = append(ix.policies[g.Table], policyFact{fqn: s.FQN, commands: g.Commands,
+					roles: g.Roles, restrictive: g.Restrictive, altered: altered})
+			}
 			for _, w := range s.Writes {
 				definer := s.Execute != nil && s.Execute.SecurityDefiner
 				ix.writers = append(ix.writers, Writer{Kind: WriterFunction, Name: s.FQN, Table: w.Table, Op: w.Op,
@@ -175,7 +210,6 @@ func BuildWriterIndex(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []str
 				Columns: w.Columns, File: m.File, Line: w.Line})
 		}
 	}
-	ix.roleWriters(grants, apiRoles, mem)
 
 	for _, s := range kg.Symbols {
 		sym, ok := syms[s.FQN]
@@ -216,11 +250,22 @@ func BuildWriterIndex(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []str
 	for _, w := range ix.writers {
 		ix.tables[w.Table] = true
 	}
+	for t := range ix.grants {
+		ix.tables[t] = true
+	}
 	for _, iw := range ix.invs {
 		for t := range iw.columns {
 			ix.tables[t] = true
 		}
 	}
+	for _, t := range setList(ix.tables) {
+		ix.roleWritersFor(t)
+	}
+	ix.sortWriters()
+	return ix
+}
+
+func (ix *WriterIndex) sortWriters() {
 	sort.SliceStable(ix.writers, func(i, j int) bool {
 		a, b := ix.writers[i], ix.writers[j]
 		if a.Table != b.Table {
@@ -237,43 +282,48 @@ func BuildWriterIndex(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []str
 		}
 		return a.Op < b.Op
 	})
-	return ix
 }
 
-// roleWriters adds a writer for each role that holds INSERT, UPDATE or DELETE
-// on a table, resolved as EXECUTE is: a role holds what it was granted or what
-// PUBLIC holds, and what any role it is a member of holds, and a state the
-// statements do not settle is an unknown that leaves the table's writer set
-// incomplete.
-func (ix *WriterIndex) roleWriters(grants []ir.TableGrant, apiRoles []string, mem []ir.Membership) {
-	type tkey struct{ table, op string }
-	by := map[tkey][]ir.TableGrant{}
-	for _, g := range grants {
-		k := tkey{g.Table, g.Op}
-		by[k] = append(by[k], g)
+var writeOps = []string{ir.WriteInsert, ir.WriteUpdate, ir.WriteDelete}
+
+// roleWritersFor adds a writer for each role that can INSERT, UPDATE or DELETE
+// on the table, resolved as EXECUTE is: the statement that names the role, then
+// PUBLIC (nothing on a table by default), then sql.default_write, and what any
+// role it is a member of holds. A state nothing settles is an unknown that
+// leaves the table's writer set incomplete, never an absent writer.
+func (ix *WriterIndex) roleWritersFor(table string) {
+	if ix.rolesDone[table] {
+		return
 	}
-	keys := make([]tkey, 0, len(by))
-	for k := range by {
-		keys = append(keys, k)
+	ix.rolesDone[table] = true
+	if len(ix.grants[table]) == 0 && len(ix.apiRoles) == 0 {
+		return
 	}
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].table != keys[j].table {
-			return keys[i].table < keys[j].table
+	reasons := map[string]bool{}
+	gap := func(file string, line int, reason string) {
+		if !reasons[reason] {
+			reasons[reason] = true
+			ix.gaps = append(ix.gaps, ir.WriterGap{Table: table, File: file, Line: line, Reason: reason})
 		}
-		return keys[i].op < keys[j].op
-	})
-	none := []string{} // the platform default for tables is not read: no role holds one
-	for _, k := range keys {
-		gs := by[k]
+	}
+	for _, op := range writeOps {
+		var gs []ir.TableGrant
+		for _, g := range ix.grants[table] {
+			if g.Op == op {
+				gs = append(gs, g)
+			}
+		}
 		roleSet := map[string]bool{ir.ExecPublic: true}
 		cols := map[string]bool{"": true}
+		named := map[string]bool{}
 		for _, g := range gs {
 			roleSet[g.Role] = true
+			named[g.Role] = true
 			for _, c := range g.Columns {
 				cols[c] = true
 			}
 		}
-		for _, r := range apiRoles {
+		for _, r := range ix.apiRoles {
 			roleSet[r] = true
 		}
 		type got struct {
@@ -282,9 +332,9 @@ func (ix *WriterIndex) roleWriters(grants []ir.TableGrant, apiRoles []string, me
 		}
 		granted := map[string]*got{}
 		for _, col := range setList(cols) {
-			sym := ir.Symbol{FQN: k.table, Execute: &ir.Execute{Roles: tableRoles(gs, col)}}
+			sym := ir.Symbol{FQN: table, File: "workspace.yaml", Execute: &ir.Execute{Roles: tableRoles(gs, col)}}
 			for _, role := range setList(roleSet) {
-				p := ExecutableBy(sym, role, &none, mem)
+				p := ExecutableBy(sym, role, ix.defaultWrite, ix.mem)
 				switch p.State {
 				case ir.ExecGranted:
 					g := granted[role]
@@ -297,8 +347,11 @@ func (ix *WriterIndex) roleWriters(grants []ir.TableGrant, apiRoles []string, me
 						g.p = p
 					}
 				case ir.ExecUnknown:
-					ix.gaps = append(ix.gaps, ir.WriterGap{Table: k.table, File: p.File, Line: p.Line,
-						Reason: fmt.Sprintf("whether %s can %s %s is not known from the migrations: %s", roleName(role), k.op, k.table, p.Reason)})
+					if strings.Contains(p.Reason, "sql.default_execute is not declared") {
+						gap("workspace.yaml", 0, fmt.Sprintf("no statement names %s on %s, and sql.default_write is not declared", roleName(role), table))
+						continue
+					}
+					gap(p.File, p.Line, fmt.Sprintf("whether %s can %s %s is not known from the migrations: %s", roleName(role), op, table, p.Reason))
 				}
 			}
 		}
@@ -309,14 +362,62 @@ func (ix *WriterIndex) roleWriters(grants []ir.TableGrant, apiRoles []string, me
 		sort.Strings(grantedRoles)
 		for _, role := range grantedRoles {
 			g := granted[role]
+			if !ix.rlsAllows(table, op, role, gap) {
+				continue
+			}
 			columns := []string{wildcard}
 			if !g.cols[""] {
 				columns = setList(g.cols)
 			}
-			ix.writers = append(ix.writers, Writer{Kind: WriterRole, Name: role, Table: k.table, Op: k.op,
-				Columns: columns, File: g.p.File, Line: g.p.Line, Via: g.p.Via})
+			via := g.p.Via
+			if g.p.Default {
+				via = "platform default (sql.default_write)"
+			}
+			ix.writers = append(ix.writers, Writer{Kind: WriterRole, Name: role, Table: table, Op: op,
+				Columns: columns, File: g.p.File, Line: g.p.Line, Via: via})
 		}
 	}
+}
+
+// rlsAllows says whether row-level security lets the role run the command on
+// the table. Without RLS enabled it does. With it enabled, the role needs a
+// permissive policy for the command (or ALL) whose TO list is PUBLIC, the role,
+// or a role it is a member of; any policy allows, even USING (false). A
+// restrictive policy never allows on its own. When membership leaves it
+// unknown the role is kept as a writer and the table gets a gap.
+func (ix *WriterIndex) rlsAllows(table, op, role string, gap func(string, int, string)) bool {
+	r, ok := ix.rls[table]
+	if !ok || !r.Enabled {
+		return true
+	}
+	unknown := ""
+	for _, p := range ix.policies[table] {
+		if p.restrictive || !contains(p.commands, op) {
+			continue
+		}
+		if p.altered || len(p.roles) == 0 {
+			return true
+		}
+		var rs []ir.ExecuteGrant
+		for _, to := range p.roles {
+			rs = append(rs, ir.ExecuteGrant{Role: to, State: ir.ExecGranted, File: "policy", Line: 1})
+		}
+		if !contains(p.roles, ir.ExecPublic) {
+			rs = append(rs, ir.ExecuteGrant{Role: ir.ExecPublic, State: ir.ExecRevoked, Default: true})
+		}
+		pr := ExecutableBy(ir.Symbol{FQN: p.fqn, Execute: &ir.Execute{Roles: rs}}, role, &[]string{}, ix.mem)
+		switch pr.State {
+		case ir.ExecGranted:
+			return true
+		case ir.ExecUnknown:
+			unknown = pr.Reason
+		}
+	}
+	if unknown != "" {
+		gap(r.File, r.Line, fmt.Sprintf("whether a policy on %s allows %s to %s is not known: %s", table, roleName(role), op, unknown))
+		return true
+	}
+	return false
 }
 
 func roleName(r string) string {
@@ -436,8 +537,8 @@ func (ix *WriterIndex) refs() []string {
 //
 // Both are info and stay on: a code that were off would hide an unknown.
 // @enforces graph:INV-7
-func CheckWriters(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string) []schema.Violation {
-	return BuildWriterIndex(kg, mods, apiRoles).Findings()
+func CheckWriters(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string, defaultWrite *[]string) []schema.Violation {
+	return BuildWriterIndex(kg, mods, apiRoles, defaultWrite).Findings()
 }
 
 // Findings are the UNGUARDED_WRITER and WRITERS_UNKNOWN findings.
@@ -475,9 +576,13 @@ func (ix *WriterIndex) Findings() []schema.Violation {
 			for _, c := range shared {
 				at := fmt.Sprintf("%s:%d", w.File, w.Line)
 				if w.Kind == WriterRole {
-					at = "granted at " + at
-					if w.Via != "" {
-						at += " " + w.Via
+					if w.Line == 0 {
+						at = "granted by the " + w.Via
+					} else {
+						at = "granted at " + at
+						if w.Via != "" {
+							at += " " + w.Via
+						}
 					}
 				}
 				if !contains(g.lines[label][c], at) {
@@ -599,7 +704,11 @@ func (ix *WriterIndex) ResolveTable(arg string) (table, column string) {
 // Report lists the writers of a table, or of one of its columns, with what
 // guards each for the invariants whose columns it writes.
 func (ix *WriterIndex) Report(table, column string) WriterReport {
-	rep := WriterReport{Table: table, Column: column, Writers: []WriterEntry{}}
+	if !ix.rolesDone[table] {
+		ix.roleWritersFor(table)
+		ix.sortWriters()
+	}
+	rep := WriterReport{Table: table, Column: column, Writers: []WriterEntry{}, RolesChecked: len(ix.apiRoles) > 0}
 	for _, w := range ix.writers {
 		if w.Table != table {
 			continue
@@ -627,7 +736,13 @@ func (ix *WriterIndex) Report(table, column string) WriterReport {
 	if column != "" {
 		cols = []string{column}
 	}
-	rep.Incomplete = gapsFor(ix.gaps, table, cols)
+	seen := map[string]bool{}
+	for _, g := range gapsFor(ix.gaps, table, cols) {
+		if !seen[g.Reason] {
+			seen[g.Reason] = true
+			rep.Incomplete = append(rep.Incomplete, g)
+		}
+	}
 	sort.SliceStable(rep.Incomplete, func(i, j int) bool { return rep.Incomplete[i].Reason < rep.Incomplete[j].Reason })
 	return rep
 }

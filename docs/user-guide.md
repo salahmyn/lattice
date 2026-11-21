@@ -3529,11 +3529,15 @@ sql:
   # Roles the platform grants EXECUTE on every new function directly, beside PUBLIC.
   # Unset means unknown; [] means none.
   default_execute: [anon, authenticated, service_role]
+  # Roles the platform grants INSERT, UPDATE and DELETE on every new table directly (4t).
+  # Unset means unknown; [] means none.
+  default_write: [anon, authenticated, service_role]
 ```
 
 Entries are lower-case SQL identifiers; anything else is a `VALIDATE_POLICY` error.
 `default_execute` matters once `PUBLIC` is revoked: a role that no statement names then
 holds what the platform grants new functions, which the migrations cannot show.
+`default_write` is the same for tables and is read only by the writer index (next section).
 
 **The adapter reads** `GRANT` and `REVOKE ... ON FUNCTION | PROCEDURE | ROUTINE` (including
 `PUBLIC`, `WITH GRANT OPTION`, `GRANTED BY`, `CASCADE`), the `ON ALL FUNCTIONS | PROCEDURES |
@@ -3640,8 +3644,10 @@ migrations and says so.
 - a role that holds a table privilege: `GRANT INSERT | UPDATE [(cols)] | DELETE | ALL ON [TABLE]
   t [, ...] | ALL TABLES IN SCHEMA s TO role`, and `ALTER DEFAULT PRIVILEGES ... ON TABLES`,
   folded in migration order as function grants are, with `PUBLIC`, role membership and
-  `REVOKE` read the same way. A role in `sql.api_roles` is resolved through `PUBLIC` and role
-  membership even when no statement names it.
+  `REVOKE` read the same way. For each role in `sql.api_roles`, a role a statement names is
+  decided by that statement; otherwise `PUBLIC`'s state applies (Postgres grants `PUBLIC`
+  nothing on a table); otherwise `sql.default_write` decides: listed means granted, declared
+  without the role means revoked, unset means unknown. Row-level security then decides (below).
 
 **What "guarded" means.** A writer is guarded for an invariant when it is an enforcer of it
 (tagged `@enforces f:INV-n`, so a break targets it), or when a trigger or policy that enforces
@@ -3649,6 +3655,16 @@ it applies to the writer's table and command (a `FOR UPDATE` policy guards updat
 `BEFORE UPDATE OF status` guards updates that write `status`). A trigger guards every writer. A
 row-level policy guards only API roles: a `SECURITY DEFINER` function, and the table's owner,
 bypass it.
+
+**Row-level security decides role writes.** `ALTER TABLE t ENABLE | DISABLE | FORCE | NO FORCE
+ROW LEVEL SECURITY` is folded in migration order. With RLS enabled, a role that holds the
+privilege can write only if a permissive policy on the table for that command (or `ALL`) has
+a `TO` list that reaches it: the role, `PUBLIC` (also a policy with no `TO`), or a role it is a
+member of. Any policy allows, even `USING (false)`; an `AS RESTRICTIVE` policy never allows on
+its own. With no such policy the role cannot write, and it is not listed. A later `DISABLE`
+re-opens the table to the privilege alone. A role that can write is guarded for an invariant
+only when an enforcing policy (or trigger) covers it. A policy or RLS statement inside a `DO`
+block, a function body or an `EXECUTE` string leaves that table's role writers unknown.
 
 **Two findings**, both info and always on, so an unknown is never hidden. Neither fails a run
 unless you set it in `validate.severity`; `fail_on: warning` still passes:
@@ -3692,6 +3708,9 @@ entries:
 - a write to a view, which writes the tables behind it, and a `GRANT` on a view;
 - `ON DELETE | ON UPDATE SET NULL | SET DEFAULT | CASCADE` on a foreign key, which writes the
   referencing columns (only those columns are unknown);
+- a role in `sql.api_roles` that no statement names on a table while `sql.default_write` is
+  not declared (`no statement names authenticated on public.jobs, and sql.default_write is not
+  declared`); `lattice writers` then says the set is incomplete, never complete;
 - a `CREATE RULE` on the table, a `GRANT` or `REVOKE` of table privileges inside a `DO` block, a
   function body or an `EXECUTE` string, and a role membership that is unknown.
 
@@ -3699,12 +3718,9 @@ A table's columns are used only to expand an `INSERT` with no column list. If th
 known (a table created `AS`, `LIKE` or `PARTITION OF`, or one the migrations never create), the
 write's columns are every column.
 
-**Not read.** The platform's own default table privileges (on Supabase, new tables in `public`
-are granted to `anon`, `authenticated` and `service_role`) are not read: `sql.default_execute` is
-the platform's default for functions, and a table's default is a different thing. A role a
-statement names holds no table privilege here, so on such a platform state the grants you rely
-on as plain `GRANT` statements. Writes made by TypeScript or Python (`.from('t').update()`) are
-not read either.
+**Not read.** With `sql.api_roles` undeclared, roles that no statement names are not checked
+(`lattice writers` says so). Writes made by TypeScript or Python (`.from('t').update()`) are not
+read either.
 
 **`lattice writers <table>[.<column>]`** prints each writer of a table or column, read-only:
 the function or role, the operation, the columns, the file and line, and each invariant it is
@@ -3724,7 +3740,7 @@ public.jobs: 3 writer(s)
   sql.public.fail_job  update  run_after, status, updated_at  supabase/migrations/20260101000000_jobs.sql:31
     guarded for queue.jobs:INV-1 by enforcer
 
-writer set complete (from the migrations; platform default table privileges are not read)
+writer set complete (from the migrations and sql.default_write)
 ```
 
 ## 5. Day-to-day commands

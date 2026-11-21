@@ -314,3 +314,30 @@ end $$;
 		t.Errorf("gaps = %v, want one on public.jobs and one on every table", got)
 	}
 }
+
+// ENABLE, DISABLE and FORCE ROW LEVEL SECURITY are folded in migration order,
+// and a policy carries its command, its TO roles and whether it is restrictive.
+// @verifies adapters.postgres:INV-7
+func TestRLSFactsAndPolicyRoles(t *testing.T) {
+	mods := resolveModules(t, m1, wTable+`alter table public.jobs enable row level security;
+alter table public.jobs force row level security;
+create policy p1 on public.jobs as restrictive for update to authenticated, anon using (true);
+create policy p2 on public.jobs for all to public using (true);
+`, m2, `alter table public.jobs no force row level security;
+alter table public.jobs disable row level security;
+`)
+	if rls := mods[0].RLS; len(rls) != 1 || rls[0].Table != "public.jobs" || rls[0].Enabled || rls[0].Forced || rls[0].Line != 2 || rls[0].File != m2 {
+		t.Errorf("rls = %+v, want disabled and unforced by the later migration", mods[0].RLS)
+	}
+	got := map[string]string{}
+	for _, m := range mods {
+		for _, s := range m.Symbols {
+			if g := s.Guard; g != nil && g.Kind == ir.GuardPolicy {
+				got[s.FQN] = fmt.Sprintf("%v %v %v", g.Commands, g.Roles, g.Restrictive)
+			}
+		}
+	}
+	if got["sql.policy.public.jobs.p1"] != "[update] [authenticated anon] true" || got["sql.policy.public.jobs.p2"] != "[insert update delete] [public] false" {
+		t.Errorf("policies = %v", got)
+	}
+}
