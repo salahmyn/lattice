@@ -20,7 +20,7 @@ invariants:
   - id: INV-5
     statement: An earlier outcome is reused only when the enforcer, verifier, method, script and runner-configuration hashes all match, and unknown outcomes are never reused.
   - id: INV-6
-    statement: A promise's verifiers are grouped by test runner (the first break.runners glob that matches, then the language template, then Go) and every group runs; the promise is killed only when a group fails after the break and every group passed at baseline.
+    statement: A promise's verifiers are grouped by test runner (the first break.runners glob that matches, then the language template, then Go) and every group runs; the promise is killed only when a group fails after the break and every group passed at baseline. A group whose command needs {patched_sql} on a break that has no SQL swap is left out of the run and its baseline, its verifiers read not run, and the other groups still run (only when every group needs the swap does the run read unknown for that reason).
   - id: INV-7
     statement: Each run records the verifiers that ran both times, the others (no runner, no test selected or run) and the tests that failed; a baseline that executes no test reads unknown, never survived.
   - id: INV-8

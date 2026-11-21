@@ -323,6 +323,7 @@ func (r *runner) measure(ctx context.Context, run *Run, t target, enf schema.Gra
 	// some: a break with no isolated statement reads unknown, and nothing
 	// runs, baseline included.
 	var sw sqlFiles
+	var lostSwap []string
 	if anyUsesSQLFiles(groups) {
 		var why string
 		var err error
@@ -331,8 +332,20 @@ func (r *runner) measure(ctx context.Context, run *Run, t target, enf schema.Gra
 			return nil
 		}
 		if !sw.ok() {
-			run.Reason = sqlUnavailable + why
-			return nil
+			// Only the groups that need the swap are lost: the others
+			// still run, and the verifiers of the lost ones are not run.
+			keep, lost := splitSwapGroups(groups)
+			if len(keep) == 0 {
+				run.Reason = sqlUnavailable + why
+				return nil
+			}
+			groups = keep
+			for _, g := range lost {
+				for _, s := range g.tests {
+					notRunWhy[s.Test] = swapNotRunReason(enf.Language, t.script != "", why)
+					lostSwap = append(lostSwap, s.Test)
+				}
+			}
 		}
 	}
 	if len(groups) == 0 {
@@ -361,6 +374,7 @@ func (r *runner) measure(ctx context.Context, run *Run, t target, enf schema.Gra
 		for _, s := range noRunner {
 			run.NotRunVerifiers = append(run.NotRunVerifiers, s.Test)
 		}
+		run.NotRunVerifiers = append(run.NotRunVerifiers, lostSwap...)
 		sort.Strings(run.NotRunVerifiers)
 		return nil
 	}

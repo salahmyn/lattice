@@ -95,30 +95,98 @@ func TestSwapCheckStatements(t *testing.T) {
 	}
 }
 
-// A CHECK inside CREATE TABLE cannot be re-applied on its own: its swap is
-// not offered, with the reason, though its break is generated. One that a
-// later statement touches is not offered either.
+// A CHECK inside CREATE TABLE is swapped as one ALTER TABLE that drops and adds
+// it back, with the table and the name as the migration wrote them: patched is
+// not valid so existing rows do not stop it, original is validated.
+// @verifies breaktest:INV-15
+func TestSwapInlineCheck(t *testing.T) {
+	for _, c := range []struct {
+		name, src, table string
+		line             int
+		tail             string
+	}{
+		{"check total_cap on public.orders", checkSrc, "public.orders", 5, ""},
+		{"check total_cap on public.orders", "create table orders (\n  total numeric,\n  constraint total_cap check (total < 10)\n);\n", "orders", 3, ""},
+		{"check total_cap on public.orders", "create table \"public\".orders (\n  total numeric,\n  constraint total_cap check (total < 10) no inherit,\n  note text\n);\n", `"public".orders`, 3, " no inherit"},
+	} {
+		sym := checkSym(c.name, c.line)
+		if !strings.Contains(c.src, "public.orders") && !strings.Contains(c.src, `"public".orders`) {
+			sym.Name = "check total_cap on public.orders"
+		}
+		brk, err := generateSQL([]byte(c.src), sym)
+		if err != nil {
+			t.Fatalf("%s: %v", c.table, err)
+		}
+		patched, original, ok := swapStatements([]byte(c.src), brk, sym)
+		expr := "total < 1000000"
+		if c.src != checkSrc {
+			expr = "total < 10"
+		}
+		head := "ALTER TABLE " + c.table + " DROP CONSTRAINT IF EXISTS total_cap, ADD CONSTRAINT total_cap CHECK "
+		wantP := head + "(true OR (" + expr + "))" + c.tail + " NOT VALID;\n"
+		wantO := head + "(" + expr + ")" + c.tail + " NOT VALID;\nALTER TABLE " + c.table + " VALIDATE CONSTRAINT total_cap;\n"
+		if !ok || patched != wantP || original != wantO {
+			t.Errorf("%s: ok=%v\npatched:  %q\nwant:     %q\noriginal: %q\nwant:     %q", c.table, ok, patched, wantP, original, wantO)
+		}
+		plan, err := planBreak("postgres", "db/migrations/001.sql", []byte(c.src), sym, nil)
+		if err != nil || plan.swapWhy != "" {
+			t.Errorf("%s: the swap is offered: %+v, %v", c.table, plan.swapWhy, err)
+		}
+	}
+}
+
+// A later statement that touches an inline CHECK makes its swap unavailable,
+// with the reason: a drop or re-add (the symbol moves to that statement), a
+// rename, a VALIDATE (both recorded on the symbol), and an ALTER COLUMN of the
+// same table. An ALTER TABLE ADD CONSTRAINT that nothing touches is unchanged.
 // @verifies breaktest:INV-15
 func TestSwapCheckUnavailable(t *testing.T) {
 	sym := checkSym("check total_cap on public.orders", 5)
+	for _, c := range []struct {
+		label, why string
+		sym        Symbol
+		src        string
+	}{
+		{"validated or altered later", "altered later in db/migrations/002.sql:3", withAltered(sym), checkSrc},
+		{"renamed", "renamed later", withDeclared(sym), checkSrc},
+		{"alter column", "ALTER COLUMN", sym, checkSrc + "\nalter table public.orders\n  alter column total set default 0;\n"},
+		{"alter column, only", "ALTER COLUMN", sym, checkSrc + "\nalter table only public.orders alter total type bigint;\n"},
+	} {
+		plan, err := planBreak("postgres", "db/migrations/001.sql", []byte(c.src), c.sym, nil)
+		if err != nil || len(plan.edits) != 1 || !strings.Contains(plan.swapWhy, c.why) {
+			t.Errorf("%s: plan = %+v, %v", c.label, plan.swapWhy, err)
+		}
+	}
+	// Another table's ALTER COLUMN does not touch it.
+	other := checkSrc + "\nalter table public.items alter column qty set default 1;\n"
+	if plan, err := planBreak("postgres", "db/migrations/001.sql", []byte(other), sym, nil); err != nil || plan.swapWhy != "" {
+		t.Errorf("another table's ALTER COLUMN blocked the swap: %q, %v", plan.swapWhy, err)
+	}
 	brk, err := generateSQL([]byte(checkSrc), sym)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, ok := swapStatements([]byte(checkSrc), brk, sym); ok {
-		t.Error("an inline CHECK was swapped")
-	}
-	plan, err := planBreak("postgres", "db/migrations/001.sql", []byte(checkSrc), sym, nil)
-	if err != nil || len(plan.edits) != 1 || !strings.Contains(plan.swapWhy, "inside CREATE TABLE") {
-		t.Errorf("plan = %+v, %v", plan, err)
+	if _, _, ok := swapStatements([]byte(checkSrc), brk, sym); !ok {
+		t.Error("an inline CHECK was not swapped")
 	}
 
 	alter := checkSym("check paid_has_date on public.orders", 8)
 	alter.Altered = []schema.GraphAlteration{{File: "db/migrations/002.sql", Line: 3}}
-	plan, err = planBreak("postgres", "db/migrations/001.sql", []byte(checkSrc), alter, nil)
+	plan, err := planBreak("postgres", "db/migrations/001.sql", []byte(checkSrc), alter, nil)
 	if err != nil || !strings.Contains(plan.swapWhy, "altered later in db/migrations/002.sql:3") {
 		t.Errorf("plan = %+v, %v", plan, err)
 	}
+}
+
+func withAltered(s Symbol) Symbol {
+	s.Altered = []schema.GraphAlteration{{File: "db/migrations/002.sql", Line: 3}}
+	return s
+}
+
+func withDeclared(s Symbol) Symbol {
+	s.DeclaredAs = s.Name
+	s.Name = "check total_limit on public.orders"
+	return s
 }
 
 // A symbol the file does not hold at that line, a renamed one found by the

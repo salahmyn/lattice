@@ -57,6 +57,31 @@ func anyUsesSQLFiles(groups []group) bool {
 	return false
 }
 
+// splitSwapGroups separates the groups whose command needs the SQL object
+// files from the others. A break that has no SQL swap loses the first kind
+// and still runs the second.
+// @enforces breaktest:INV-6
+func splitSwapGroups(groups []group) (keep, lost []group) {
+	for _, g := range groups {
+		if g.usesSQLFiles() {
+			lost = append(lost, g)
+		} else {
+			keep = append(keep, g)
+		}
+	}
+	return keep, lost
+}
+
+// swapNotRunReason is why a verifier of a group that needs the SQL swap did
+// not run on a break that has none: language is the enforcer's.
+func swapNotRunReason(language string, scripted bool, why string) string {
+	what := "this break"
+	if !scripted && language != "postgres" && language != "sql" && language != "" {
+		what = "a " + language + " break"
+	}
+	return "needs " + patchedSQLToken + ", which " + what + " does not have" + why
+}
+
 // swapStatements isolates the statement that defines an enforcer and returns
 // it twice, with the break applied and without. Each text is a complete
 // statement, so a runner can apply one with psql -f instead of rebuilding the

@@ -21,11 +21,10 @@ import (
 func (r *runner) edgeVerifiers(t target) target {
 	groups, _ := r.groups(t.verifiers)
 	drop := map[string]bool{}
-	for _, g := range groups {
-		if g.usesSQLFiles() {
-			for _, s := range g.tests {
-				drop[s.Test] = true
-			}
+	_, lost := splitSwapGroups(groups)
+	for _, g := range lost {
+		for _, s := range g.tests {
+			drop[s.Test] = true
 		}
 	}
 	if len(drop) == 0 {

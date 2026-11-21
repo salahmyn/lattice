@@ -1641,6 +1641,14 @@ break:
   statement that cannot be isolated does not run: the break reads `unknown`
   ("{patched_sql} not available for this break"), never `survived`.
 
+  When only some of a promise's runner groups name the placeholders, only those
+  groups are left out: their verifiers are not run (reason `needs {patched_sql},
+  which a typescript break does not have`), they are left out of the baseline
+  too, and the other groups run. The run is `killed` when a group that ran fails
+  after the break; otherwise it is `unknown` with a `partial:` reason that names
+  the verifiers that did not run, never `survived`. The reason above is kept
+  only when every group needs the swap.
+
   The swap is offered only when the broken statement is the last one that
   touches the object. Restoring an earlier statement would otherwise undo the
   later ones for every run after it. When the break is an `ALTER POLICY` that
@@ -1662,10 +1670,27 @@ break:
   alter table public.orders add constraint paid_has_date check (true OR (status <> 'paid' or paid_at is not null));
   ```
 
-  A `CHECK` inside `CREATE TABLE` cannot be re-applied on its own: its swap is not
-  available (`{patched_sql} not available for this break: the CHECK is inside CREATE
-  TABLE, which cannot be re-applied on its own`) and the full reset runs it. A
-  constraint dropped and added again is broken where the last statement adds it.
+  A named `CHECK` inside `CREATE TABLE` is swapped as one `ALTER TABLE` that drops
+  the constraint and adds it back, with the table (schema-qualified if the
+  migration wrote it so) and the name as the migration spelled them:
+
+  ```sql
+  -- {patched_sql}
+  ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS total_cap, ADD CONSTRAINT total_cap CHECK (true OR (total < 1000000)) NOT VALID;
+  -- {original_sql}
+  ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS total_cap, ADD CONSTRAINT total_cap CHECK (total < 1000000) NOT VALID;
+  ALTER TABLE public.orders VALIDATE CONSTRAINT total_cap;
+  ```
+
+  The patched side is `NOT VALID` so rows already in the table do not stop the
+  constraint from being added; it is the break, so it needs no check of its own.
+  The restore validates the constraint, which is what the inline definition does,
+  so the database ends as the migrations left it. Options written after the
+  expression (such as `NO INHERIT`) are kept. As for any swap, a later statement
+  that touches the constraint makes it unavailable (`{patched_sql} not available
+  for this break: altered later in …`): a `DROP`, a rename, a `VALIDATE`, or an
+  `ALTER COLUMN` of the same table. A constraint dropped and added again is broken
+  where the last statement adds it.
 
   **Restoring the original.** A one-line runner is easier to get right than the
   script above: apply the broken object, run the tests, and let
