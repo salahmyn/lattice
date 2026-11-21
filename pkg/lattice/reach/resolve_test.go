@@ -158,6 +158,9 @@ export class K {
 		"src/b.ts":     "export function helper() {}\nexport default function Defaulted() {}\n",
 		"src/c.ts":     "export function fromC() {}\nexport function star() {}\n",
 		"src/index.ts": "export { helper as reexported } from './b';\nexport * from './c';\n",
+		// An entry loads a and d together: a by-name member resolves only
+		// into a module loaded with the caller's.
+		"src/main.ts": "import './a';\nimport './d';\n",
 		"src/d.ts": `export class A {
   uniqueMethod() {}
   common() {}
@@ -210,9 +213,10 @@ class K:
 def local():
     pass
 `,
-		"app/b.py": "def helper():\n    pass\n",
-		"app/c.py": "def fromc():\n    pass\n",
-		"app/d.py": "def fd():\n    pass\n",
+		"app/main.py": "import app.a\nimport app.e\n",
+		"app/b.py":    "def helper():\n    pass\n",
+		"app/c.py":    "def fromc():\n    pass\n",
+		"app/d.py":    "def fd():\n    pass\n",
 		"app/e.py": `class A:
     def unique_method(self):
         pass

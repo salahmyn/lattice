@@ -954,11 +954,23 @@ core resolves them.
 A reference resolves, in order, through the module's imports, through its
 own scope (the enclosing function, then the module or package), and, for a
 method called on a value of unknown type, through a member name that is
-unique in the language. Anything else stays unresolved and is counted,
-never guessed:
+unique among the members a program can load together with the caller.
+Anything else stays unresolved and is counted, never guessed:
 
 - **ambiguous**: several members share the name (`x.Parse()` with five
   adapters that have `Parse`), so no edge is drawn;
+- **external**: no member of that name sits in a module loaded with the
+  caller's, so the call is taken to leave the workspace (an SDK's
+  `client.messages.create()` is not another function's `create`). For
+  TypeScript, JavaScript and Python, two modules are loaded together when
+  some module, possibly one of the two, transitively imports both. That keeps
+  dependency injection: an entry module that imports a handler and a store
+  loads them together, though the handler never names the store. Modules
+  shared by two entry points load with each of them, but two entry points
+  that share nothing do not load together. A test that imports both does not
+  join them for production code; for a test's own calls it does. Go keeps its
+  package rule (an unexported name stays in its package), and a language with
+  no recorded imports (PHP) keeps every candidate;
 - **missing**: it names a module of the workspace, or a database function,
   that has no such symbol;
 - **dynamic**: `.rpc(name)` with a computed name, or `import(x)` /
