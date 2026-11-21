@@ -385,7 +385,7 @@ func editLines(plan breakPlan, enf schema.GraphSymbol) (lns []int, whole bool) {
 		return nil, false
 	}
 	sql := enf.Language == "postgres" || enf.Language == "sql"
-	if !sql || sqlFunctionAt(plan.edits[0], enf.Line) {
+	if !sql || !sqlExpressionGuard(enf.FQN) {
 		return nil, true
 	}
 	file := plan.edits[0].file
@@ -451,14 +451,17 @@ func (r *runner) remember(key string, inv invocation) {
 	r.last[key] = inv
 }
 
-// sqlFunctionAt reports whether the statement that starts at line of the
-// edit's file creates a function or procedure, whose break is an early
-// return, not an edit of one expression.
-func sqlFunctionAt(e fileEdit, line int) bool {
-	ls := strings.Split(string(e.src), "\n")
-	if line < 1 || line > len(ls) {
-		return false
+// sqlExpressionGuard reports whether a SQL enforcer is a policy, trigger or
+// CHECK constraint, whose break edits the guarding expression itself, so the
+// edited lines are the lines it checks. Any other SQL symbol is a function or
+// procedure, whose break skips the body as a whole. The FQN decides, never
+// the statement's text, so an unexpected layout reads as whole, never as
+// lines checked.
+func sqlExpressionGuard(fqn string) bool {
+	for _, p := range []string{"sql.policy.", "sql.trigger.", "sql.check."} {
+		if strings.HasPrefix(fqn, p) {
+			return true
+		}
 	}
-	l := strings.ToLower(ls[line-1])
-	return strings.Contains(l, " function ") || strings.Contains(l, " procedure ")
+	return false
 }

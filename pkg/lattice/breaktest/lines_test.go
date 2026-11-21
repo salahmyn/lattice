@@ -226,13 +226,20 @@ func TestEditLines(t *testing.T) {
 	policy := []byte("create policy p on t\n  using (a = 1\n  and b = 2);\n")
 	pe := breakPlan{edits: []fileEdit{{file: "m.sql", src: policy,
 		brk: Break{Offset: 28, Text: "x", More: []Break{{Offset: 44, Text: "y"}}}}}}
-	if got, whole := editLines(pe, schema.GraphSymbol{File: "m.sql", Line: 1, Language: "postgres"}); !reflect.DeepEqual(got, []int{2, 3}) || whole {
+	if got, whole := editLines(pe, schema.GraphSymbol{FQN: "sql.policy.public.t.p", File: "m.sql", Line: 1, Language: "postgres"}); !reflect.DeepEqual(got, []int{2, 3}) || whole {
 		t.Errorf("SQL expression edit = %v whole %v, want exactly lines [2 3]", got, whole)
 	}
 	fn := []byte("create or replace function f() returns int language sql as $$ select 1 $$;\n")
 	fe := breakPlan{edits: []fileEdit{{file: "m.sql", src: fn, brk: Break{Offset: 5, Text: "x"}}}}
-	if got, whole := editLines(fe, schema.GraphSymbol{File: "m.sql", Line: 1, Language: "postgres"}); got != nil || !whole {
+	if got, whole := editLines(fe, schema.GraphSymbol{FQN: "sql.public.f", File: "m.sql", Line: 1, Language: "postgres"}); got != nil || !whole {
 		t.Errorf("SQL function early return = %v whole %v", got, whole)
+	}
+	// A function whose keyword sits on a later line than the symbol's is still
+	// whole: the FQN decides, never the statement's layout.
+	split := []byte("create or replace\n  function f() returns int language sql as $$ select 1 $$;\n")
+	se := breakPlan{edits: []fileEdit{{file: "m.sql", src: split, brk: Break{Offset: 40, Text: "x"}}}}
+	if got, whole := editLines(se, schema.GraphSymbol{FQN: "sql.public.f", File: "m.sql", Line: 1, Language: "postgres"}); got != nil || !whole {
+		t.Errorf("SQL function split over lines = %v whole %v, want no lines and whole", got, whole)
 	}
 	if got, whole := editLines(breakPlan{}, enf); got != nil || whole {
 		t.Errorf("no edit has no lines")
