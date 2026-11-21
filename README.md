@@ -30,7 +30,7 @@ This repository is the **core engine**: one static Go binary, `lattice`.
 Supported languages for extraction: **Python, TypeScript/JavaScript, PHP 8.0+,
 Go**, plus opt-in PostgreSQL migrations and pgTAP tests (a SQL enforcer that a
 declared database API role can execute is reported as `ENFORCER_EXPOSED`, info; see
-`sql:` in the user guide; a second writer of the columns an enforcer writes is
+`sql:` in the user guide; a second writer of the columns an enforcer tests in a condition is
 reported as `UNGUARDED_WRITER`, info, and `lattice writers <table>[.<column>]` lists who
 writes a table; an invariant may declare `columns:` to say which columns it is about, and
 `ENFORCER_EXPOSED` states whether the function reads the caller's identity). A parameterized

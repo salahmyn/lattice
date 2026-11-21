@@ -26,3 +26,5 @@ invariants:
     statement: An invariant's declared columns, when present, are its columns exactly and its enforcers' writes are not used; a declared column that names no table or column the migrations leave is an error.
   - id: INV-9
     statement: Each ENFORCER_EXPOSED states whether the function body reads the caller's identity, citing the first read, or that it reads none; the finding fires either way and those that read none come first.
+  - id: INV-10
+    statement: Without declared columns, an invariant's columns are the columns its enforcers read in a condition on a table they write; an enforcer with no known condition read falls back to the columns it writes, never to an empty set, and the source is stated as conditions, writes or declared.

@@ -336,3 +336,122 @@ func TestDeclaredColumnErrors(t *testing.T) {
 		}
 	}
 }
+
+func reads(cols ...string) []ir.CondRead {
+	var out []ir.CondRead
+	for _, c := range cols {
+		out = append(out, ir.CondRead{Table: "public.jobs", Column: c, Qualified: true, Line: 6})
+	}
+	return out
+}
+
+var jobsTable = ir.TableColumns{Table: "public.jobs", Columns: []string{"attempts", "id", "owner_id", "status", "updated_at"}}
+
+// An invariant's columns are the columns its enforcers read in a condition on a
+// table they write, whether or not they write them. A writer of one is
+// reported with columns from conditions; a bookkeeping column that is only
+// assigned no longer links an unrelated writer. Without condition reads the
+// columns are what the enforcers write, as before.
+// @verifies graph:INV-10
+func TestColumnsFromConditions(t *testing.T) {
+	enforcer := fn("sql.public.fail_job", 5, upd("public.jobs", 7, "status", "updated_at"))
+	enforcer.CondReads = reads("attempts", "id")
+	build := func(withReads bool) []ir.Module {
+		e := enforcer
+		if !withReads {
+			e.CondReads = nil
+		}
+		return []ir.Module{{File: "m.sql", Tables: []ir.TableColumns{jobsTable}, Symbols: []ir.Symbol{
+			e,
+			fn("sql.public.claim", 10, upd("public.jobs", 12, "attempts", "status", "updated_at")),
+			fn("sql.public.touch", 20, upd("public.jobs", 22, "updated_at")),
+		}}}
+	}
+	after := CheckWriters(enforcing("sql.public.fail_job"), build(true), nil, noDefault)
+	if len(after) != 1 || after[0].Subject != "sql.public.claim" {
+		t.Fatalf("findings = %v, want only claim", codesOf(after))
+	}
+	m := after[0].Message
+	if !strings.Contains(m, "columns from conditions") || !strings.Contains(m, "attempts (m.sql:12)") || strings.Contains(m, "status (") || strings.Contains(m, "updated_at (") {
+		t.Errorf("message = %q", m)
+	}
+	before := CheckWriters(enforcing("sql.public.fail_job"), build(false), nil, noDefault)
+	if len(before) != 2 || !strings.Contains(before[0].Message, "columns derived from writes") {
+		t.Fatalf("without condition reads: %v, want claim and touch on the derived columns", codesOf(before))
+	}
+	t.Logf("findings on the example: %d from writes, %d from conditions", len(before), len(after))
+	for _, f := range after {
+		if f.Severity != schema.SeverityInfo {
+			t.Errorf("%s is %s, want info", f.Code, f.Severity)
+		}
+	}
+}
+
+// An enforcer whose condition reads are empty, unknown, on a table it does not
+// write, or a bare name its table lacks, falls back to the columns it writes:
+// the set never shrinks to nothing. The message says which enforcer fell back.
+// @verifies graph:INV-10
+func TestColumnsFallBackToWrites(t *testing.T) {
+	other := ir.CondRead{Table: "public.audit", Column: "attempts", Qualified: true, Line: 6}
+	param := ir.CondRead{Table: "public.jobs", Column: "p_id", Line: 6}
+	for name, cr := range map[string][]ir.CondRead{"none": nil, "other table": {other}, "not a column": {param}} {
+		t.Run(name, func(t *testing.T) {
+			e := fn("sql.public.fail_job", 5, upd("public.jobs", 7, "status"))
+			e.CondReads = cr
+			mods := []ir.Module{{File: "m.sql", Tables: []ir.TableColumns{jobsTable}, Symbols: []ir.Symbol{
+				e, fn("sql.public.claim", 10, upd("public.jobs", 12, "status"))}}}
+			v := CheckWriters(enforcing("sql.public.fail_job"), mods, nil, noDefault)
+			if len(v) != 1 || !strings.Contains(v[0].Message, "columns derived from writes") || !strings.Contains(v[0].Message, "status (m.sql:12)") {
+				t.Fatalf("findings = %+v, want claim on the columns derived from writes", v)
+			}
+		})
+	}
+	// Two enforcers: one reads a condition, one has none. The message names the one
+	// that fell back, and its columns are used too.
+	a := fn("sql.public.fail_job", 5, upd("public.jobs", 7, "status"))
+	a.CondReads = reads("attempts")
+	b := fn("sql.public.retry", 30, upd("public.jobs", 32, "updated_at"))
+	mods := []ir.Module{{File: "m.sql", Tables: []ir.TableColumns{jobsTable}, Symbols: []ir.Symbol{
+		a, b, fn("sql.public.claim", 10, upd("public.jobs", 12, "attempts", "updated_at"))}}}
+	v := CheckWriters(enforcing("sql.public.fail_job", "sql.public.retry"), mods, nil, noDefault)
+	if len(v) != 1 || !strings.Contains(v[0].Message, "sql.public.retry no condition read was known") ||
+		!strings.Contains(v[0].Message, "attempts (") || !strings.Contains(v[0].Message, "updated_at (") {
+		t.Errorf("findings = %+v", v)
+	}
+}
+
+// A CHECK enforcer writes nothing; its condition columns count on the tables
+// the invariant's other enforcers write. Declared columns still win.
+// @verifies graph:INV-10
+func TestCheckConditionColumns(t *testing.T) {
+	check := ir.Symbol{FQN: "sql.check.public.jobs.cap", File: "m.sql", Line: 3, CondReads: []ir.CondRead{{Table: "public.jobs", Column: "attempts", Line: 3}}}
+	enforcer := fn("sql.public.fail_job", 5, upd("public.jobs", 7, "status"))
+	enforcer.CondReads = reads("id")
+	mods := []ir.Module{{File: "m.sql", Tables: []ir.TableColumns{jobsTable}, Symbols: []ir.Symbol{
+		check, enforcer,
+		fn("sql.public.claim", 10, upd("public.jobs", 12, "attempts", "status")),
+	}}}
+	v := CheckWriters(enforcing("sql.public.fail_job", "sql.check.public.jobs.cap"), mods, nil, noDefault)
+	if len(v) != 1 || !strings.Contains(v[0].Message, "attempts (") || strings.Contains(v[0].Message, "status (") {
+		t.Errorf("findings = %+v, want claim on attempts only", v)
+	}
+	kg := manifestWithColumns("public.jobs.status")
+	kg.Symbols = append(kg.Symbols, schema.GraphSymbol{FQN: "sql.check.public.jobs.cap", Feature: "queue.jobs", EnforcesInvariants: []string{wRef}})
+	v = CheckWriters(kg, mods, nil, noDefault)
+	if len(v) != 1 || !strings.Contains(v[0].Message, "declares") {
+		t.Errorf("declared columns must win: %+v", v)
+	}
+}
+
+// The writers report says where the columns came from.
+// @verifies graph:INV-10
+func TestReportColumnsFromConditions(t *testing.T) {
+	e := fn("sql.public.fail_job", 5, upd("public.jobs", 7, "status"))
+	e.CondReads = reads("attempts")
+	mods := []ir.Module{{File: "m.sql", Tables: []ir.TableColumns{jobsTable}, Symbols: []ir.Symbol{
+		e, fn("sql.public.claim", 10, upd("public.jobs", 12, "attempts"))}}}
+	rep := BuildWriterIndex(enforcing("sql.public.fail_job"), mods, nil, noDefault).Report("public.jobs", "attempts")
+	if len(rep.Writers) != 1 || rep.Writers[0].ColumnsFrom[wRef] != ColumnsConditions {
+		t.Errorf("report = %+v, want columns_from conditions", rep.Writers)
+	}
+}

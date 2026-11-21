@@ -776,6 +776,7 @@ func readFunctionWrites(mod *ir.Module, sym *ir.Symbol, st statement) {
 	for _, part := range codeBodies(st.text, st.line) {
 		w, g := readCode(mod.File, part.text, part.line, true)
 		sym.Writes = append(sym.Writes, w...)
+		sym.CondReads = append(sym.CondReads, readConditions(part.text, part.line)...)
 		for _, gap := range g {
 			gapEvent(mod, gap, sym.FQN, st.line)
 		}

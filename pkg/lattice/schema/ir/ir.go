@@ -80,6 +80,9 @@ type Symbol struct {
 	// or DO block, as the adapter parsed them (SQL only; nil for every other
 	// symbol). A write it could not read is not here: it is a WriterGap.
 	Writes []TableWrite `json:"writes,omitempty"`
+	// CondReads are the columns the body of a SQL function, or a CHECK, reads
+	// in a condition (SQL only; nil for every other symbol): see CondRead.
+	CondReads []CondRead `json:"cond_reads,omitempty"`
 	// Guard says which table and commands a SQL policy or trigger applies
 	// to (nil for every other symbol).
 	Guard *Guard `json:"guard,omitempty"`
@@ -107,6 +110,22 @@ type TableWrite struct {
 	Columns []string `json:"columns,omitempty"`
 	Op      string   `json:"op"`
 	Line    int      `json:"line"`
+}
+
+// CondRead is a column a SQL body reads in a condition: an IF, ELSIF or CASE
+// WHEN condition, the WHERE of its own UPDATE, DELETE or SELECT ... INTO, or a
+// CHECK. A column loaded by a simple SELECT col INTO v and then tested as v in
+// an IF is a read of col. It records what the adapter parsed; a condition it
+// could not read is simply not here.
+type CondRead struct {
+	// Table is "<schema>.<table>".
+	Table  string `json:"table"`
+	Column string `json:"column"`
+	// Qualified is true when the text named the table (an alias, NEW, OLD, or
+	// the variable a SELECT col INTO loaded). When false the text was a bare
+	// name that is a column only if Table has one of that name.
+	Qualified bool `json:"qualified,omitempty"`
+	Line      int  `json:"line"`
 }
 
 // Guard kinds.

@@ -3655,8 +3655,9 @@ and `jobs.status`, with no cap. It carries no tag, so no break ever targets it, 
 reads as break-tested while production breaks it. Lattice reads who writes a table from the
 migrations and says so.
 
-**What counts as a writer.** The columns of an invariant are the columns its enforcers write
-(reads are not counted). Any other writer of one of them is a writer of the promise:
+**What counts as a writer.** The columns of an invariant are the columns its enforcers test in a
+condition (see 4z); where an enforcer's conditions are not known, the columns it writes. Any
+other writer of one of them is a writer of the promise:
 
 - a SQL function, procedure or `DO` block whose body has an `INSERT INTO t [(cols)]` (with no
   column list, every column of `t` as `CREATE TABLE` and `ALTER TABLE ... ADD COLUMN` leave
@@ -3696,7 +3697,7 @@ block, a function body or an `EXECUTE` string leaves that table's role writers u
 unless you set it in `validate.severity`; `fail_on: warning` still passes:
 
 ```
-info  UNGUARDED_WRITER  sql.public.claim_jobs writes columns that queue.jobs:INV-1's enforcers write (derived; declare columns: on the invariant to narrow them), and is neither an enforcer of queue.jobs:INV-1 nor under a trigger or policy that enforces it, so no break ever targets it. public.jobs by update: status (supabase/migrations/20260101000000_jobs.sql:12), updated_at (supabase/migrations/20260101000000_jobs.sql:12)
+info  UNGUARDED_WRITER  sql.public.claim_jobs writes columns that queue.jobs:INV-1's enforcers test (columns from conditions: read in an IF, CASE WHEN, WHERE or CHECK of an enforcer, on a table it writes; declare columns: on the invariant to override), and is neither an enforcer of queue.jobs:INV-1 nor under a trigger or policy that enforces it, so no break ever targets it. public.jobs by update: attempts (supabase/migrations/20260101000000_jobs.sql:12)
 info  WRITERS_UNKNOWN   the writers of queue.jobs:INV-1's columns (public.jobs.attempts,run_after,status,updated_at) are not completely known, so an unguarded writer may exist: an EXECUTE at supabase/migrations/20260301000000_dyn.sql:2 runs a write statement that names no table literally, so it may write any table
 ```
 
@@ -3707,8 +3708,8 @@ columns lie on a table with an incomplete writer set, with the reasons. Both go 
 allowlist like any finding; the subject of a function writer is its FQN, of a role
 `sql.role.<role>`, of a migration its file.
 
-On a project where every enforcer writes `status` or `updated_at`, the derived columns link
-unrelated promises. Declare the columns the promise is about; see 4z.
+Columns are decided from the conditions the enforcers test, not from everything they assign, so
+a `status` or `updated_at` every enforcer sets does not link unrelated promises; see 4z.
 
 **To clear `UNGUARDED_WRITER`**, do one of:
 
@@ -4252,11 +4253,36 @@ invariants:
   migrations do not create and a column a known table does not have are
   `VALIDATE_POLICY` errors, so a typo cannot silently match nothing. A table whose columns
   the adapter cannot list (`LIKE`, inheritance) accepts any column.
-- `lattice writers` prints `(columns declared)` or `(columns derived)` after each promise a
-  writer is guarded or unguarded for, and `--json` adds `columns_from` to each writer. The
-  `UNGUARDED_WRITER` message says `declares (columns: in its feature YAML)` or `derived`.
+- `lattice writers` prints `(columns declared)`, `(columns from conditions)` or `(columns from
+  writes)` after each promise a writer is guarded or unguarded for, and `--json` adds
+  `columns_from` (`declared`, `conditions` or `derived`) to each writer. The `UNGUARDED_WRITER`
+  message says `declares (columns: in its feature YAML)`, `columns from conditions` or
+  `columns derived from writes`.
 - It applies to an invariant that has SQL enforcers; the field stays in canonical order,
   after `verifiable_by` and before `cases`, and `lattice fmt` keeps it there.
+
+**Columns from conditions.** With no `columns:` declared, a promise's columns are the columns
+its enforcers test, not every column they assign. For each enforcer, the columns it reads in a
+condition on a table it writes:
+
+- a column in an `IF` / `ELSIF` / `CASE WHEN` condition;
+- a column in the `WHERE` of its own `UPDATE`, `DELETE` or `SELECT ... INTO`;
+- a column in a `CHECK` that enforces the promise (on a table another enforcer of it writes);
+- a column loaded by `SELECT col INTO v ... FROM t` and then tested as `v` in an `IF`: one
+  simple flow inside one body, nothing deeper; `NEW.col` and `OLD.col` in a trigger function
+  count on the table of each trigger that runs it.
+
+The enforcer does not have to write the column: `fail_job` tests `attempts` and assigns
+`status`, so the promise is about `attempts`, and `claim_jobs`, which increments `attempts`, is
+still reported while a function that only sets `updated_at` is not. A bare name counts only if
+its table has a column of that name, so a parameter or variable is never a column.
+
+When an enforcer has no condition read on the tables it writes, or its body could not be read,
+that enforcer falls back to the columns it writes, and the message says so (`no condition read
+was known, so its columns derived from writes`). The set never shrinks to nothing, because that
+would read as "no column". Declared `columns:` still replace all of this. It is a reading of
+the code, not a verdict: a condition hidden in a called function, an `EXECUTE` string or a view
+is not seen, so declare the columns when the promise is about one of those.
 
 **Caller identity on `ENFORCER_EXPOSED`.** Each finding now says whether the function's body
 reads the caller's identity: `auth.uid()`, `auth.jwt()`, `current_setting('request.jwt...')`,

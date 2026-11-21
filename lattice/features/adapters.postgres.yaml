@@ -25,3 +25,5 @@ invariants:
     statement: A table write is recorded only from DML the adapter parsed; a write it could not read makes the table's writer set incomplete, never empty.
   - id: INV-8
     statement: A function's caller-identity read is recorded only from code in its body, never from a comment, a string, or an argument default, and is absent when the body reads none.
+  - id: INV-9
+    statement: A column a function reads in a condition is recorded only from the IF, ELSIF, CASE WHEN or WHERE text of its body (or a CHECK) that the adapter parsed, with the table it resolves to; a name it cannot place on a table is not recorded.

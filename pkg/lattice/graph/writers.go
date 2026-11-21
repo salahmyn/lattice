@@ -19,12 +19,22 @@ import (
 // function, a migration, or an API role holding a table privilege, can break
 // the promise with no break ever aimed at it.
 //
-// The columns of an invariant are, by default, the columns its enforcers
-// write. A column every enforcer happens to write (a status or a timestamp)
-// then ties the invariant to every other writer of that column, whatever it is
-// about. An invariant may instead declare its columns (columns: in its feature
-// YAML); the declared set is then exactly its columns, and the derived set is
-// not used.
+// An invariant's columns are decided in this order:
+//
+//  1. declared: columns: in its feature YAML, exactly those;
+//  2. from conditions: for each enforcer, the columns it reads in a condition
+//     (an IF, ELSIF or CASE WHEN, the WHERE of its own UPDATE, DELETE or
+//     SELECT ... INTO, a CHECK, a column loaded by SELECT col INTO v and tested
+//     as v) on a table it writes. Whether the enforcer also writes the column
+//     does not matter: a function that tests attempts and sets status is about
+//     attempts, and a second writer of attempts can break the promise;
+//  3. from writes: for an enforcer whose condition reads on its tables are
+//     empty or not known (a body the adapter could not read), the columns it
+//     writes. It never shrinks to an empty set, which would read as "no
+//     column".
+//
+// A column every enforcer happens to write (a status or a timestamp) therefore
+// no longer ties the invariant to every other writer of that column.
 //
 // A writer is guarded for an invariant when it is an enforcer of it, or when a
 // trigger that enforces it applies to the writer's table and command, or when
@@ -69,15 +79,16 @@ type WriterEntry struct {
 	Unguarded []string      `json:"unguarded,omitempty"`
 	// ColumnsFrom says, for each invariant the writer is guarded or
 	// unguarded for, whether its columns were declared in the feature YAML
-	// ("declared") or derived from the columns its enforcers write
-	// ("derived").
+	// ("declared"), read in the conditions of its enforcers ("conditions"),
+	// or derived from the columns its enforcers write ("derived").
 	ColumnsFrom map[string]string `json:"columns_from,omitempty"`
 }
 
 // How the columns of an invariant were decided.
 const (
-	ColumnsDeclared = "declared"
-	ColumnsDerived  = "derived"
+	ColumnsDeclared   = "declared"
+	ColumnsConditions = "conditions"
+	ColumnsDerived    = "derived"
 )
 
 // WriterReport is what `lattice writers` prints.
@@ -111,12 +122,21 @@ type invWrites struct {
 	line      int
 	// declared is true when columns came from the invariant's columns: field.
 	declared bool
+	// fromConditions are the enforcers whose columns are the columns they read
+	// in a condition; fromWrites are those that fell back to the columns they
+	// write, because no condition read on their tables was known.
+	fromConditions, fromWrites []string
 }
 
-// columnsFrom is how the invariant's columns were decided.
+// columnsFrom is how the invariant's columns were decided: declared, from
+// conditions when any enforcer contributed its condition reads, else derived
+// from writes.
 func (iw *invWrites) columnsFrom() string {
-	if iw.declared {
+	switch {
+	case iw.declared:
 		return ColumnsDeclared
+	case len(iw.fromConditions) > 0:
+		return ColumnsConditions
 	}
 	return ColumnsDerived
 }
@@ -270,18 +290,10 @@ func BuildWriterIndex(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []str
 			if g := sym.Guard; g != nil {
 				iw.guards = append(iw.guards, writeGuard{fqn: s.FQN, kind: g.Kind, table: g.Table, commands: g.Commands, columns: g.Columns})
 			}
-			for _, w := range sym.Writes {
-				if w.Op == ir.WriteDelete {
-					continue
-				}
-				if iw.columns[w.Table] == nil {
-					iw.columns[w.Table] = map[string]bool{}
-				}
-				for _, c := range w.Columns {
-					iw.columns[w.Table][c] = true
-				}
-			}
 		}
+	}
+	for _, iw := range ix.invs {
+		ix.deriveColumns(iw, syms)
 	}
 	ix.declareColumns(kg)
 	for _, w := range ix.writers {
@@ -303,6 +315,74 @@ func BuildWriterIndex(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []str
 	}
 	ix.sortWriters()
 	return ix
+}
+
+// deriveColumns decides the columns of an invariant from its enforcers: for
+// each, the columns it reads in a condition on a table it writes, or, when it
+// has none on those tables, the columns it writes. An enforcer that writes
+// nothing (a CHECK) contributes its condition reads on the tables the
+// invariant's other enforcers write. A bare name in a condition is a column
+// only if the table is known to have it.
+// @enforces graph:INV-10
+func (ix *WriterIndex) deriveColumns(iw *invWrites, syms map[string]ir.Symbol) {
+	enforcers := setList(iw.enforcers)
+	invTables := map[string]bool{}
+	for _, f := range enforcers {
+		for _, w := range syms[f].Writes {
+			invTables[w.Table] = true
+		}
+	}
+	add := func(table, col string) {
+		if iw.columns[table] == nil {
+			iw.columns[table] = map[string]bool{}
+		}
+		iw.columns[table][col] = true
+	}
+	for _, f := range enforcers {
+		sym := syms[f]
+		tables := map[string]bool{}
+		for _, w := range sym.Writes {
+			tables[w.Table] = true
+		}
+		if len(tables) == 0 {
+			tables = invTables
+		}
+		found := false
+		for _, c := range sym.CondReads {
+			if tables[c.Table] && ix.isColumn(c) {
+				add(c.Table, c.Column)
+				found = true
+			}
+		}
+		if found {
+			iw.fromConditions = append(iw.fromConditions, f)
+			continue
+		}
+		wrote := false
+		for _, w := range sym.Writes {
+			if w.Op == ir.WriteDelete {
+				continue
+			}
+			wrote = true
+			for _, c := range w.Columns {
+				add(w.Table, c)
+			}
+		}
+		if wrote {
+			iw.fromWrites = append(iw.fromWrites, f)
+		}
+	}
+}
+
+// isColumn says whether a condition read names a column of its table: a name
+// the text qualified does, unless the table's columns are known and lack it; a
+// bare name does only when the table is known to have it.
+func (ix *WriterIndex) isColumn(c ir.CondRead) bool {
+	t, ok := ix.schema[c.Table]
+	if c.Qualified {
+		return !ok || t.Unknown != "" || contains(t.Columns, c.Column)
+	}
+	return ok && contains(t.Columns, c.Column)
 }
 
 // foldColumnRef folds a declared "<schema>.<table>.<column>" as PostgreSQL
@@ -649,7 +729,14 @@ func (iw *invWrites) columnsPhrase(ref string) string {
 	if iw.declared {
 		return ref + " declares (columns: in its feature YAML)"
 	}
-	return ref + "'s enforcers write (derived; declare columns: on the invariant to narrow them)"
+	if len(iw.fromConditions) == 0 {
+		return ref + "'s enforcers write (columns derived from writes; declare columns: on the invariant to narrow them)"
+	}
+	phrase := ref + "'s enforcers test (columns from conditions: read in an IF, CASE WHEN, WHERE or CHECK of an enforcer, on a table it writes"
+	if len(iw.fromWrites) > 0 {
+		phrase += "; for " + strings.Join(iw.fromWrites, ", ") + " no condition read was known, so its columns derived from writes"
+	}
+	return phrase + "; declare columns: on the invariant to override)"
 }
 
 // shared are the columns a writer's write has in common with the invariant's
