@@ -1286,10 +1286,10 @@ into the worktree and records `dirty: true`.
 | `survived` | They passed both times: the test cannot tell the code is broken. |
 | `unknown` | Anything else. It is never a pass and never a fail. |
 
-`unknown` covers: no generated break for the language ("add a script"), a
-break that does not compile, a baseline that fails or executes no test, a
-timeout (`--timeout`, default 120s, per test run), no runner configured, and
-SQL without a script.
+`unknown` covers: no generated break for the language or symbol ("add a
+script"), a break that does not compile, a baseline that fails or executes no
+test, a timeout (`--timeout`, default 120s, per test run) and no runner
+configured.
 
 Only an explicit build marker reads as "does not compile": Go's `[build
 failed]` or `[setup failed]`, an esbuild or transform `file:line:col: ERROR:`
@@ -1308,10 +1308,32 @@ body; Python gets `return None`. An arrow with an expression body,
 (no `as any` in JavaScript), so `expr` stays referenced. Constructors, setters,
 classes and consts that are not functions ("not a function") read unknown.
 
+**SQL breaks.** A PostgreSQL enforcer (from the `postgres` adapter) is found by
+the line its `CREATE` statement starts on and its name, and broken by an
+insertion that keeps the statement valid SQL:
+
+| Enforcer | Break |
+|---|---|
+| `CREATE POLICY … USING (expr) WITH CHECK (expr)` | each clause becomes `(true OR (expr))`, so the policy admits every row |
+| `CREATE [CONSTRAINT] TRIGGER …` with no `WHEN` | ` WHEN (false)` before `EXECUTE FUNCTION` (or `PROCEDURE`) |
+| a trigger with `WHEN (cond)` | `WHEN (false AND (cond))` |
+| a `LANGUAGE plpgsql` function or procedure | an early return right after the top-level `BEGIN` (after any `DECLARE`), inside the dollar-quoted body |
+
+The early return follows the declared result: `RETURNS trigger` gets `RETURN
+COALESCE(NEW, OLD);` (the row goes through unchecked; `NEW` is NULL on DELETE
+and `OLD` on INSERT); `void`, `SETOF …`, `TABLE (…)`, `OUT` parameters and
+procedures get `RETURN;`; `boolean` gets `RETURN true;`, because a guard
+function usually answers "is this allowed?" and the break should allow what
+it would deny; any other type gets `RETURN NULL;`. Functions in any other
+language (`LANGUAGE sql`, `c`, …), event trigger functions, string-quoted
+bodies, `INSTEAD OF` triggers (which allow no `WHEN`) and anything the
+generator cannot place exactly read unknown with the reason, never a break
+that would fail for the wrong reason.
+
 **A scripted break** is a patch at `lattice/breaks/<feature>/<INV>.patch`
 (made with `git diff`), applied with `git apply` in the worktree. It
 replaces the generated break for that promise, and is the way to break
-SQL or anything else with no generator.
+anything with no generator.
 
 **Runners.** Go verifiers run with `go test -run '^(TestA|TestB)$' -count=1`
 and need no setup. Everything else needs a runner in `lattice/config.yaml`.
@@ -1353,6 +1375,21 @@ break:
   runner may resolve them against its own root. For vitest, pass `--root
   apps/client` rather than `cd apps/client && vitest {files}`, which finds
   nothing; or set `dir`.
+- pgTAP verifiers need a runner that rebuilds a scratch database from the
+  worktree's migrations, so the broken SQL is what the tests run against. For
+  example, with a `db/reset.sh` of your own that drops and re-creates the
+  database and applies `db/migrations/*.sql` in order:
+
+  ```yaml
+  break:
+    runners:
+      - name: pgtap
+        match: ["db/tests/**/*.sql"]
+        command: [sh, -c, 'db/reset.sh && pg_prove -d "$PGDATABASE" "$@"', sh, "{files}"]
+  ```
+
+  pg_prove runs whole files, so `{filter}` does not apply. With Supabase,
+  `supabase db reset && supabase test db` fits the same way.
 
 **The worktree.** A temporary worktree has no `node_modules`, so `lattice break`
 symlinks each `node_modules` directory of the main checkout into the same relative
