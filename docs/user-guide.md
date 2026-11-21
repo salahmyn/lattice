@@ -1031,7 +1031,11 @@ reads them) and its entry points. `lattice serve` shows it at `/map`, and
 offline. The page lays out with ELK (elkjs 0.9.3, shipped in the binary):
 the export inlines it, and `serve` serves it itself, so neither makes a
 network request. If the library cannot start, the page falls back to a
-simple grid.
+simple grid. The first view follows the shape of the window: when the
+layered drawing would be much taller than the pane (many blocks, few links,
+so most of them stack in the first column), each connected group keeps its
+left-to-right layout, a large group with a cap on the blocks per column, and
+the groups are packed in rows to the pane's width and height.
 
 Every feature and invariant is a block. A dotted feature sits inside the
 feature its id extends: `orders.refunds` inside `orders`, and

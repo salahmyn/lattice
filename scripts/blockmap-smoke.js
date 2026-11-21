@@ -15,7 +15,10 @@
 // The network is blocked: every request that is not file:// is aborted and
 // fails the run, so the page must lay out with the layout library it carries
 // inline (ELK's layered layout, not the grid fallback). A second load stops the
-// library from starting and checks that the grid fallback still draws.
+// library from starting and checks that the grid fallback still draws. At
+// 1600×1000 a generated wide, shallow graph must be laid out wide (its
+// width:height near the pane's, Fit at 35% or more, no boxes overlapping), and
+// the demo graph no smaller than before.
 //
 // --shots writes PNGs of each view in light and dark. --perf N swaps in a
 // generated graph of about N blocks and prints timings instead of the smoke run.
@@ -336,6 +339,69 @@ async function smoke(browser) {
   check((await pageText(off.page)).includes('layout library not available: simple grid') && await off.page.$('#gload') === null && off.errors.length === 0,
     'without the layout library the grid fallback draws' + (off.errors.length ? ':\n  ' + off.errors.join('\n  ') : ''));
   await off.page.close();
+
+  await paneShape(browser);
+}
+
+// the first layout follows the pane's shape: a wide, shallow graph is drawn wide, not as one tall column, and the
+// demo graph is drawn no smaller than before
+async function paneShape(browser) {
+  const g = wideShallow();
+  const wide = path.join(path.dirname(file), path.basename(file, '.html') + '-wide.html');
+  fs.writeFileSync(wide, withGraph(fs.readFileSync(file, 'utf8'), g));
+  const tops = g.blocks.filter(b => !b.parent).length;
+  for (const [name, url, minZoom, minRatio] of [[`a wide, shallow graph (${g.blocks.length} blocks, ${tops} on top, ${g.block_edges.length} links)`, 'file://' + wide, 35, 0.6], ['the demo graph', 'file://' + file, 35, 0]]) {
+    const page = await browser.newPage({ viewport: { width: 1600, height: 1000 }, deviceScaleFactor: 1 });
+    const errors = [];
+    page.on('pageerror', e => errors.push('uncaught: ' + e.message));
+    await page.route(u => !/^(file|data|blob|about):/.test(u.protocol), r => r.abort('blockedbyclient'));
+    await page.goto(url); await diagramDrawn(page); await settle(page);
+    const m = await page.evaluate(() => {
+      const vp = document.getElementById('vp'), bb = vp.getBBox(), svg = document.getElementById('dsvg').getBoundingClientRect();
+      const top = (document.getElementById('dbar')?.offsetHeight || 0) + 10;
+      const rs = [...vp.querySelectorAll('.bx')].map(g => { const r = g.querySelector('rect').getBBox(); return { id: g.dataset.box, x0: r.x, y0: r.y, x1: r.x + r.width, y1: r.y + r.height }; });
+      const within = (a, b) => a.x0 >= b.x0 && a.y0 >= b.y0 && a.x1 <= b.x1 && a.y1 <= b.y1; // an open box holds what is inside it
+      const overlaps = [];
+      for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
+        const a = rs[i], b = rs[j];
+        if (a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1 && !within(a, b) && !within(b, a)) overlaps.push(a.id + ' / ' + b.id);
+      }
+      return { ratio: bb.width / bb.height, area: (svg.width - 40) / (svg.height - 60 - top), zoom: parseInt(document.getElementById('zp').textContent, 10), boxes: rs.length, overlaps, grid: document.body.innerText.includes('simple grid'),
+        at: rs.map(r => `${r.id}@${Math.round(r.x0)},${Math.round(r.y0)}`).sort().join(' ') };
+    });
+    const ok = !m.grid && m.zoom >= minZoom && m.ratio >= minRatio * m.area && !m.overlaps.length && !errors.length;
+    check(ok, `1600×1000, ${name}: Fit at ${m.zoom}% (want ≥ ${minZoom}%), width:height ${m.ratio.toFixed(2)} for a pane of ${m.area.toFixed(2)}` +
+      (minRatio ? ` (want ≥ ${(minRatio * m.area).toFixed(2)})` : '') + `, ${m.boxes} boxes, ${m.overlaps.length} overlapping` +
+      (m.overlaps.length ? ': ' + m.overlaps.slice(0, 5).join(', ') : '') + (errors.length ? ':\n  ' + errors.join('\n  ') : ''));
+    if (minRatio) { // the same graph in the same pane: the same layout
+      await page.reload(); await diagramDrawn(page); await settle(page);
+      const again = await page.evaluate(() => [...document.querySelectorAll('#vp .bx')].map(g => { const r = g.querySelector('rect').getBBox(); return `${g.dataset.box}@${Math.round(r.x)},${Math.round(r.y)}`; }).sort().join(' '));
+      check(again === m.at, `1600×1000, a wide, shallow graph: a reload lays it out the same`);
+    }
+    await page.close();
+  }
+}
+
+// the exported page with another graph inline in place of its own
+function withGraph(html, g) {
+  return html.replace(/(<script id="graph" type="application\/json">)[\s\S]*?(<\/script>)/, (_, a, b) => a + JSON.stringify(g).replace(/</g, '\\u003c') + b);
+}
+
+// a wide, shallow graph: 60 features of 2 to 4 invariants each, 36 entry points that each start a flow into one
+// feature, and features used in pairs; no system, so every feature and entry point is on top, in small groups
+function wideShallow() {
+  const blocks = [], edges = [], area = ['orders', 'fees', 'wallet', 'ledger', 'refunds', 'search', 'stock', 'reports'];
+  for (let f = 0; f < 60; f++) {
+    const id = 'feat:f' + f;
+    blocks.push({ id, kind: 'composite', title: `${area[f % 8]}.part${f}`, description: 'A feature of the generated workspace.', truth: 'declared', provenance: { kind: 'human' } });
+    for (let i = 1; i <= 2 + f % 3; i++) blocks.push({ id: `inv:f${f}.INV-${i}`, kind: 'invariant', parent: id, title: 'INV-' + i, truth: 'declared', provenance: { kind: 'human' } });
+    if (f % 2) edges.push({ from: 'feat:f' + (f - 1), to: id, kind: 'uses', labels: ['depends on'], provenance: { kind: 'human' } });
+  }
+  for (let e = 0; e < 36; e++) {
+    blocks.push({ id: 'ep:e' + e, kind: 'boundary-in', title: `POST /${area[e % 8]}/${e}`, truth: 'wired', provenance: { kind: 'extraction' } });
+    edges.push({ from: 'ep:e' + e, to: 'feat:f' + (e * 7) % 60, kind: 'flow', provenance: { kind: 'extraction' } });
+  }
+  return { blocks, block_edges: edges, flows: [], sources: [] };
 }
 
 // the served map while /api/graph is slow or failing: a live status, then an error with a retry, and neither once drawn
@@ -484,8 +550,7 @@ function generate(n) { // a synthetic graph of about n blocks: systems, areas, n
 
 async function measure(browser) {
   const g = generate(perf);
-  const html = fs.readFileSync(file, 'utf8').replace(/(<script id="graph" type="application\/json">)[\s\S]*?(<\/script>)/,
-    (_, a, b) => a + JSON.stringify(g).replace(/</g, '\\u003c') + b);
+  const html = withGraph(fs.readFileSync(file, 'utf8'), g);
   const big = path.join(path.dirname(file), path.basename(file, '.html') + `-perf-${g.blocks.length}.html`);
   fs.writeFileSync(big, html);
   console.log(`generated ${g.blocks.length} blocks, ${g.block_edges.length} edges, ${g.flows.length} flows (${big})`);

@@ -1357,6 +1357,18 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
   }
 
   const LW = 250, lh = () => 102 + (S.init ? 16 : 0) + (asOn() ? 16 : 0); // last lines: verdict counts with a proposal, the class with the assurance lens
+  const PACK = "pack\u0000"; // the id prefix of a connected group's frame in a packed layout; never a block id, never drawn
+  function fitArea() { // the part of the pane Fit draws into (without the minimap), as in fitTf
+    const r = document.getElementById("dsvg")?.getBoundingClientRect(), top = (document.getElementById("dbar")?.offsetHeight || 0) + 10;
+    const w = r ? r.width - 40 : 0, h = r ? r.height - TOOLBAR_H - top : 0;
+    return w > 0 && h > 0 ? { w, h } : { w: 1600, h: 900 };
+  }
+  // The first layout follows the pane's shape. ELK's layered algorithm puts every block with no inbound link in its
+  // first layer, so a wide, shallow graph (many blocks, few links) comes out as one tall column. When the drawing is
+  // much taller than the pane, the top level is laid out again: each connected group of blocks keeps a layered layout
+  // (with at most so many blocks per layer when the group alone would still be too tall), and the groups are packed
+  // into rows to the pane's aspect ratio (rectpacking). The packed layout is kept only when Fit can draw it larger.
+  // Same graph and pane, same layout.
   async function layout(pr) {
     const lanes = S.lens === "containment" && !D.root;
     const elkNode = id => {
@@ -1366,26 +1378,54 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
       return { id, layoutOptions: { ...part, "elk.padding": "[top=40,left=14,bottom=14,right=14]", "elk.direction": "RIGHT" },
         children: [...pr.nodes.values()].filter(c => c.parent === id).map(c => elkNode(c.id)) };
     };
-    const top = [...pr.nodes.values()].filter(n => n.parent === "").map(n => elkNode(n.id));
+    const tops = [...pr.nodes.values()].filter(n => n.parent === "").map(n => n.id);
+    const elkEdge = i => ({ id: "e" + i, sources: [pr.es[i].from], targets: [pr.es[i].to] });
+    const LAYERED = { "elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN",
+      "elk.partitioning.activate": String(lanes), "elk.layered.spacing.nodeNodeBetweenLayers": "90",
+      "elk.spacing.nodeNode": "22", "elk.spacing.componentComponent": "50", "elk.edgeRouting": "SPLINES", "elk.layered.mergeEdges": "true" };
+    const area = fitArea(), aim = area.w / area.h, scale = l => Math.min(area.w / l.w, area.h / l.h);
+    const linked = () => { // the connected groups of top-level boxes, biggest first, then in the order the boxes come
+      const at = new Map(tops.map((t, i) => [t, i])), up = tops.map((_, i) => i);
+      const find = i => { while (up[i] !== i) i = up[i] = up[up[i]]; return i; };
+      const topOf = id => { let n = pr.nodes.get(id); while (n.parent) n = pr.nodes.get(n.parent); return at.get(n.id); };
+      pr.es.forEach(e => { const a = find(topOf(e.from)), b = find(topOf(e.to)); if (a !== b) up[Math.max(a, b)] = Math.min(a, b); });
+      const gs = new Map();
+      tops.forEach((t, i) => { const r = find(i); (gs.get(r) || gs.set(r, { first: i, ids: [], es: [] }).get(r)).ids.push(t); });
+      pr.es.forEach((e, i) => gs.get(find(topOf(e.from))).es.push(i));
+      return [...gs.values()].sort((a, b) => b.ids.length - a.ids.length || a.first - b.first);
+    };
+    const packed = () => ({ id: "root", children: linked().map((g, i) => {
+      if (g.ids.length === 1 && !pr.nodes.get(g.ids[0]).open) return elkNode(g.ids[0]);
+      // blocks per layer for a group of n boxes to fill the pane's shape: c layers of n/c, a layer step being LW + 90 wide
+      // and a box lh() + 22 tall; only a group that needs more than one layer's worth is bounded
+      const n = g.ids.length, per = Math.max(2, Math.ceil(n / Math.max(1, Math.round(Math.sqrt(n * aim * (lh() + 22) / (LW + 90))))));
+      const bound = n > per ? { "elk.layered.layering.strategy": "COFFMAN_GRAHAM", "elk.layered.layering.coffmanGraham.layerBound": String(per), "elk.layered.nodePlacement.strategy": "LINEAR_SEGMENTS" } : {};
+      return { id: PACK + i, layoutOptions: { ...LAYERED, ...bound, "elk.padding": "[top=0,left=0,bottom=0,right=0]" }, children: g.ids.map(elkNode), edges: g.es.map(elkEdge) };
+    }), layoutOptions: { "elk.algorithm": "rectpacking", "elk.aspectRatio": String(aim), "elk.spacing.nodeNode": "50", "elk.padding": "[top=12,left=12,bottom=12,right=12]" } });
+    const read = res => { // absolute boxes, and each edge's points in the frame ELK names as its container
+      const boxes = new Map(), pts = new Map();
+      const walk = (n, ox, oy) => { for (const c of n.children || []) { boxes.set(c.id, { x: ox + c.x, y: oy + c.y, w: c.width, h: c.height }); walk(c, ox + c.x, oy + c.y); } };
+      walk(res, 0, 0);
+      const edgesIn = n => {
+        for (const e of n.edges || []) {
+          const o = e.container ? (e.container === "root" ? null : boxes.get(e.container)) : boxes.get(n.id);
+          const ox = o ? o.x : 0, oy = o ? o.y : 0, sec = (e.sections || [])[0];
+          if (sec) pts.set(e.id, [sec.startPoint, ...(sec.bendPoints || []), sec.endPoint].map(q => ({ x: q.x + ox, y: q.y + oy })));
+        }
+        for (const c of n.children || []) edgesIn(c);
+      };
+      edgesIn(res);
+      for (const id of boxes.keys()) if (id.startsWith(PACK)) boxes.delete(id);
+      return { boxes, pts, x: 0, y: 0, w: res.width, h: res.height };
+    };
     const boxes = new Map();
     await elkReady;
     D.note = window.ELK ? "" : "layout library not available: simple grid";
     if (window.ELK) {
       try {
-        const res = await new ELK().layout({ id: "root", children: top,
-          layoutOptions: { "elk.algorithm": "layered", "elk.direction": "RIGHT", "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-            "elk.partitioning.activate": String(lanes), "elk.layered.spacing.nodeNodeBetweenLayers": "90",
-            "elk.spacing.nodeNode": "22", "elk.spacing.componentComponent": "50", "elk.edgeRouting": "SPLINES", "elk.layered.mergeEdges": "true" },
-          edges: pr.es.map((e, i) => ({ id: "e" + i, sources: [e.from], targets: [e.to] })) });
-        const walk = (n, ox, oy) => { for (const c of n.children || []) { boxes.set(c.id, { x: ox + c.x, y: oy + c.y, w: c.width, h: c.height }); walk(c, ox + c.x, oy + c.y); } };
-        walk(res, 0, 0);
-        const pts = new Map();
-        for (const e of res.edges || []) {
-          const o = e.container && e.container !== "root" ? boxes.get(e.container) : null;
-          const ox = o ? o.x : 0, oy = o ? o.y : 0, sec = (e.sections || [])[0];
-          if (sec) pts.set(e.id, [sec.startPoint, ...(sec.bendPoints || []), sec.endPoint].map(q => ({ x: q.x + ox, y: q.y + oy })));
-        }
-        return { boxes, pts, x: 0, y: 0, w: res.width, h: res.height };
+        const one = read(await new ELK().layout({ id: "root", children: tops.map(elkNode), layoutOptions: LAYERED, edges: pr.es.map((_, i) => elkEdge(i)) }));
+        if (tops.length < 2 || one.w / one.h >= 0.6 * aim) return one;
+        try { const two = read(await new ELK().layout(packed())); return scale(two) > scale(one) ? two : one; } catch (err) { return one; }
       } catch (err) { D.note = "layout failed (" + err + "): simple grid"; boxes.clear(); }
     }
     // no ELK (it failed to load or to start): a grid, each open box's insides together under its own frame, straight edges

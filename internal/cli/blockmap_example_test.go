@@ -69,8 +69,12 @@ func TestBlockMapExample(t *testing.T) {
 // playwright package is missing; it never installs browsers. The script blocks
 // every request that is not file://, so the map must lay out with the layout
 // library it carries, and with its graph inline it never shows the load status.
+// At 1600×1000 a generated wide, shallow graph must be laid out to the pane's
+// shape (width:height at least 0.6 of the pane's, Fit at 35% or more, no
+// overlapping boxes, the same layout on a reload), and the demo graph at Fit 35% or more.
 // @verifies ui:INV-4
 // @verifies ui:INV-6
+// @verifies ui:INV-7
 func TestBlockMapBrowserSmoke(t *testing.T) {
 	if testing.Short() {
 		t.Skip("-short: no browser")
@@ -108,6 +112,9 @@ func TestBlockMapBrowserSmoke(t *testing.T) {
 		"ok   Discover names the proposal-only blocks: 159 of 159 blocks · 8 more only in proposals",
 		"ok   clicking it selects the proposal (159 -> 167 rows)",
 		"ok   no console errors",
+		"ok   1600×1000, a wide, shallow graph (",
+		"ok   1600×1000, the demo graph: ",
+		"ok   1600×1000, a wide, shallow graph: a reload lays it out the same",
 	} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("smoke output lacks %q", want)

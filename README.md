@@ -280,7 +280,9 @@ that needs no network (its layout library, elkjs, is inlined; see
 first, as `refresh` does, and save it when it changed; when it cannot be
 rebuilt they draw the stored one and say why (`export map --no-refresh`
 skips the rebuild). Storage is files by default, or PostgreSQL
-(`storage: {backend: postgres}`) for search and relation queries.
+(`storage: {backend: postgres}`) for search and relation queries. The
+map's first view follows the window's shape: loosely linked blocks are
+packed in rows rather than stacked in one tall column.
 
 The map's **Assurance** toggle (`a`) colours each block by the audit
 class of the promises it holds, the weakest by the audit's own order:
