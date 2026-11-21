@@ -228,3 +228,32 @@ func TestLoopbackRefusesForeignHost(t *testing.T) {
 		}
 	}
 }
+
+// With BlockGraph set, /api/graph draws the graph it gives, under the store
+// lock, and carries its refresh note beside the lens.
+// @verifies cli:INV-5
+func TestBlockMapDrawsTheRebuiltGraph(t *testing.T) {
+	ws := &workspace.Workspace{LatticeDir: t.TempDir()}
+	st := store.OpenFiles(ws)
+	calls := 0
+	srv := New(ws, Options{Store: st, BlockGraph: func(_ context.Context, got store.Store) (store.Graph, *MapRefresh, error) {
+		calls++
+		if got != st {
+			t.Errorf("BlockGraph got another store")
+		}
+		return store.Graph{Blocks: []schema.Block{{ID: "feat:orders", Kind: "composite", Title: "orders", Truth: "declared"}}},
+			&MapRefresh{Note: "this is the stored block graph; it was not rebuilt"}, nil
+	}})
+	w := httptest.NewRecorder()
+	srv.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/graph", nil))
+	var got MapData
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil {
+		t.Fatalf("/api/graph = %d %s", w.Code, w.Body.String())
+	}
+	if calls != 1 || len(got.Blocks) != 1 || got.Refresh == nil || !strings.Contains(got.Refresh.Note, "not rebuilt") {
+		t.Errorf("calls %d, graph %+v, refresh %+v", calls, got.Blocks, got.Refresh)
+	}
+	if _, ok := got.Assurance.Nodes["feat:orders"]; !ok {
+		t.Errorf("the lens is not computed over the rebuilt graph: %+v", got.Assurance.Nodes)
+	}
+}

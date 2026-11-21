@@ -15,19 +15,26 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/blocks"
 	"github.com/salahmyn/lattice/pkg/lattice/store"
 	"github.com/salahmyn/lattice/pkg/lattice/ui"
+	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
 
 func newExportCommand(io *IO) *cobra.Command {
 	cmd := &cobra.Command{Use: "export", Short: "Write views of the workspace as files"}
 	var title string
+	var noRefresh bool
 	mapCmd := &cobra.Command{
 		Use:   "map <out.html>",
-		Short: "Write the block map as one self-contained HTML file (the stored graph and its assurance lens inlined)",
-		Long: `Write the block map as one self-contained HTML file: the stored block graph,
+		Short: "Write the block map as one self-contained HTML file (the block graph and its assurance lens inlined)",
+		Long: `Write the block map as one self-contained HTML file: the block graph,
 and beside it the assurance lens, the audit (lattice audit) of the promises
 each block holds. The audit reads the ingested results, coverage and break
 runs; missing evidence is never drawn as a pass, and when the audit cannot
-run, or has no row for a promise block, that promise reads unknown.`,
+run, or has no row for a promise block, that promise reads unknown.
+
+The block graph is rebuilt from the workspace's inputs first, as lattice
+refresh does, and saved to the store when it changed. When it cannot be
+rebuilt (a source clone missing, say), the stored graph is drawn and the page
+and the output say why. --no-refresh draws the stored graph as it is.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			st, err := openStore(io)
@@ -35,12 +42,21 @@ run, or has no row for a promise block, that promise reads unknown.`,
 				return err
 			}
 			defer st.Close()
-			g, err := st.Graph(context.Background())
+			var g store.Graph
+			var rf *ui.MapRefresh
+			if noRefresh {
+				g, err = st.Graph(context.Background())
+			} else {
+				var ws *workspace.Workspace
+				if ws, err = openWorkspace(io); err == nil {
+					g, rf, err = mapGraph(context.Background(), ws, st)
+				}
+			}
 			if err != nil {
 				return io.fail("GRAPH_READ", err.Error(), nil)
 			}
 			lens := mapAssurance(cmd, io, g)
-			page, err := ui.MapPage(ui.MapData{Graph: g, Assurance: lens}, title)
+			page, err := ui.MapPage(ui.MapData{Graph: g, Assurance: lens, Refresh: rf}, title)
 			if err != nil {
 				return io.fail("EXPORT_FAILED", err.Error(), nil)
 			}
@@ -48,6 +64,7 @@ run, or has no row for a promise block, that promise reads unknown.`,
 				return io.fail("WRITE", err.Error(), nil)
 			}
 			io.printf("wrote %s: %d blocks, %d edges, %d flows\n", args[0], len(g.Blocks), len(g.Edges), len(g.Flows))
+			printMapRefresh(io, st, rf)
 			if !lens.Available {
 				io.printf("  assurance: unknown for every promise (%s)\n", lens.Note)
 			} else {
@@ -57,10 +74,14 @@ run, or has no row for a promise block, that promise reads unknown.`,
 				}
 				io.printf("  assurance: %d promises audited%s\n", len(lens.Promises), at)
 			}
+			if n := len(lens.Unplaced); n > 0 {
+				io.printf("  assurance: %d audited promises have no block on the map\n", n)
+			}
 			return nil
 		},
 	}
 	mapCmd.Flags().StringVar(&title, "title", "", "page title (default \"Block map\")")
+	mapCmd.Flags().BoolVar(&noRefresh, "no-refresh", false, "draw the stored block graph as it is, without rebuilding it")
 
 	var vtitle string
 	viewsCmd := &cobra.Command{
@@ -137,6 +158,25 @@ run, or has no row for a promise block, that promise reads unknown.`,
 	}
 	cmd.AddCommand(mapCmd, viewsCmd, featuresCmd)
 	return cmd
+}
+
+// printMapRefresh says how the drawn block graph was obtained.
+func printMapRefresh(io *IO, st store.Store, rf *ui.MapRefresh) {
+	switch {
+	case rf == nil:
+		io.printf("  block graph: stored, not rebuilt (--no-refresh)\n")
+	case rf.Note != "":
+		io.printf("  block graph: %s\n", rf.Note)
+	case rf.Saved:
+		io.printf("  block graph: rebuilt from the workspace and saved to %s (%s)\n", st.Where(), rf.Summary)
+	default:
+		io.printf("  block graph: current\n")
+	}
+	if rf != nil {
+		for _, w := range rf.Warnings {
+			io.errorf("warning: %s\n", w)
+		}
+	}
 }
 
 // mapAssurance audits the workspace for an exported map, read-only. When the

@@ -48,7 +48,8 @@ func checkEntryPoints(kg schema.KnowledgeGraph) []schema.Violation {
 				Message:  fmt.Sprintf("entry point %q reaches no feature — annotate the handler chain or accept it as a trampoline", ep.ID),
 			})
 		}
-		// PHANTOM_FLOW — every named feature must exist.
+		// PHANTOM_FLOW — every named feature must exist. lattice refresh
+		// warns about the same steps, over the same features.
 		for _, step := range ep.Flow {
 			if !featureIDs[step.Feature] {
 				out = append(out, schema.Violation{
@@ -56,6 +57,8 @@ func checkEntryPoints(kg schema.KnowledgeGraph) []schema.Violation {
 					Severity:  schema.SeverityError,
 					Message:   fmt.Sprintf("entry point %q flow step names non-existent feature %q", ep.ID, step.Feature),
 					FeatureID: step.Feature,
+					NextAction: &schema.NextAction{Kind: "edit_entry_point", Ref: ep.ID, Field: "flow",
+						Detail: "name a declared feature in the step, or create the feature it names"},
 				})
 			}
 		}

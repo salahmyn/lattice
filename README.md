@@ -220,7 +220,7 @@ A complete, validating three-language example lives in
 | `lattice analyze proposal <f>` | Conflict and impact analysis |
 | `lattice patch --from-file <f>` | Preview/apply a typed artifact edit |
 | `lattice serve` | Web UI (live updates, search); block map at `/map` (with an assurance lens), views at `/views` |
-| `lattice refresh` | Rebuild the block graph from the workspace's sources and judgments |
+| `lattice refresh` | Rebuild the block graph from the workspace's sources, judgments and features (`serve` and `export map` also rebuild it) |
 | `lattice record list\|get\|put` | Authored records (judgments, initiatives, evidence, BRDs) in the store |
 | `lattice store search\|relations\|export` | Query the stored block graph |
 | `lattice export map\|views\|features` | Self-contained map (graph and audit inlined) or views page; Gherkin `.feature` files |
@@ -258,9 +258,13 @@ Declare a workspace's sources in `lattice/workspace.yaml` (repos pinned to
 commits, each publishing `catalogue/v1` files), add judgments for what the
 catalogues cannot say, and run `lattice refresh`. The result is one graph
 of blocks and edges, stamped with the commit and release each source
-reflects. `lattice serve` shows it at `/map`; `lattice export map` writes
-the same page as one file. Storage is files by default, or PostgreSQL
-(`storage: {backend: postgres}`) for search and relation queries.
+reflects. Every feature and invariant is a block, a dotted feature nested
+in the one its id extends (`orders.refunds` in `orders`). `lattice serve`
+shows it at `/map`; `lattice export map` writes the same page as one file.
+Both rebuild the graph first, as `refresh` does, and save it when it
+changed; when it cannot be rebuilt they draw the stored one and say why
+(`export map --no-refresh` skips the rebuild). Storage is files by default,
+or PostgreSQL (`storage: {backend: postgres}`) for search and relation queries.
 
 The map's **Assurance** toggle (`a`) colours each block by the audit
 class of the promises it holds, the weakest by the audit's own order:

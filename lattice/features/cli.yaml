@@ -15,3 +15,7 @@ invariants:
     statement: init leaves .gitignore ignoring the workspace's cache and derived graph, appending only the missing lines and never rewriting the user's.
   - id: INV-3
     statement: A build without link-time version flags reports the module version and the commit, time and modified state the Go toolchain embedded; values set at link time are never replaced.
+  - id: INV-4
+    statement: refresh builds the block graph from the feature manifests extract loads, nested directories included, so it warns about a flow step exactly when validate reports it as PHANTOM_FLOW.
+  - id: INV-5
+    statement: export map and serve draw the block graph rebuilt from the workspace's inputs, writing only the block graph in the store and only when it changed; when it cannot be rebuilt they draw the stored graph and say why.
