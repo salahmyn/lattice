@@ -8,17 +8,23 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
+// FeatureBlockID is the id of the block a feature converts to.
+func FeatureBlockID(feature string) string { return "feat:" + feature }
+
+// InvariantBlockID is the id of the block an invariant of a feature converts to.
+func InvariantBlockID(feature, invariant string) string { return "inv:" + feature + "." + invariant }
+
 // addFeatures converts the feature axis into blocks (rnd/0003): a feature is a
 // composite block carrying its BRD link, its invariants are leaf blocks, and an
 // entry point is a boundary-in block. Feature YAML on disk is unchanged.
 func (g *graph) addFeatures(ms []schema.Manifest, eps []schema.EntryPoint) {
 	for _, m := range ms {
 		prov := schema.Provenance{Kind: schema.ProvenanceHuman, Source: "features/" + m.ID + ".yaml"}
-		id := "feat:" + m.ID
+		id := FeatureBlockID(m.ID)
 		g.blocks[id] = &schema.Block{ID: id, Kind: "composite", Title: m.ID, Description: m.Purpose,
 			BRD: m.ImplementsBRD, Truth: schema.TruthDeclared, Provenance: prov, Attrs: ownerAttrs(m.Owners)}
 		for _, inv := range m.Invariants {
-			iid := "inv:" + m.ID + "." + inv.ID
+			iid := InvariantBlockID(m.ID, inv.ID)
 			g.blocks[iid] = &schema.Block{ID: iid, Kind: "invariant", Parent: id, Title: inv.ID,
 				Description: inv.Statement, Truth: schema.TruthDeclared, Provenance: prov}
 		}

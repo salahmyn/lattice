@@ -56,7 +56,8 @@ func TestBlockMapExample(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"<title>Demo bookshop</title>", `data-tab="focus"`, `data-tab="discover"`, `"id":"sys.checkout"`, `"owner":"team-payments"`, `"initiative":"pay-sheet"`} {
+	for _, want := range []string{"<title>Demo bookshop</title>", `data-tab="focus"`, `data-tab="discover"`, `"id":"sys.checkout"`, `"owner":"team-payments"`, `"initiative":"pay-sheet"`,
+		`"contract":"lattice.audit/1","available":true`, `"inv:checkout.INV-1":{"class":"unenforced","style":"unenforced"`} { // the assurance lens: the demo has no enforcers
 		if !bytes.Contains(html, []byte(want)) {
 			t.Errorf("exported map lacks %s", want)
 		}
@@ -97,6 +98,11 @@ func TestBlockMapBrowserSmoke(t *testing.T) {
 		"ok   Focus: after Fit with the minimap on, no card is under the minimap",
 		"ok   system context at 2 hop(s): each block once",
 		"ok   a block linked both ways is marked ⇄ both ways",
+		"ok   the assurance toggle turns the lens on",
+		"ok   the assurance legend lists 9 classes and the rule",
+		"ok   the assurance lens draws each box in its kernel style",
+		"ok   a deep link restores the lens; the details show the block's assurance",
+		"ok   a turns the lens off",
 		"ok   Discover names the proposal-only blocks: 159 of 159 blocks · 8 more only in proposals",
 		"ok   clicking it selects the proposal (159 -> 167 rows)",
 		"ok   no console errors",
