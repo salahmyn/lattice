@@ -2554,7 +2554,9 @@ applies:
    trigger) is `data`. The handler of a declared entry point takes the layer of
    its kind: `http_route` and `grpc` are `api`; `cron`, `queue`,
    `event_consumer` and `webhook` are `async`; `cli` is `service`. This holds for
-   the handler symbol only, not for what it calls.
+   the handler symbol only, not for what it calls. When entry points of
+   different kinds share one handler, the entry point with the lowest id
+   decides.
 2. **A declared path rule.** `layers:` in `lattice/workspace.yaml` lists
    `{glob, layer}` entries, matched against the file's path as the graph names it
    (relative to its code root). The first match wins.
