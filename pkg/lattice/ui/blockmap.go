@@ -16,7 +16,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/blocks"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/store"
@@ -88,23 +87,26 @@ func (s *Server) apiGraph(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, err, http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, MapData{Graph: g, Assurance: s.mapAssurance(r.Context(), g)})
+	lens, cache := s.mapAssurance(r.Context(), g)
+	if cache != "" {
+		w.Header().Set(cacheHeader, cache)
+	}
+	writeJSON(w, MapData{Graph: g, Assurance: lens})
 }
 
 // mapAssurance audits the live workspace for the map, read-only, as
-// /api/v2 does. When the graph cannot be built the lens says why and every
-// promise reads unknown.
-func (s *Server) mapAssurance(ctx context.Context, g store.Graph) AssuranceLens {
+// /api/v2 does, through the same facts cache. When the graph cannot be built
+// the lens says why and every promise reads unknown. cache says how the
+// audit was obtained ("" when there was none to obtain).
+func (s *Server) mapAssurance(ctx context.Context, g store.Graph) (AssuranceLens, string) {
 	if s.opts.GraphBuilder == nil && s.opts.ReadOnlyGraphBuilder == nil {
-		return Assurance(g, nil, "the server has no knowledge graph to audit")
+		return Assurance(g, nil, "the server has no knowledge graph to audit"), ""
 	}
-	kg, err := s.readGraph(ctx)
+	f, cache, err := s.facts(ctx)
 	if err != nil {
-		return Assurance(g, nil, "the audit could not build the knowledge graph: "+err.Error())
+		return Assurance(g, nil, "the audit could not build the knowledge graph: "+err.Error()), cache
 	}
-	_, dirty := s.gitState()
-	rep := audit.Compute(audit.Collect(s.ws.LatticeDir, kg, dirty != nil && *dirty))
-	return Assurance(g, &rep, "")
+	return Assurance(g, &f.report, ""), cache
 }
 
 func (s *Server) apiBlockSearch(w http.ResponseWriter, r *http.Request) {

@@ -31,6 +31,26 @@ type Detector interface {
 	Detect(ctx context.Context, ws *workspace.Workspace, modules []ir.Module) ([]schema.EntryPoint, error)
 }
 
+// InputLister is a detector that reads files beyond the parsed source (a
+// framework's route files, wherever they sit). InputGlobs lists them as
+// glob patterns, so a caller that keys a cache on everything a graph build
+// reads can cover them.
+type InputLister interface {
+	InputGlobs(ws *workspace.Workspace) []string
+}
+
+// InputGlobs is the union of the registered detectors' input globs, in
+// detector order.
+func InputGlobs(ws *workspace.Workspace) []string {
+	var out []string
+	for _, d := range All() {
+		if l, ok := d.(InputLister); ok {
+			out = append(out, l.InputGlobs(ws)...)
+		}
+	}
+	return out
+}
+
 // registry holds every detector registered at init time. Detect runs the
 // registry against a workspace and dedupes findings.
 var registry []Detector

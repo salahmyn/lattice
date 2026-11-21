@@ -172,6 +172,18 @@ type CodeRoot struct {
 var moduleScript = regexp.MustCompile(`(?is)<script\b[^>]*>`)
 var attr = regexp.MustCompile(`(?i)\b(type|src)\s*=\s*["']([^"']*)["']`)
 
+// The build files EntryFiles reads beside the parsed modules.
+const (
+	packageJSON  = "package.json"
+	indexHTML    = "index.html"
+	tsconfigJSON = "tsconfig.json"
+)
+
+// BuildFiles names the files EntryFiles reads in the directories that hold
+// parsed modules (and their parents), whether git tracks them or ignores
+// them. A cache keyed on what a graph build reads covers them by name.
+func BuildFiles() []string { return []string{packageJSON, indexHTML, tsconfigJSON} }
+
 // EntryFiles reads the build configuration beside the parsed modules: a
 // package.json's main, module, exports and bin, and an index.html's
 // <script type="module" src>; and it names every tool config file
@@ -234,12 +246,12 @@ func EntryFiles(roots []CodeRoot, modules []ir.Module) []EntryFile {
 		}
 		for _, d := range list {
 			abs := filepath.Join(cr.Abs, filepath.FromSlash(d))
-			if pkg, err := os.ReadFile(filepath.Join(abs, "package.json")); err == nil {
+			if pkg, err := os.ReadFile(filepath.Join(abs, packageJSON)); err == nil {
 				for _, e := range packageEntries(pkg) {
 					emit(d, e.target, "package.json "+e.field, e.field != "bin")
 				}
 			}
-			if html, err := os.ReadFile(filepath.Join(abs, "index.html")); err == nil {
+			if html, err := os.ReadFile(filepath.Join(abs, indexHTML)); err == nil {
 				for _, src := range moduleScripts(string(html)) {
 					emit(d, strings.TrimPrefix(src, "/"), "index.html", false)
 				}
@@ -376,7 +388,7 @@ func sourceOf(rootAbs, dir, rel string, parsed func(string) bool) string {
 	if dir == "." {
 		inDir = rel
 	}
-	outDir, rootDir := tsconfigDirs(filepath.Join(rootAbs, filepath.FromSlash(dir), "tsconfig.json"))
+	outDir, rootDir := tsconfigDirs(filepath.Join(rootAbs, filepath.FromSlash(dir), tsconfigJSON))
 	if outDir != "" && strings.HasPrefix(inDir, outDir+"/") {
 		if f := try(path.Join(dir, rootDir, strings.TrimPrefix(inDir, outDir+"/"))); f != "" {
 			return f
