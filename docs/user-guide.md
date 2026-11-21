@@ -1805,13 +1805,13 @@ the hash of the out end's file to the usual ones. Edge runs never count as the
 promise's break signal in `lattice audit`, which reads enforcer runs only; they are
 shown by `lattice slice`, where a hop an edge break killed is `break_tested`.
 
-**Browser journeys as verifiers.** An edge break renames a literal at the client end, and a client-side enforcer
-break changes code the browser runs. The unit tests of an API wrapper fake the
-far side, so they pass either way. A verifier that runs the real client against
-the faked or real far side notices: a Playwright journey that fakes
-`/functions/v1/list-orders` by route misses the fake once the client asks for
-`list-orders-lattice-break`, and fails. A Playwright runner is an ordinary
-`break.runners` entry:
+**Browser journeys as verifiers.** An edge break renames a literal at the client
+end, and a client-side enforcer break changes code the browser runs. The unit
+tests of an API wrapper fake the far side, so they pass either way. A verifier
+that runs the real client against the faked or real far side notices: a
+Playwright journey that fakes `/functions/v1/list-orders` by route misses the
+fake once the client asks for `list-orders-lattice-break`, and fails. A
+Playwright runner is an ordinary `break.runners` entry:
 
 ```yaml
 break:
