@@ -2,6 +2,21 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.22.3] — 2026-11-21
+
+A cached break outcome could be handed to the wrong enforcer.
+
+### Fixed
+
+- **Two enforcers with the same source never share a cached outcome.** The break cache key held
+  the enforcer's source hash, but not which enforcer the run was for.
+  - **What went wrong.** One promise kept by the same code in two modules, such as a client copy and
+    a shared copy, has two enforcers with equal keys. A second run on the same tree could then give
+    one copy the other's cached outcome: a kill whose reason quoted a test that cannot import it.
+  - **The fix.** The key now names the enforcer.
+  - **Cached outcomes.** `GeneratorVersion` is 6, so outcomes cached under such a collision are
+    dropped once.
+
 ## [0.22.2] — 2026-11-21
 
 Two ways a result could read as a pass that was not earned are fixed. A type error that a runner
