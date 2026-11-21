@@ -192,8 +192,10 @@ results:
 
 The per-invariant finding reads only results for the graph's commit (or a
 set, or a graph, with no commit); results ingested at another commit raise
-nothing. A warning fails the run only with `fail_on: warning` (or
-`--fail-on warning`); the default is `error`.
+nothing. `RESULTS_STALE` (info) names that case once: criteria and scenarios
+still read `demonstrated` from such results, and no level changes. A warning
+fails the run only with `fail_on: warning` (or `--fail-on warning`); the
+default is `error`.
 
 ```yaml
 validate:
@@ -686,15 +688,16 @@ a verifier's run executed the handler of an entry point it names.
   summaries carry `exercised`.
 - Floors are separate. A row can be exercised and still below its floor.
 
-Findings. Each one is off until the workspace has a `coverage:` block (or
-sets its severity), fires only when its data was ingested, and states the
-evidence basis it rests on:
+Findings. Each one but `RESULTS_STALE` is off until the workspace has a
+`coverage:` block (or sets its severity); each fires only when its data was
+ingested, and states the evidence basis it rests on:
 
 | Code | With `coverage:` | Fires when |
 |---|---|---|
 | `VERIFIER_MISSES_ENFORCER` | warning | every verifier of an invariant has evidence (its own run, its file's run, or a suite that never ran the enforcer) and none executed an enforcer |
 | `VERIFIER_UNPROVEN` | info | per-test coverage was ingested, and a verifier has none; the finding names the tests |
 | `COVERAGE_STALE` | warning | the coverage was ingested at another commit than the graph's, or from a dirty tree |
+| `RESULTS_STALE` | info, always on | the test results were ingested at another commit than the graph's. Criteria and scenarios still read `demonstrated` from them; the per-invariant `VERIFIER_FAILING` and the audit ignore them. It changes no level; raise it with `validate.severity: {RESULTS_STALE: warning}` |
 | `COVERAGE_BELOW_FLOOR` | warning, per declared floor | a feature, invariant or criterion tier is under its floor; an invariant is measured over its verifiers' runs when each has per-test data, else over the suite, and the finding says which |
 
 `validate.severity` entries always win, for example

@@ -89,9 +89,9 @@ func (s Set) WithTests(tests []schema.GraphSymbol) Set {
 	return s
 }
 
-// cacheFile is the on-disk location of the ingested set, relative to the
+// CacheFile is the on-disk location of the ingested set, relative to the
 // lattice/ directory.
-const cacheFile = ".cache/results/results.json"
+const CacheFile = ".cache/results/results.json"
 
 // junit mirrors the common junit/pytest/phpunit XML shape. The three
 // tools agree on testsuite/testcase with classname+name; failures and
@@ -737,7 +737,7 @@ func Ingest(latticeDir, commit string, paths ...string) (Set, error) {
 
 // Save writes the set to lattice/.cache/results/results.json.
 func Save(latticeDir string, set Set) error {
-	path := filepath.Join(latticeDir, cacheFile)
+	path := filepath.Join(latticeDir, CacheFile)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -752,7 +752,7 @@ func Save(latticeDir string, set Set) error {
 // results have been ingested — callers treat "no results" as "no
 // demonstration evidence", never as an error.
 func Load(latticeDir string) Set {
-	path := filepath.Join(latticeDir, cacheFile)
+	path := filepath.Join(latticeDir, CacheFile)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Set{Results: map[string]Outcome{}}
