@@ -4,6 +4,7 @@ package breaktest
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -34,6 +35,13 @@ type Options struct {
 	CodeRoot   string // absolute path of the primary code root
 	// Warn receives notes such as a reclaimed stale lock; nil is os.Stderr.
 	Warn io.Writer
+	// Edges adds, for each promise, a run per hop of EdgeHops that has a
+	// literal out end: the literal is altered and the promise's verifiers
+	// run. It is off by default because it multiplies the runs.
+	Edges bool
+	// EdgeHops are the hops on each promise's slice paths ("feature:INV-n"),
+	// read from the reach graph by the caller. Only used with Edges.
+	EdgeHops map[string][]EdgeHop
 }
 
 // warn is where notes go.
@@ -64,6 +72,9 @@ type target struct {
 	verifiers []results.Selector
 	tests     []schema.GraphSymbol
 	script    string // absolute path of the patch, "" for a generated break
+	// hop is set for an edge break: the run breaks that hop's out end, and
+	// enforcers is empty.
+	hop *EdgeHop
 }
 
 // promiseKey normalises an invariant reference to "feature:INV-n".
@@ -137,11 +148,29 @@ func plan(kg schema.KnowledgeGraph, opts Options) []target {
 		}
 		if script != "" {
 			out = append(out, target{promise: k, enforcers: syms, verifiers: sels, tests: tests, script: script})
-			continue
+		} else {
+			for _, s := range syms {
+				out = append(out, target{promise: k, enforcers: []schema.GraphSymbol{s}, verifiers: sels, tests: tests})
+			}
 		}
-		for _, s := range syms {
-			out = append(out, target{promise: k, enforcers: []schema.GraphSymbol{s}, verifiers: sels, tests: tests})
+		if opts.Edges {
+			out = append(out, planEdges(opts, k, sels, tests)...)
 		}
+	}
+	return out
+}
+
+// planEdges lists the edge runs of one promise: each hop with a literal out
+// end, then the hops that are skipped, which read unknown with their reason.
+func planEdges(opts Options, promise string, sels []results.Selector, tests []schema.GraphSymbol) []target {
+	try, skipped, over := edgeTargets(opts.EdgeHops[promise])
+	if over > 0 {
+		fmt.Fprintf(opts.warn(), "break: %s has %d more hop(s) than the %d an edge break tries; the rest are not broken\n", promise, over, MaxEdgesPerPromise)
+	}
+	var out []target
+	for _, h := range append(try, skipped...) {
+		h := h
+		out = append(out, target{promise: promise, verifiers: sels, tests: tests, hop: &h})
 	}
 	return out
 }

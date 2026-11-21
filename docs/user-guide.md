@@ -1655,6 +1655,56 @@ break:
   migration seeded after the object, by calling the unbroken object. Use the
   reset for those.
 
+**Edge breaks.** An enforcer break shows that a verifier notices the enforcer
+failing. A UI test with the backend faked can do that for the UI and still say
+nothing about the hop from the client to the API. `lattice break --edges` (or
+`break.edges: true` in `config.yaml`) breaks the **hops** too: for each promise it
+takes the hops on its slice paths (section 4p) and, for each one the reach graph
+resolved whose out end is a string literal in source, alters that literal so the
+key no longer matches, then runs the promise's verifiers.
+
+```sh
+lattice break --edges                     # enforcers, and each hop on their slice paths
+lattice break --edges --promise orders:INV-1
+```
+
+| Hop | What is altered at the out end |
+|---|---|
+| `http` | `-lattice-break` is appended to the path in the `fetch`, `axios` or `window.fetch` literal: the last path segment that leaves a key no route serves, looking from the last segment to the first, so `GET /api/orders` becomes `GET /api/orders-lattice-break` and, where a route `/api/orders/:id` would absorb a changed last segment, `GET /api/orders/42` becomes `GET /api/orders-lattice-break/42`. The method, the origin and the query are kept. For `functions.invoke('name')`, the name |
+| `rpc` | the function name in `.rpc('name')` |
+| `table` | the table name in `.from('t')` |
+| `publish` | the channel name at the publisher, where it is a literal in `new Queue('name').add()`, a declared wrapper's call, or a `pgmq_send` `queue_name` |
+
+Each alteration is one fixed insertion, the same on every run, made in a throwaway
+worktree like any other break. Nothing is guessed:
+
+- A hop is broken only when the adapter recorded where its literal is, and the
+  literal read back from the file is the one the key was read from. A URL that is
+  computed (`fetch(base + '/orders')`, a template with `${}`) is no hop at all, a
+  literal with an escape sequence is not altered, and a call of a bound queue
+  (`queue.add(...)` where `queue` was made elsewhere), a SQL `NOTIFY` and the other
+  languages record no position.
+- An **unknown** hop (an ambiguous reference followed to one of its candidates), a
+  resolved hop with no recorded position, and a request every altered path of which
+  a route still serves are listed as `unknown`, with a reason that starts `skipped:`.
+  No verifier runs for them.
+- A hop that several slice paths cross, or that several calls make, is broken once; a
+  function that sends the same request twice has both literals altered together. At
+  most 20 hops per promise are broken, and a note on stderr counts the rest.
+
+Each is a run with `"method": "edge"` and a `hop` (`from`, `to`, `kind`); its
+`enforcer` is the symbol that holds the out end and `enforcer_file` the file. The
+outcome follows the same rules as an enforcer break (killed, survived, unknown,
+partial). A **survived** edge break carries `"finding": "EDGE_BREAK_SURVIVED"` (info) and
+ends the table with the hops: no verifier of the promise noticed the request,
+call or message no longer reaching what it names. That is a real gap, a UI test
+with the route faked, say. Verifiers whose command applies SQL object files
+(`{patched_sql}`) check the database and cannot notice a client literal, so they are
+left out of edge runs and not counted as not run. The cache key adds the hop and
+the hash of the out end's file to the usual ones. Edge runs never count as the
+promise's break signal in `lattice audit`, which reads enforcer runs only; they are
+shown by `lattice slice`, where a hop an edge break killed is `break_tested`.
+
 **The worktree.** A temporary worktree has no `node_modules`, so `lattice break`
 symlinks each `node_modules` directory of the main checkout into the same relative
 path of the worktree (set `break.link_node_modules: false` to opt out). `break.setup`
@@ -2990,6 +3040,27 @@ The JSON adds, all optional: per hop `exercised` and `exercised_by` (sorted, at 
 5 tests); per path `exercised_hops` (the count, out of `len(hops)`); and on the
 record `exercised` (`measured` or `unknown`), `exercised_why` and `verifiers`
 (`id`, `layers`). `lattice.slice/1` only gained fields.
+
+### Which hops a break noticed
+
+A hop can also be **break-tested**: `lattice break --edges` (section 4i) altered the
+literal that names the hop's target at its out end, so the key no longer matched, and
+a verifier of the promise failed. The text draws it `kind*`, and `--json` adds, per
+hop, `break_tested` and `break_tested_by` (the failing verifiers, sorted, at most 5),
+and per path `break_tested_hops`:
+
+```
+  web.orders.load [ui] -http*-> api.orders.listOrders [api] =table=> sql.table.public.orders [data]
+      root: coverage.roots: the page; carried by ui -> api -> data; 2 hops; exercised 1 of 2; break-tested 1 of 2
+
+kind* marks a break-tested hop: an edge break of it (its out-end key altered) was killed by a verifier.
+```
+
+Only a **killed** edge break marks a hop, and only a resolved one: a survived or unknown
+run, a hop with no run and an unknown hop show nothing, and absent is never false. The
+runs are read from `breaks.json` when it is for the commit the graph is at, as the audit
+reads it. This never changes the `reading`. A hop whose edge break survived is the
+`EDGE_BREAK_SURVIVED` finding of `lattice break`.
 
 ## 4q. HTTP edges and edge truth
 

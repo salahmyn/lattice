@@ -73,7 +73,7 @@ func (w *tsRefWalker) requestKey(url, options *sitter.Node, def string) ir.Ref {
 	if !ok {
 		return ir.Ref{Kind: ir.RefHTTP}
 	}
-	return ir.Ref{Name: ir.HTTPKey(method, u), Qualifier: ir.HTTPOrigin(u), Kind: ir.RefHTTP}
+	return withLit(ir.Ref{Name: ir.HTTPKey(method, u), Qualifier: ir.HTTPOrigin(u), Kind: ir.RefHTTP}, url)
 }
 
 // configKey is the key of axios({method, url}).
@@ -90,7 +90,7 @@ func (w *tsRefWalker) configKey(cfg *sitter.Node) ir.Ref {
 	if !ok {
 		return ir.Ref{Kind: ir.RefHTTP}
 	}
-	return ir.Ref{Name: ir.HTTPKey(method, u), Qualifier: ir.HTTPOrigin(u), Kind: ir.RefHTTP}
+	return withLit(ir.Ref{Name: ir.HTTPKey(method, u), Qualifier: ir.HTTPOrigin(u), Kind: ir.RefHTTP}, val)
 }
 
 // invokeKey is the key of functions.invoke('name', {method}): the platform
@@ -108,7 +108,18 @@ func (w *tsRefWalker) invokeKey(name, options *sitter.Node) ir.Ref {
 	if !ok {
 		return ir.Ref{Kind: ir.RefHTTP}
 	}
-	return ir.Ref{Name: ir.HTTPKey(method, functionsPrefix+fnName), Kind: ir.RefHTTP}
+	return withLit(ir.Ref{Name: ir.HTTPKey(method, functionsPrefix+fnName), Kind: ir.RefHTTP}, name)
+}
+
+// withLit records where the string literal n, the one that carries the name
+// the reference is keyed by, is in the source (ir.Ref.LitStart, LitEnd). A
+// reference with no name, and a node that is not a plain string or template
+// literal, record nothing.
+func withLit(r ir.Ref, n *sitter.Node) ir.Ref {
+	if n != nil && r.Name != "" && (n.Kind() == "string" || n.Kind() == "template_string") {
+		r.LitStart, r.LitEnd = int(n.StartByte()), int(n.EndByte())
+	}
+	return r
 }
 
 // literalURL returns the text of a string literal, or of a template literal

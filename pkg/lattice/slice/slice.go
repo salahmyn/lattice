@@ -45,8 +45,8 @@ const (
 	ReadingUnknown        = "unknown"
 )
 
-// Truth of a hop. Exercised and break_tested are left out on purpose: a
-// later increment adds them, and an absent field is not a false one.
+// Truth of a hop. Exercised and break_tested are separate fields: an absent
+// field is not a false one.
 const (
 	TruthResolved = "resolved" // the graph resolved the reference to this target
 	TruthUnknown  = "unknown"  // an ambiguous reference that lists this target among its candidates
@@ -96,6 +96,13 @@ type Hop struct {
 	// capped at MaxExercisedBy.
 	Exercised   bool     `json:"exercised,omitempty"`
 	ExercisedBy []string `json:"exercised_by,omitempty"`
+	// BreakTested is set only when an edge break of this hop was killed: the
+	// literal that names the hop's target, at its out end, was altered and a
+	// verifier failed (see MarkBreakTested). BreakTestedBy lists the failing
+	// verifiers, sorted and capped at MaxExercisedBy. Absent means no edge
+	// break showed it, never that none would.
+	BreakTested   bool     `json:"break_tested,omitempty"`
+	BreakTestedBy []string `json:"break_tested_by,omitempty"`
 }
 
 // Path is one shortest path from a root to an enforcer.
@@ -113,6 +120,9 @@ type Path struct {
 	// ExercisedHops counts the hops marked exercised, out of len(Hops). It is
 	// absent when the record has no per-test coverage to count from.
 	ExercisedHops *int `json:"exercised_hops,omitempty"`
+	// BreakTestedHops counts the hops marked break_tested, out of len(Hops).
+	// It is absent when the record has no edge-break runs to count from.
+	BreakTestedHops *int `json:"break_tested_hops,omitempty"`
 }
 
 // Record is the slice of one invariant: lattice.slice/1.

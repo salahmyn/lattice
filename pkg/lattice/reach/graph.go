@@ -38,6 +38,23 @@ type Edge struct {
 	// member name unique in the language), structure, or scip.
 	Via  string `json:"via"`
 	Line int    `json:"line,omitempty"`
+	// Sites are where the literals that name the target are in source: one
+	// per call that made this edge, for the kinds whose key is a literal
+	// (http, rpc, table, publish) when the adapter recorded where it is. An
+	// edge with none cannot be altered at its out end.
+	Sites []Site `json:"sites,omitempty"`
+}
+
+// Site is one string literal in a source file that names an edge's target.
+type Site struct {
+	File string `json:"file"`
+	Line int    `json:"line"`
+	// Start and End are the byte offsets of the literal, quotes included.
+	Start int `json:"start"`
+	End   int `json:"end"`
+	// Key is the reference's key as the adapter read it from the literal
+	// ("GET /api/orders", "queue:emails", the name of an rpc or a table).
+	Key string `json:"key"`
 }
 
 // Unresolved is a reference left without a target.
@@ -96,6 +113,7 @@ type Graph struct {
 	Stats      Stats
 
 	nodes map[string]*node
+	http  httpEnds            // the routes the workspace serves
 	out   map[string][]string // resolved edges, the synchronous ones
 	// Channel edges are kept apart from out, so synchronous reach never
 	// crosses a channel: pub is publisher -> channel node, cons is channel
@@ -130,9 +148,9 @@ type Options struct {
 type builder struct {
 	g       *Graph
 	members map[string]map[string][]string // language -> member name -> FQNs
-	edgeSet map[string]bool
-	http    httpEnds // the routes the workspace serves
-	origins []string // declared own origins
+	edgeSet map[string]int                 // edge key -> index in g.Edges
+	http    httpEnds                       // the routes the workspace serves
+	origins []string                       // declared own origins
 }
 
 // Build resolves every module's references into a call graph.
@@ -142,7 +160,7 @@ func Build(modules []ir.Module, opts Options) *Graph {
 		pub: map[string][]string{}, cons: map[string][]string{},
 		imported: map[string]bool{}, modules: modules, byNS: map[string][]int{}, tops: map[int]string{},
 		Stats: Stats{ByLang: map[string]int{}}}
-	b := &builder{g: g, members: map[string]map[string][]string{}, edgeSet: map[string]bool{}}
+	b := &builder{g: g, members: map[string]map[string][]string{}, edgeSet: map[string]int{}}
 
 	for mi := range modules {
 		m := &modules[mi]
@@ -185,6 +203,7 @@ func Build(modules []ir.Module, opts Options) *Graph {
 	}
 
 	b.http = g.collectHTTPEnds(opts.EntryPoints)
+	g.http = b.http
 	b.collectEntryConsumers(opts.EntryPoints)
 	for _, o := range opts.Origins {
 		if ir.ValidHTTPOrigin(o) {
@@ -252,6 +271,15 @@ func Build(modules []ir.Module, opts Options) *Graph {
 		}
 		return a.Kind < c.Kind
 	})
+	for i := range g.Edges {
+		sites := g.Edges[i].Sites
+		sort.SliceStable(sites, func(a, c int) bool {
+			if sites[a].File != sites[c].File {
+				return sites[a].File < sites[c].File
+			}
+			return sites[a].Start < sites[c].Start
+		})
+	}
 	sort.SliceStable(g.Unresolved, func(i, j int) bool {
 		a, c := g.Unresolved[i], g.Unresolved[j]
 		if a.File != c.File {
@@ -290,10 +318,16 @@ func lastSegment(fqn string) string {
 
 func (b *builder) addEdge(e Edge) {
 	key := e.From + "\x00" + e.To + "\x00" + e.Kind
-	if b.edgeSet[key] || e.From == e.To {
+	if e.From == e.To {
 		return
 	}
-	b.edgeSet[key] = true
+	if i, seen := b.edgeSet[key]; seen {
+		// Another call that makes the same edge: its literal is a site too,
+		// so altering the edge's out end alters every call that makes it.
+		b.g.Edges[i].Sites = append(b.g.Edges[i].Sites, e.Sites...)
+		return
+	}
+	b.edgeSet[key] = len(b.g.Edges)
 	b.g.Edges = append(b.g.Edges, e)
 	switch e.Kind {
 	case ir.RefPublish:
@@ -464,7 +498,11 @@ func (b *builder) resolve(mc *modCtx, owner *node, from string, r ir.Ref) {
 	g.Stats.ByLang[m.Language]++
 	resolved := func(to, via string) {
 		g.Stats.Resolved++
-		b.addEdge(Edge{From: from, To: to, Kind: r.Kind, Via: via, Line: r.Line})
+		e := Edge{From: from, To: to, Kind: r.Kind, Via: via, Line: r.Line}
+		if r.HasLiteral() && r.Name != "" {
+			e.Sites = []Site{{File: m.File, Line: r.Line, Start: r.LitStart, End: r.LitEnd, Key: r.Name}}
+		}
+		b.addEdge(e)
 	}
 	unresolved := func(why string, cands []string) {
 		g.Stats.Unresolved++

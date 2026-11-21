@@ -34,9 +34,11 @@ type BreakRun struct {
 	Enforcer     string   `json:"enforcer"`
 	EnforcerFile string   `json:"enforcer_file,omitempty"`
 	Verifiers    []string `json:"verifiers,omitempty"`
-	Method       string   `json:"method,omitempty"` // early_return | scripted
-	Script       string   `json:"script,omitempty"`
-	Baseline     string   `json:"baseline,omitempty"` // pass | fail | error
+	Method       string   `json:"method,omitempty"` // early_return | scripted | edge
+	// Hop is set on an edge run: the hop whose out-end key was altered.
+	Hop      *BreakHop `json:"hop,omitempty"`
+	Script   string    `json:"script,omitempty"`
+	Baseline string    `json:"baseline,omitempty"` // pass | fail | error
 	// Outcome is killed, survived or unknown; anything else reads unknown.
 	Outcome    string `json:"outcome"`
 	Reason     string `json:"reason,omitempty"`
@@ -48,6 +50,16 @@ type BreakRun struct {
 	NotRunVerifiers []string `json:"not_run_verifiers,omitempty"`
 	FailedTests     []string `json:"failed_tests,omitempty"`
 }
+
+// BreakHop is the hop an edge run broke.
+type BreakHop struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	Kind string `json:"kind"`
+}
+
+// MethodEdge is the method of a run that broke a hop, not an enforcer.
+const MethodEdge = "edge"
 
 // LoadBreaks reads breaks.json; ok is false when there is none. A file that
 // cannot be parsed is reported as an error, not silently dropped.
@@ -86,9 +98,28 @@ func usableBreaks(bf *BreaksFile, head string) (map[string][]BreakRun, BreaksInp
 	}
 	out := map[string][]BreakRun{}
 	for _, r := range bf.Runs {
+		if r.Method == MethodEdge {
+			continue // a hop is not an enforcer: its runs never read as the promise's break signal
+		}
 		out[r.Promise] = append(out[r.Promise], r)
 	}
 	return out, in
+}
+
+// EdgeRuns returns the edge runs (Method "edge") of breaks.json by promise,
+// or none when the file is of another schema or commit than head, the same
+// rule the enforcer runs are read by.
+func EdgeRuns(bf *BreaksFile, head string) map[string][]BreakRun {
+	if bf == nil || bf.Schema != BreaksSchema || !stampMatches(bf.Commit, head) {
+		return nil
+	}
+	out := map[string][]BreakRun{}
+	for _, r := range bf.Runs {
+		if r.Method == MethodEdge && r.Hop != nil {
+			out[r.Promise] = append(out[r.Promise], r)
+		}
+	}
+	return out
 }
 
 func mergeBreaksInput(stamped, used BreaksInput) BreaksInput {
