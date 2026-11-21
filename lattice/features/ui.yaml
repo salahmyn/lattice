@@ -16,3 +16,5 @@ invariants:
     statement: serve reuses a computed knowledge graph and audit only while the fingerprint of every input they read is unchanged; any change, or any error computing the fingerprint, computes them again.
   - id: INV-4
     statement: The block map never loads code from the network; an exported map carries its layout library inline and serve serves it from the binary, so both lay out offline.
+  - id: INV-5
+    statement: The server-rendered pages load no script, stylesheet or font from another origin; serve serves every one of them from the binary, so the pages render offline.
