@@ -3749,13 +3749,14 @@ other channel does not.
 A **killer** is a verifier of the promise among the `failed_tests` of a killed break
 in `breaks.json`. A killer **ran a way in** when, strongest first:
 
-1. its own per-test coverage executed the handler, or a symbol on a static path from
-   the handler to the enforcer (the enforcer itself does not count, unless it is the
-   handler);
+1. its own per-test coverage executed the handler itself. A symbol further down the
+   path does not count: a test that calls it skips whatever the handler does first,
+   such as a catch-all, which is the gap this proof is for;
 2. `verifier-lines.json` (`lattice break --lines`) shows its verifier group's
-   invocation ran no other test and hit a line of the handler. This is group level:
-   it does not say which verifier of the group ran the line, and the evidence says so.
-   A shared invocation is no proof.
+   invocation ran no other test and hit a line of the handler, and every test that
+   invocation ran killed the break. This is group level: it does not say which test of
+   the group ran the line, and the evidence says so. A shared invocation, or one that
+   also ran a verifier that passed, is no proof.
 
 A static path from the killer to the handler is **never proof**. It shows the test can
 run the way in, not that it did.

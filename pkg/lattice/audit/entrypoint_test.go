@@ -103,16 +103,13 @@ func TestEntryProofPerTestCoverage(t *testing.T) {
 	src.Coverage = fakeCoverage{"f.TestEntry": {"f.EnfINV-1"}}
 	wantProof(t, "per-test run without the handler", epProofOf(t, src), EntryUnknown, CauseNoDynamic)
 
-	// A symbol between the handler and the enforcer counts.
+	// A symbol between the handler and the enforcer is not the way in: a test
+	// that calls it skips what the handler does first, so it proves nothing.
 	src = epSources("f.TestEntry")
 	src.Calls.Edges = []CallEdge{{From: "f.Serve", To: "f.Mid", Kind: "call"}, {From: "f.Mid", To: "f.EnfINV-1", Kind: "call"},
 		{From: "f.TestEntry", To: "f.Serve", Kind: "call"}}
 	src.Coverage = fakeCoverage{"f.TestEntry": {"f.Mid", "f.EnfINV-1"}}
-	p = epProofOf(t, src)
-	wantProof(t, "a symbol on the path", p, EntryProven, "")
-	if !strings.Contains(p.Evidence[0], "f.Mid on the path of f.route (f.Serve) to f.EnfINV-1") {
-		t.Errorf("evidence = %v", p.Evidence)
-	}
+	wantProof(t, "a symbol on the path", epProofOf(t, src), EntryUnknown, CauseNoDynamic)
 
 	// Only a run of the test file is per_file, not the test's own.
 	src = epSources("f.TestEntry")
@@ -138,7 +135,7 @@ func TestEntryProofVerifierLines(t *testing.T) {
 		src.VerifierLines = f
 		return epProofOf(t, src)
 	}
-	p := withLines(epLines(false, "11-12", "", "f.TestDirect", "f.TestEntry"), "f.TestEntry")
+	p := withLines(epLines(false, "11-12", "", "f.TestEntry"), "f.TestEntry")
 	wantProof(t, "unshared", p, EntryProven, "")
 	if !strings.Contains(p.Evidence[0], "unshared invocation") || !strings.Contains(p.Evidence[0], "group level") ||
 		!strings.Contains(p.Evidence[0], "f.Serve") {
@@ -146,15 +143,22 @@ func TestEntryProofVerifierLines(t *testing.T) {
 	}
 
 	for name, f := range map[string]*lines.File{
-		"shared":               epLines(true, "11-12", "", "f.TestDirect", "f.TestEntry"),
-		"handler not hit":      epLines(false, "", "", "f.TestDirect", "f.TestEntry"),
-		"group has no data":    epLines(false, "11-12", "the baseline did not pass", "f.TestDirect", "f.TestEntry"),
-		"killer not in group":  epLines(false, "11-12", "", "f.TestDirect"),
-		"other line hit only":  epLines(false, "20", "", "f.TestDirect", "f.TestEntry"),
-		"invocation is absent": {Schema: lines.FileSchema, Promises: map[string][]lines.Group{"f:INV-1": {{Key: "gone", Tests: []string{"f.TestEntry"}}}}},
+		"shared": epLines(true, "11-12", "", "f.TestDirect", "f.TestEntry"),
+		// The group also ran a verifier that passed: it may be the one that
+		// ran the handler, and a passing run noticed nothing.
+		"a passing test in the group": epLines(false, "11-12", "", "f.TestDirect", "f.TestEntry"),
+		"handler not hit":             epLines(false, "", "", "f.TestDirect", "f.TestEntry"),
+		"group has no data":           epLines(false, "11-12", "the baseline did not pass", "f.TestDirect", "f.TestEntry"),
+		"killer not in group":         epLines(false, "11-12", "", "f.TestDirect"),
+		"other line hit only":         epLines(false, "20", "", "f.TestDirect", "f.TestEntry"),
+		"invocation is absent":        {Schema: lines.FileSchema, Promises: map[string][]lines.Group{"f:INV-1": {{Key: "gone", Tests: []string{"f.TestEntry"}}}}},
 	} {
 		wantProof(t, name, withLines(f, "f.TestEntry"), EntryUnknown, CauseNoDynamic)
 	}
+
+	// Every test the group ran killed the break: one of them ran the handler.
+	wantProof(t, "every group test killed", withLines(epLines(false, "11-12", "", "f.TestDirect", "f.TestEntry"),
+		"f.TestDirect", "f.TestEntry"), EntryProven, "")
 
 	// A killer's own per-test run outranks its group's lines: the run is
 	// known not to have executed the handler.

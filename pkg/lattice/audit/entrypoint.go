@@ -235,24 +235,21 @@ type killerVerdict struct {
 // enf ran a way in, strongest evidence first: its own per-test run, the
 // unshared line data of its verifier group, then the static call graph, which
 // can only say it could (unknown) or could not (none).
-func (p *prover) proveKiller(promise, k, enf string, ways []wayPath) killerVerdict {
+func (p *prover) proveKiller(promise, k, enf string, ways []wayPath, killers []string) killerVerdict {
+	// Proof is the handler itself running: a test that calls a symbol further
+	// down the path skips whatever the handler does first (a catch-all, a
+	// guard), which is the very gap an entry-point proof is for.
 	perTest := false
 	if p.cov != nil && p.cov.HasPerTest() {
 		for _, w := range ways {
-			for _, s := range w.path {
-				ex, basis := p.cov.TestRan(k, s)
-				if basis != rtm.EvidencePerTest {
-					break
-				}
-				perTest = true
-				if ex {
-					what := "the handler " + s + " of " + w.ID
-					if s != w.Handler {
-						what = s + " on the path of " + w.ID + " (" + w.Handler + ") to " + enf
-					}
-					return killerVerdict{state: killerRan,
-						detail: k + ": its own run executed " + what + " (per-test coverage)"}
-				}
+			ex, basis := p.cov.TestRan(k, w.Handler)
+			if basis != rtm.EvidencePerTest {
+				continue
+			}
+			perTest = true
+			if ex {
+				return killerVerdict{state: killerRan,
+					detail: k + ": its own run executed the handler " + w.Handler + " of " + w.ID + " (per-test coverage)"}
 			}
 		}
 	}
@@ -260,7 +257,7 @@ func (p *prover) proveKiller(promise, k, enf string, ways []wayPath) killerVerdi
 	// promise's verifiers, but not which of them hit a line. A killer whose
 	// own per-test run is known is judged by that run alone.
 	if !perTest {
-		if d, ok := p.linesRan(promise, k, ways); ok {
+		if d, ok := p.linesRan(promise, k, ways, killers); ok {
 			return killerVerdict{state: killerRan, detail: d}
 		}
 	}
@@ -304,12 +301,24 @@ func (p *prover) proveKiller(promise, k, enf string, ways []wayPath) killerVerdi
 
 // linesRan reads verifier-lines.json: the killer's runner group had an
 // invocation that ran no other test, and it hit a line of a way in's handler.
-func (p *prover) linesRan(promise, k string, ways []wayPath) (string, bool) {
+// Group data cannot say which of its tests ran a line, so it proves a killer
+// only when every test the group ran killed the break: a verifier that ran
+// the handler and passed noticed nothing, and must not lend its run.
+func (p *prover) linesRan(promise, k string, ways []wayPath, killers []string) (string, bool) {
 	if p.vlines == nil {
 		return "", false
 	}
 	for _, g := range p.vlines.Promises[promise] {
 		if g.Shared || g.Unknown != "" || g.Key == "" || !hasString(g.Tests, k) {
+			continue
+		}
+		allKilled := len(g.Tests) > 0
+		for _, t := range g.Tests {
+			if !hasString(killers, t) {
+				allKilled = false
+			}
+		}
+		if !allKilled {
 			continue
 		}
 		inv, ok := p.vlines.Invocations[g.Key]
@@ -401,7 +410,7 @@ func (p *prover) proveRun(promise string, run BreakRun, verifiers []string) runP
 
 	var unknown []killerVerdict
 	for _, k := range rp.killers {
-		v := p.proveKiller(promise, k, run.Enforcer, ways)
+		v := p.proveKiller(promise, k, run.Enforcer, ways, rp.killers)
 		switch v.state {
 		case killerRan:
 			rp.evidence = append(rp.evidence, v.detail)
