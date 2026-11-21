@@ -219,6 +219,39 @@ func TestBreakOutcomes(t *testing.T) {
 	}
 }
 
+// lattice break reads a break that left the verifiers that ran green, while
+// another did not run, as unknown with a "partial: " reason. The audit reads
+// it as the older survived form with not_run_verifiers: unknown/partial_run,
+// never fake. An unknown run for another reason (a timeout) that lists
+// verifiers not run is not a partial run.
+// @verifies audit:INV-3
+func TestPartialUnknownRunReadsPartial(t *testing.T) {
+	kg := graph(inv("INV-1"), []string{"INV-1"}, map[string][]string{"INV-1": {"f.TestOne", "f.TestJourney"}})
+	set := pass("f.TestOne", "f.TestJourney")
+	unknown := func(reason string) BreakRun {
+		r := run("f:INV-1", "f.EnfINV-1", "unknown")
+		r.Baseline, r.Reason = "pass", reason
+		r.RanVerifiers = []string{"f.TestOne"}
+		r.NotRunVerifiers = []string{"f.TestJourney"}
+		return r
+	}
+	row := Compute(Sources{KG: kg, Results: set, Breaks: breaks("abc123",
+		unknown("partial: the 1 verifier(s) that ran passed after the break; 1 verifier(s) did not run: f.TestJourney (no runner matches e2e/j.spec.ts)"))}).Rows[0]
+	if row.Class != ClassUnknown || row.Kind != KindPartialRun || row.Signals.BreakTested.Value != "partial_run" ||
+		!strings.Contains(row.Reason, "f.TestJourney") {
+		t.Errorf("partial: %s/%s %q %+v", row.Class, row.Kind, row.Reason, row.Signals.BreakTested)
+	}
+	if len(row.Enforcers) != 1 || row.Enforcers[0].Outcome != OutcomeUnknown || !strings.Contains(row.Enforcers[0].Reason, "f.TestJourney") {
+		t.Errorf("enforcers: %+v", row.Enforcers)
+	}
+
+	timeout := Compute(Sources{KG: kg, Results: set, Breaks: breaks("abc123",
+		unknown("verifiers timed out after 2m0s after the break"))}).Rows[0]
+	if timeout.Kind == KindPartialRun || timeout.Signals.BreakTested.Value != "unknown" {
+		t.Errorf("a timeout is not a partial run: %s/%s %+v", timeout.Class, timeout.Kind, timeout.Signals.BreakTested)
+	}
+}
+
 // A survived run is fake only when every verifier ran. With a verifier that
 // could not run (a journey the runner excludes), it reads unknown/partial_run
 // and names the verifier; a killed enforcer still makes the promise

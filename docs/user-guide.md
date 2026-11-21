@@ -1291,13 +1291,18 @@ into the worktree and records `dirty: true`.
 | Outcome | Meaning |
 |---|---|
 | `killed` | The verifiers passed before the break and failed after it. |
-| `survived` | They passed both times: the test cannot tell the code is broken. |
+| `survived` | They all ran and passed both times: the test cannot tell the code is broken. |
 | `unknown` | Anything else. It is never a pass and never a fail. |
 
 `unknown` covers: no generated break for the language or symbol ("add a
 script"), a break that does not compile, a baseline that fails or executes no
-test, a timeout (`--timeout`, default 120s, per test run) and no runner
-configured.
+test, a timeout (`--timeout`, default 120s, per test run), no runner
+configured, and a **partial** run: the verifiers that ran passed after the
+break, but some did not run (no runner matches their file, no test was
+selected, or the JUnit report does not show them), so the ones that could have
+noticed never saw the break. Its reason starts `partial:` and names them
+("partial: the 4 verifier(s) that ran passed after the break; 6 verifier(s) did
+not run: …"). A group that fails after the break still makes the run `killed`.
 
 Only an explicit build marker reads as "does not compile": Go's `[build
 failed]` or `[setup failed]`, an esbuild or transform `file:line:col: ERROR:`
@@ -1427,8 +1432,9 @@ A setup command that fails makes every run `unknown` ("setup failed").
 `lattice results tests --verifiers` shows the filter each runner takes.
 
 Each run in `breaks.json` records `ran_verifiers` (from the JUnit report, or Go's
-`-v` pass lines), `not_run_verifiers` (no runner, or the filter or the runner's
-config left them out) and `failed_tests` (the tests that failed after the break).
+`-v` pass lines), `not_run_verifiers` (no runner, the filter or the runner's
+config left them out, or they did not run after the break) and `failed_tests`
+(the tests that failed after the break).
 
 **Cache.** An earlier killed or survived outcome is reused when the
 enforcer's source, the verifiers' source, the method, the script and the
@@ -1459,7 +1465,8 @@ a `summary` of the shown runs (`runs`, `killed`, `survived`, `unknown`, `ran`,
 the top `unknown_reasons` and `missing_runners`, and the invocation's
 `baselines`), and `error` and `code` when
 `--fail-on` matched. Runs that lack a runner count under one reason, `no runner
-configured`, whatever languages each lacks; `missing_runners` counts, per
+configured`, whatever languages each lacks, and partial runs under `partial:
+some verifiers did not run`; `missing_runners` counts, per
 language, the runs that need its runner (a run that needs two counts under
 both), so each runner to configure is named once.
 
@@ -1661,10 +1668,10 @@ proof the intent is right.
 `breaks.json` (`lattice/.cache/results/`, written by `lattice break`) is read
 as a file. A run for another commit, or of a schema the audit does not know, is
 set aside and listed under `inputs.breaks.ignored`. When an invariant has
-several enforcers, a survived break on any of them reads `passes_when_broken`,
-but only when no verifier of the promise was left unrun: a run with entries in
-`not_run_verifiers` reads `unknown` / `partial_run`, with a reason naming those
-verifiers. `break_tested` needs at least one enforcer killed and none survived
+several enforcers, a survived break on any of them reads `passes_when_broken`.
+A partial run (`unknown` with a `partial:` reason, or, in an older
+`breaks.json`, `survived` with entries in `not_run_verifiers`) reads `unknown` /
+`partial_run`, with a reason naming the verifiers that did not run. `break_tested` needs at least one enforcer killed and none survived
 with all verifiers run. A row's evidence lists the outcome of each enforcer, with
 its unrun verifiers and failed tests. A `breaks.json` from before these fields
 reads as it always did.
@@ -1672,7 +1679,7 @@ reads as it always did.
 Each row also carries `enforcers`: every enforcer of the promise as
 `{symbol, file, line, outcome, reason}`, with `outcome` one of `killed`,
 `survived` (its break left every verifier green), `unknown` (no runner, a red
-baseline, or a survival while a verifier could not run) or `not_run` (no break
+baseline, or a partial run) or `not_run` (no break
 run of it). It says *which* enforcer a class is about and never changes the
 class: one survived enforcer still makes the promise `fake` /
 `passes_when_broken`, even when the others were killed. When a promise has

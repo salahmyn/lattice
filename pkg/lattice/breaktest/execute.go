@@ -297,8 +297,8 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 	case statusFail:
 		run.Outcome, run.Reason, run.FailedTests = Killed, res.reason+note, res.failed
 	case statusOK:
-		run.Outcome = Survived
-		run.Reason = notRunReason(run.NotRunVerifiers, notRunWhy) + note
+		run.Outcome, run.Reason = survivedOrPartial(&run, res.ran, notRunWhy)
+		run.Reason += note
 	case statusBuild:
 		run.Reason = "break " + res.reason
 	case statusTimeout:
@@ -307,6 +307,46 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 		run.Reason = res.reason
 	}
 	return run, nil
+}
+
+// survivedOrPartial reads a break that every group passed. It is survived
+// only when each verifier ran both at baseline and after the break; when any
+// did not (no runner, no test selected, or absent from the JUnit report), the
+// break was never shown to the ones that could have noticed it, so the run is
+// unknown, with a partial reason. after are the verifiers that ran after the
+// break; the ones that ran only at baseline join the run's not-run list.
+// @enforces breaktest:INV-4, breaktest:INV-7
+func survivedOrPartial(run *Run, after []string, why map[string]string) (outcome, reason string) {
+	ranAfter := map[string]bool{}
+	for _, v := range after {
+		ranAfter[v] = true
+	}
+	var both []string
+	for _, v := range run.RanVerifiers {
+		if ranAfter[v] {
+			both = append(both, v)
+			continue
+		}
+		run.NotRunVerifiers = append(run.NotRunVerifiers, v)
+		why[v] = "did not run after the break"
+	}
+	run.RanVerifiers = both
+	if len(run.NotRunVerifiers) == 0 {
+		return Survived, ""
+	}
+	sort.Strings(run.NotRunVerifiers)
+	return Unknown, fmt.Sprintf("%sthe %d verifier(s) that ran passed after the break; %s",
+		PartialPrefix, len(both), notRunReason(run.NotRunVerifiers, why))
+}
+
+// PartialPrefix starts the reason of a partial run: the verifiers that ran
+// passed after the break, but some did not run, so it reads unknown.
+const PartialPrefix = "partial: "
+
+// IsPartial reports whether a reason is a partial run's. A summary groups
+// such runs under one reason.
+func IsPartial(reason string) bool {
+	return strings.HasPrefix(reason, PartialPrefix)
 }
 
 // noRunnerReason says which languages or files have no runner.

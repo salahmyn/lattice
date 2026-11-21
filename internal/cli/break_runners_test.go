@@ -116,10 +116,12 @@ func has(list []string, sub string) bool {
 
 // A promise whose verifiers span two frameworks runs both: it is killed when
 // either group fails after the break, and each framework's tests are
-// recorded as run. A verifier no runner covers is not run, so a survived
-// outcome carries it in not_run_verifiers; a runner whose filter selects no
-// test leaves the baseline unknown, never survived.
+// recorded as run. A verifier no runner covers is not run, so a break the
+// others do not notice reads unknown (partial), never survived, and carries
+// it in not_run_verifiers; a runner whose filter selects no test leaves the
+// baseline unknown, never survived.
 // @verifies breaktest:INV-3
+// @verifies breaktest:INV-4
 // @verifies breaktest:INV-6
 // @verifies breaktest:INV-7
 func TestBreakRunnersSpanFrameworks(t *testing.T) {
@@ -158,10 +160,12 @@ func TestBreakRunnersSpanFrameworks(t *testing.T) {
 	}
 
 	// INV-3: the checking verifier is under a glob no runner matches. The
-	// other one survives, but the promise is not fully run.
+	// other one passes after the break, but the promise is not fully run, so
+	// nothing is known about the one that could have noticed.
 	r = runs["web:INV-3"]
-	if r.Outcome != breaktest.Survived || len(r.RanVerifiers) != 1 || len(r.NotRunVerifiers) != 1 ||
-		!strings.Contains(r.NotRunVerifiers[0], "orphan") || !strings.Contains(r.Reason, "no runner matches fw3/orphan.test.js") {
+	if r.Outcome != breaktest.Unknown || len(r.RanVerifiers) != 1 || len(r.NotRunVerifiers) != 1 ||
+		!strings.Contains(r.NotRunVerifiers[0], "orphan") || !strings.HasPrefix(r.Reason, "partial: the 1 verifier(s) that ran passed after the break; ") ||
+		!strings.Contains(r.Reason, "no runner matches fw3/orphan.test.js") {
 		t.Errorf("INV-3: %+v", r)
 	}
 

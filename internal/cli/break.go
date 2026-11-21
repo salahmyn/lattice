@@ -29,9 +29,10 @@ func newBreakCommand(io *IO) *cobra.Command {
 		Long: "For each promise (invariant) with an enforcer, break the enforcer on a temporary\n" +
 			"git worktree at HEAD, run only that promise's verifiers, and record whether they\n" +
 			"notice. A verifier that passes before and after the break cannot tell the code is\n" +
-			"broken (survived); one that passes before and fails after is killed; anything\n" +
-			"else (no generator for the language, a break that does not compile, a failing\n" +
-			"baseline, a timeout, no runner configured) is unknown, which is never a pass.\n" +
+			"broken (survived, when every verifier ran); one that passes before and fails\n" +
+			"after is killed; anything else (no generator for the language, a break that\n" +
+			"does not compile, a failing baseline, a timeout, no runner configured, or a\n" +
+			"verifier that did not run) is unknown, which is never a pass.\n" +
 			"\n" +
 			"The generated break returns early at the top of the enforcer's body (Go,\n" +
 			"TypeScript/JavaScript, Python). A patch at lattice/breaks/<feature>/<INV>.patch\n" +
