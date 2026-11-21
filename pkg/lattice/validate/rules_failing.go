@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/rtm"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
@@ -111,6 +112,38 @@ func (c *corpus) checkFailingVerifiers() []schema.Violation {
 		})
 	}
 	return v
+}
+
+// checkResultsStale raises RESULTS_STALE (info) once when the ingested
+// results carry a commit and the graph another one. Criteria and scenarios
+// still read DEMONSTRATED from such results, while the per-invariant
+// VERIFIER_FAILING and the audit ignore them; the finding says so. It only
+// reports: the RTM statuses and the require_level gate are unchanged. An
+// unknown stamp on either side is current, as resultsCurrent reads it.
+// @enforces validation:INV-17
+func (c *corpus) checkResultsStale() []schema.Violation {
+	if c.opts.ResultOf == nil || c.resultsCurrent() {
+		return nil
+	}
+	stamp, head := shortCommit(c.opts.ResultsCommit), shortCommit(c.kg.GeneratedFromCommit)
+	return []schema.Violation{{
+		Code: schema.CodeResultsStale, Severity: schema.SeverityInfo,
+		Subject: "results",
+		Message: fmt.Sprintf("the ingested results are of commit %s, the graph is at %s: criteria and scenarios still read DEMONSTRATED from them, while the per-invariant VERIFIER_FAILING and the audit ignore them (evidence: ingest stamp)",
+			stamp, head),
+		Location: &schema.Location{File: results.CacheFile},
+		NextAction: &schema.NextAction{Kind: "run_command",
+			Command: []string{"lattice", "results", "ingest"},
+			Detail:  "rerun the tests at this commit and ingest their reports"},
+	}}
+}
+
+// shortCommit abbreviates a commit to eight characters.
+func shortCommit(c string) string {
+	if len(c) > 8 {
+		return c[:8]
+	}
+	return c
 }
 
 // nameFailures lists up to maxNamedFailures tests, then "and N more".

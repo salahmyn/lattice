@@ -1,10 +1,13 @@
 package validate
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/salahmyn/lattice/pkg/lattice/config"
+	"github.com/salahmyn/lattice/pkg/lattice/results"
+	"github.com/salahmyn/lattice/pkg/lattice/rtm"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 )
 
@@ -163,5 +166,129 @@ func TestVerifierFailingNamesAFew(t *testing.T) {
 	f := failingFindings(v)["fees:INV-1"]
 	if !strings.Contains(f.Message, "FeesTest.rounds, FeesTest.rounds_a, FeesTest.rounds_b and 2 more") {
 		t.Errorf("message = %q", f.Message)
+	}
+}
+
+// staleFindings returns the RESULTS_STALE findings.
+func staleFindings(v []schema.Violation) []schema.Violation {
+	var out []schema.Violation
+	for _, x := range v {
+		if x.Code == schema.CodeResultsStale {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+// Results ingested at another commit than the graph's are named once, as
+// info, with both short commits and what they still drive.
+// @verifies validation:INV-17
+func TestResultsStale(t *testing.T) {
+	kg := failingGraph()
+	kg.GeneratedFromCommit = "bbbbbbbbbb222222"
+	v := Validate(kg, config.Default(), Options{ResultOf: redFor(), ResultsCommit: "aaaaaaaaaa111111"})
+	got := staleFindings(v)
+	if len(got) != 1 {
+		t.Fatalf("want exactly one RESULTS_STALE, got %v", got)
+	}
+	f := got[0]
+	if f.Severity != schema.SeverityInfo || f.Subject != "results" {
+		t.Errorf("finding = %+v, want info on subject results", f)
+	}
+	for _, want := range []string{"aaaaaaaa", "bbbbbbbb", "DEMONSTRATED", "VERIFIER_FAILING", "audit"} {
+		if !strings.Contains(f.Message, want) {
+			t.Errorf("message %q does not name %q", f.Message, want)
+		}
+	}
+	if strings.Contains(f.Message, "aaaaaaaaaa111111") {
+		t.Errorf("message %q should name the short commit", f.Message)
+	}
+	if f.Location == nil || f.Location.File != results.CacheFile {
+		t.Errorf("location = %+v, want %s", f.Location, results.CacheFile)
+	}
+	if f.NextAction == nil || f.NextAction.Kind != "run_command" ||
+		strings.Join(f.NextAction.Command, " ") != "lattice results ingest" ||
+		f.NextAction.Detail != "rerun the tests at this commit and ingest their reports" {
+		t.Errorf("next action = %+v", f.NextAction)
+	}
+}
+
+// Results of the graph's commit, a set or a graph with no commit, and no
+// results at all raise nothing.
+// @verifies validation:INV-17
+func TestResultsStaleNotWhenCurrentOrUnknown(t *testing.T) {
+	nogit := failingGraph()
+	nogit.GeneratedFromCommit = ""
+	for name, tc := range map[string]struct {
+		kg   schema.KnowledgeGraph
+		opts Options
+	}{
+		"same commit":     {failingGraph(), Options{ResultOf: redFor(), ResultsCommit: "head"}},
+		"unstamped set":   {failingGraph(), Options{ResultOf: redFor()}},
+		"graph no commit": {nogit, Options{ResultOf: redFor(), ResultsCommit: "older"}},
+		"no results":      {failingGraph(), Options{ResultsCommit: "older"}},
+	} {
+		if got := staleFindings(Validate(tc.kg, config.Default(), tc.opts)); len(got) != 0 {
+			t.Errorf("%s: want no RESULTS_STALE, got %v", name, got)
+		}
+	}
+}
+
+// validate.severity raises it like any other code, and fail_on treats it
+// as the severity it ends up with.
+// @verifies validation:INV-17
+func TestResultsStaleSeverity(t *testing.T) {
+	opts := Options{ResultOf: redFor(), ResultsCommit: "older"}
+	def := staleFindings(Validate(failingGraph(), config.Default(), opts))
+	if len(def) != 1 || Fails(def[0], schema.SeverityError) || Fails(def[0], schema.SeverityWarning) ||
+		!Fails(def[0], schema.SeverityInfo) {
+		t.Errorf("default: an info finding fails only fail_on: info, got %v", def)
+	}
+	cfg := config.Default()
+	cfg.Validate.Severity = map[string]string{schema.CodeResultsStale: "warning"}
+	got := staleFindings(Validate(failingGraph(), cfg, opts))
+	if len(got) != 1 || got[0].Severity != schema.SeverityWarning || !Fails(got[0], schema.SeverityWarning) ||
+		Fails(got[0], schema.SeverityError) {
+		t.Errorf("validate.severity RESULTS_STALE: warning = %v", got)
+	}
+	cfg.Validate.Severity = map[string]string{schema.CodeResultsStale: "off"}
+	if got := staleFindings(Validate(failingGraph(), cfg, opts)); len(got) != 0 {
+		t.Errorf("validate.severity RESULTS_STALE: off = %v", got)
+	}
+}
+
+// Naming stale results changes nothing else: a criterion still reads
+// demonstrated from them, require_level judges them as before, and every
+// other finding is the same as with current results.
+// @verifies validation:INV-17
+func TestResultsStaleKeepsLevels(t *testing.T) {
+	kg := levelGraph()
+	kg.GeneratedFromCommit = "head"
+	pass := func(fqn string) (bool, bool) { return true, fqn == "T1" }
+	cfg := config.Default()
+	cfg.Validate.RequireLevel = config.RequireLevel{Default: "demonstrated"}
+
+	current := Validate(kg, cfg, Options{ResultOf: pass, ResultsCommit: "head"})
+	stale := Validate(kg, cfg, Options{ResultOf: pass, ResultsCommit: "older"})
+	if len(staleFindings(stale)) != 1 {
+		t.Fatalf("want one RESULTS_STALE, got %v", staleFindings(stale))
+	}
+	var rest []schema.Violation
+	for _, f := range stale {
+		if f.Code != schema.CodeResultsStale {
+			rest = append(rest, f)
+		}
+	}
+	if !reflect.DeepEqual(rest, current) {
+		t.Errorf("stale results changed other findings:\n got %v\nwant %v", rest, current)
+	}
+	if got := belowLevel(stale); got != "brd.x:SC-2 brd.x:SC-3" {
+		t.Errorf("BRD_BELOW_LEVEL = %q, want SC-1 and US-1 demonstrated from the stale results", got)
+	}
+	c := newCorpus(kg, cfg, Options{ResultOf: pass, ResultsCommit: "older"})
+	for _, row := range rtm.Build(kg, c.rtmOptions()).Rows {
+		if row.Ref() == "brd.x:SC-1" && row.Status != rtm.StatusDemonstrated {
+			t.Errorf("brd.x:SC-1 = %s, want demonstrated", row.Status)
+		}
 	}
 }

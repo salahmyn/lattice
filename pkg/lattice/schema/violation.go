@@ -154,6 +154,11 @@ const (
 	CodeCoverageStale          = "COVERAGE_STALE"           // coverage is of another commit, or a dirty tree (warning)
 	CodeCoverageBelowFloor     = "COVERAGE_BELOW_FLOOR"     // a feature, invariant or tier is under its declared floor (warning)
 
+	// CodeResultsStale: the ingested test results are of another commit
+	// than the graph's (info, always on). It names the evidence and never
+	// changes a level.
+	CodeResultsStale = "RESULTS_STALE"
+
 	// Reachability (rnd/0009, phase 2). Every one is off until enabled in
 	// validate.severity; a coverage: block does not turn them on, because
 	// they depend on the call graph's quality. REACHABILITY_NO_ROOTS,
