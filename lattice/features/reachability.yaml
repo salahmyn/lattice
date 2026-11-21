@@ -27,7 +27,7 @@ invariants:
   - id: INV-8
     statement: SUITE_OVERLAP fires for two suites whose verified targets have a Jaccard index at or above coverage.overlap.
   - id: INV-9
-    statement: A Go call of an unexported member name on a value of unknown type resolves only among the caller's own package's members; another package's unexported member is never an edge or a candidate.
+    statement: A member call on a value of unknown type resolves by name only to a member of a module loaded with the caller's (some module transitively imports both, a test's imports counting only for test callers), otherwise it is external; a Go call of an unexported member name resolves only among the caller's own package's members.
   - id: INV-10
     statement: A slice with an unknown hop is never complete.
   - id: INV-11

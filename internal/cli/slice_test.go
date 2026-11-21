@@ -37,7 +37,8 @@ invariants:
 // policy on a table a client module reads, INV-2 by a method only an
 // ambiguous call can reach, INV-3 by a function nothing calls. The client
 // module is run from the entry file index.html names, and web/** is the ui
-// layer by a declared rule.
+// layer by a declared rule. The entry module also loads lib/steps, so a
+// by-name member call may name its methods.
 func sliceFixture(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -47,7 +48,7 @@ func sliceFixture(t *testing.T) string {
 		"lattice/workspace.yaml":       "mode: embedded\nlayers:\n  - glob: \"web/**\"\n    layer: ui\n",
 		"lattice/features/orders.yaml": sliceFeature,
 		"index.html":                   "<!doctype html>\n<script type=\"module\" src=\"/web/main.ts\"></script>\n",
-		"web/main.ts":                  "/** @module-feature orders */\n\nimport { loadOrders } from './orders';\n\ndeclare const client: any;\nloadOrders(client, client);\n",
+		"web/main.ts":                  "/** @module-feature orders */\n\nimport { loadOrders } from './orders';\nimport '../lib/steps';\n\ndeclare const client: any;\nloadOrders(client, client);\n",
 		"web/orders.ts": "/** @module-feature orders */\n\nexport async function loadOrders(supabase: any, step: any) {\n" +
 			"  step.run();\n  return supabase.from('orders').select('*');\n}\n",
 		"db/migrations/0001_orders.sql": "-- @module-feature orders\n\n-- @enforces orders:INV-1\ncreate policy owner_reads on public.orders for select using (user_id = auth.uid());\n",

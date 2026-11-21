@@ -154,6 +154,7 @@ type builder struct {
 	edgeSet map[string]int                 // edge key -> index in g.Edges
 	http    httpEnds                       // the routes the workspace serves
 	origins []string                       // declared own origins
+	coload  *coloader                      // which modules load together, built on first use
 }
 
 // Build resolves every module's references into a call graph.
@@ -781,13 +782,16 @@ func (b *builder) resolveType(mc *modCtx, owner *node, t string) string {
 
 // byMember resolves a member called on a value of unknown type: the one
 // member of that name in the language, or, with several, an ambiguous
-// reference. A production caller never resolves to a test's member, and a
-// Go caller never to another package's unexported member (see visible).
+// reference. Only members of a module loaded with the caller's count (see
+// loadedWith); with none left the call is external. A production caller
+// never resolves to a test's member, and a Go caller never to another
+// package's unexported member (see visible).
 // @enforces reachability:INV-9
 func (b *builder) byMember(lang string, owner *node, name string, resolved func(string, string), unresolved func(string, []string), external func()) {
 	var cands []string
 	for _, f := range b.members[lang][name] {
-		if n := b.g.nodes[f]; n != nil && (!n.isTest || owner.isTest) && visible(lang, owner, n, name) {
+		n := b.g.nodes[f]
+		if n != nil && (!n.isTest || owner.isTest) && visible(lang, owner, n, name) && b.loadedWith(lang, owner, n) {
 			cands = append(cands, f)
 		}
 	}
@@ -799,6 +803,21 @@ func (b *builder) byMember(lang string, owner *node, name string, resolved func(
 	default:
 		unresolved("ambiguous", cands)
 	}
+}
+
+// loadedWith reports whether cand's module can be loaded in the same
+// program as owner's. It holds for every language whose adapter records no
+// imports. A test owner counts the imports of test modules, a production
+// one does not.
+// @enforces reachability:INV-9
+func (b *builder) loadedWith(lang string, owner, cand *node) bool {
+	if !importLanguages[lang] {
+		return true
+	}
+	if b.coload == nil {
+		b.coload = newColoader(b.g)
+	}
+	return b.coload.coLoaded(owner.mod, cand.mod, !owner.isTest)
 }
 
 // goLanguage is the Go adapter's language name.
