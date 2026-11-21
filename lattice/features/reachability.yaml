@@ -30,3 +30,5 @@ invariants:
     statement: A Go call of an unexported member name on a value of unknown type resolves only among the caller's own package's members; another package's unexported member is never an edge or a candidate.
   - id: INV-10
     statement: A slice with an unknown hop is never complete.
+  - id: INV-11
+    statement: An HTTP edge exists only when a literal client call and a served route were both extracted and their normalised keys are equal; a computed URL never makes an edge.

@@ -185,7 +185,7 @@ func (g *graph) edge(from, to, kind, label string, when []string, prov schema.Pr
 	k := [3]string{from, to, kind}
 	e := g.edges[k]
 	if e == nil {
-		e = &schema.BlockEdge{From: from, To: to, Kind: kind, Provenance: prov}
+		e = &schema.BlockEdge{From: from, To: to, Kind: kind, Provenance: prov, Truth: edgeTruth(prov)}
 		g.edges[k] = e
 	}
 	if label != "" && !contains(e.Labels, label) {
@@ -196,6 +196,20 @@ func (g *graph) edge(from, to, kind, label string, when []string, prov schema.Pr
 			e.When = append(e.When, w)
 		}
 	}
+}
+
+// edgeTruth is the truth an edge takes from where it came from. A human
+// record or a judgment states the edge, so it is declared. An edge read from
+// a catalogue or derived from an entry point's flow is neither declared nor
+// the join of two extracted ends, so no rule applies and the truth stays
+// empty: not computed, never a pass.
+// @enforces blocks:INV-5
+func edgeTruth(prov schema.Provenance) string {
+	switch prov.Kind {
+	case schema.ProvenanceHuman, schema.ProvenanceJudgment:
+		return schema.EdgeTruthDeclared
+	}
+	return ""
 }
 
 func (g *graph) isAncestor(a, b string) bool {

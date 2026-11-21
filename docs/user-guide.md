@@ -998,6 +998,9 @@ is the severity each is designed for.
 | `IMPORT_UNRESOLVED` | info, with any of the four above | an `import()` or `require()` of a computed module |
 | `SUITE_OVERLAP` | info | two test suites verify nearly the same targets (below) |
 
+The HTTP join raises `HTTP_CALL_UNSERVED` and `HTTP_CALL_DYNAMIC` (info, always on;
+see [HTTP edges](#4q-http-edges-and-edge-truth)).
+
 ```yaml
 validate:
   severity:
@@ -2789,7 +2792,7 @@ paths (2)
       root: index.html; carried by ui -> data; 3 hops
 ```
 
-Each hop is an edge of the reach graph (`call`, `new`, `rpc`, `table`, `jsx`,
+Each hop is an edge of the reach graph (`call`, `new`, `rpc`, `table`, `http`, `jsx`,
 `ref`, and the structural `import`, `member`, `use`) with the layer of both ends
 (see [Layers](#4o-layers-what-kind-of-runtime-is-this-code)); a node that is not
 a symbol (a module's top-level code, a table) takes `data` from the Postgres
@@ -2827,6 +2830,101 @@ id is a usage error (exit 2).
 `GET /api/v2/promises/{id}/slice` returns the same JSON, and each promise on the
 `lattice serve` audit page has a **Slice** section with its reading and one line per
 path.
+
+## 4q. HTTP edges and edge truth
+
+A client's `fetch('/api/orders')` and the route that serves `GET /api/orders` are two
+facts. Lattice joins them into one **`http` edge** of the reach graph only when both
+ends were extracted from code and their keys are equal. Nothing is guessed: no prefix
+match, no fuzzy match, no join through a computed URL.
+
+**Out ends** are the requests the TypeScript adapter reads, keyed by method and path:
+
+| Call | Key |
+|---|---|
+| `fetch(url)`, `fetch(url, { method: 'POST' })`, `window.fetch(...)` | `GET`, or the literal method |
+| `axios.get/post/put/patch/delete/head(url)` | the method of the call |
+| `axios({ url, method })` | `GET`, or the literal method |
+| `supabase.functions.invoke('name')` | `POST /functions/v1/name` (`{ method }` overrides) |
+
+A literal URL is a string, or a template with no `${}`. The key drops the query
+string, the fragment and a trailing slash (and the origin, see below), so
+`/api/orders/?page=2` keys as `GET /api/orders`. A URL that is
+not a path (`'orders'`, `'./orders'`) depends on the page that sends it and has no
+key. A computed URL (a variable, a concatenation, a template with `${}`), or a method
+that is not a literal, is recorded with an empty key: a `dynamic` reference, never an
+edge.
+
+**Only a path-only URL (starting with `/`) and `supabase.functions.invoke` take part in
+the join.** An absolute URL is an **external** out end: nothing extracted says its origin
+is this system, so a route of the same path is no evidence. It makes no edge, no
+`HTTP_CALL_UNSERVED`, and keeps its origin in the reference. To say which origins are
+yours, declare them in `lattice/workspace.yaml`:
+
+```yaml
+http:
+  origins:
+    - https://app.example.com
+    - http://localhost:3000
+```
+
+An absolute URL whose origin is on the list (scheme and host compared without regard
+to case) is treated as path-only. That is a declaration, not a guess. Each entry must
+be a scheme plus host with an optional port and no path; a bad one is a
+`VALIDATE_POLICY` error, like a bad `layers:` rule, and the join ignores it.
+
+**In ends** are the routes the code serves: routes the adapters detected
+(`app.get('/api/orders', listOrders)`), declared `http_route` entry points
+(`trigger.method` + `trigger.path`), and an edge function's `serve` handler, which the
+platform serves at `/functions/v1/<name>` for supabase/functions/<name>/index.ts and
+which answers every method. A route whose handler is not a symbol of the graph has no
+node to draw an edge to and is left out. An axios call is a request, never a route.
+
+**Matching** normalises path parameters on both sides, so `/orders/:id`,
+`/orders/{id}` and `/orders/[id]` are one shape. The method must match (an `ANY` end
+answers every method), the segment counts must agree, and two literal segments must
+be equal. A literal client segment may stand where the route has a parameter:
+`/api/orders/42` matches `GET /api/orders/:id`. A route with a catch-all segment
+(`[...rest]`, `*`) is never matched, because equality cannot say how many segments it
+covers.
+
+| Result | Recorded as |
+|---|---|
+| exactly one route matches | an edge of kind `http` to its handler, via `route` |
+| several routes match | an ambiguous reference with each handler as a candidate, no edge |
+| none matches | unresolved, `why: no_route` |
+| the key is computed | unresolved, `why: dynamic` |
+
+In `lattice slice`, an `http` edge is a hop of kind `http`, `resolved`; an ambiguous
+one is `unknown` (`-http?->`), and a slice through it is never complete.
+
+Two findings (info, always on) show what the join could not do:
+
+```
+info  HTTP_CALL_UNSERVED  web.orders.load sends GET /api/nothing, and no route extracted from code serves it (evidence: static call graph, literal request key)
+info  HTTP_CALL_DYNAMIC   web/orders.ts sends 5 request(s) whose URL or method is computed, so which route they call is unknown (lines 4, 9, 12 and 2 more; evidence: static call graph)
+```
+
+`HTTP_CALL_UNSERVED` names a literal request that no route serves: a typo, a route the
+adapters do not detect (declare its entry point in `lattice/entry-points/`), or a
+server that is not in the workspace. A request to an absolute URL on an origin not
+declared in `http.origins` is external and never raised. `HTTP_CALL_DYNAMIC` is one per file, with the count and the
+first lines. Test code raises neither. A route nothing calls raises nothing: it may be
+public API.
+
+**Edge truth.** A block edge (`block_edges` in the graph) can carry `truth`:
+
+| Truth | Meaning |
+|---|---|
+| `declared` | a human record or a judgment states it (a feature's `depends_on`, an `edge` judgment) |
+| `wired` | both ends were extracted from code and their keys are equal |
+| `half` | one end was extracted, the other was not |
+| `unknown` | the ends could not be told apart |
+
+An empty `truth` means no rule computed it, never that it passed. Today the engine
+sets `declared`; edges read from a catalogue or derived from an entry point's flow
+carry none. The reach graph's `http` edges are the `wired` ones: they exist only on
+equal keys.
 
 ## 5. Day-to-day commands
 

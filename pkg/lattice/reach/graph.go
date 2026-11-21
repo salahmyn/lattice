@@ -16,6 +16,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 	"github.com/salahmyn/lattice/pkg/lattice/scip"
 )
@@ -24,7 +25,7 @@ import (
 type Edge struct {
 	From string `json:"from"`
 	To   string `json:"to"`
-	// Kind is the reference kind (call, new, rpc, table, jsx, ref), or
+	// Kind is the reference kind (call, new, rpc, table, http, jsx, ref), or
 	// import (a module loads another), member (a member implies its
 	// type), use (a dynamic import uses an export) or scip.
 	Kind string `json:"kind"`
@@ -43,9 +44,11 @@ type Unresolved struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name,omitempty"`
 	Qualifier string `json:"qualifier,omitempty"`
-	// Why: ambiguous (several members share the name), missing (it names
-	// a module of the workspace, or a database function, that has no such
-	// symbol) or dynamic (an .rpc() whose name is not a literal).
+	// Why: ambiguous (several members share the name, or several routes
+	// serve the request), missing (it names a module of the workspace, or a
+	// database function, that has no such symbol), dynamic (an .rpc() whose
+	// name is not a literal, or a request whose URL or method is computed)
+	// or no_route (a literal request that no extracted route serves).
 	Why        string   `json:"why"`
 	Candidates []string `json:"candidates,omitempty"`
 }
@@ -58,6 +61,9 @@ type Stats struct {
 	Ambiguous  int `json:"ambiguous"`
 	Missing    int `json:"missing"`
 	Dynamic    int `json:"dynamic"`
+	// NoRoute counts literal requests that no route extracted from code
+	// serves.
+	NoRoute int `json:"no_route,omitempty"`
 	// External refs name nothing in the workspace: the standard library,
 	// a dependency, a builtin, a local variable the adapter could not tell
 	// apart. They are not unresolved.
@@ -100,12 +106,23 @@ type Options struct {
 	// SCIP maps a language to its index. A language with one is resolved
 	// from the index alone; its adapter references are not read.
 	SCIP map[string]*scip.Corpus
+	// EntryPoints are the declared entry points; the http_route ones are
+	// routes a request can be joined to (see http.go). A proposal is not
+	// one: it is derived from the same facts.
+	EntryPoints []schema.EntryPoint
+	// Origins are the origins (scheme and host) the workspace declares as its
+	// own (http.origins in workspace.yaml). An absolute URL on one of them
+	// takes part in the http join as a path; any other absolute URL is
+	// external and joins nothing.
+	Origins []string
 }
 
 type builder struct {
 	g       *Graph
 	members map[string]map[string][]string // language -> member name -> FQNs
 	edgeSet map[string]bool
+	http    httpEnds // the routes the workspace serves
+	origins []string // declared own origins
 }
 
 // Build resolves every module's references into a call graph.
@@ -153,6 +170,13 @@ func Build(modules []ir.Module, opts Options) *Graph {
 	for _, list := range b.members {
 		for k := range list {
 			sort.Strings(list[k])
+		}
+	}
+
+	b.http = g.collectHTTPEnds(opts.EntryPoints)
+	for _, o := range opts.Origins {
+		if ir.ValidHTTPOrigin(o) {
+			b.origins = append(b.origins, o)
 		}
 	}
 
@@ -418,6 +442,8 @@ func (b *builder) resolve(mc *modCtx, owner *node, from string, r ir.Ref) {
 			g.Stats.Missing++
 		case "dynamic":
 			g.Stats.Dynamic++
+		case WhyNoRoute:
+			g.Stats.NoRoute++
 		}
 		g.Unresolved = append(g.Unresolved, Unresolved{From: from, File: m.File, Line: r.Line, Kind: r.Kind,
 			Name: r.Name, Qualifier: r.Qualifier, Why: why, Candidates: cands})
@@ -444,6 +470,9 @@ func (b *builder) resolve(mc *modCtx, owner *node, from string, r ir.Ref) {
 		for _, f := range b.exportsOf(ns) {
 			b.addEdge(Edge{From: from, To: f, Kind: "use", Via: "import", Line: r.Line})
 		}
+		return
+	case r.Kind == ir.RefHTTP:
+		b.resolveHTTP(r, resolved, unresolved, external)
 		return
 	case r.Kind == ir.RefRPC:
 		if r.Name == "" {

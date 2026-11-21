@@ -10,6 +10,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
+	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 )
 
 // postgresLanguage is the language the Postgres adapter reports (its Name).
@@ -72,6 +73,28 @@ func AssignLayers(kg *schema.KnowledgeGraph, rules []schema.LayerRule) []schema.
 		}
 	}
 	return viol
+}
+
+// CheckHTTPOrigins reports each http.origins entry of workspace.yaml that is
+// not a scheme plus host with an optional port and no path, as a
+// VALIDATE_POLICY error. The reach graph ignores such an entry.
+// @enforces reachability:INV-11
+func CheckHTTPOrigins(origins []string) []schema.Violation {
+	var out []schema.Violation
+	for i, o := range origins {
+		if ir.ValidHTTPOrigin(o) {
+			continue
+		}
+		out = append(out, schema.Violation{
+			Code: schema.CodeValidatePolicy, Severity: schema.SeverityError,
+			Subject:  fmt.Sprintf("http.origins[%d]", i),
+			Message:  fmt.Sprintf("workspace.yaml http.origins[%d]: %q is not an origin (a scheme and a host, with an optional port and no path)", i, o),
+			Location: &schema.Location{File: "workspace.yaml"},
+			NextAction: &schema.NextAction{Kind: "edit_workspace",
+				Detail: `write each origin like "https://app.example.com" or "http://localhost:3000"`},
+		})
+	}
+	return out
 }
 
 func layerRuleError(i int, msg string) schema.Violation {
