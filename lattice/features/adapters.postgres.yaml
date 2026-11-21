@@ -21,3 +21,5 @@ invariants:
     statement: A function's EXECUTE privilege for a role is read only from statements the adapter parsed, in migration order; a role no statement names holds what PUBLIC holds, and one the adapter could not resolve is unknown, never closed.
   - id: INV-6
     statement: A SQL enforcer that a declared API role can execute is reported as ENFORCER_EXPOSED unless a security case naming it is verified; a privilege that is unknown, or API roles that are not declared, are reported as EXPOSURE_UNKNOWN; both are info.
+  - id: INV-7
+    statement: A table write is recorded only from DML the adapter parsed; a write it could not read makes the table's writer set incomplete, never empty.

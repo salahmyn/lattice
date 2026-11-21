@@ -195,6 +195,11 @@ const (
 	CodeEnforcerExposed = "ENFORCER_EXPOSED" // a SQL enforcer an API role can execute, with no security case that calls it as that role (info)
 	CodeExposureUnknown = "EXPOSURE_UNKNOWN" // who can execute a SQL enforcer cannot be told from the migrations, or no API roles are declared (info)
 
+	// Writers of a promise's columns. Both are info and always on, for the
+	// same reason: they never fail a gate unless validate.severity says so.
+	CodeUnguardedWriter = "UNGUARDED_WRITER" // a SQL writer of an invariant's columns that is neither an enforcer of it nor under a trigger or policy that enforces it (info)
+	CodeWritersUnknown  = "WRITERS_UNKNOWN"  // an invariant's columns lie on a table whose writers cannot all be told from the migrations (info)
+
 	// Council approval (v0.12).
 	CodeBRDCouncilUnreviewed = "BRD_COUNCIL_UNREVIEWED" // a council approval its human has not acknowledged (info)
 	CodeBRDCouncilInvalid    = "BRD_COUNCIL_INVALID"
