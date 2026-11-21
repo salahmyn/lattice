@@ -1,0 +1,14 @@
+id: shop.digest
+version: 1
+status: proposal
+purpose: |
+  A proposal whose code a declared root calls, on no entry-point flow.
+owners:
+  business: product
+  engineering: web
+implements_brd: brd.shop.orders
+capabilities:
+  - id: send_digest
+    summary: Sends the digest of the day's orders.
+    rules:
+      - A digest names its order count.

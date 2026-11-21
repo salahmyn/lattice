@@ -256,6 +256,10 @@ const (
 	CodeInvariantUnrequired = "INVARIANT_UNREQUIRED" // a declared invariant that no criterion's maps_to_invariant names (info)
 	CodeStatusDrift         = "STATUS_DRIFT"         // a proposal or accepted feature on the flow of a production entry point (info)
 
+	// CodeProposalReachedByRoot is a proposal or accepted feature on no
+	// production flow that a runtime root's static call graph reaches (info).
+	CodeProposalReachedByRoot = "PROPOSAL_REACHED_BY_ROOT"
+
 	// Break facts, read from breaks.json. Both are info and always on.
 	CodeBreakSurvived     = "BREAK_SURVIVED"      // break-tested promises whose break no verifier noticed (info)
 	CodeBreakUnknownCause = "BREAK_UNKNOWN_CAUSE" // unknown break runs by cause, or no break evidence at all (info)

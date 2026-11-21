@@ -16,3 +16,4 @@ implements_via:
   - shop
   - shop.checkout
   - shop.refunds
+  - shop.digest
