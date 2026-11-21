@@ -2,6 +2,70 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.20.0] — 2026-11-21
+
+Lattice now says what kind of runtime each piece of code lives in. Code the runtime invokes becomes
+a proposed entry point, and each promise shows which ways in reach it, through which layers.
+Database break runs are faster and cannot overlap.
+
+### Added
+
+- **Layers.** Every symbol, block, feature and invariant carries a computed `layer`: `ui`, `api`,
+  `service`, `data`, `async`, `edge`, `external` or `unknown`.
+  - **How a layer is decided.** An adapter fact comes first: Postgres objects are `data`, and an
+    entry point's handler takes the layer of its kind. Otherwise a `layers:` path rule in
+    `lattice/workspace.yaml` decides. Otherwise the layer is `unknown`. Nothing is guessed.
+  - **Where layers show.** In `audit --json`, `feature show` and `/api/v2`, and in a **Group by >
+    Layer** lens on the block map.
+  - **Unchanged.** `tier` keeps its meaning. User guide section 4o.
+- **Runtime roots become proposed entry points.** A `serve` handler, a `cron.schedule` job or a
+  detected route that no entry point covers is proposed (`status: proposal`, `detected_by`).
+  - **Flows.** A proposal's flow is the set of features its handler reaches through the call graph
+    (`basis: reach`). Steps found by module proximity are marked `basis: proximity`.
+  - **Nothing is written** until you run `ep accept` or `ep reject`.
+  - **No silent roots.** A root that cannot be proposed raises `RUNTIME_ROOT_UNPROPOSED` (info): a
+    route whose handler is not in the graph, or a cron job with a computed name or schedule. User
+    guide section 4b.
+- **`lattice slice <invariant-id> [--json]`.** For one promise, this lists one shortest path per
+  root and enforcer.
+  - **Each hop** carries its edge kind, the layer at both ends, and whether it is `resolved` or
+    `unknown`.
+  - **Each path** lists the layers it is carried by, e.g. `ui → data`.
+  - **The reading** is `complete`, `unknown_from_hop`, `unreached`, `no_enforcer` or `unknown`. A
+    slice with an unknown hop is never complete.
+  - **Formats.** The JSON contract is `lattice.slice/1`, also served at `GET
+    /api/v2/promises/{id}/slice`. The `lattice serve` audit page shows a Slice section per promise.
+    User guide section 4p.
+- **SQL breaks can apply just the broken object.** A runner can name `{patched_sql}` and
+  `{original_sql}`: files holding only the broken object's statement, and the same statement
+  unbroken. Policies and triggers come with their `DROP … IF EXISTS`.
+  - **Why.** The runner no longer has to reset the database for every break.
+  - **The default** is still the full reset.
+  - **When the swap cannot apply.** A command that names these placeholders for a break that has no
+    such statement reads `unknown`.
+
+### Fixed
+
+- **One `lattice break` run per repository at a time.** A second run fails at once with
+  `BREAK_LOCKED`, naming the holder's pid and start time.
+  - **The lock** is `lattice/.cache/results/break.lock`. It is removed on exit, SIGINT and SIGTERM.
+  - **Stale locks.** On Linux and macOS, a lock whose process is gone is reclaimed. On Windows it
+    stays held until removed.
+- **"Did not apply" reasons are readable.** A runner exit 125 quotes the first `ERROR:` line (else
+  the last line), cut at 120 characters, instead of a CLI's whole JSON error.
+- **Entry-point files are written in canonical YAML**, so an accepted entry point passes `lattice
+  fmt --check`.
+
+### Behaviour changes to plan for
+
+- **New info findings.** On a codebase with `serve` handlers, `cron.schedule` jobs or detected
+  routes, `extract` now lists proposed entry points, and `RUNTIME_ROOT_UNPROPOSED` info findings can
+  appear (inline route handlers, computed cron names).
+- **Rule changes.** `DUPLICATE_TRIGGER` now includes a cron job's name, and tells apart entry points
+  that have no trigger by their handler, so it reports fewer false duplicates.
+- **`ep list` and `ep show`** build the graph read-only to include derived proposals, so they are
+  slower on large repositories.
+
 ## [0.19.2] — 2026-11-21
 
 Two `lattice break` outcomes read truthfully on real database tests.
