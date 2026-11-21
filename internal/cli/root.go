@@ -60,6 +60,7 @@ func NewRootCommand() *cobra.Command {
 		newRTMCommand(io),
 		newAuditCommand(io),
 		newSliceCommand(io),
+		newWritersCommand(io),
 		newJourneyCommand(io),
 		newActorCommand(io),
 		newResultsCommand(io),

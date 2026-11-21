@@ -749,7 +749,7 @@ coverage:
     feature: 60                         # a feature's runtime symbols, over the suite
     invariant: 80                       # an invariant's enforcers, over its verifiers' runs
     tier: {2: 90, 3: 100}               # a BRD criterion's weakest invariant, by tier
-    verified_lines: 70                  # a feature's lines run by their own verifiers (4s)
+    verified_lines: 70                  # a feature's lines run by their own verifiers (4u)
 ```
 
 Paths are relative to the directory holding `lattice/`. When a path given
@@ -1426,7 +1426,7 @@ lattice break --promise cart:INV-2     # one promise
 lattice break --promise cart:INV-2#b   # one acceptance case
 lattice break --feature cart --json
 lattice break --fail-on survived,unknown   # exit 1 when a shown run survived or is unknown
-lattice break --lines                  # also record which lines each promise's verifiers run (4s)
+lattice break --lines                  # also record which lines each promise's verifiers run (4u)
 ```
 
 `--promise <promise>#<case>` breaks one acceptance case: the case's own `enforcer`,
@@ -1591,7 +1591,7 @@ break:
   `survived`: vitest's `-t` with no match exits 0. Without `{junit}` the executed
   count cannot be checked, and the reason says so.
 - `{coverage}` is the path where a runner writes a coverage report, for
-  `lattice break --lines` (section 4s). It is filled for every invocation, but
+  `lattice break --lines` (section 4u). It is filled for every invocation, but
   the report is read only with `--lines`.
 - Paths in `{files}` are relative to the directory that holds `lattice/`, but a
   runner may resolve them against its own root. For vitest, pass `--root
@@ -2139,7 +2139,7 @@ is always computed over the whole workspace, so a row reads the same filtered
 or not. An unknown `--promise` id is a usage error (exit 2).
 
 `lattice audit --lines` adds what each block of code is for and how many of
-its lines its own verifiers ran (section 4s).
+its lines its own verifiers ran (section 4u).
 
 Each break-tested row also says whether a verifier that killed a break ran the
 promise through an entry point's handler (`entrypoint`, `none`, `unknown`; section
@@ -3523,7 +3523,239 @@ wrapper). `CHANNEL_NO_PUBLISHER` is a consumer whose channel nothing publishes t
 fine for a queue fed from outside the workspace, but it is named. Renaming the queue at one
 end gives no edge and both findings. `CHANNEL_DYNAMIC` is one per file. Test code raises none.
 
-## 4s. Lines: what is each block for, and do its verifiers reach it?
+## 4s. Who can call a SQL enforcer
+
+An enforcer can be correct and break-tested, and the promise still not hold. A
+`SECURITY DEFINER` function that trusts a verdict passed in as a parameter (`p_ok boolean`)
+and is granted to the role every signed-in client uses (`authenticated`) can be called by
+any client through the database API with the verdict forged, and every break inside the
+function is still killed by its tests. Lattice reads who can execute a function from the
+migrations and says so.
+
+**Declare the roles** in `workspace.yaml`, next to `http:`:
+
+```yaml
+sql:
+  # Roles a client reaches the database as, through its API.
+  api_roles: [anon, authenticated]
+  # Roles the platform grants EXECUTE on every new function directly, beside PUBLIC.
+  # Unset means unknown; [] means none.
+  default_execute: [anon, authenticated, service_role]
+  # Roles the platform grants INSERT, UPDATE and DELETE on every new table directly (4t).
+  # Unset means unknown; [] means none.
+  default_write: [anon, authenticated, service_role]
+```
+
+Entries are lower-case SQL identifiers; anything else is a `VALIDATE_POLICY` error.
+`default_execute` matters once `PUBLIC` is revoked: a role that no statement names then
+holds what the platform grants new functions, which the migrations cannot show.
+`default_write` is the same for tables and is read only by the writer index (next section).
+
+**The adapter reads** `GRANT` and `REVOKE ... ON FUNCTION | PROCEDURE | ROUTINE` (including
+`PUBLIC`, `WITH GRANT OPTION`, `GRANTED BY`, `CASCADE`), the `ON ALL FUNCTIONS | PROCEDURES |
+ROUTINES IN SCHEMA` forms (the functions defined at that point), `ALTER DEFAULT PRIVILEGES
+[IN SCHEMA] ... ON FUNCTIONS` (the functions created later), and `SECURITY DEFINER | INVOKER`
+in `CREATE FUNCTION` and `ALTER FUNCTION`, in the order migrations apply. `CREATE OR REPLACE`
+keeps the privileges; `DROP FUNCTION` then `CREATE` resets them to the defaults. A role no
+statement names holds what `PUBLIC` holds (granted by default, cited at the `CREATE`), and a
+`REVOKE` from one role does not take away what `PUBLIC` still grants. `REVOKE GRANT OPTION
+FOR` removes no privilege.
+
+**Two findings**, both info and always on, so an unknown is never hidden. Neither fails a
+run unless you set it in `validate.severity`:
+
+```
+info  ENFORCER_EXPOSED  sql.public.finish_submission enforces review.submissions:INV-1 and is executable by authenticated (supabase/migrations/20260101000000_submissions.sql:27); it is SECURITY DEFINER (supabase/migrations/20260101000000_submissions.sql:11): a client can call it directly, so its inputs are the client's
+info  EXPOSURE_UNKNOWN  who can execute sql.public.finish_submission is not known from the migrations: service_role: no statement names service_role and PUBLIC is revoked at supabase/migrations/20260101000000_submissions.sql:26, so it holds what the platform grants new functions, and sql.default_execute is not declared
+```
+
+`ENFORCER_EXPOSED` is one per (enforcer, invariant): a function tagged `@enforces f:INV-n`
+that a declared API role can execute. `EXPOSURE_UNKNOWN` is one per enforcer whose state for
+an API role cannot be told, and one for the workspace when there are SQL enforcers but
+`sql.api_roles` is not declared. Both go through the allowlist like any finding.
+
+**To clear `ENFORCER_EXPOSED`**, either revoke the grant:
+
+```sql
+revoke execute on function public.finish_submission(uuid, boolean, bigint) from authenticated;
+```
+
+or keep the exposure on purpose and show that calling it as the API role with forged inputs
+fails. Add a `security` case to the invariant that names the enforcer, and a test tagged with
+the case that calls the function as the role:
+
+```yaml
+invariants:
+  - id: INV-1
+    statement: A submission becomes accepted only when the checker found the file valid.
+    cases:
+      - id: a
+        kind: security
+        statement: A signed-in client cannot call the function with a verdict it made up.
+        enforcer: sql.public.finish_submission
+```
+
+```sql
+begin;
+select plan(1);
+set local role authenticated;
+-- @verifies review.submissions:INV-1#a
+select throws_ok($$ select public.finish_submission('...', true, 100) $$,
+  '42501', null, 'a signed-in client cannot pass the checker''s verdict itself');
+select * from finish();
+rollback;
+```
+
+A live (non-retired) security case that names the enforcer and that a test verifies clears
+the finding. Lattice does not check that the test really calls the function as that role or
+that its inputs are forgeable; the case says what the test is for.
+
+**What reads as unknown**, never as closed:
+
+- a `GRANT` or `REVOKE` inside a `DO` block, a function body or an `EXECUTE` string that
+  names the function (that function is unknown), or names nothing literal (every function
+  defined before it is unknown);
+- a name created with different argument lists (an overload): exposure is read per name, not
+  per signature;
+- `ALTER DEFAULT PRIVILEGES FOR ROLE | USER`: the creating role is unknown, so the roles it
+  names are unknown for functions created later;
+- `ALTER FUNCTION ... SET SCHEMA`, and a `GRANT` or `REVOKE` on functions that the parser could
+  not read;
+- a role no statement names once `PUBLIC` is revoked, while `sql.default_execute` is unset;
+- a membership statement the parser cannot read, or that sits in a `DO` block, function body or
+  `EXECUTE` string (the roles it targets, or every role, are unknown), and a membership that does
+  not pass privileges on automatically (`WITH INHERIT FALSE`, a `NOINHERIT` member).
+
+**Role membership** counts: a role holds EXECUTE through any role it is a member of, followed
+transitively (`GRANT app_writer TO authenticated`, `CREATE ROLE x ... IN ROLE a, b`), and the
+finding cites the chain, e.g. `authenticated via app_writer (db/002.sql:4), granted at db/002.sql:3`.
+
+Table grants and row-level policies are not read here; who can write a table is the next
+section.
+
+## 4t. Who else writes the columns a promise is about
+
+A promise such as "a job is tried at most 3 times" is enforced in one function, `fail_job`,
+and every break of it is killed. A second function, `claim_jobs`, also writes `jobs.attempts`
+and `jobs.status`, with no cap. It carries no tag, so no break ever targets it, and the promise
+reads as break-tested while production breaks it. Lattice reads who writes a table from the
+migrations and says so.
+
+**What counts as a writer.** The columns of an invariant are the columns its enforcers write
+(reads are not counted). Any other writer of one of them is a writer of the promise:
+
+- a SQL function, procedure or `DO` block whose body has an `INSERT INTO t [(cols)]` (with no
+  column list, every column of `t` as `CREATE TABLE` and `ALTER TABLE ... ADD COLUMN` leave
+  them), an `INSERT ... ON CONFLICT ... DO UPDATE SET`, an `UPDATE t SET col = ..., (a, b) = ...`,
+  a `DELETE FROM t` (the row, no column), or a `MERGE`; aliases (`update public.jobs j set ...`)
+  and `WITH x AS (update ...)` wrappers are read through;
+- a trigger function that assigns `NEW.col`, a write of that column on the table of each
+  `CREATE TRIGGER ... EXECUTE FUNCTION f()` that runs it;
+- a migration that runs DML itself, or in a `DO` block: a writer of kind `migration`. Test files
+  are never writers;
+- a role that holds a table privilege: `GRANT INSERT | UPDATE [(cols)] | DELETE | ALL ON [TABLE]
+  t [, ...] | ALL TABLES IN SCHEMA s TO role`, and `ALTER DEFAULT PRIVILEGES ... ON TABLES`,
+  folded in migration order as function grants are, with `PUBLIC`, role membership and
+  `REVOKE` read the same way. For each role in `sql.api_roles`, a role a statement names is
+  decided by that statement; otherwise `PUBLIC`'s state applies (Postgres grants `PUBLIC`
+  nothing on a table); otherwise `sql.default_write` decides: listed means granted, declared
+  without the role means revoked, unset means unknown. Row-level security then decides (below).
+
+**What "guarded" means.** A writer is guarded for an invariant when it is an enforcer of it
+(tagged `@enforces f:INV-n`, so a break targets it), or when a trigger or policy that enforces
+it applies to the writer's table and command (a `FOR UPDATE` policy guards updates; a trigger
+`BEFORE UPDATE OF status` guards updates that write `status`). A trigger guards every writer. A
+row-level policy guards only API roles: a `SECURITY DEFINER` function, and the table's owner,
+bypass it.
+
+**Row-level security decides role writes.** `ALTER TABLE t ENABLE | DISABLE | FORCE | NO FORCE
+ROW LEVEL SECURITY` is folded in migration order. With RLS enabled, a role that holds the
+privilege can write only if a permissive policy on the table for that command (or `ALL`) has
+a `TO` list that reaches it: the role, `PUBLIC` (also a policy with no `TO`), or a role it is a
+member of. Any policy allows, even `USING (false)`; an `AS RESTRICTIVE` policy never allows on
+its own. With no such policy the role cannot write, and it is not listed. A later `DISABLE`
+re-opens the table to the privilege alone. A role that can write is guarded for an invariant
+only when an enforcing policy (or trigger) covers it. A policy or RLS statement inside a `DO`
+block, a function body or an `EXECUTE` string leaves that table's role writers unknown.
+
+**Two findings**, both info and always on, so an unknown is never hidden. Neither fails a run
+unless you set it in `validate.severity`; `fail_on: warning` still passes:
+
+```
+info  UNGUARDED_WRITER  sql.public.claim_jobs writes columns that queue.jobs:INV-1's enforcers write, and is neither an enforcer of queue.jobs:INV-1 nor under a trigger or policy that enforces it, so no break ever targets it. public.jobs by update: status (supabase/migrations/20260101000000_jobs.sql:12), updated_at (supabase/migrations/20260101000000_jobs.sql:12)
+info  WRITERS_UNKNOWN   the writers of queue.jobs:INV-1's columns (public.jobs.attempts,run_after,status,updated_at) are not completely known, so an unguarded writer may exist: an EXECUTE at supabase/migrations/20260301000000_dyn.sql:2 runs a write statement that names no table literally, so it may write any table
+```
+
+`UNGUARDED_WRITER` is one per (writer, invariant): it lists the columns both write, each with
+the file and line, and the operation; for a role it names the role and the grant. It never
+fires on a writer that is itself an enforcer. `WRITERS_UNKNOWN` is one per invariant whose
+columns lie on a table with an incomplete writer set, with the reasons. Both go through the
+allowlist like any finding; the subject of a function writer is its FQN, of a role
+`sql.role.<role>`, of a migration its file.
+
+**To clear `UNGUARDED_WRITER`**, do one of:
+
+- tag the writer as an enforcer, `-- @enforces queue.jobs:INV-1`. It then gets breaks like the
+  first one, and a test tagged `@verifies queue.jobs:INV-1` has to notice them. Rewriting the
+  function in a later migration is not enough on its own: Lattice cannot know the rewrite is
+  right;
+- put the table under a trigger or policy that enforces the invariant, tagged the same way;
+- allowlist it with a reason in `lattice/allowlist.yaml`:
+
+```yaml
+entries:
+  - code: UNGUARDED_WRITER
+    subject: sql.public.claim_jobs
+    reason: the claim path is reviewed by hand
+```
+
+**What reads as incomplete**, never as "no writer". Each makes the table's writer set unknown
+(the first two, every table), with the reason in `WRITERS_UNKNOWN`:
+
+- an `EXECUTE` of a string built at run time, or of a literal write statement that names no
+  table (a literal that names its table leaves that table unknown; a literal with no write in
+  it, such as a `CREATE INDEX`, writes nothing);
+- a statement that starts like an `INSERT INTO`, `UPDATE`, `DELETE FROM` or `MERGE INTO` and
+  that the parser could not read, or a `GRANT` or `REVOKE` of table privileges it could not read;
+- a write to a view, which writes the tables behind it, and a `GRANT` on a view;
+- `ON DELETE | ON UPDATE SET NULL | SET DEFAULT | CASCADE` on a foreign key, which writes the
+  referencing columns (only those columns are unknown);
+- a role in `sql.api_roles` that no statement names on a table while `sql.default_write` is
+  not declared (`no statement names authenticated on public.jobs, and sql.default_write is not
+  declared`); `lattice writers` then says the set is incomplete, never complete;
+- a `CREATE RULE` on the table, a `GRANT` or `REVOKE` of table privileges inside a `DO` block, a
+  function body or an `EXECUTE` string, and a role membership that is unknown.
+
+A table's columns are used only to expand an `INSERT` with no column list. If they are not
+known (a table created `AS`, `LIKE` or `PARTITION OF`, or one the migrations never create), the
+write's columns are every column.
+
+**Not read.** With `sql.api_roles` undeclared, roles that no statement names are not checked
+(`lattice writers` says so). Writes made by TypeScript or Python (`.from('t').update()`) are not
+read either.
+
+**`lattice writers <table>[.<column>]`** prints each writer of a table or column, read-only:
+the function or role, the operation, the columns, the file and line, and each invariant it is
+guarded for or unguarded for, ending with the table's incomplete reasons or `writer set
+complete`. `--json` prints `lattice.writers/1`.
+
+```
+$ lattice writers public.jobs
+public.jobs: 3 writer(s)
+
+  sql.public.claim_jobs  update  attempts, status, updated_at  supabase/migrations/20260101000000_jobs.sql:12
+    unguarded for queue.jobs:INV-1
+
+  sql.public.fail_job  update  status, updated_at  supabase/migrations/20260101000000_jobs.sql:28
+    guarded for queue.jobs:INV-1 by enforcer
+
+  sql.public.fail_job  update  run_after, status, updated_at  supabase/migrations/20260101000000_jobs.sql:31
+    guarded for queue.jobs:INV-1 by enforcer
+
+writer set complete (from the migrations and sql.default_write)
+```
+
+## 4u. Lines: what is each block for, and do its verifiers reach it?
 
 Every line of code should have a **known intent** and be **reached by the
 verifiers of that intent**. The intent of a line is the invariant its block

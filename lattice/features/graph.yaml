@@ -20,3 +20,5 @@ invariants:
     statement: A verifier ref that names a case (f:INV-N#c) counts as a verifier of f:INV-N for every signal, and the graph keeps the case ref as written.
   - id: INV-6
     statement: A layer comes only from an adapter fact or a declared path rule; otherwise it is unknown.
+  - id: INV-7
+    statement: A writer of an invariant's columns that is neither its enforcer nor under a guard of it is reported.

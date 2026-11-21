@@ -137,6 +137,7 @@ type file struct {
 	Exclude   []string           `yaml:"exclude,omitempty"`
 	Layers    []schema.LayerRule `yaml:"layers,omitempty"`
 	HTTP      HTTP               `yaml:"http,omitempty"`
+	SQL       SQL                `yaml:"sql,omitempty"`
 	Channels  Channels           `yaml:"channels,omitempty"`
 	Sources   []Source           `yaml:"sources,omitempty"`
 	Judgments string             `yaml:"judgments,omitempty"`
@@ -161,6 +162,36 @@ type HTTP struct {
 	// that secret, alone or followed by a literal, joins the route at that
 	// path. Checked by validate, not here.
 	Secrets map[string]string `yaml:"secrets,omitempty"`
+}
+
+// SQL is the sql: block of workspace.yaml: what the database's roles can
+// reach, which the migrations alone do not say.
+type SQL struct {
+	// APIRoles are the roles a client reaches the database as through its
+	// API, such as [anon, authenticated]. A SQL function that enforces an
+	// invariant and that one of them can execute is reported as
+	// ENFORCER_EXPOSED. Unset means the roles are not declared, and the
+	// workspace gets one EXPOSURE_UNKNOWN in place of the per-function
+	// findings. Entries are lower-case SQL identifiers; validate checks them.
+	APIRoles []string `yaml:"api_roles,omitempty"`
+	// DefaultExecute are the roles the platform grants EXECUTE on every new
+	// function directly, beside PUBLIC, such as [anon, authenticated,
+	// service_role]. It decides a role that no statement names once PUBLIC is
+	// revoked. Unset (nil) means unknown, so such a role is reported as
+	// EXPOSURE_UNKNOWN; an empty list means the platform grants none. A
+	// pointer tells the two apart. Entries are lower-case SQL identifiers;
+	// validate checks them.
+	DefaultExecute *[]string `yaml:"default_execute,omitempty"`
+	// DefaultWrite are the roles the platform grants INSERT, UPDATE and
+	// DELETE on every new table directly, such as [anon, authenticated,
+	// service_role]. It decides an API role that no statement names on a
+	// table once PUBLIC (which holds nothing on a table by default) is
+	// passed over: listed means granted, declared without the role means
+	// revoked, and unset (nil) means unknown, which leaves the table's
+	// writers incomplete (WRITERS_UNKNOWN). An empty list means the platform
+	// grants none. A pointer tells the two apart. Entries are lower-case SQL
+	// identifiers; validate checks them.
+	DefaultWrite *[]string `yaml:"default_write,omitempty"`
 }
 
 // Channels is the channels: block of workspace.yaml: the project's own
@@ -234,6 +265,8 @@ type Workspace struct {
 	Layers []schema.LayerRule
 	// HTTP holds the declared own origins.
 	HTTP HTTP
+	// SQL holds the declared database API roles. Checked by validate, not here.
+	SQL SQL
 	// Channels holds the declared queue and event wrappers. Checked by
 	// validate, not here.
 	Channels Channels
@@ -311,6 +344,7 @@ func (w *Workspace) loadWorkspaceFile() error {
 	w.CodeRoots = f.CodeRoots
 	w.Layers = f.Layers
 	w.HTTP = f.HTTP
+	w.SQL = f.SQL
 	w.Channels = f.Channels
 	w.Sources = f.Sources
 	w.judgments = f.Judgments
