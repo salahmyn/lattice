@@ -54,6 +54,7 @@ func (s *Server) sliceGraph(ctx context.Context) *slice.Graph {
 // sliceViewOf computes the slice of one audit row.
 func sliceViewOf(g *slice.Graph, row audit.Row) sliceView {
 	rec := slice.Compute(g, row.Promise, slice.EnforcersOf(row))
+	slice.Exercise(&rec, g, slice.VerifiersOf(row))
 	v := sliceView{Record: rec, Badge: sliceBadge(rec.Reading)}
 	for _, p := range rec.Paths {
 		l := sliceLine{Root: p.Root.FQN, Layers: p.CarriedBy, Chain: slice.PathLine(p)}

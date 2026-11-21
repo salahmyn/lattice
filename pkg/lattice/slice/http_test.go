@@ -43,6 +43,13 @@ const ordersPolicy = `create policy "reads" on public.orders for select using (t
 // table policy, from the real adapters, with layers by path.
 func httpSlice(t *testing.T, api map[string]string) *Graph {
 	t.Helper()
+	g, _ := httpSliceKG(t, api)
+	return g
+}
+
+// httpSliceKG is httpSlice with the knowledge graph its layers came from.
+func httpSliceKG(t *testing.T, api map[string]string) (*Graph, schema.KnowledgeGraph) {
+	t.Helper()
 	mods := parseFiles(t, typescript.New(), map[string]string{
 		"web/orders.ts": "export function load() { return fetch('/api/orders'); }\n",
 	})
@@ -57,7 +64,7 @@ func httpSlice(t *testing.T, api map[string]string) *Graph {
 	}
 	rr := reach.Compute(reach.Input{Modules: mods,
 		Declared: []config.CoverageRoot{{Symbol: "web.orders.load", Reason: "the page"}}})
-	return NewGraph(rr, kg, rules)
+	return NewGraph(rr, kg, rules), kg
 }
 
 // A UI fetch, the API route handler it joins to, and the SQL table policy the

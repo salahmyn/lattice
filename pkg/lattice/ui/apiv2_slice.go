@@ -24,6 +24,7 @@ func (s *Server) v2PromiseSlice(wr http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rec := slice.Compute(w.sg, id, slice.EnforcersOf(row))
+	slice.Exercise(&rec, w.sg, slice.VerifiersOf(row))
 	rec.Commit = w.kg.GeneratedFromCommit
 	writeV2(wr, http.StatusOK, rec, contract.LintOptions{})
 }

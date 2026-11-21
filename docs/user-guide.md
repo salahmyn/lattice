@@ -2831,6 +2831,52 @@ id is a usage error (exit 2).
 `lattice serve` audit page has a **Slice** section with its reading and one line per
 path.
 
+### Which hops ran, and which layers each verifier covered
+
+A path says what the code allows. Per-test coverage (section 4f) says what a
+verifier's own run executed, and a slice reads it hop by hop. A browser test with a
+faked backend runs only UI code: it shows nothing about the API or the database.
+A hop is **exercised** only when **one verifier's own run executed symbols on both
+sides of it**. The text draws it `=kind=>` instead of `-kind->`:
+
+```
+paths (1)
+  web.orders.load [ui] -http-> api.orders.listOrders [api] =table=> sql.table.public.orders [data] =ref=> sql.policy.public.orders.reads [data]
+      root: coverage.roots: the page; carried by ui -> api -> data; 3 hops; exercised 2 of 3
+
+=kind=> marks an exercised hop: one verifier's own run executed symbols on both sides of it; -kind-> is a hop no verifier showed.
+
+verifiers (2)
+  orders.test.list_shows_own  [ui]
+  orders.test.list_reads_policy  [api, data]
+```
+
+Here neither test ran both the page and the handler, so the `http` hop is not
+exercised; the second test ran the handler and the policy, so the hops after it are.
+
+- **Verifiers** are the promise's own verifiers. Each lists `layers`: the sorted set
+  of layers of the symbols its own run executed (a symbol the graph knows with no
+  layer counts as `unknown`). A verifier with no per-test report has `["unknown"]`;
+  its span is never inferred from the file it lives in.
+- **Only a verifier's own per-test report counts.** A run of the whole test file or
+  of the whole suite never exercises a hop, and two tests that each ran one side do
+  not either.
+- **A node that is no symbol** (a table, a module's top-level code) cannot be
+  executed by itself. Each side of a hop is stood for by the nearest symbol on that
+  side of the path: before the hop's start, after the hop's end. A hop with no
+  symbol on a side cannot be shown exercised.
+- **An unknown hop is never exercised**, even when both ends ran: running both ends
+  does not show that an ambiguous reference was the edge taken. Likewise, an
+  exercised hop means both sides ran in one test, not that the call crossed it.
+- **Without per-test coverage** the slice says so once (`exercised: unknown, no
+  per-test coverage`) and no hop reads exercised. Absent is never false and unknown
+  is never a pass. None of this changes the `reading`, which stays about structure.
+
+The JSON adds, all optional: per hop `exercised` and `exercised_by` (sorted, at most
+5 tests); per path `exercised_hops` (the count, out of `len(hops)`); and on the
+record `exercised` (`measured` or `unknown`), `exercised_why` and `verifiers`
+(`id`, `layers`). `lattice.slice/1` only gained fields.
+
 ## 4q. HTTP edges and edge truth
 
 A client's `fetch('/api/orders')` and the route that serves `GET /api/orders` are two

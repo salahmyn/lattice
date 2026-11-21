@@ -16,12 +16,16 @@ type Index struct {
 	perTest  map[string]map[string]bool
 	perFile  map[string]map[string]bool
 	testFile map[string]string // test FQN -> its file
+	layer    map[string]string // symbol FQN -> layer, as the graph assigned it ("" when none)
 }
 
 // NewIndex binds a set to the graph's tests.
 func NewIndex(set Set, kg schema.KnowledgeGraph) *Index {
 	ix := &Index{Set: set, perTest: map[string]map[string]bool{},
-		perFile: map[string]map[string]bool{}, testFile: map[string]string{}}
+		perFile: map[string]map[string]bool{}, testFile: map[string]string{}, layer: map[string]string{}}
+	for _, s := range kg.Symbols {
+		ix.layer[s.FQN] = s.Layer
+	}
 	for t, syms := range set.PerTest {
 		m := map[string]bool{}
 		for _, s := range syms {
