@@ -2,6 +2,44 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.25.0] — 2026-11-21
+
+More precise drift, exposure and writer findings, from a real project's run of 0.24.0. Every finding
+is still info, and nothing reads as safe.
+
+### Added
+
+- **`PROPOSAL_REACHED_BY_ROOT`** (info, user guide 4w). It fires for a `proposal` or `accepted`
+  feature that no production entry-point flow names, but that a non-test root reaches through the
+  call graph. It reads "reachable in code from root …", never "live", because Lattice cannot see
+  runtime flags. Its next action is to add the feature to the entry point that serves the root, then
+  `lattice feature promote`. It never fires on a feature `STATUS_DRIFT` already reports.
+- **Identity facts on `ENFORCER_EXPOSED`** (4z):
+  - The caller's identity, when it is read through a SQL helper one level deep
+    (`via public.is_admin() → auth.uid() at file:line`).
+  - Authentication by a hash of a parameter compared with a stored value
+    (`authenticates by a hash of parameter p_token`).
+  - The declared `boolean` parameters (`It takes boolean parameter(s): p_ok.`).
+  - Findings that read no identity and take a boolean are listed first.
+
+### Changed
+
+- **`UNGUARDED_WRITER` derives an invariant's columns from conditions** (4t, 4z), when the invariant
+  declares no `columns:`.
+  - The columns are those its enforcers read in an `IF`, `CASE WHEN`, `WHERE`, `CHECK`, or a
+    `SELECT … INTO` that is then tested, on a table they write. Before, they were every column the
+    enforcers assign.
+  - Row selectors (`WHERE id = p_id`) are not counted.
+  - An enforcer with no usable condition read falls back to the columns it writes, and says so.
+  - `lattice writers` and `columns_from` report `conditions`, `derived` or `declared`.
+
+### Behaviour changes to plan for
+
+- **Fewer `UNGUARDED_WRITER` findings** on workspaces whose enforcers write bookkeeping columns.
+  Writers that touch only columns no condition reads are no longer linked to the promise.
+- **`ENFORCER_EXPOSED` messages are longer**, because they now state the identity, hash and boolean
+  facts. The findings are also ordered differently.
+
 ## [0.24.0] — 2026-11-21
 
 This release catches a spec that has drifted from the code.
