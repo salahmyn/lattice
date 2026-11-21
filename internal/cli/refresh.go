@@ -6,13 +6,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 
 	"github.com/spf13/cobra"
 
 	"github.com/salahmyn/lattice/pkg/lattice/blocks"
 	"github.com/salahmyn/lattice/pkg/lattice/entrypoints"
+	"github.com/salahmyn/lattice/pkg/lattice/extract"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
 	"github.com/salahmyn/lattice/pkg/lattice/store"
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
@@ -47,125 +47,18 @@ func runRefresh(io *IO) error {
 	if err != nil {
 		return io.fail("NO_WORKSPACE", err.Error(), "run `lattice init`")
 	}
-	if ws.Storage.Backend == "files" {
-		// shortcut: refresh writes an unsharded lattice.json; add sharded writes when a block workspace needs them
-		if _, err := os.Stat(ws.GraphShardDir()); err == nil {
-			return io.fail("GRAPH_SHARDED", "refresh does not write sharded graphs yet", nil)
-		}
+	if f := refreshable(ws); f != nil {
+		return io.fail(f.code, f.msg, f.next)
 	}
 	st, err := store.Open(ctx, ws)
 	if err != nil {
 		return io.fail("STORE_OPEN", err.Error(), nil)
 	}
 	defer st.Close()
-	recs, err := st.List(ctx, "judgment")
-	if err != nil {
-		return io.fail("STORE_READ", err.Error(), nil)
+	res, report, verified, f := buildBlockGraph(ctx, ws, st)
+	if f != nil {
+		return io.fail(f.code, f.msg, f.next)
 	}
-	var js []blocks.Judgment
-	for _, r := range recs {
-		j, err := blocks.ParseJudgment(r.Body, "judgment "+r.ID)
-		if err != nil {
-			return io.fail("JUDGMENT_INVALID", err.Error(), nil)
-		}
-		js = append(js, j)
-	}
-	in := blocks.Inputs{Judgments: js}
-	if in.Proposals, err = loadProposals(ctx, st); err != nil {
-		return io.fail(proposalCode(err), err.Error(), nil)
-	}
-	var report refreshReport
-	for _, s := range ws.Sources {
-		if len(s.LaravelRoutes) > 0 {
-			v, code, err := readLaravelRoutes(ws, s)
-			if err != nil {
-				return io.fail(code, err.Error(), nil)
-			}
-			in.Verified = append(in.Verified, v)
-			continue
-		}
-		if s.Catalogue == "" {
-			continue
-		}
-		stamp := schema.SourceStamp{ID: s.ID, Repo: s.Repo, Ref: s.Ref, System: s.System}
-		var files []blocks.File
-		switch {
-		case s.Clone != "":
-			clone := ws.ResolvePath(s.Clone)
-			if _, err := os.Stat(clone); err != nil {
-				// stop rather than skip: a skipped source would drop its blocks from lattice.json
-				return io.fail("SOURCE_MISSING", fmt.Sprintf("source %s: clone %s not found; nothing written", s.ID, clone),
-					"clone the repository there, or fix `clone:` in workspace.yaml")
-			}
-			files, stamp.Commit, stamp.CommitDate, err = blocks.ReadGit(clone, s.Ref, s.Catalogue)
-			if err == nil {
-				var rel *schema.Release
-				if rel, err = readRelease(ws, s, &report); err != nil {
-					return io.fail("RELEASE_INVALID", fmt.Sprintf("source %s: %v", s.ID, err), nil)
-				}
-				stamp.State, stamp.Behind, stamp.Ahead = blocks.Freshness(clone, stamp.Commit, rel)
-				stamp.Release = rel
-			}
-		case s.Path != "":
-			files, err = blocks.ReadDir(ws.ResolvePath(s.Path), s.Catalogue)
-			if err == nil && s.Stamp != "" {
-				var data []byte
-				if data, err = os.ReadFile(ws.ResolvePath(s.Stamp)); err == nil {
-					var snap schema.SourceStamp
-					if snap, err = blocks.ParseSnapshot(data); err != nil {
-						return io.fail("STAMP_INVALID", fmt.Sprintf("source %s: %v", s.ID, err), nil)
-					}
-					if snap.Repo != "" {
-						stamp.Repo = snap.Repo
-					}
-					stamp.Branch, stamp.Commit, stamp.CommitDate, stamp.State = snap.Branch, snap.Commit, snap.CommitDate, snap.State
-				}
-			}
-		default:
-			err = fmt.Errorf("needs clone or path")
-		}
-		if err != nil {
-			return io.fail("SOURCE_READ", fmt.Sprintf("source %s: %v", s.ID, err), nil)
-		}
-		cats, skipped, err := blocks.ParseAll(files)
-		if err != nil {
-			return io.fail("CATALOGUE_INVALID", fmt.Sprintf("source %s: %v", s.ID, err), nil)
-		}
-		if len(cats) == 0 {
-			return io.fail("SOURCE_EMPTY", fmt.Sprintf("source %s: no catalogue/v1 files match %s; nothing written", s.ID, s.Catalogue), nil)
-		}
-		for _, p := range skipped {
-			report.Skipped = append(report.Skipped, s.ID+":"+p)
-		}
-		var eg *blocks.EndpointGrouping
-		if o := s.GroupByEndpoint; o != nil {
-			eg = &blocks.EndpointGrouping{SkipAreas: o.SkipAreas, SkipSegments: o.SkipSegments, PathPrefixes: o.PathPrefixes}
-		}
-		var walks []blocks.Walk
-		if s.Flows != "" {
-			data, err := os.ReadFile(ws.ResolvePath(s.Flows))
-			if err != nil {
-				return io.fail("FLOWS_READ", fmt.Sprintf("source %s: %v", s.ID, err), nil)
-			}
-			if walks, err = blocks.ParseWalks(data); err != nil {
-				return io.fail("FLOWS_INVALID", fmt.Sprintf("source %s: %s: %v", s.ID, s.Flows, err), nil)
-			}
-		}
-		in.Sources = append(in.Sources, blocks.SourceInput{
-			Info: blocks.SourceInfo{ID: s.ID, Prefix: s.Prefix, Tier: s.Tier, System: s.System, Commit: stamp.Commit, Endpoints: eg,
-				RoutePrefixes: s.RoutePrefixes},
-			Catalogues: cats, Stamp: stamp, Walks: walks})
-	}
-	if in.Features, err = loadFeatureManifests(ws.FeaturesDir()); err != nil {
-		return io.fail("FEATURE_READ", err.Error(), nil)
-	}
-	if _, err := os.Stat(ws.EntryPointsDir()); err == nil {
-		if in.EntryPoints, err = entrypoints.LoadEntryPoints(ws.EntryPointsDir()); err != nil {
-			return io.fail("ENTRY_POINT_READ", err.Error(), nil)
-		}
-	}
-
-	res := blocks.Build(in)
 
 	old, err := st.Graph(ctx)
 	if err != nil {
@@ -185,7 +78,7 @@ func runRefresh(io *IO) error {
 		report.Edges[e.Kind]++
 	}
 	report.Warnings = append(report.Warnings, res.Warnings...)
-	for _, v := range in.Verified {
+	for _, v := range verified {
 		report.Routes = append(report.Routes, wiredCount(ws, v, res.Blocks))
 	}
 	if io.JSON {
@@ -221,21 +114,157 @@ func runRefresh(io *IO) error {
 	return nil
 }
 
-func loadFeatureManifests(dir string) ([]schema.Manifest, error) {
-	paths, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(paths)
-	var out []schema.Manifest
-	for _, p := range paths {
-		m, err := schema.LoadManifest(p)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", p, err)
+// refreshFailure is why the block graph could not be rebuilt: the code and
+// message refresh fails with, and the next step.
+type refreshFailure struct {
+	code, msg string
+	next      any
+}
+
+// refreshable says why refresh cannot write ws's block graph, or nil.
+func refreshable(ws *workspace.Workspace) *refreshFailure {
+	if ws.Storage.Backend == "files" {
+		// shortcut: refresh writes an unsharded lattice.json; add sharded writes when a block workspace needs them
+		if _, err := os.Stat(ws.GraphShardDir()); err == nil {
+			return &refreshFailure{code: "GRAPH_SHARDED", msg: "refresh does not write sharded graphs yet"}
 		}
-		out = append(out, *m)
 	}
-	return out, nil
+	return nil
+}
+
+// buildBlockGraph reads every input of the block graph (the sources declared
+// in workspace.yaml, the judgment and proposal records, the feature manifests
+// extract reads and the entry points) and builds it. It writes nothing; the
+// report carries the skipped files and the warnings met while reading.
+func buildBlockGraph(ctx context.Context, ws *workspace.Workspace, st store.Store) (blocks.Result, refreshReport, []blocks.Verification, *refreshFailure) {
+	var report refreshReport
+	fail := func(code, msg string, next any) (blocks.Result, refreshReport, []blocks.Verification, *refreshFailure) {
+		return blocks.Result{}, report, nil, &refreshFailure{code: code, msg: msg, next: next}
+	}
+	recs, err := st.List(ctx, "judgment")
+	if err != nil {
+		return fail("STORE_READ", err.Error(), nil)
+	}
+	var js []blocks.Judgment
+	for _, r := range recs {
+		j, err := blocks.ParseJudgment(r.Body, "judgment "+r.ID)
+		if err != nil {
+			return fail("JUDGMENT_INVALID", err.Error(), nil)
+		}
+		js = append(js, j)
+	}
+	in := blocks.Inputs{Judgments: js}
+	if in.Proposals, err = loadProposals(ctx, st); err != nil {
+		return fail(proposalCode(err), err.Error(), nil)
+	}
+	for _, s := range ws.Sources {
+		if len(s.LaravelRoutes) > 0 {
+			v, code, err := readLaravelRoutes(ws, s)
+			if err != nil {
+				return fail(code, err.Error(), nil)
+			}
+			in.Verified = append(in.Verified, v)
+			continue
+		}
+		if s.Catalogue == "" {
+			continue
+		}
+		stamp := schema.SourceStamp{ID: s.ID, Repo: s.Repo, Ref: s.Ref, System: s.System}
+		var files []blocks.File
+		switch {
+		case s.Clone != "":
+			clone := ws.ResolvePath(s.Clone)
+			if _, err := os.Stat(clone); err != nil {
+				// stop rather than skip: a skipped source would drop its blocks from lattice.json
+				return fail("SOURCE_MISSING", fmt.Sprintf("source %s: clone %s not found; nothing written", s.ID, clone),
+					"clone the repository there, or fix `clone:` in workspace.yaml")
+			}
+			files, stamp.Commit, stamp.CommitDate, err = blocks.ReadGit(clone, s.Ref, s.Catalogue)
+			if err == nil {
+				var rel *schema.Release
+				if rel, err = readRelease(ws, s, &report); err != nil {
+					return fail("RELEASE_INVALID", fmt.Sprintf("source %s: %v", s.ID, err), nil)
+				}
+				stamp.State, stamp.Behind, stamp.Ahead = blocks.Freshness(clone, stamp.Commit, rel)
+				stamp.Release = rel
+			}
+		case s.Path != "":
+			files, err = blocks.ReadDir(ws.ResolvePath(s.Path), s.Catalogue)
+			if err == nil && s.Stamp != "" {
+				var data []byte
+				if data, err = os.ReadFile(ws.ResolvePath(s.Stamp)); err == nil {
+					var snap schema.SourceStamp
+					if snap, err = blocks.ParseSnapshot(data); err != nil {
+						return fail("STAMP_INVALID", fmt.Sprintf("source %s: %v", s.ID, err), nil)
+					}
+					if snap.Repo != "" {
+						stamp.Repo = snap.Repo
+					}
+					stamp.Branch, stamp.Commit, stamp.CommitDate, stamp.State = snap.Branch, snap.Commit, snap.CommitDate, snap.State
+				}
+			}
+		default:
+			err = fmt.Errorf("needs clone or path")
+		}
+		if err != nil {
+			return fail("SOURCE_READ", fmt.Sprintf("source %s: %v", s.ID, err), nil)
+		}
+		cats, skipped, err := blocks.ParseAll(files)
+		if err != nil {
+			return fail("CATALOGUE_INVALID", fmt.Sprintf("source %s: %v", s.ID, err), nil)
+		}
+		if len(cats) == 0 {
+			return fail("SOURCE_EMPTY", fmt.Sprintf("source %s: no catalogue/v1 files match %s; nothing written", s.ID, s.Catalogue), nil)
+		}
+		for _, p := range skipped {
+			report.Skipped = append(report.Skipped, s.ID+":"+p)
+		}
+		var eg *blocks.EndpointGrouping
+		if o := s.GroupByEndpoint; o != nil {
+			eg = &blocks.EndpointGrouping{SkipAreas: o.SkipAreas, SkipSegments: o.SkipSegments, PathPrefixes: o.PathPrefixes}
+		}
+		var walks []blocks.Walk
+		if s.Flows != "" {
+			data, err := os.ReadFile(ws.ResolvePath(s.Flows))
+			if err != nil {
+				return fail("FLOWS_READ", fmt.Sprintf("source %s: %v", s.ID, err), nil)
+			}
+			if walks, err = blocks.ParseWalks(data); err != nil {
+				return fail("FLOWS_INVALID", fmt.Sprintf("source %s: %s: %v", s.ID, s.Flows, err), nil)
+			}
+		}
+		in.Sources = append(in.Sources, blocks.SourceInput{
+			Info: blocks.SourceInfo{ID: s.ID, Prefix: s.Prefix, Tier: s.Tier, System: s.System, Commit: stamp.Commit, Endpoints: eg,
+				RoutePrefixes: s.RoutePrefixes},
+			Catalogues: cats, Stamp: stamp, Walks: walks})
+	}
+	if in.Features, err = loadFeatureManifests(ws); err != nil {
+		return fail("FEATURE_READ", err.Error(), nil)
+	}
+	if _, err := os.Stat(ws.EntryPointsDir()); err == nil {
+		if in.EntryPoints, err = entrypoints.LoadEntryPoints(ws.EntryPointsDir()); err != nil {
+			return fail("ENTRY_POINT_READ", err.Error(), nil)
+		}
+	}
+
+	return blocks.Build(in), report, in.Verified, nil
+}
+
+// loadFeatureManifests loads the manifests the knowledge graph holds, as
+// extract loads them: nested directories included, so a flow step or
+// depends_on naming a nested feature resolves, and every feature and
+// invariant gets a block.
+// @enforces cli:INV-5
+func loadFeatureManifests(ws *workspace.Workspace) ([]schema.Manifest, error) {
+	ms, viol := extract.LoadManifests(ws)
+	for _, v := range viol {
+		file := ""
+		if v.Location != nil {
+			file = v.Location.File + ": "
+		}
+		return nil, fmt.Errorf("%s%s", file, v.Message)
+	}
+	return ms, nil
 }
 
 // readRelease reads a source's release/v1 file. No release configured, or a

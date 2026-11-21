@@ -541,7 +541,7 @@ svg.mini rect.mv { fill: var(--accent); fill-opacity: .08; stroke: var(--accent)
     const st = s.state === "behind" ? `behind ${s.behind}` : s.state === "ahead" ? `ahead ${s.ahead}` : (s.state || "");
     const cls = s.state === "current" || s.state === "snapshot" ? "ok" : s.state ? "warn" : "";
     return `<span class="chip ${cls}" title="${esc(s.repo || "")} ${esc(s.commit || "")}"><b>${esc(s.id)}</b> ${esc((s.commit || "").slice(0, 7))} <span class="st">${esc(st)}</span></span>`;
-  }).join("");
+  }).join("") + (G.refresh?.note ? `<span class="chip warn" role="status" style="white-space: normal"><span class="st">${esc(G.refresh.note)}</span></span>` : "");
   const sel = document.getElementById("init");
   for (const b of inits) sel.insertAdjacentHTML("beforeend", `<option value="${esc(b.initiative)}">${esc(b.title)} (${esc(b.attrs?.status || "")})</option>`);
   if (!inits.length) sel.hidden = true;

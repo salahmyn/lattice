@@ -345,8 +345,8 @@ tracing is on the v0.3.1 roadmap.
 Four new validation rules surface entry-point integrity issues:
 `UNCLASSIFIED_ENTRY_POINT` (handler reaches no feature),
 `DUPLICATE_TRIGGER` (routing collision), `PHANTOM_FLOW` (flow step
-names a non-existent feature), and `HANDLER_MISSING` (handler FQN not
-in the IR).
+names a non-existent feature; its next action names the entry point),
+and `HANDLER_MISSING` (handler FQN not in the IR).
 
 ---
 
@@ -996,10 +996,30 @@ run it in a copy to keep the example as committed.
 ## 4h. The block map
 
 `lattice refresh` builds the block graph from a workspace's sources and
-judgments. `lattice serve` shows it at `/map`, and `lattice export map
-out.html` writes the same page as one file that works offline. The page
-lays out with ELK from a pinned, SRI-checked CDN copy; without the network
-it falls back to a simple grid.
+judgments, its feature manifests (nested directories included, as extract
+reads them) and its entry points. `lattice serve` shows it at `/map`, and
+`lattice export map out.html` writes the same page as one file that works
+offline. The page lays out with ELK from a pinned, SRI-checked CDN copy;
+without the network it falls back to a simple grid.
+
+Every feature and invariant is a block. A dotted feature sits inside the
+feature its id extends: `orders.refunds` inside `orders`, and
+`orders.refunds.partial` inside `orders.refunds`. When no feature declares
+the prefix (`reports.daily` with no `reports` feature), a group block
+`feat-group:reports` holds it instead. A group judgment can still move any
+of them.
+
+`serve` and `export map` build the block graph themselves, as `refresh`
+would, before they draw it. When it differs from the stored graph they save
+it to the store (`lattice.json`, or the database), the only thing `refresh`
+writes, so a workspace that never ran `refresh` still gets a full map.
+When it cannot be built (a source clone missing, say), they draw the stored
+graph, and the page and the command's output say why and what to fix.
+`export map --no-refresh` draws the stored graph as it is.
+
+`refresh` warns about a flow step that names no feature, with the code
+`validate` reports for it (`PHANTOM_FLOW`); the two read the same features,
+so they flag the same steps.
 
 `examples/block-map/` is a fictional bookshop to try it on:
 
@@ -1074,7 +1094,8 @@ invariants, and any other block the promises of the blocks inside it.
 - Each class has one colour. Only **break-tested** (solid green) and
   **exercised** (green outline) are drawn as a pass. **Unknown** is
   hatched grey, and so is a promise block the audit has no row for (a
-  stored graph older than the features: run `lattice refresh`). A block
+  stored graph older than the features, drawn with `--no-refresh` or
+  when the graph could not be rebuilt: run `lattice refresh`). A block
   that holds no promise is faded.
 - While the lens is on, kind and wiring colours on the blocks go grey, so
   every colour on a block is an audit class.

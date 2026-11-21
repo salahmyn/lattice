@@ -58,3 +58,61 @@ func TestFeaturesWarnOnMissingTargets(t *testing.T) {
 		t.Errorf("cli trigger title = %q", blockMap(r)["ep:cli"].Title)
 	}
 }
+
+// Every feature and invariant becomes a block, and a dotted feature sits in
+// the block of its id's prefix: the feature when one is declared, else a
+// group block for the prefix. Ids stay what they were for flat features.
+// @verifies blocks:INV-4
+func TestDottedFeaturesNestUnderTheirParent(t *testing.T) {
+	inv := func(ids ...string) []schema.Invariant {
+		var out []schema.Invariant
+		for _, id := range ids {
+			out = append(out, schema.Invariant{ID: id, Statement: id})
+		}
+		return out
+	}
+	ms := []schema.Manifest{
+		{ID: "orders"},
+		{ID: "orders.refunds", Invariants: inv("INV-1", "INV-2"), SourcePath: "features/orders/refunds.yaml"},
+		{ID: "orders.refunds.partial", Invariants: inv("INV-1")},
+		{ID: "wallet.topup", Invariants: inv("INV-1")},
+		{ID: "wallet.limits.daily", Invariants: inv("INV-1")},
+		{ID: "fees", Invariants: inv("INV-1")},
+	}
+	b := blockMap(Build(Inputs{Features: ms}))
+	for id, parent := range map[string]string{
+		"feat:orders":                 "",
+		"feat:fees":                   "",
+		"feat:orders.refunds":         "feat:orders",
+		"feat:orders.refunds.partial": "feat:orders.refunds",
+		"feat:wallet.topup":           "feat-group:wallet",
+		"feat:wallet.limits.daily":    "feat-group:wallet.limits",
+		"feat-group:wallet.limits":    "feat-group:wallet",
+		"feat-group:wallet":           "",
+	} {
+		got, ok := b[id]
+		if !ok {
+			t.Errorf("no block %s", id)
+			continue
+		}
+		if got.Parent != parent {
+			t.Errorf("%s parent = %q, want %q", id, got.Parent, parent)
+		}
+	}
+	if g := b["feat-group:wallet"]; g.Kind != "group" || g.Title != "wallet" {
+		t.Errorf("group block = %+v", g)
+	}
+	for _, m := range ms {
+		for _, v := range m.Invariants {
+			if got := b[InvariantBlockID(m.ID, v.ID)]; got.Parent != FeatureBlockID(m.ID) || got.Kind != "invariant" {
+				t.Errorf("invariant %s:%s block = %+v", m.ID, v.ID, got)
+			}
+		}
+	}
+	if src := b["inv:orders.refunds.INV-1"].Provenance.Source; src != "features/orders/refunds.yaml" {
+		t.Errorf("provenance = %q, want the manifest's path", src)
+	}
+	if n := len(b); n != 6+6+2 {
+		t.Errorf("%d blocks, want 6 features, 6 invariants and 2 groups", n)
+	}
+}

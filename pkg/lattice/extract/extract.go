@@ -105,6 +105,14 @@ func Extract(ctx context.Context, w *workspace.Workspace, reg *adapters.Registry
 	return res, nil
 }
 
+// LoadManifests loads the feature manifests the knowledge graph is built
+// from: every manifest under lattice/features/, nested directories included
+// and proposals left out, sorted by id. A manifest that does not parse is a
+// violation, not a manifest.
+func LoadManifests(w *workspace.Workspace) ([]schema.Manifest, []schema.Violation) {
+	return loadManifests(w, Options{})
+}
+
 // loadManifests loads every feature manifest under lattice/features/.
 // SourcePath is recorded relative to the lattice/ directory.
 func loadManifests(w *workspace.Workspace, opts Options) ([]schema.Manifest, []schema.Violation) {
