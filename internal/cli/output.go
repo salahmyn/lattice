@@ -53,6 +53,9 @@ type jsonError struct {
 	Error      string      `json:"error"`
 	Code       string      `json:"code,omitempty"`
 	NextAction interface{} `json:"next_action,omitempty"`
+	// Problems lists each problem of a refusal that found several at once
+	// (a preflight). Absent on every other error.
+	Problems interface{} `json:"problems,omitempty"`
 }
 
 // fail emits an error (respecting --json) and returns a non-nil error so the

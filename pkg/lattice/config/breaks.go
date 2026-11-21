@@ -48,6 +48,11 @@ type Break struct {
 	// test files that changed in the same commits as a touched file no
 	// promise guards and no stronger evidence links to a test.
 	CoChange CoChange `yaml:"co_change,omitempty"`
+
+	// Services are what the verifier suites need running (a test database,
+	// a local API). The preflight checks each answers on TCP; Lattice never
+	// starts them.
+	Services []Service `yaml:"services,omitempty"`
 }
 
 // Defaults of the co-change window.

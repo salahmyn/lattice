@@ -205,7 +205,7 @@ A complete, validating three-language example lives in
 | Command | Purpose |
 |---|---|
 | `lattice init` | Scaffold a workspace (the `lattice/` directory) |
-| `lattice doctor [--probe-llm]` | Check optional prerequisites |
+| `lattice doctor [--probe-llm]` | Check optional prerequisites and the preflight checks of `runtime:` and `break:` |
 | `lattice extract` | Build the knowledge graph (`lattice.json`) |
 | `lattice validate` | Run every validation rule |
 | `lattice coverage` | Adoption report: discovery / docs / verification / BRD |
@@ -227,9 +227,9 @@ A complete, validating three-language example lives in
 | `lattice view <name>` | Render developer / product / business / c4 views |
 | `lattice journey <brd>` \| `lattice actor list` | Journey and actor views |
 | `lattice rtm` | Requirements traceability matrix with attestation header |
-| `lattice check --base <rev>` | One verdict for a change (ASSURED / UNPROVEN / BROKEN) and the merge rule |
+| `lattice check --base <rev>` | One verdict for a change (ASSURED / UNPROVEN / BROKEN) and the merge rule. Preflight first when `break.runners` is declared |
 | `lattice impact --since <rev> [--tests]` | What a change touches, the acceptance cases included; `--tests` lists the verifier tests to run, by runner |
-| `lattice break [--promise f:INV-n[#case]] [--fails-on-base <rev>]` | Break each enforcer and see whether its verifiers notice; `--promise f:INV-n#a` breaks one case against its tagged tests; `--fails-on-base` runs a change's new or edited tests on the old code |
+| `lattice break [--promise f:INV-n[#case]] [--fails-on-base <rev>]` | Break each enforcer and see whether its verifiers notice; `--promise f:INV-n#a` breaks one case against its tagged tests; `--fails-on-base` runs a change's new or edited tests on the old code. Preflight first |
 | `lattice audit [--promise f:INV-n]` | Classify every promise: fake, break-tested, exercised, a gap; each case covered, partial, failing or uncovered |
 | `lattice prepare brd\|promise\|waiver …` | Prepare a decision branch for a human to approve; never pushes |
 | `lattice confirm [--offline] [--unsigned]` | Which decisions a human confirmed: an approving review on the merged PR, or a hardware-key signature; `--unsigned` lists what a signature could re-confirm, with the commands |
@@ -241,16 +241,28 @@ A complete, validating three-language example lives in
 | `lattice results ingest <junit.xml>...` | Ingest test results (unit and e2e reports of one run, together) so the RTM can say *demonstrated* |
 | `lattice lease acquire\|release\|list` | Claim work units in a multi-agent fleet |
 | `lattice ledger [rebuild\|runs]` | Append-only ledger of decisions and state changes (gates, CRs, flags, sign-offs, transitions); `runs` shows the latest check runs from the untracked cache |
-| `lattice runs-clean` (alias `v0`) | Gate zero: clean install → build → boot → smoke probes |
+| `lattice runs-clean` (alias `v0`) | Gate zero: clean install → build → boot → smoke probes. Preflight first |
 | `lattice flag raise\|list\|clear` | Meaning flags: ride alongside green, humans clear |
 | `lattice cr propose\|price\|decide\|reconverge` | Change requests against grounded intent, with demotions |
 | `lattice backprop [--since <ref>]` | Code→docs scan: which grounded criteria a change touched |
 | `lattice sweep` | Forbidden-move sweep: no verifier disappears without a CR |
-| `lattice demonstrate` | QAE sign-off: every gate executed now, then ledgered |
+| `lattice demonstrate` | QAE sign-off: every gate executed now, then ledgered. Preflight first when V0 runs |
 | `lattice skills list` | List shipped agent skills |
 
 Every command supports `--json` for machine-readable output; `--actor`
 (or `LATTICE_ACTOR`) names the agent identity on leases and ledger entries.
+
+`runs-clean`, `demonstrate` and `break` run a preflight first, in seconds and
+without running a test. It checks only what the config declares: the
+executables of the `runtime:` and `break:` commands are on PATH, each runner's
+`dir` exists, a Node minimum in `package.json` `engines.node` is met, the
+Docker daemon answers for a command that runs `docker`, each
+`runtime.services` / `break.services` address (`host:port`) answers on TCP,
+and, for `break`, the tree is clean. `check` does the same for
+`break.runners` alone, when it is declared. It lists every problem at once,
+each with a code, the config key and a fix (`--json`: `PREFLIGHT_FAILED` with
+`problems`), and exits 2, the setup-error code, before any step runs.
+`--no-preflight` skips it; `lattice doctor` lists the same checks.
 
 ## Block maps (0.9, preview)
 

@@ -3,13 +3,14 @@ package cli
 // @module-feature cli
 
 import (
+	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 
 	"github.com/spf13/cobra"
 
+	"github.com/salahmyn/lattice/internal/preflight"
 	"github.com/salahmyn/lattice/pkg/lattice/adapters/all"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 )
@@ -60,12 +61,16 @@ func newDoctorCommand(io *IO) *cobra.Command {
 		Use:   "doctor",
 		Short: "Check installed prerequisites",
 		Long: `Reports which optional tools (SCIP indexers, mutation runners, LLM config)
-are available. With --probe-llm, also sends a tiny test request to the
-configured LLM and reports the verbatim provider response so a setup
+are available, and runs the preflight checks of runs-clean, demonstrate,
+break and check for whatever runtime: and break: declare (executables,
+runner dirs, the Node minimum in package.json engines.node, the Docker
+daemon, services); a failed one makes ok false. The dirty-tree check is
+break's own and is not listed. With --probe-llm, also sends a tiny test
+request to the configured LLM and reports the verbatim provider response so a setup
 problem (upgrade_required / unsupported_model / DNS failure) surfaces
 once, not 55 times during a draft run.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			report := runDoctor(io)
+			report := runDoctor(cmd.Context(), io)
 			if probeLLM {
 				report.LLMProbe = probeLLMProvider(cmd.Context(), io)
 			}
@@ -81,7 +86,7 @@ once, not 55 times during a draft run.`,
 	return cmd
 }
 
-func runDoctor(io *IO) doctorReport {
+func runDoctor(ctx context.Context, io *IO) doctorReport {
 	var checks []doctorCheck
 
 	// Doctor works before `lattice init`: fall back to defaults if there is
@@ -89,10 +94,12 @@ func runDoctor(io *IO) doctorReport {
 	adCfg := config.DefaultAdapters()
 	cfg := config.Default()
 	codeRoot := io.Repo
+	var gates []gate
 	if ws, err := openWorkspace(io); err == nil {
 		adCfg, _ = config.LoadAdapters(ws.LatticeDir)
 		cfg, _ = config.Load(ws.LatticeDir)
 		codeRoot = ws.PrimaryCodeRoot().Abs
+		gates = gateRequirements(io, ws, cfg)
 	}
 	reg := all.Registry(adCfg)
 
@@ -128,6 +135,15 @@ func runDoctor(io *IO) doctorReport {
 	}
 	checks = append(checks, llmCheck)
 
+	// The same checks the long commands run first, so a setup problem shows
+	// here before a run meets it.
+	for _, g := range gates {
+		for _, r := range preflight.Check(ctx, g.reqs) {
+			checks = append(checks, doctorCheck{Name: g.name + " " + r.Key, Category: "preflight",
+				Found: r.OK, Detail: r.Detail, InstallHint: r.Next})
+		}
+	}
+
 	sort.SliceStable(checks, func(i, j int) bool {
 		if checks[i].Category != checks[j].Category {
 			return checks[i].Category < checks[j].Category
@@ -137,7 +153,7 @@ func runDoctor(io *IO) doctorReport {
 
 	ok := true
 	for _, c := range checks {
-		if !c.Found && c.Category == "agentic" {
+		if !c.Found && (c.Category == "agentic" || c.Category == "preflight") {
 			ok = false
 		}
 	}
@@ -158,7 +174,7 @@ func toolCheck(name, category, tool, repo string) doctorCheck {
 		c.Detail = "not found at " + p
 		return c
 	}
-	if path, err := exec.LookPath(tool); err == nil {
+	if path, err := preflight.LookupExecutable(tool, repo); err == nil {
 		c.Found = true
 		c.Detail = "found: " + path
 		return c
@@ -176,10 +192,15 @@ func renderDoctor(io *IO, report doctorReport) {
 		}
 		io.printf("[%-2s] %-28s %s\n", mark, c.Name, c.Detail)
 		if !c.Found && c.InstallHint != "" {
-			io.printf("       install: %s\n", c.InstallHint)
+			label := "install"
+			if c.Category == "preflight" {
+				label = "next"
+			}
+			io.printf("       %s: %s\n", label, c.InstallHint)
 		}
 	}
-	io.printf("\nOptional tools missing above are only needed for the features that use them.\n")
+	io.printf("\nOptional tools missing above are only needed for the features that use them;\n" +
+		"a failed preflight check blocks the command it names.\n")
 	if report.LLMProbe != nil {
 		io.printf("\nLLM probe — %s / %s\n", report.LLMProbe.Provider, report.LLMProbe.Model)
 		if report.LLMProbe.OK {

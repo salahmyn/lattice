@@ -9,8 +9,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/salahmyn/lattice/internal/preflight"
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/check"
+	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/impact"
 )
 
@@ -29,7 +31,7 @@ func usageError(io *IO, code, msg string) error {
 // newCheckCommand is `lattice check --base <rev>`: one verdict for a change.
 func newCheckCommand(io *IO) *cobra.Command {
 	var base string
-	var markdown, ci, snapshot bool
+	var markdown, ci, snapshot, noPreflight bool
 	cmd := &cobra.Command{
 		Use:   "check --base <rev>",
 		Short: "One verdict for a change: BROKEN, UNPROVEN or ASSURED",
@@ -77,9 +79,15 @@ anything else reads unknown (EVIDENCE_NOT_CI). That includes confirm.json:
 under --ci a confirm file of a local run or of another commit confirms
 nothing. Only CI's verdict counts.
 
+When break.runners is declared, a preflight runs first, before the graph is
+built: each runner's executable is on PATH, its dir exists, a Node minimum
+declared in package.json engines.node is met, and the Docker daemon answers
+for a runner that runs docker. It lists every problem at once (code, config
+key, fix) and exits 2. --no-preflight skips it.
+
 Exit codes: 0 for ASSURED or an allowed UNPROVEN; 1 for BROKEN or a
-disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
---markdown is a PR comment starting with ` + check.Marker + `.`,
+disallowed UNPROVEN; 2 for a usage error or a failed preflight. --json is
+lattice.check/1; --markdown is a PR comment starting with ` + check.Marker + `.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if markdown && io.JSON {
@@ -95,6 +103,15 @@ disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
 			top, err := impact.TopLevel(ws.LatticeDir)
 			if err != nil {
 				return usageError(io, "NOT_A_REPO", err.Error())
+			}
+			// The test listing names break.runners' commands: check that they
+			// can run before the graph is built.
+			if !snapshot && !noPreflight {
+				if cfg, cerr := config.Load(ws.LatticeDir); cerr == nil && len(cfg.Break.Runners) > 0 {
+					if err := runPreflight(cmd.Context(), io, "check", preflight.Runners(cfg.Break, filepath.Dir(ws.LatticeDir))); err != nil {
+						return err
+					}
+				}
 			}
 			kg, calls, err := readOnlyGraphCalls(cmd, ws)
 			if err != nil {
@@ -160,6 +177,7 @@ disallowed UNPROVEN; 2 for a usage error. --json is lattice.check/1;
 	cmd.Flags().StringVar(&base, "base", "", "git ref to compare with; the base is merge-base(<rev>, HEAD) (required)")
 	cmd.Flags().BoolVar(&markdown, "markdown", false, "print Markdown for a PR comment")
 	cmd.Flags().BoolVar(&ci, "ci", false, "count only evidence stamped with the head commit and a CI run")
+	cmd.Flags().BoolVar(&noPreflight, "no-preflight", false, noPreflightUsage)
 	cmd.Flags().BoolVar(&snapshot, "snapshot", false, "only save the audit of HEAD as lattice/.cache/audit/<sha>.json (for a base branch job)")
 	return cmd
 }
