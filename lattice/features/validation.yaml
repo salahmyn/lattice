@@ -66,3 +66,7 @@ invariants:
     statement: INVARIANT_UNREQUIRED, STATUS_DRIFT and the findings of FEATURE_UNREACHED for unpromoted features are info and always on, so a run that fails on warnings stays green with all of them present.
   - id: INV-22
     statement: CRITERION_TIER_UNSET is an info finding, always on, one per BRD listing every criterion whose tier is not 1, 2 or 3; it never suggests a tier.
+  - id: INV-23
+    statement: BREAK_SURVIVED is raised once per feature for the break-tested promises whose break survived with every verifier run, naming each promise, enforcer and method, and BREAK_UNKNOWN_CAUSE once per feature for its unknown runs grouped by cause with a count and the reason text; both are info and always on, and neither changes a status, a level or a gate.
+  - id: INV-24
+    statement: A breaks.json that is missing, of another schema or of another commit than the graph reads as "no break evidence", raised once as BREAK_UNKNOWN_CAUSE (info); it is never counted as a pass and raises no per-feature finding.

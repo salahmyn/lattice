@@ -256,6 +256,10 @@ const (
 	CodeInvariantUnrequired = "INVARIANT_UNREQUIRED" // a declared invariant that no criterion's maps_to_invariant names (info)
 	CodeStatusDrift         = "STATUS_DRIFT"         // a proposal or accepted feature on the flow of a production entry point (info)
 
+	// Break facts, read from breaks.json. Both are info and always on.
+	CodeBreakSurvived     = "BREAK_SURVIVED"      // break-tested promises whose break no verifier noticed (info)
+	CodeBreakUnknownCause = "BREAK_UNKNOWN_CAUSE" // unknown break runs by cause, or no break evidence at all (info)
+
 	// Workspace hygiene: derived files git should not track (warning).
 	CodeGraphTracked = "GRAPH_TRACKED" // lattice/lattice.json is tracked, so every extract dirties the tree
 	CodeCacheTracked = "CACHE_TRACKED" // files under lattice/.cache/ are tracked

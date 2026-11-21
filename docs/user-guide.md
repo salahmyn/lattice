@@ -4173,6 +4173,54 @@ It refuses, and writes nothing, when:
 No mandate covers it and no grant exists for it. It never touches a BRD, so it causes no
 `BRD_DRIFT`.
 
+## 4y. Break facts: what did breaking the code show?
+
+`lattice validate` reads `lattice/.cache/results/breaks.json`, which `lattice break`
+writes, and states what it shows per feature. Each finding is a fact, info and always
+on, so `validate.fail_on: warning` stays green with all of them open. None changes an RTM
+status, a level or a gate.
+
+```sh
+lattice break          # writes breaks.json for this commit
+lattice validate       # BREAK_SURVIVED, BREAK_UNKNOWN_CAUSE
+```
+
+- **`BREAK_SURVIVED`**: one finding per feature listing each promise whose break
+  survived, with every verifier run and green. Each entry gives the promise, the enforcer
+  that was broken and the method (`early_return`, `scripted`). A partial run, where some
+  verifier did not run, is not survived: it is unknown.
+- **`BREAK_UNKNOWN_CAUSE`**: one finding per feature for its unknown runs, grouped by
+  cause with a count and the reason text: `setup failed`, `no runner`, `partial run`
+  or `other` (the reason says what, for instance a failing baseline). An unknown run says
+  nothing about the verifiers, and it never reads as a pass.
+- **No break evidence**: a `breaks.json` that is missing, of another schema, or of another
+  commit than the graph's is not evidence. `lattice validate` says "no break evidence" once,
+  as a `BREAK_UNKNOWN_CAUSE` finding with no feature, and raises nothing per feature from
+  the file. A stale `killed` never reads as a pass.
+
+### A failed setup
+
+A `break.setup` that fails (a database or container daemon that is down, say) leaves every
+promise unknown within seconds, which can look like a quick, real result. `lattice break`
+now says so once, under the counts:
+
+```
+0 killed, 0 survived, 902 unknown
+setup failed: 902 promises not run (docker compose up -d: Cannot connect to the Docker daemon)
+```
+
+`--json` carries the same fact as `summary.setup_failed`
+(`{"promises": 902, "runs": 902, "reason": "..."}`). In `lattice validate` the runs are
+one cause, `setup failed`, in `BREAK_UNKNOWN_CAUSE`. A setup that fails again after a failed
+`break.restore` or a failed baseline reads the same way.
+
+### Clear a finding
+
+- `BREAK_SURVIVED`: add or fix a verifier that fails when the enforcer is broken, then
+  break the feature again (`lattice break --feature <id>`).
+- `BREAK_UNKNOWN_CAUSE`: fix the cause the finding names (the setup command, a runner), then
+  break again. Or allowlist the finding for the feature with a reason.
+
 ## 5. Day-to-day commands
 
 ```sh
