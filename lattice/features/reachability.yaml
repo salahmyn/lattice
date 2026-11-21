@@ -34,3 +34,5 @@ invariants:
     statement: An HTTP edge exists only when a literal client call and a served route were both extracted and their normalised keys are equal; a computed URL never makes an edge.
   - id: INV-12
     statement: A slice hop is exercised only when one verifier's own run executed symbols on both sides of it; without per-test coverage no hop reads exercised.
+  - id: INV-13
+    statement: An async hop exists only through a channel both ends name with a literal, and async reach is reported apart from synchronous reach.

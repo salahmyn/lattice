@@ -238,7 +238,7 @@ func WriteMarkdown(w io.Writer, r Report) {
 			fmt.Fprintf(w, "\n**`%s`** (%s): %s\n\n", row.Promise, row.Kind, mdCell(row.Statement))
 			fmt.Fprintf(w, "- %s\n", row.Reason)
 			for _, e := range row.Evidence.Enforcers {
-				fmt.Fprintf(w, "- enforcer `%s` (%s:%d, reach %s)\n", e.FQN, e.File, e.Line, orDash(e.Reach))
+				fmt.Fprintf(w, "- enforcer `%s` (%s:%d, reach %s%s)\n", e.FQN, e.File, e.Line, orDash(e.Reach), asyncNote(e.AsyncHops))
 			}
 			for _, v := range row.Evidence.Verifiers {
 				fmt.Fprintf(w, "- verifier `%s`: result %s, coverage %s, ran enforcer %t\n", v.FQN, v.Result, orDash(v.Coverage), v.RanEnforcer)
@@ -303,6 +303,18 @@ func at(file string, line int) string {
 
 func mdCell(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "|", "\\|"), "\n", " ")
+}
+
+// asyncNote says a symbol is reached only through channels, apart from its
+// reach class: ", 1 async hop".
+func asyncNote(n int) string {
+	switch {
+	case n <= 0:
+		return ""
+	case n == 1:
+		return ", 1 async hop"
+	}
+	return fmt.Sprintf(", %d async hops", n)
 }
 
 func orDash(s string) string {

@@ -99,6 +99,10 @@ type EnforcerEvidence struct {
 	File  string `json:"file,omitempty"`
 	Line  int    `json:"line,omitempty"`
 	Reach string `json:"reach,omitempty"`
+	// AsyncHops is how many channels the shortest path from a root crosses,
+	// set only when no root reaches the enforcer synchronously. It never
+	// changes Reach, and so never the live signal.
+	AsyncHops int `json:"async_hops,omitempty"`
 	// Layer is the enforcer's runtime layer (the schema.Layer* values), as
 	// the graph assigned it; empty when layers were not assigned.
 	Layer string `json:"layer,omitempty"`
@@ -396,7 +400,7 @@ func buildRow(ref, feature string, inv schema.Invariant, rr rtm.Row, src Sources
 	for _, fqn := range enf {
 		s := symbols[fqn]
 		r.Evidence.Enforcers = append(r.Evidence.Enforcers,
-			EnforcerEvidence{FQN: fqn, File: s.File, Line: s.Line, Reach: s.Reach, Layer: s.Layer})
+			EnforcerEvidence{FQN: fqn, File: s.File, Line: s.Line, Reach: s.Reach, AsyncHops: s.AsyncHops, Layer: s.Layer})
 		r.Layers = append(r.Layers, s.Layer)
 	}
 	r.Layers = schema.LayerSet(r.Layers)

@@ -186,7 +186,7 @@ func appliedRefs(st statement) []ir.Ref {
 	if namesOnly.MatchString(st.text) {
 		return nil
 	}
-	return callRefs(st, false)
+	return append(callRefs(st, false), channelRefs(st.text, st.line, false)...)
 }
 
 // appliedNode is the root holding a migration's (or schema file's)
@@ -244,6 +244,7 @@ func cronNode(mod *ir.Module, st statement) (ir.Node, bool) {
 	n := ir.Node{FQN: cronFQN(name, mod.File, st.line), Kind: ir.NodeCron, Root: "cron", Line: st.line,
 		Job: name, Schedule: schedule, KeyComputed: computed}
 	n.Refs = callRefs(statement{text: body, line: st.line}, true)
+	n.Refs = append(n.Refs, channelRefs(body, st.line, true)...)
 	return n, true
 }
 
@@ -281,6 +282,7 @@ func linkRefs(mod *ir.Module, sym *ir.Symbol, st statement, kind string, schemaN
 			sym.Refs = append(sym.Refs, r)
 		}
 	}
+	sym.Refs = append(sym.Refs, channelRefs(st.text, st.line, false)...)
 	switch kind {
 	case "trigger", "policy":
 		sym.Root = kind

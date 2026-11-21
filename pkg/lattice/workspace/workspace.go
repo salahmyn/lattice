@@ -25,6 +25,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
+	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 )
 
 // Dir is the single directory that holds every Lattice-maintained artifact.
@@ -136,6 +137,7 @@ type file struct {
 	Exclude   []string           `yaml:"exclude,omitempty"`
 	Layers    []schema.LayerRule `yaml:"layers,omitempty"`
 	HTTP      HTTP               `yaml:"http,omitempty"`
+	Channels  Channels           `yaml:"channels,omitempty"`
 	Sources   []Source           `yaml:"sources,omitempty"`
 	Judgments string             `yaml:"judgments,omitempty"`
 	Storage   Storage            `yaml:"storage,omitempty"`
@@ -149,6 +151,58 @@ type HTTP struct {
 	// serves as a path; a request to any other origin is external. Checked by
 	// validate, not here.
 	Origins []string `yaml:"origins,omitempty"`
+}
+
+// Channels is the channels: block of workspace.yaml: the project's own
+// wrappers around a queue or event client, so a call of one is a publish or a
+// consume end of a channel the way a built-in client call is.
+type Channels struct {
+	Publish []ChannelCall `yaml:"publish,omitempty"`
+	Consume []ChannelCall `yaml:"consume,omitempty"`
+}
+
+// ChannelCall is one declared wrapper.
+type ChannelCall struct {
+	// Call is the callee as written, compared by its trailing segments.
+	Call string `yaml:"call"`
+	// Arg is the zero-based argument that names the channel.
+	Arg int `yaml:"arg"`
+	// Kind is queue, event, notify or topic.
+	Kind string `yaml:"kind"`
+	// HandlerArg, on a consume entry, is the zero-based argument that is the
+	// handler function.
+	HandlerArg *int `yaml:"handler_arg,omitempty"`
+}
+
+// Wrappers returns the declared wrappers as the adapters read them: the
+// publish entries, then the consume entries, each in file order. Nothing is
+// filtered here; validate reports a bad entry and ValidWrappers drops it.
+func (c Channels) Wrappers() (publish, consume []ir.ChannelWrapper) {
+	conv := func(in []ChannelCall, consuming bool) []ir.ChannelWrapper {
+		var out []ir.ChannelWrapper
+		for _, e := range in {
+			w := ir.ChannelWrapper{Call: strings.TrimSpace(e.Call), Arg: e.Arg, Kind: e.Kind, Consume: consuming, HandlerArg: -1}
+			if consuming && e.HandlerArg != nil {
+				w.HandlerArg = *e.HandlerArg
+			}
+			out = append(out, w)
+		}
+		return out
+	}
+	return conv(c.Publish, false), conv(c.Consume, true)
+}
+
+// ValidWrappers is Wrappers without the entries validate rejects (an empty
+// call, a negative argument index, a kind outside the vocabulary).
+func (c Channels) ValidWrappers() []ir.ChannelWrapper {
+	pub, con := c.Wrappers()
+	var out []ir.ChannelWrapper
+	for _, w := range append(pub, con...) {
+		if w.Call != "" && w.Arg >= 0 && w.HandlerArg >= -1 && ir.ValidChannelKind(w.Kind) {
+			out = append(out, w)
+		}
+	}
+	return out
 }
 
 // Workspace is the resolved view of a project's Lattice setup.
@@ -170,6 +224,9 @@ type Workspace struct {
 	Layers []schema.LayerRule
 	// HTTP holds the declared own origins.
 	HTTP HTTP
+	// Channels holds the declared queue and event wrappers. Checked by
+	// validate, not here.
+	Channels Channels
 	// Sources are the block-graph inputs declared in workspace.yaml.
 	Sources []Source
 	// judgments is the judgments directory as declared, resolved by ResolvePath.
@@ -244,6 +301,7 @@ func (w *Workspace) loadWorkspaceFile() error {
 	w.CodeRoots = f.CodeRoots
 	w.Layers = f.Layers
 	w.HTTP = f.HTTP
+	w.Channels = f.Channels
 	w.Sources = f.Sources
 	w.judgments = f.Judgments
 	w.Storage = f.Storage

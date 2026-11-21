@@ -87,6 +87,13 @@ const (
 	CodeHTTPCallUnserved = "HTTP_CALL_UNSERVED"
 	CodeHTTPCallDynamic  = "HTTP_CALL_DYNAMIC"
 
+	// The channel join (info, always on). A literal publish that no consumer
+	// of the workspace names, and a consumer whose channel no publisher names.
+	CodeChannelNoConsumer  = "CHANNEL_NO_CONSUMER"
+	CodeChannelNoPublisher = "CHANNEL_NO_PUBLISHER"
+	// One per file: the channel ends whose name is computed, so no edge.
+	CodeChannelDynamic = "CHANNEL_DYNAMIC"
+
 	// BRD integrity (v0.5.0)
 	//
 	// All BRD rules are deliberately conservative — adoption is opt-in.

@@ -68,6 +68,7 @@ func (a *Adapter) parse(ctx context.Context, path string, source []byte) (ir.Mod
 		testFile:      isTestFile(path),
 		testCounts:    map[string]int{},
 		boundRequires: map[uint32]bool{},
+		wrappers:      a.wrappers,
 	}
 	p.walkStatements(tree.RootNode())
 	mod.HasCode = !p.testFile && hasTopLevelCode(tree.RootNode())
@@ -141,6 +142,8 @@ type tsParser struct {
 	// boundRequires are the require() calls a top-level binding
 	// (const x = require('./x')) records as an import.
 	boundRequires map[uint32]bool
+	// wrappers are the declared queue and event wrappers.
+	wrappers []ir.ChannelWrapper
 }
 
 // track records the span of the symbol just appended.

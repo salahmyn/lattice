@@ -186,3 +186,27 @@ func TestOpenReadsHTTPOrigins(t *testing.T) {
 		t.Errorf("origins = %+v", w.HTTP.Origins)
 	}
 }
+
+func TestOpenReadsChannelWrappers(t *testing.T) {
+	root := t.TempDir()
+	writeLatticeDir(t, filepath.Join(root, "lattice"), `channels:
+  publish:
+    - {call: "jobs.enqueue", arg: 0, kind: queue}
+    - {call: "", arg: 0, kind: queue}
+  consume:
+    - {call: "jobs.register", arg: 0, handler_arg: 1, kind: queue}
+    - {call: "bus.on", arg: 0, kind: bogus}
+`)
+	w, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub, con := w.Channels.Wrappers()
+	if len(pub) != 2 || len(con) != 2 || pub[0].HandlerArg != -1 || !con[0].Consume || con[0].HandlerArg != 1 || con[1].HandlerArg != -1 {
+		t.Errorf("wrappers = %+v %+v", pub, con)
+	}
+	// Entries validate rejects (an empty call, a kind outside the vocabulary) are not handed to the adapters.
+	if valid := w.Channels.ValidWrappers(); len(valid) != 2 || valid[0].Call != "jobs.enqueue" || valid[1].Call != "jobs.register" {
+		t.Errorf("valid wrappers = %+v", valid)
+	}
+}

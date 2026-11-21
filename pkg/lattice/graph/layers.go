@@ -97,6 +97,43 @@ func CheckHTTPOrigins(origins []string) []schema.Violation {
 	return out
 }
 
+// CheckChannelWrappers reports each channels: entry of workspace.yaml that
+// cannot be read (an empty call, a negative argument index, a kind that is not
+// one of ir.ChannelKinds, a handler_arg below -1) as a
+// VALIDATE_POLICY error. The adapters ignore such an entry.
+// @enforces reachability:INV-13
+func CheckChannelWrappers(publish, consume []ir.ChannelWrapper) []schema.Violation {
+	var out []schema.Violation
+	bad := func(list string, i int, msg string) {
+		subject := fmt.Sprintf("channels.%s[%d]", list, i)
+		out = append(out, schema.Violation{
+			Code: schema.CodeValidatePolicy, Severity: schema.SeverityError,
+			Subject:  subject,
+			Message:  fmt.Sprintf("workspace.yaml %s: %s", subject, msg),
+			Location: &schema.Location{File: "workspace.yaml"},
+			NextAction: &schema.NextAction{Kind: "edit_workspace",
+				Detail: `write each entry like {call: "jobs.enqueue", arg: 0, kind: queue}; kind is one of ` + strings.Join(ir.ChannelKinds, ", ")},
+		})
+	}
+	check := func(list string, ws []ir.ChannelWrapper) {
+		for i, w := range ws {
+			switch {
+			case strings.TrimSpace(w.Call) == "":
+				bad(list, i, "call is empty")
+			case w.Arg < 0:
+				bad(list, i, fmt.Sprintf("arg %d is not an argument index", w.Arg))
+			case !ir.ValidChannelKind(w.Kind):
+				bad(list, i, fmt.Sprintf("kind %q is not one of %s", w.Kind, strings.Join(ir.ChannelKinds, ", ")))
+			case w.HandlerArg < -1:
+				bad(list, i, fmt.Sprintf("handler_arg %d is not an argument index", w.HandlerArg))
+			}
+		}
+	}
+	check("publish", publish)
+	check("consume", consume)
+	return out
+}
+
 func layerRuleError(i int, msg string) schema.Violation {
 	return schema.Violation{
 		Code: schema.CodeValidatePolicy, Severity: schema.SeverityError,

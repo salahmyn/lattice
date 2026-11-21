@@ -72,6 +72,7 @@ func (p *tsParser) collectRefs(root *sitter.Node) {
 		}
 		top = append(top, r)
 	}
+	w.prepareChannels(root)
 	w.visit(root)
 	m.Nodes = append(m.Nodes, ir.Node{FQN: ir.TopFQN(p.modulePath, p.testFile), Kind: ir.NodeTop,
 		IsTest: p.testFile, Line: 1, Refs: top})
@@ -257,6 +258,7 @@ type tsRefWalker struct {
 	emit      func(n *sitter.Node, r ir.Ref)
 	serve     [][2]uint32 // byte ranges of top-level serve() arguments
 	serveLine int
+	ch        *channelState // BullMQ imports and queue bindings of the module
 }
 
 func (w *tsRefWalker) text(n *sitter.Node) string { return n.Utf8Text(w.p.src) }
@@ -355,6 +357,7 @@ func (w *tsRefWalker) visit(n *sitter.Node) {
 		w.call(n)
 		return
 	case "new_expression":
+		w.workerRef(n)
 		if c := n.ChildByFieldName("constructor"); c != nil {
 			switch c.Kind() {
 			case "identifier":
@@ -476,6 +479,7 @@ func (w *tsRefWalker) call(n *sitter.Node) {
 	fn := n.ChildByFieldName("function")
 	args := n.ChildByFieldName("arguments")
 	w.httpRef(fn, args)
+	w.channelCall(fn, args)
 	switch {
 	case fn == nil:
 	case fn.Kind() == "import":

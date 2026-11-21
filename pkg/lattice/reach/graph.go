@@ -25,9 +25,13 @@ import (
 type Edge struct {
 	From string `json:"from"`
 	To   string `json:"to"`
-	// Kind is the reference kind (call, new, rpc, table, http, jsx, ref), or
-	// import (a module loads another), member (a member implies its
-	// type), use (a dynamic import uses an export) or scip.
+	// Kind is the reference kind (call, new, rpc, table, http, jsx, ref,
+	// publish, consume), or import (a module loads another), member (a
+	// member implies its type), use (a dynamic import uses an export) or
+	// scip. A publish edge runs from the code that publishes to a channel
+	// node (chan.<kind>.<name>), and a consume edge from the channel node to
+	// each consumer that names it; neither is followed by the synchronous
+	// walk (see asyncDistances).
 	Kind string `json:"kind"`
 	// Via is how it resolved: target (the adapter named the FQN), import,
 	// scope (the module's own names), this (the enclosing type), unique (a
@@ -46,8 +50,9 @@ type Unresolved struct {
 	Qualifier string `json:"qualifier,omitempty"`
 	// Why: ambiguous (several members share the name, or several routes
 	// serve the request), missing (it names a module of the workspace, or a
-	// database function, that has no such symbol), dynamic (an .rpc() whose
-	// name is not a literal, or a request whose URL or method is computed)
+	// database function, that has no such symbol, or a handler that is no
+	// node), dynamic (an .rpc() whose name is not a literal, a request whose
+	// URL or method is computed, or a channel end whose name is computed)
 	// or no_route (a literal request that no extracted route serves).
 	Why        string   `json:"why"`
 	Candidates []string `json:"candidates,omitempty"`
@@ -91,8 +96,13 @@ type Graph struct {
 	Stats      Stats
 
 	nodes map[string]*node
-	out   map[string][]string // resolved edges
-	may   map[string][]string // ambiguous references, to every candidate
+	out   map[string][]string // resolved edges, the synchronous ones
+	// Channel edges are kept apart from out, so synchronous reach never
+	// crosses a channel: pub is publisher -> channel node, cons is channel
+	// node -> consumer.
+	pub, cons map[string][]string
+	chans     map[string]*Channel
+	may       map[string][]string // ambiguous references, to every candidate
 	// imported holds the symbols another namespace imports or references.
 	imported map[string]bool
 	modules  []ir.Module
@@ -129,6 +139,7 @@ type builder struct {
 // @enforces reachability:INV-2
 func Build(modules []ir.Module, opts Options) *Graph {
 	g := &Graph{nodes: map[string]*node{}, out: map[string][]string{}, may: map[string][]string{},
+		pub: map[string][]string{}, cons: map[string][]string{},
 		imported: map[string]bool{}, modules: modules, byNS: map[string][]int{}, tops: map[int]string{},
 		Stats: Stats{ByLang: map[string]int{}}}
 	b := &builder{g: g, members: map[string]map[string][]string{}, edgeSet: map[string]bool{}}
@@ -174,6 +185,7 @@ func Build(modules []ir.Module, opts Options) *Graph {
 	}
 
 	b.http = g.collectHTTPEnds(opts.EntryPoints)
+	b.collectEntryConsumers(opts.EntryPoints)
 	for _, o := range opts.Origins {
 		if ir.ValidHTTPOrigin(o) {
 			b.origins = append(b.origins, o)
@@ -198,18 +210,22 @@ func Build(modules []ir.Module, opts Options) *Graph {
 		for _, im := range m.Imports {
 			b.importEdges(mi, top, im)
 		}
-		if scipLangs[m.Language] {
-			continue
-		}
+		// A SCIP index replaces the call resolution of its language, but not
+		// the channel ends: it knows nothing of them.
+		viaSCIP := scipLangs[m.Language]
 		mc := b.context(mi)
 		for _, s := range m.Symbols {
 			for _, r := range s.Refs {
-				b.resolve(mc, g.nodes[s.FQN], s.FQN, r)
+				if !viaSCIP || isAsyncKind(r.Kind) {
+					b.resolve(mc, g.nodes[s.FQN], s.FQN, r)
+				}
 			}
 		}
 		for _, nd := range m.Nodes {
 			for _, r := range nd.Refs {
-				b.resolve(mc, g.nodes[nd.FQN], nd.FQN, r)
+				if !viaSCIP || isAsyncKind(r.Kind) {
+					b.resolve(mc, g.nodes[nd.FQN], nd.FQN, r)
+				}
 			}
 		}
 	}
@@ -252,6 +268,16 @@ func Build(modules []ir.Module, opts Options) *Graph {
 	for k := range g.may {
 		sort.Strings(g.may[k])
 	}
+	for k := range g.pub {
+		sort.Strings(g.pub[k])
+	}
+	for k := range g.cons {
+		sort.Strings(g.cons[k])
+	}
+	for _, c := range g.chans {
+		sort.Slice(c.Publishers, func(i, j int) bool { return endLess(c.Publishers[i], c.Publishers[j]) })
+		sort.Slice(c.Consumers, func(i, j int) bool { return endLess(c.Consumers[i], c.Consumers[j]) })
+	}
 	return g
 }
 
@@ -269,6 +295,14 @@ func (b *builder) addEdge(e Edge) {
 	}
 	b.edgeSet[key] = true
 	b.g.Edges = append(b.g.Edges, e)
+	switch e.Kind {
+	case ir.RefPublish:
+		b.g.pub[e.From] = append(b.g.pub[e.From], e.To)
+		return
+	case ir.RefConsume:
+		b.g.cons[e.From] = append(b.g.cons[e.From], e.To)
+		return
+	}
 	b.g.out[e.From] = append(b.g.out[e.From], e.To)
 	from, to := b.g.nodes[e.From], b.g.nodes[e.To]
 	if from != nil && to != nil && to.symbol && from.namespace != to.namespace && e.Kind != "member" {
@@ -473,6 +507,12 @@ func (b *builder) resolve(mc *modCtx, owner *node, from string, r ir.Ref) {
 		return
 	case r.Kind == ir.RefHTTP:
 		b.resolveHTTP(r, resolved, unresolved, external)
+		return
+	case r.Kind == ir.RefPublish:
+		b.resolvePublish(from, r, resolved, unresolved)
+		return
+	case r.Kind == ir.RefConsume:
+		b.resolveConsume(mc, owner, from, r, unresolved)
 		return
 	case r.Kind == ir.RefRPC:
 		if r.Name == "" {
@@ -839,4 +879,11 @@ func (b *builder) scipEdges(lang string, c *scip.Corpus) {
 			g.Stats.SCIPEdges++
 		}
 	}
+}
+
+func endLess(a, b ChannelEnd) bool {
+	if a.Symbol != b.Symbol {
+		return a.Symbol < b.Symbol
+	}
+	return a.Line < b.Line
 }
