@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -753,5 +754,40 @@ func TestBreakSummaryGroupsMissingRunners(t *testing.T) {
 	}
 	if _, ok := breaktest.NoRunnerLanguages("no generated break for postgres; add a script"); ok {
 		t.Error("another reason read as a missing runner")
+	}
+}
+
+// A break run holds lattice/.cache/results/break.lock while it runs and
+// removes it after; a second run against a held lock fails without running
+// anything and names the holder.
+// @verifies breaktest:INV-14
+func TestBreakRunLock(t *testing.T) {
+	dir := breakFixture(t)
+	lock := filepath.Join(dir, "lattice", ".cache", "results", "break.lock")
+
+	if _, out, err := runBreak(t, dir, "--promise", "guard:INV-1"); err != nil {
+		t.Fatalf("break: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(lock); !os.IsNotExist(err) {
+		t.Fatalf("the lock outlived the run: %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(lock), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	held := fmt.Sprintf(`{"pid":%d,"started":"2026-01-02T03:04:05Z"}`, os.Getpid())
+	if err := os.WriteFile(lock, []byte(held), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, out, err := runBreak(t, dir, "--promise", "guard:INV-1")
+	if err == nil || !strings.Contains(out, "BREAK_LOCKED") ||
+		!strings.Contains(out, fmt.Sprintf("another lattice break is running (pid %d, started 2026-01-02T03:04:05Z)", os.Getpid())) {
+		t.Fatalf("a held lock should stop the run: %v\n%s", err, out)
+	}
+	if got, _ := os.ReadFile(lock); string(got) != held {
+		t.Errorf("the refused run touched the holder's lock: %q", got)
+	}
+	if n := worktreeCount(t, dir); n != 1 {
+		t.Errorf("%d worktrees: the refused run should not have made one", n)
 	}
 }

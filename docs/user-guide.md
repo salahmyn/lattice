@@ -1103,6 +1103,7 @@ count.
 | Owner | `attrs.owner` on the block or the nearest block above it |
 | Kind | their kind |
 | Tier | `tier` on the block or above it |
+| Layer | the runtime layers the kernel computed for the block (see [Layers](#4o-layers-what-kind-of-runtime-is-this-code)) |
 | Truth | `declared` or `wired` |
 | Proposal verdict | the selected proposal's verdict (only with a proposal) |
 
@@ -1317,9 +1318,22 @@ names the failing tests, else the first error line.
 code under test could not be prepared, for example because a database reset
 failed when a generated SQL break did not apply. As in `git bisect`, where 125
 means "this revision cannot be tested", the run reads `unknown` ("did not
-apply (runner exit 125)", with the runner's last output line), never `killed`,
+apply (runner exit 125)", quoting the first line that contains `ERROR:` or
+`error:`, else the last non-empty line, cut at 120 characters), never `killed`,
 whatever else the output says. A setup step that fails must not count as a
 verifier noticing the break, so end such a step with `|| exit 125`.
+
+**One break run per repository.** A run that executes runners (`lattice break`,
+`lattice break --fails-on-base`) takes an exclusive lock, the file
+`lattice/.cache/results/break.lock`, which holds its pid and start time and is
+removed when the run ends, including on an error, Ctrl-C or SIGTERM. A second
+run fails at once with `BREAK_LOCKED`: "another lattice break is running (pid
+N, started <time>); wait for it or remove lattice/.cache/results/break.lock if
+it is gone". Runners that share a resource, such as one database, would corrupt
+each other's results. If the pid no longer exists on this machine the lock is
+reclaimed, with a note on stderr. On Windows the pid is not checked, so a lock
+left by a killed run is removed by hand. A run that has nothing to execute takes
+no lock.
 
 **The generated break** is an early return at the top of the enforcer's
 body, with the rest left in place so imports and variables stay used. Go
@@ -2589,6 +2603,73 @@ confirms: a decision counts only when `lattice confirm` reads the platform's app
 merged pull request. Send `packet_hash` from the review packet to refuse the decision if the
 packet moved after you read it (`PACKET_STALE`). Prepare is not an MCP tool; agents use
 `propose`.
+
+## 4o. Layers: what kind of runtime is this code?
+
+A **layer** says what kind of runtime a piece of code lives in. The vocabulary
+is closed:
+
+| Layer | Meaning |
+|---|---|
+| `ui` | runs in a browser or an app |
+| `api` | request handlers: routes and RPC endpoints |
+| `service` | application logic and command-line programs |
+| `data` | database functions, policies and triggers |
+| `async` | scheduled jobs, queue workers, event and webhook consumers |
+| `edge` | edge or serverless functions |
+| `external` | third-party integrations |
+| `unknown` | nothing says |
+
+Three words are easy to mix up. `layer` is the runtime kind of code, computed as
+below. `tier` on a block is its existing frontend/backend grouping (a source's
+`tier:`), and `tier` on a BRD criterion is how critical it is. They are separate
+and unchanged.
+
+Layers are computed, never guessed. A symbol takes the first of these that
+applies:
+
+1. **An adapter fact.** A symbol of the Postgres adapter (a function, policy or
+   trigger) is `data`. The handler of a declared entry point takes the layer of
+   its kind: `http_route` and `grpc` are `api`; `cron`, `queue`,
+   `event_consumer` and `webhook` are `async`; `cli` is `service`. This holds for
+   the handler symbol only, not for what it calls. When entry points of
+   different kinds share one handler, the entry point with the lowest id
+   decides.
+2. **A declared path rule.** `layers:` in `lattice/workspace.yaml` lists
+   `{glob, layer}` entries, matched against the file's path as the graph names it
+   (relative to its code root). The first match wins.
+3. **Otherwise `unknown`.**
+
+An adapter fact beats a rule. Each symbol records which one decided it as
+`layer_source`: `adapter`, `rule`, or empty for `unknown`.
+
+```yaml
+# lattice/workspace.yaml
+layers:
+  - glob: "apps/web/**"
+    layer: ui
+  - glob: "services/**"
+    layer: service
+  - glob: "functions/**"
+    layer: edge
+```
+
+A layer outside the vocabulary or a glob that is not a valid pattern is a
+`VALIDATE_POLICY` error, and the rule matches nothing.
+
+A feature's layers are the sorted set of the layers of its implementation
+symbols, and an invariant's those of its enforcers. They are computed and cannot
+be declared.
+
+- `lattice audit --json` rows carry `layers` (the promise's enforcers' layers),
+  and each enforcer a `layer`.
+- `lattice feature show <id>` lists the feature's layers, and its `--json` output
+  gains a `layers` field.
+- `/api/v2` promise objects carry `layers`, their enforcers `layer`, and a feature
+  page `layers`.
+- The block map's **Group by > Layer** lens groups blocks by layer, colours each
+  group, gives blocks that span several layers a neutral colour and `unknown` its
+  own, and shows a legend with a count per layer.
 
 ## 5. Day-to-day commands
 

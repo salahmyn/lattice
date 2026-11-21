@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -93,8 +94,9 @@ func newBreakCommand(io *IO) *cobra.Command {
 				return io.fail("BAD_CONFIG", err.Error(), nil)
 			}
 
-			// An interrupt stops the run; the worktree is removed on the way out.
-			ctx, stop := signal.NotifyContext(commandContext(cmd), os.Interrupt)
+			// An interrupt or a termination stops the run; the worktree and the
+			// run lock are removed on the way out.
+			ctx, stop := signal.NotifyContext(commandContext(cmd), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
 			if !noPreflight {
@@ -125,6 +127,7 @@ func newBreakCommand(io *IO) *cobra.Command {
 				Config:     cfg,
 				LatticeDir: ws.LatticeDir,
 				CodeRoot:   ws.PrimaryCodeRoot().Abs,
+				Warn:       io.Err,
 			}
 			if failsOnBase != "" {
 				return runFailsOnBase(ctx, io, kg, ws, failsOnBase, opts, want)
@@ -133,6 +136,8 @@ func newBreakCommand(io *IO) *cobra.Command {
 			switch {
 			case errors.Is(err, breaktest.ErrDirty):
 				return io.fail("DIRTY_TREE", err.Error(), nil)
+			case errors.Is(err, breaktest.ErrLocked):
+				return io.fail("BREAK_LOCKED", err.Error(), nil)
 			case err != nil:
 				return io.fail("BREAK_FAILED", err.Error(), nil)
 			}

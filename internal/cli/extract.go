@@ -283,6 +283,10 @@ func buildGraphReach(ctx context.Context, ws *workspace.Workspace, opts buildOpt
 		}
 	}
 
+	// Runtime layers come after the entry points: a handler's layer is its
+	// entry point's.
+	kg.Violations = append(kg.Violations, graph.AssignLayers(&kg, ws.Layers)...)
+
 	var rr *reach.Result
 	if !ws.Review && !res.Review {
 		cfg, _ := config.Load(ws.LatticeDir)
@@ -365,6 +369,7 @@ func runExtract(ctx context.Context, ws *workspace.Workspace, opts buildOptions)
 // writeGraph emits the knowledge graph, sharded when configured.
 func writeGraph(ws *workspace.Workspace, cfg config.Config, kg schema.KnowledgeGraph) (bool, error) {
 	graph.CarryBlocks(ws.GraphPath(), &kg) // extract must not wipe what refresh wrote
+	graph.DeriveBlockLayers(&kg)           // the carried blocks follow the symbols this extract assigned
 	if cfg.Knowledge.Sharding.Enabled {
 		if err := graph.WriteSharded(ws.GraphPath(), ws.GraphShardDir(), kg, graph.ShardOptions{
 			Strategy:            cfg.Knowledge.Sharding.Strategy,

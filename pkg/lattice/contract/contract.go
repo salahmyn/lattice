@@ -283,6 +283,8 @@ type Enforcer struct {
 	Line int    `json:"line,omitempty"`
 	// Live is the symbol's reach class, an upper bound.
 	Live Assurance `json:"live"`
+	// Layer is the symbol's runtime layer, as the graph assigned it.
+	Layer string `json:"layer,omitempty"`
 }
 
 // Verifier is a test that guards a promise, and what its own run did.
@@ -321,7 +323,9 @@ type Promise struct {
 	Reason    string  `json:"reason"`
 	Verdict   Verdict `json:"verdict"`
 	// Criteria are the BRD criteria that map to the promise.
-	Criteria  []string   `json:"criteria,omitempty"`
+	Criteria []string `json:"criteria,omitempty"`
+	// Layers are the runtime layers of the promise's enforcers: where it is kept.
+	Layers    []string   `json:"layers,omitempty"`
 	Signals   Signals    `json:"signals"`
 	Gaps      []Gap      `json:"gaps"`
 	Enforcers []Enforcer `json:"enforcers"`
@@ -568,6 +572,8 @@ type FeaturePage struct {
 	Origin  Assurance         `json:"origin"`
 	BRD     *BRDRef           `json:"brd,omitempty"`
 	Verdict Verdict           `json:"verdict"`
+	// Layers are the runtime layers of the feature's implementation symbols.
+	Layers []string `json:"layers,omitempty"`
 	// NoPromise is true when the feature declares none: it never looks clean.
 	NoPromise   bool         `json:"no_promise"`
 	Counts      Counts       `json:"counts"`

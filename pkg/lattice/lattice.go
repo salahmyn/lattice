@@ -55,14 +55,16 @@ func (l *Lattice) Extract(ctx context.Context) (schema.KnowledgeGraph, error) {
 	if err != nil {
 		return schema.KnowledgeGraph{}, err
 	}
-	return graph.Build(graph.Input{
+	kg := graph.Build(graph.Input{
 		BRDs:        res.BRDs,
 		Manifests:   res.Manifests,
 		Modules:     res.Modules,
 		Initiatives: res.Initiatives,
 		Tasks:       res.Tasks,
 		Violations:  res.Violations,
-	}, graph.Options{}), nil
+	}, graph.Options{})
+	kg.Violations = append(kg.Violations, graph.AssignLayers(&kg, l.ws.Layers)...)
+	return kg, nil
 }
 
 // Validate extracts and validates the workspace.

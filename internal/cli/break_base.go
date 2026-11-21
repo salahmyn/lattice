@@ -30,6 +30,8 @@ func runFailsOnBase(ctx context.Context, io *IO, kg schema.KnowledgeGraph, ws *w
 	switch {
 	case errors.Is(err, breaktest.ErrDirty):
 		return io.fail("DIRTY_TREE", err.Error(), nil)
+	case errors.Is(err, breaktest.ErrLocked):
+		return io.fail("BREAK_LOCKED", err.Error(), nil)
 	case err != nil:
 		return io.fail("BREAK_FAILED", err.Error(), nil)
 	}
