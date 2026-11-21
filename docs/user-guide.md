@@ -832,6 +832,9 @@ a verifier's run executed the handler of an entry point it names.
   `none`), `enforcer_coverage`, `exercised_by` and `coverage_reason`; BRD
   summaries carry `exercised`.
 - Floors are separate. A row can be exercised and still below its floor.
+- The header also carries a second figure, `invariants N/M required`: the
+  declared invariants some criterion maps (section 4w). The criteria figure
+  is unchanged.
 
 Findings. Each one but `RESULTS_STALE` is off until the workspace has a
 `coverage:` block (or sets its severity); each fires only when its data was
@@ -1120,6 +1123,10 @@ entries:
 counts as reached when a root reaches any of its symbols, and the rule
 runs even with no entry point declared. Without roots it keeps its
 flow-based rule.
+
+**`FEATURE_UNREACHED` also covers unpromoted features.** A `proposal` or
+`accepted` feature with non-test code in the graph that is reached by no flow
+and no root is reported with its status in the message (section 4w).
 
 ### Suite overlap
 
@@ -4037,6 +4044,85 @@ without, and the finding goes.
   from before failed tests were kept);
 - no call graph was read. `lattice audit` and `lattice validate` read it; other
   commands that print the audit do not, and show every proof as unknown.
+
+## 4w. Drift: does the spec still describe the code?
+
+A project can read green and still have a spec that has drifted from the code. The
+criteria figure of `lattice rtm` says "1/1 criteria verified, 100%" while two of the
+three declared invariants are required by nothing, a feature the spec calls a proposal
+sits on the flow of a production entry point, and another proposal has code that no
+flow and no root reaches. Three facts say so, each from the graph alone.
+
+```sh
+lattice validate     # INVARIANT_UNREQUIRED, STATUS_DRIFT, FEATURE_UNREACHED (all info)
+lattice rtm          # the header gains: invariants 1/3 required
+```
+
+### The three facts
+
+- **`INVARIANT_UNREQUIRED`**: a declared invariant that no criterion's
+  `maps_to_invariant` names. One finding per feature, listing every such invariant
+  (`feature:INV-N`) and saying it is "mapped by no criterion". It covers every declared
+  invariant, including one no block carries, which `audit --lines` never lists. Criteria
+  of every BRD count, drafts and superseded ones included, the same rule the audit's
+  line view uses (`required` against `unrequired`). It says what is mapped, not what
+  matters.
+- **`STATUS_DRIFT`**: a feature whose status is `proposal` or `accepted` and whose id
+  appears in the flow of an entry point with `status: production`. The message names the
+  entry points and the feature's status. Its next action names
+  `lattice feature promote <id>`, which prints the evidence without `--by` and writes
+  nothing.
+- **`FEATURE_UNREACHED` for unpromoted features**: the rule of section 4g also fires for
+  a `proposal` or `accepted` feature that has at least one non-test symbol in the graph
+  and is on no flow and reached by no root. The message states the status. A feature with
+  no code in the graph stays silent, because nothing built is unreached. The finding for
+  a production feature is unchanged.
+
+### What never fires them
+
+- Reach from a root alone does not make a feature production: `STATUS_DRIFT` needs a
+  declared production entry point whose flow names it, because a root carries no status.
+  If you know a root is production, declare the entry point.
+- A `demonstrated` criterion alone does not either, nor a passing verifier, nor a feature
+  flag. Lattice cannot see runtime flag state, so no such fact reads as "shipped".
+- A deprecated or proposal entry point never fires `STATUS_DRIFT`.
+
+### The second RTM figure
+
+`lattice rtm` keeps its criteria line exactly as it was and adds a second figure under
+it:
+
+```
+BRD verification coverage: 100.0%  (1/1 criteria verified)
+invariants:                1/3 required  (2 mapped by no criterion)
+```
+
+`--json` adds a top-level `invariant_coverage` object beside `coverage`:
+`{"total_invariants": 3, "required_invariants": 1, "ratio": 0.3333}`. No existing key
+changes. The line is omitted when no feature declares an invariant.
+
+### Policy
+
+All three are info and always on, so `validate.fail_on: warning` stays green with them
+open. `validate.severity` can raise or drop them like any other code.
+
+### Clear a finding
+
+- `INVARIANT_UNREQUIRED`: map the invariant from a criterion of the BRD it serves
+  (`maps_to_invariant: <feature>:<INV-N>`), then re-run `lattice rtm`. Or add an
+  allowlist entry with a reason; one entry accepts one `feature:INV` and leaves the
+  feature's other invariants open:
+
+  ```yaml
+  entries:
+    - code: INVARIANT_UNREQUIRED
+      subject: "fees:INV-3"
+      reason: an internal detail no business criterion states
+  ```
+- `STATUS_DRIFT`: promote the status by hand once you know the feature is production
+  (edit its manifest), or allowlist the finding with a reason.
+- `FEATURE_UNREACHED` on an unpromoted feature: declare the entry point that reaches it,
+  or allowlist the finding with a reason.
 
 ## 5. Day-to-day commands
 

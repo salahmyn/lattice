@@ -269,6 +269,13 @@ func LoadAllowlist(latticeDir string, p config.ValidatePolicy) (Allowlist, []sch
 	return al, bad
 }
 
+// withSubject is the finding as one of its refs: the ref is the subject an
+// allowlist entry's glob is matched against.
+func withSubject(f schema.Violation, ref string) schema.Violation {
+	f.Subject = ref
+	return f
+}
+
 func (e AllowEntry) matches(f schema.Violation) bool {
 	if e.Code != f.Code {
 		return false
@@ -321,7 +328,7 @@ type Accepted struct {
 // An entry that accepts nothing is stale: the gap it excused is gone, so it
 // comes back as an ALLOWLIST_STALE error and the list only ever shrinks.
 // Allowlist findings themselves are never accepted.
-// @enforces validation:INV-7
+// @enforces validation:INV-7, validation:INV-18
 func (al Allowlist) Apply(v []schema.Violation) (open []schema.Violation, accepted []Accepted) {
 	used := make([]bool, len(al.Entries))
 	for _, f := range v {
@@ -333,6 +340,36 @@ func (al Allowlist) Apply(v []schema.Violation) (open []schema.Violation, accept
 					break
 				}
 			}
+		}
+		if hit < 0 && len(f.Refs) > 0 && f.Code == schema.CodeInvariantUnrequired {
+			// A rolled-up finding: an entry accepts one ref at a time, so the
+			// refs it names leave the finding and the rest stay open.
+			rest := f
+			rest.Refs = nil
+			for _, ref := range f.Refs {
+				at := -1
+				for i, e := range al.Entries {
+					if e.matches(withSubject(f, ref)) {
+						at = i
+						break
+					}
+				}
+				if at < 0 {
+					rest.Refs = append(rest.Refs, ref)
+					continue
+				}
+				used[at] = true
+				e := al.Entries[at]
+				got := withSubject(f, ref)
+				got.Refs = []string{ref}
+				got.Message = unrequiredMessage(f.FeatureID, got.Refs)
+				accepted = append(accepted, Accepted{Violation: got, Reason: e.Reason, Kind: e.Kind, ADR: e.ADR})
+			}
+			if len(rest.Refs) > 0 {
+				rest.Message = unrequiredMessage(f.FeatureID, rest.Refs)
+				open = append(open, rest)
+			}
+			continue
 		}
 		if hit < 0 {
 			open = append(open, f)

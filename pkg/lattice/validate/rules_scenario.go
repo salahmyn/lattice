@@ -109,7 +109,7 @@ func (c *corpus) checkScenarios() []schema.Violation {
 // with no entry point declared, and a feature also counts as reached when
 // a root reaches any of its symbols. It used to fire for every feature off
 // the flows as soon as the first entry point existed.
-// @enforces reachability:INV-7
+// @enforces reachability:INV-7, validation:INV-20, validation:INV-21
 func (c *corpus) checkFeatureReach() []schema.Violation {
 	bySymbols := c.opts.Reach.FeaturesReached(c.kg)
 	if len(c.kg.EntryPoints) == 0 && bySymbols == nil {
@@ -128,10 +128,12 @@ func (c *corpus) checkFeatureReach() []schema.Violation {
 	if bySymbols != nil {
 		msg = "production feature %q is on no entry-point flow and no root reaches any of its symbols — dead code or an unmodeled seam (evidence: static call graph)"
 	}
+	built := featuresWithCode(c.kg)
 	var v []schema.Violation
 	for i := range c.kg.Features {
 		f := &c.kg.Features[i]
-		if f.Status != schema.StatusProduction || reached[f.ID] {
+		unpromoted := f.Status == schema.StatusProposal || f.Status == schema.StatusAccepted
+		if reached[f.ID] || (f.Status != schema.StatusProduction && !(unpromoted && built[f.ID])) {
 			continue
 		}
 		// An umbrella/parent feature with children is reached transitively
@@ -142,7 +144,7 @@ func (c *corpus) checkFeatureReach() []schema.Violation {
 		v = append(v, schema.Violation{
 			Code: schema.CodeFeatureUnreached, Severity: schema.SeverityInfo,
 			FeatureID: f.ID,
-			Message:   fmt.Sprintf(msg, f.ID),
+			Message:   featureUnreachedMessage(msg, f, bySymbols != nil),
 			Location:  &schema.Location{File: f.SourcePath},
 			NextAction: &schema.NextAction{
 				Kind:   "edit_entry_point",
@@ -151,6 +153,41 @@ func (c *corpus) checkFeatureReach() []schema.Violation {
 		})
 	}
 	return v
+}
+
+// featureUnreachedMessage words the finding. A production feature keeps the
+// message as is; a proposal or accepted feature that has code states its
+// status and that the code is built.
+func featureUnreachedMessage(msg string, f *schema.Manifest, byRoots bool) string {
+	if f.Status == schema.StatusProduction {
+		return fmt.Sprintf(msg, f.ID)
+	}
+	out := fmt.Sprintf("%s feature %q has code in the graph and is on no entry-point flow", f.Status, f.ID)
+	if byRoots {
+		out += " and no root reaches any of its symbols"
+	}
+	out += " — built but not reached: dead code, an unmodeled seam, or work not yet wired in"
+	if byRoots {
+		out += " (evidence: static call graph)"
+	}
+	return out
+}
+
+// featuresWithCode names the features that own at least one non-test symbol.
+// A feature with no code in the graph has nothing built to be unreached.
+func featuresWithCode(kg schema.KnowledgeGraph) map[string]bool {
+	test := map[string]bool{}
+	for _, t := range kg.Tests {
+		test[t.File] = true
+	}
+	out := map[string]bool{}
+	for _, s := range kg.Symbols {
+		if s.IsTest || test[s.File] || s.Feature == "" {
+			continue
+		}
+		out[s.Feature] = true
+	}
+	return out
 }
 
 func anyChildReached(f *schema.Manifest, reached map[string]bool) bool {
