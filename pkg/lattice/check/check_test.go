@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/salahmyn/lattice/internal/preflight"
 	"github.com/salahmyn/lattice/pkg/lattice/adapters/golang"
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/confirm"
@@ -1088,6 +1089,8 @@ func TestCheckContractGolden(t *testing.T) {
 	in.FailsOnBase = &BaseProof{Schema: failsOnBaseSchema, BaseRev: "main", Base: "base", Head: "head", CIRun: "local",
 		Verifiers: []BaseProofTest{{Verifier: "bookshop.TestGuard", Promises: []string{q}, Outcome: "passes_on_base"}}}
 	rep := Compute(in)
+	// Run adds the preflight note after Compute; freeze its shape too.
+	rep.Preflight = samplePreflight()
 
 	got, err := json.MarshalIndent(rep, "", "  ")
 	if err != nil {
@@ -1245,5 +1248,45 @@ func TestUntouchedBreakNotRerunIsNotANewGap(t *testing.T) {
 	rep = Compute(in)
 	if _, ok := gapOf(rep, q, SigBreakTested); !ok {
 		t.Errorf("a survival is evidence, never 'not re-run'")
+	}
+}
+
+func samplePreflight() *Preflight {
+	return &Preflight{
+		Text: "the break.runners commands the test listing names may not run here (1 problem); this never changes the verdict, the merge rule or the exit code",
+		Problems: []preflight.Problem{{Code: preflight.CodeExecNotFound, Key: "break.runners[0].command",
+			Detail: "vitest is not on PATH", Next: "install vitest or put it on PATH, or change break.runners[0].command"}},
+	}
+}
+
+// A preflight note is printed in the terminal and the PR comment, marked
+// informational, and the verdict lines above it are those of the same report
+// without it.
+func TestPreflightNoteRendered(t *testing.T) {
+	p := "bookshop:INV-1"
+	base := auditOf("base", good(p, 2))
+	r := Compute(scenario(&base, auditOf("head", good(p, 2)), impact.Report{ChangedSymbols: []impact.ChangedSymbol{guardEdited(p)}}))
+	var plainText, plainMD bytes.Buffer
+	WriteText(&plainText, r)
+	WriteMarkdown(&plainMD, r)
+
+	r.Preflight = samplePreflight()
+	var text, md bytes.Buffer
+	WriteText(&text, r)
+	WriteMarkdown(&md, r)
+	for name, out := range map[string]string{"text": text.String(), "markdown": md.String()} {
+		for _, want := range []string{"EXEC_NOT_FOUND", "break.runners[0].command", "vitest is not on PATH",
+			"install vitest or put it on PATH", "never changes the verdict"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s lacks %q:\n%s", name, want, out)
+			}
+		}
+	}
+	if !strings.Contains(text.String(), "PREFLIGHT (informational") || !strings.Contains(md.String(), "### Preflight") {
+		t.Errorf("the note is not marked:\n%s\n%s", text.String(), md.String())
+	}
+	firstLines := func(s string) string { return strings.Join(strings.SplitN(s, "\n", 4)[:3], "\n") }
+	if firstLines(text.String()) != firstLines(plainText.String()) || firstLines(md.String()) != firstLines(plainMD.String()) {
+		t.Error("the note changed the verdict lines")
 	}
 }

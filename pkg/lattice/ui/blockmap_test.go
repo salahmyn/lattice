@@ -60,7 +60,7 @@ func TestBlockMapServesTheStore(t *testing.T) {
 }
 
 // The exported page is one file with the explorer's tabs, lenses, legend and
-// canvas tools, the graph inlined, and no script but the pinned, SRI-checked ELK.
+// canvas tools, the graph and the layout library inlined, and no external script.
 func TestMapExportHasTheExplorer(t *testing.T) {
 	g := store.Graph{Blocks: []schema.Block{{ID: "sys.shop", Kind: "system", Title: "Shop", Truth: "declared", Attrs: map[string]string{"owner": "team-a"}},
 		{ID: "web:cart", Kind: "screen", Parent: "sys.shop", Title: "Cart", Truth: "declared"}}}
@@ -80,8 +80,8 @@ func TestMapExportHasTheExplorer(t *testing.T) {
 			t.Errorf("export lacks %s", want)
 		}
 	}
-	if n := strings.Count(s, "<script src="); n != 1 || !strings.Contains(s, `<script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js" integrity="sha384-`) {
-		t.Errorf("external scripts: %d, want only the pinned ELK with SRI", n)
+	if n := strings.Count(s, "<script src="); n != 0 {
+		t.Errorf("external scripts: %d, want none (the layout library is inlined)", n)
 	}
 	if strings.Contains(s, "<link ") {
 		t.Error("the export loads a stylesheet")
@@ -226,5 +226,34 @@ func TestLoopbackRefusesForeignHost(t *testing.T) {
 		if w.Code != want {
 			t.Errorf("Host %s: %d, want %d", host, w.Code, want)
 		}
+	}
+}
+
+// With BlockGraph set, /api/graph draws the graph it gives, under the store
+// lock, and carries its refresh note beside the lens.
+// @verifies cli:INV-6
+func TestBlockMapDrawsTheRebuiltGraph(t *testing.T) {
+	ws := &workspace.Workspace{LatticeDir: t.TempDir()}
+	st := store.OpenFiles(ws)
+	calls := 0
+	srv := New(ws, Options{Store: st, BlockGraph: func(_ context.Context, got store.Store) (store.Graph, *MapRefresh, error) {
+		calls++
+		if got != st {
+			t.Errorf("BlockGraph got another store")
+		}
+		return store.Graph{Blocks: []schema.Block{{ID: "feat:orders", Kind: "composite", Title: "orders", Truth: "declared"}}},
+			&MapRefresh{Note: "this is the stored block graph; it was not rebuilt"}, nil
+	}})
+	w := httptest.NewRecorder()
+	srv.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/graph", nil))
+	var got MapData
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil {
+		t.Fatalf("/api/graph = %d %s", w.Code, w.Body.String())
+	}
+	if calls != 1 || len(got.Blocks) != 1 || got.Refresh == nil || !strings.Contains(got.Refresh.Note, "not rebuilt") {
+		t.Errorf("calls %d, graph %+v, refresh %+v", calls, got.Blocks, got.Refresh)
+	}
+	if _, ok := got.Assurance.Nodes["feat:orders"]; !ok {
+		t.Errorf("the lens is not computed over the rebuilt graph: %+v", got.Assurance.Nodes)
 	}
 }

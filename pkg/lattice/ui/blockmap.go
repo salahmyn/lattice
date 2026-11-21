@@ -35,14 +35,18 @@ func MapHTML(g store.Graph, title string) ([]byte, error) {
 	return MapPage(MapData{Graph: g, Assurance: Assurance(g, nil, "no audit was computed for this page")}, title)
 }
 
-// MapPage returns the map page with d inlined, so it works as a single file
-// without a server (lattice export map). A non-empty title replaces "Block map".
+// MapPage returns the map page with d and the layout library inlined, so it
+// works as a single file without a server or a network (lattice export map).
+// A non-empty title replaces "Block map".
 func MapPage(d MapData, title string) ([]byte, error) {
 	data, err := json.Marshal(d) // escapes < and >, so the data cannot close its <script>
 	if err != nil {
 		return nil, err
 	}
-	page := bytes.Replace(mapHTML, []byte(graphSlot), data, 1)
+	page, err := inlineLayoutLib(bytes.Replace(mapHTML, []byte(graphSlot), data, 1))
+	if err != nil {
+		return nil, err
+	}
 	if title != "" {
 		t := []byte(html.EscapeString(title))
 		page = bytes.Replace(page, []byte("<title>Block map</title>"), append(append([]byte("<title>"), t...), "</title>"...), 1)
@@ -70,18 +74,27 @@ func (s *Server) withStore(w http.ResponseWriter, fn func(store.Store) (any, err
 
 func (s *Server) pageMap(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write(bytes.Replace(mapHTML, []byte(graphSlot), nil, 1))
+	page := bytes.Replace(mapHTML, []byte(graphSlot), nil, 1)
+	_, _ = w.Write(bytes.Replace(page, []byte(layoutSlot), nil, 1)) // the page loads the layout library from layoutLibPath
 }
 
-// apiGraph serves the stored graph with the assurance lens beside it. The
-// audit runs outside the store lock: it builds the knowledge graph.
+// apiGraph serves the block graph with the assurance lens beside it: the
+// graph BlockGraph gives when set, else the stored one. The audit runs
+// outside the store lock: it builds the knowledge graph.
 func (s *Server) apiGraph(w http.ResponseWriter, r *http.Request) {
 	if s.opts.Store == nil {
 		writeJSONError(w, errors.New("no block graph store: serve opens the workspace store"), http.StatusServiceUnavailable)
 		return
 	}
+	var g store.Graph
+	var rf *MapRefresh
+	var err error
 	s.storeMu.Lock()
-	g, err := s.opts.Store.Graph(r.Context())
+	if s.opts.BlockGraph != nil {
+		g, rf, err = s.opts.BlockGraph(r.Context(), s.opts.Store)
+	} else {
+		g, err = s.opts.Store.Graph(r.Context())
+	}
 	s.storeMu.Unlock()
 	if err != nil {
 		writeJSONError(w, err, http.StatusInternalServerError)
@@ -91,7 +104,7 @@ func (s *Server) apiGraph(w http.ResponseWriter, r *http.Request) {
 	if cache != "" {
 		w.Header().Set(cacheHeader, cache)
 	}
-	writeJSON(w, MapData{Graph: g, Assurance: lens})
+	writeJSON(w, MapData{Graph: g, Assurance: lens, Refresh: rf})
 }
 
 // mapAssurance audits the live workspace for the map, read-only, as

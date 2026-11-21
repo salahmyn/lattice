@@ -2,7 +2,7 @@
 // @module-feature ui
 // Browser smoke test for the block map (`lattice export map`), with Playwright.
 //
-//   node scripts/blockmap-smoke.js <map.html> [--elk <elk.bundled.js>] [--shots <dir>] [--perf <blocks>]
+//   node scripts/blockmap-smoke.js <map.html> [--shots <dir>] [--perf <blocks>]
 //
 // It loads the exported page, switches every tab and lens, turns the assurance
 // lens on and off, hides a kind from the legend, uses the canvas toolbar (zoom, minimap, Mermaid text, SVG/PNG/
@@ -11,10 +11,10 @@
 // into swimlanes, walks it (keys and a fork) and follows deep links, and fails
 // on any console error.
 //
-// The page loads ELK from a CDN. Without --elk the request is blocked and the
-// page runs its offline grid fallback (that one blocked request is the only
-// error ignored). With --elk the request is answered from the given file, which
-// must be elkjs 0.9.3 (the page's SRI hash checks it).
+// The network is blocked: every request that is not file:// is aborted and
+// fails the run, so the page must lay out with the layout library it carries
+// inline (ELK's layered layout, not the grid fallback). A second load stops the
+// library from starting and checks that the grid fallback still draws.
 //
 // --shots writes PNGs of each view in light and dark. --perf N swaps in a
 // generated graph of about N blocks and prints timings instead of the smoke run.
@@ -27,29 +27,24 @@ const { chromium } = require('playwright');
 const args = process.argv.slice(2);
 const file = path.resolve(args[0] || '');
 const opt = name => { const i = args.indexOf('--' + name); return i > 0 ? args[i + 1] : ''; };
-const elk = opt('elk'), shots = opt('shots'), perf = parseInt(opt('perf'), 10) || 0;
-if (!args[0] || !fs.existsSync(file)) { console.error('usage: blockmap-smoke.js <map.html> [--elk file] [--shots dir] [--perf n]'); process.exit(2); }
+const shots = opt('shots'), perf = parseInt(opt('perf'), 10) || 0;
+if (!args[0] || !fs.existsSync(file)) { console.error('usage: blockmap-smoke.js <map.html> [--shots dir] [--perf n]'); process.exit(2); }
 
-const CDN = 'cdn.jsdelivr.net/npm/elkjs@0.9.3/';
 let failed = 0;
 function check(ok, what) { if (ok) console.log('ok   ' + what); else { failed++; console.log('FAIL ' + what); } }
 
-async function open(browser, url, scheme) {
+async function open(browser, url, scheme, noLayout) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, colorScheme: scheme || 'light' });
   const errors = [];
-  page.on('console', m => {
-    if (m.type() !== 'error') return;
-    const loc = m.location()?.url || '';
-    if (!elk && (loc.includes(CDN) || /ERR_FAILED|ERR_BLOCKED/.test(m.text()) && loc.includes('elkjs'))) return; // the blocked CDN request
-    errors.push(m.text());
-  });
+  page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', e => errors.push('uncaught: ' + e.message));
-  await page.route('**/' + CDN + '**', r => elk
-    ? r.fulfill({ body: fs.readFileSync(elk), contentType: 'application/javascript', headers: { 'access-control-allow-origin': '*' } })
-    : r.abort('blockedbyclient'));
+  // no network: anything but the file itself is aborted, and counts as an error
+  await page.route(u => !/^(file|data|blob|about):/.test(u.protocol), r => { errors.push('network request: ' + r.request().url()); return r.abort('blockedbyclient'); });
+  if (noLayout) await page.addInitScript(() => Object.defineProperty(window, 'ELK', { get: () => undefined, set: () => {} }));
   await page.goto(url);
   return { page, errors };
 }
+const pageText = page => page.evaluate(() => document.body.innerText);
 const settle = page => page.waitForTimeout(350);
 const diagramDrawn = page => page.waitForSelector('#vp .bx', { timeout: 15000 });
 const hashParams = async page => Object.fromEntries(new URLSearchParams((await page.evaluate(() => location.hash)).slice(1)));
@@ -68,6 +63,8 @@ async function smoke(browser) {
   const url = 'file://' + file;
   const { page, errors } = await open(browser, url);
   await diagramDrawn(page);
+  check(await page.evaluate(() => typeof window.ELK === 'function'), 'the layout library starts from the file itself');
+  check(!(await pageText(page)).includes('simple grid') && await page.$('#vp path[d*="C"]') !== null, 'the diagram has the layered layout (spline edges), not the grid fallback');
   const tabs = await page.$$eval('.tabs button', bs => bs.map(b => b.textContent.trim()));
   check(['Diagram', 'Focus', 'Flows', 'Discover'].every(t => tabs.includes(t)), 'tabs: ' + tabs.join(', '));
   check(await page.$('#klegend:not([hidden]) span') !== null, 'kind legend shows');
@@ -324,6 +321,13 @@ async function smoke(browser) {
 
   check(errors.length === 0, 'no console errors' + (errors.length ? ':\n  ' + errors.join('\n  ') : ''));
   await page.close();
+
+  // the layout library does not start: the grid fallback still draws, with no request either
+  const off = await open(browser, url, 'light', true);
+  await diagramDrawn(off.page);
+  check((await pageText(off.page)).includes('layout library not available: simple grid') && off.errors.length === 0,
+    'without the layout library the grid fallback draws' + (off.errors.length ? ':\n  ' + off.errors.join('\n  ') : ''));
+  await off.page.close();
 }
 
 async function screenshots(browser) {

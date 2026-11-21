@@ -78,8 +78,7 @@ func getPage(t *testing.T, srv *Server, target string, header ...string) *httpte
 }
 
 // serverPages is every server-rendered page and the template it renders.
-// The /views page is not a template. The block map (/map), a standalone
-// page with its own layout library, is not covered here.
+// The /views page and the block map (/map) are not templates.
 var serverPages = map[string]string{
 	"/":                             "overview.html",
 	"/brds":                         "brds.html",
@@ -102,12 +101,13 @@ var serverPages = map[string]string{
 	"/config":                       "config.html",
 	"/onboarding":                   "onboarding.html",
 	"/views":                        "",
+	"/map":                          "",
 }
 
-// remoteRef finds a reference that makes the browser fetch from another
+// pageRemoteRef finds a reference that makes the browser fetch from another
 // origin: a script src, a stylesheet or preconnect link href, a module
 // import, a CSS @import or url(). Plain anchor links are not fetches.
-var remoteRef = regexp.MustCompile(`(?is)<script\b[^>]*\bsrc\s*=\s*["']?\s*(?:https?:)?//[^"'\s>]*` +
+var pageRemoteRef = regexp.MustCompile(`(?is)<script\b[^>]*\bsrc\s*=\s*["']?\s*(?:https?:)?//[^"'\s>]*` +
 	`|<link\b[^>]*\bhref\s*=\s*["']?\s*(?:https?:)?//[^"'\s>]*` +
 	`|\bimport\s*(?:[\w{}*\s,]+\bfrom\s*)?\(?\s*["'](?:https?:)?//[^"']*` +
 	`|@import\s+(?:url\(\s*)?["']?\s*(?:https?:)?//[^"')\s;]*` +
@@ -166,7 +166,7 @@ func TestPagesLoadNothingFromNetwork(t *testing.T) {
 			return
 		}
 		body := w.Body.String()
-		for _, ref := range remoteRef.FindAllString(body, -1) {
+		for _, ref := range pageRemoteRef.FindAllString(body, -1) {
 			t.Errorf("%s loads from the network: %s", target, ref)
 		}
 		for _, ref := range localRefs(body) {

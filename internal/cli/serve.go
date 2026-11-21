@@ -70,6 +70,10 @@ reverse proxy in front and run Lattice with --host 127.0.0.1.`,
 				CheckGraphBuilder: func(ctx context.Context) (schema.KnowledgeGraph, impact.CallGraph, error) {
 					return graphCalls(ctx, ws)
 				},
+				// /map draws the block graph refresh would build now, saving it when it changed
+				BlockGraph: func(ctx context.Context, st store.Store) (store.Graph, *ui.MapRefresh, error) {
+					return mapGraph(ctx, ws, st)
+				},
 				Actor: io.actor(),
 			})
 			ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
