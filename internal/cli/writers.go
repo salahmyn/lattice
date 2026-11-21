@@ -39,7 +39,9 @@ and a role that holds INSERT, UPDATE or DELETE on the table through a GRANT.
 For each writer it prints the operation, the columns, the file and line, and,
 for every promise (<feature>:INV-n) whose columns it writes, whether it is
 guarded for it (it enforces it, or a trigger or policy that enforces it applies
-to its table and command) or unguarded for it. 'lattice validate' reports an
+to its table and command) or unguarded for it, and whether that promise's columns were declared (columns: on
+the invariant in its feature YAML) or derived from the columns its enforcers
+write. 'lattice validate' reports an
 unguarded writer as UNGUARDED_WRITER (info).
 
 It ends with the reasons the table's writer set is incomplete (an EXECUTE of a
@@ -98,10 +100,10 @@ func writeWriters(io *IO, rep graph.WriterReport) {
 			io.printf("    %s\n", w.Via)
 		}
 		for _, g := range w.Guarded {
-			io.printf("    guarded for %s by %s\n", g.Invariant, g.By)
+			io.printf("    guarded for %s by %s (columns %s)\n", g.Invariant, g.By, w.ColumnsFrom[g.Invariant])
 		}
 		for _, ref := range w.Unguarded {
-			io.printf("    unguarded for %s\n", ref)
+			io.printf("    unguarded for %s (columns %s)\n", ref, w.ColumnsFrom[ref])
 		}
 	}
 	io.printf("\n")

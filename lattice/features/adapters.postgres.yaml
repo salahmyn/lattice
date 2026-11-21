@@ -23,3 +23,5 @@ invariants:
     statement: A SQL enforcer that a declared API role can execute is reported as ENFORCER_EXPOSED unless a security case naming it is verified; a privilege that is unknown, or API roles that are not declared, are reported as EXPOSURE_UNKNOWN; both are info.
   - id: INV-7
     statement: A table write is recorded only from DML the adapter parsed; a write it could not read makes the table's writer set incomplete, never empty.
+  - id: INV-8
+    statement: A function's caller-identity read is recorded only from code in its body, never from a comment, a string, or an argument default, and is absent when the body reads none.

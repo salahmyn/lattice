@@ -19,6 +19,13 @@ import (
 // function, a migration, or an API role holding a table privilege, can break
 // the promise with no break ever aimed at it.
 //
+// The columns of an invariant are, by default, the columns its enforcers
+// write. A column every enforcer happens to write (a status or a timestamp)
+// then ties the invariant to every other writer of that column, whatever it is
+// about. An invariant may instead declare its columns (columns: in its feature
+// YAML); the declared set is then exactly its columns, and the derived set is
+// not used.
+//
 // A writer is guarded for an invariant when it is an enforcer of it, or when a
 // trigger that enforces it applies to the writer's table and command, or when
 // a policy that enforces it does and the writer is an API role (a SECURITY
@@ -60,7 +67,18 @@ type WriterEntry struct {
 	Writer
 	Guarded   []WriterGuard `json:"guarded,omitempty"`
 	Unguarded []string      `json:"unguarded,omitempty"`
+	// ColumnsFrom says, for each invariant the writer is guarded or
+	// unguarded for, whether its columns were declared in the feature YAML
+	// ("declared") or derived from the columns its enforcers write
+	// ("derived").
+	ColumnsFrom map[string]string `json:"columns_from,omitempty"`
 }
+
+// How the columns of an invariant were decided.
+const (
+	ColumnsDeclared = "declared"
+	ColumnsDerived  = "derived"
+)
 
 // WriterReport is what `lattice writers` prints.
 type WriterReport struct {
@@ -91,6 +109,16 @@ type invWrites struct {
 	guards    []writeGuard
 	file      string
 	line      int
+	// declared is true when columns came from the invariant's columns: field.
+	declared bool
+}
+
+// columnsFrom is how the invariant's columns were decided.
+func (iw *invWrites) columnsFrom() string {
+	if iw.declared {
+		return ColumnsDeclared
+	}
+	return ColumnsDerived
 }
 
 // WriterIndex lists the writers of every table the SQL facts name.
@@ -99,6 +127,11 @@ type WriterIndex struct {
 	gaps    []ir.WriterGap
 	invs    map[string]*invWrites
 	tables  map[string]bool
+	// schema is what the migrations leave of each table's columns.
+	schema map[string]ir.TableColumns
+	// errs are the declared columns that name no table or column the
+	// migrations leave.
+	errs []schema.Violation
 
 	apiRoles     []string
 	defaultWrite *[]string
@@ -174,7 +207,7 @@ type policyFact struct {
 // command whose TO list reaches it.
 // @enforces graph:INV-7
 func BuildWriterIndex(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string, defaultWrite *[]string) *WriterIndex {
-	ix := &WriterIndex{invs: map[string]*invWrites{}, tables: map[string]bool{}, apiRoles: apiRoles, defaultWrite: defaultWrite,
+	ix := &WriterIndex{invs: map[string]*invWrites{}, tables: map[string]bool{}, schema: map[string]ir.TableColumns{}, apiRoles: apiRoles, defaultWrite: defaultWrite,
 		grants: map[string][]ir.TableGrant{}, rls: map[string]ir.TableRLS{}, policies: map[string][]policyFact{}, rolesDone: map[string]bool{}}
 	syms := map[string]ir.Symbol{}
 	for _, m := range mods {
@@ -186,6 +219,9 @@ func BuildWriterIndex(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []str
 			ix.rls[r.Table] = r
 		}
 		ix.gaps = append(ix.gaps, m.WriterGaps...)
+		for _, t := range m.Tables {
+			ix.schema[t.Table] = t
+		}
 		for _, s := range m.Symbols {
 			if s.IsTest {
 				continue
@@ -247,8 +283,12 @@ func BuildWriterIndex(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []str
 			}
 		}
 	}
+	ix.declareColumns(kg)
 	for _, w := range ix.writers {
 		ix.tables[w.Table] = true
+	}
+	for t := range ix.schema {
+		ix.tables[t] = true
 	}
 	for t := range ix.grants {
 		ix.tables[t] = true
@@ -263,6 +303,118 @@ func BuildWriterIndex(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []str
 	}
 	ix.sortWriters()
 	return ix
+}
+
+// foldColumnRef folds a declared "<schema>.<table>.<column>" as PostgreSQL
+// folds names: a part in double quotes keeps its case, any other is lower
+// case. ok is false unless it has exactly three non-empty parts.
+func foldColumnRef(ref string) (table, column string, ok bool) {
+	var parts []string
+	var cur strings.Builder
+	quoted := false
+	for i := 0; i < len(ref); i++ {
+		c := ref[i]
+		switch {
+		case c == '"' && quoted && i+1 < len(ref) && ref[i+1] == '"':
+			cur.WriteByte('"')
+			i++
+		case c == '"':
+			quoted = !quoted
+		case c == '.' && !quoted:
+			parts = append(parts, cur.String())
+			cur.Reset()
+		case quoted:
+			cur.WriteByte(c)
+		default:
+			cur.WriteString(strings.ToLower(string(c)))
+		}
+	}
+	parts = append(parts, cur.String())
+	if quoted || len(parts) != 3 {
+		return "", "", false
+	}
+	for _, p := range parts {
+		if p == "" || p == wildcard {
+			return "", "", false
+		}
+	}
+	return parts[0] + "." + parts[1], parts[2], true
+}
+
+// declareColumns applies the columns an invariant declares. They replace the
+// columns derived from its enforcers, for an invariant that has enforcers, and
+// each must name a column the migrations leave: a table the index does not know
+// and a column a known table does not have are errors, but a table whose
+// columns are not all known (LIKE, inheritance) accepts any column.
+// @enforces graph:INV-8
+func (ix *WriterIndex) declareColumns(kg schema.KnowledgeGraph) {
+	for i := range kg.Features {
+		m := &kg.Features[i]
+		for _, in := range m.Invariants {
+			if len(in.Columns) == 0 {
+				continue
+			}
+			ref := m.ID + ":" + in.ID
+			declared := map[string]map[string]bool{}
+			for _, raw := range in.Columns {
+				table, col, ok := foldColumnRef(raw)
+				if !ok {
+					ix.declaredErr(m, ref, fmt.Sprintf("%s: columns entry %q is not <schema>.<table>.<column>", ref, raw))
+					continue
+				}
+				if why := ix.unknownColumn(table, col); why != "" {
+					ix.declaredErr(m, ref, fmt.Sprintf("%s: columns entry %q %s", ref, raw, why))
+					continue
+				}
+				if declared[table] == nil {
+					declared[table] = map[string]bool{}
+				}
+				declared[table][col] = true
+			}
+			if iw := ix.invs[ref]; iw != nil {
+				iw.columns, iw.declared = declared, true
+			}
+		}
+	}
+}
+
+// unknownColumn says why a table or column is not one the migrations leave,
+// or "" when it is, or when that cannot be told.
+func (ix *WriterIndex) unknownColumn(table, col string) string {
+	t, ok := ix.schema[table]
+	if !ok {
+		if ix.knownByStatement(table) {
+			return ""
+		}
+		return fmt.Sprintf("names table %s, which the migrations do not create", table)
+	}
+	if t.Unknown != "" || contains(t.Columns, col) {
+		return ""
+	}
+	return fmt.Sprintf("names column %s, which table %s does not have (it has %s)", col, table, strings.Join(t.Columns, ", "))
+}
+
+// knownByStatement is true for a table some statement names even though no
+// CREATE TABLE of it was read: its columns are not known, so a column of it
+// cannot be checked.
+func (ix *WriterIndex) knownByStatement(table string) bool {
+	for _, w := range ix.writers {
+		if w.Table == table {
+			return true
+		}
+	}
+	return len(ix.grants[table]) > 0
+}
+
+func (ix *WriterIndex) declaredErr(m *schema.Manifest, ref, msg string) {
+	ix.errs = append(ix.errs, schema.Violation{
+		Code: schema.CodeValidatePolicy, Severity: schema.SeverityError,
+		FeatureID: m.ID, InvariantID: strings.TrimPrefix(ref, m.ID+":"), Subject: ref,
+		Message:  msg,
+		Location: &schema.Location{File: m.SourcePath},
+		NextAction: &schema.NextAction{Kind: "edit_feature", Ref: ref,
+			Detail: "write each entry of columns: as <schema>.<table>.<column>, naming a column the migrations create"},
+	})
 }
 
 func (ix *WriterIndex) sortWriters() {
@@ -492,6 +644,14 @@ func (iw *invWrites) guardedBy(w Writer) string {
 	return ""
 }
 
+// columnsPhrase says whose columns they are and how they were decided.
+func (iw *invWrites) columnsPhrase(ref string) string {
+	if iw.declared {
+		return ref + " declares (columns: in its feature YAML)"
+	}
+	return ref + "'s enforcers write (derived; declare columns: on the invariant to narrow them)"
+}
+
 // shared are the columns a writer's write has in common with the invariant's
 // columns on the table.
 func (iw *invWrites) shared(w Writer) []string {
@@ -541,9 +701,10 @@ func CheckWriters(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string,
 	return BuildWriterIndex(kg, mods, apiRoles, defaultWrite).Findings()
 }
 
-// Findings are the UNGUARDED_WRITER and WRITERS_UNKNOWN findings.
+// Findings are the UNGUARDED_WRITER and WRITERS_UNKNOWN findings, preceded by a
+// VALIDATE_POLICY error for each declared column the migrations do not leave.
 func (ix *WriterIndex) Findings() []schema.Violation {
-	var out []schema.Violation
+	out := append([]schema.Violation(nil), ix.errs...)
 	for _, ref := range ix.refs() {
 		iw := ix.invs[ref]
 		if len(iw.columns) == 0 {
@@ -628,8 +789,8 @@ func (ix *WriterIndex) Findings() []schema.Violation {
 				Code: schema.CodeUnguardedWriter, Severity: schema.SeverityInfo,
 				FeatureID: f, InvariantID: inv, Subject: subject,
 				Location: &schema.Location{File: g.first.File, Line: g.first.Line},
-				Message: fmt.Sprintf("%s writes columns that %s's enforcers write, and is neither an enforcer of %s nor under a trigger or policy that enforces it, so no break ever targets it. %s",
-					who, ref, ref, strings.Join(parts, "; ")),
+				Message: fmt.Sprintf("%s writes columns that %s, and is neither an enforcer of %s nor under a trigger or policy that enforces it, so no break ever targets it. %s",
+					who, iw.columnsPhrase(ref), ref, strings.Join(parts, "; ")),
 				NextAction: &schema.NextAction{Kind: "tag_or_guard", Ref: ref,
 					Detail: "tag the writer -- @enforces " + ref + " so it is break-tested, put it under a trigger or policy that enforces " + ref + ", or allowlist it with a reason"},
 			})
@@ -724,6 +885,10 @@ func (ix *WriterIndex) Report(table, column string) WriterReport {
 			if len(iw.shared(w)) == 0 {
 				continue
 			}
+			if e.ColumnsFrom == nil {
+				e.ColumnsFrom = map[string]string{}
+			}
+			e.ColumnsFrom[ref] = iw.columnsFrom()
 			if by := iw.guardedBy(w); by != "" {
 				e.Guarded = append(e.Guarded, WriterGuard{Invariant: ref, By: by})
 			} else {

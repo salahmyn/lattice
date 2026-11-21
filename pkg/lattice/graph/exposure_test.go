@@ -130,3 +130,35 @@ func TestExecutableByMembership(t *testing.T) {
 		}
 	}
 }
+
+// ENFORCER_EXPOSED states whether the enforcer's body reads the caller's
+// identity, citing its first read, or that it reads none. It fires either way,
+// never words the function as safe, and lists the findings that read none
+// first.
+// @verifies graph:INV-9
+func TestExposureStatesCallerIdentity(t *testing.T) {
+	open := []ir.ExecuteGrant{grant(ir.ExecPublic, ir.ExecGranted, 2)}
+	reads := ir.Symbol{FQN: "sql.public.a_reads", File: "m.sql", Line: 1, Execute: &ir.Execute{Roles: open,
+		Identity: &ir.CallerIdentity{Via: "auth.uid()", File: "m.sql", Line: 7}}}
+	none := ir.Symbol{FQN: "sql.public.b_none", File: "m.sql", Line: 20, Execute: &ir.Execute{Roles: open}}
+	mods := []ir.Module{{File: "m.sql", Symbols: []ir.Symbol{reads, none}}}
+	var kg schema.KnowledgeGraph
+	for _, f := range []string{reads.FQN, none.FQN} {
+		kg.Symbols = append(kg.Symbols, schema.GraphSymbol{FQN: f, Feature: "pay.cards", EnforcesInvariants: []string{"pay.cards:INV-1"}})
+	}
+	got := CheckExposure(kg, mods, []string{"authenticated"}, &[]string{})
+	if len(got) != 2 || got[0].Code != schema.CodeEnforcerExposed || got[1].Code != schema.CodeEnforcerExposed {
+		t.Fatalf("findings = %v", codesOf(got))
+	}
+	if got[0].Subject != none.FQN || !strings.Contains(got[0].Message, "reads no caller identity") {
+		t.Errorf("the function that reads none comes first: %q", got[0].Message)
+	}
+	if got[1].Subject != reads.FQN || !strings.Contains(got[1].Message, "reads the caller's identity (auth.uid() at m.sql:7); a caller-supplied parameter can still decide the outcome") {
+		t.Errorf("message = %q", got[1].Message)
+	}
+	for _, f := range got {
+		if f.Severity != schema.SeverityInfo || strings.Contains(f.Message, "safe") {
+			t.Errorf("finding = %+v: info, and never worded as a pass", f)
+		}
+	}
+}

@@ -164,6 +164,17 @@ type TableGrant struct {
 	Reason  string   `json:"reason,omitempty"`
 }
 
+// TableColumns is a table as the migrations leave it.
+type TableColumns struct {
+	// Table is "<schema>.<table>".
+	Table string `json:"table"`
+	// Columns are its columns, sorted.
+	Columns []string `json:"columns,omitempty"`
+	// Unknown, when set, is why the columns are not all known (LIKE,
+	// inheritance, CREATE TABLE AS): a column absent from Columns may exist.
+	Unknown string `json:"unknown,omitempty"`
+}
+
 // WriterGap says why the writers of a table, or of some of its columns, are
 // not completely known: a write the adapter cannot read, never an absent one.
 type WriterGap struct {
@@ -227,6 +238,20 @@ type Execute struct {
 	// Unknown, when set, is why no entry can be trusted: an overload, or a
 	// statement the adapter could not resolve to this function.
 	Unknown string `json:"unknown,omitempty"`
+	// Identity is the first place the body reads the caller's identity, or
+	// nil when it reads none. A function that reads it can still let a
+	// caller-supplied parameter decide the outcome.
+	Identity *CallerIdentity `json:"caller_identity,omitempty"`
+}
+
+// CallerIdentity is a read of the caller's identity in a function body:
+// auth.uid(), auth.jwt(), current_setting('request.jwt...'), current_user or
+// session_user.
+type CallerIdentity struct {
+	// Via is the expression read, such as "auth.uid()".
+	Via  string `json:"via"`
+	File string `json:"file"`
+	Line int    `json:"line"`
 }
 
 // ExecuteGrant is the state of one role, with the statement that decided it.
@@ -440,6 +465,10 @@ type Module struct {
 	TableGrants []TableGrant `json:"table_grants,omitempty"`
 	RLS         []TableRLS   `json:"rls,omitempty"`
 	WriterGaps  []WriterGap  `json:"writer_gaps,omitempty"`
+	// Tables are the tables the change history leaves in force and the
+	// columns each has, folded across every migration and written on one
+	// module, like RLS.
+	Tables []TableColumns `json:"tables,omitempty"`
 
 	// The fields below feed the call graph (docs/rnd/0009). An adapter
 	// that does not extract references leaves them empty and RefsKnown

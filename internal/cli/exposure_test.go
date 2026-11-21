@@ -295,3 +295,35 @@ func TestEnforcerExposureThroughMembership(t *testing.T) {
 		t.Errorf("a membership change in a DO block: %+v", got)
 	}
 }
+
+// An exposed enforcer states what its body does about the caller's identity:
+// none read, or the first read with its line. The finding is the same info
+// finding either way, so a workspace that fails on warnings stays green.
+// @verifies graph:INV-9
+func TestEnforcerExposureStatesCallerIdentity(t *testing.T) {
+	feature := map[string]string{"lattice/features/review/submissions.yaml": exposureFeature}
+	const failOnWarning = "validate:\n  fail_on: warning\n  severity:\n    FEATURE_NO_BRD: off\n"
+
+	v, ok := exposureRun(t, apiRoles, failOnWarning, feature)
+	got := exposureFindings(v)
+	if len(got) != 1 || !strings.Contains(got[0].Message, "Its body reads no caller identity") {
+		t.Fatalf("findings = %+v", got)
+	}
+	if !ok {
+		t.Errorf("fail_on: warning failed on an info finding")
+	}
+
+	reads := strings.Replace(exposureSubmissions, "  select * into v from public.submissions s where s.id = p_id for update;",
+		"  select * into v from public.submissions s where s.id = p_id and s.owner_id = auth.uid() for update;", 1)
+	files := map[string]string{"lattice/features/review/submissions.yaml": exposureFeature,
+		"supabase/migrations/20260101000000_submissions.sql": reads}
+	v, ok = exposureRun(t, apiRoles, failOnWarning, files)
+	got = exposureFindings(v)
+	want := "Its body reads the caller's identity (auth.uid() at supabase/migrations/20260101000000_submissions.sql:14); a caller-supplied parameter can still decide the outcome"
+	if len(got) != 1 || got[0].Code != schema.CodeEnforcerExposed || !strings.Contains(got[0].Message, want) {
+		t.Fatalf("findings = %+v, want %q", got, want)
+	}
+	if !ok {
+		t.Errorf("fail_on: warning failed on an info finding")
+	}
+}

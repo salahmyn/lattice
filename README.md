@@ -32,7 +32,8 @@ Go**, plus opt-in PostgreSQL migrations and pgTAP tests (a SQL enforcer that a
 declared database API role can execute is reported as `ENFORCER_EXPOSED`, info; see
 `sql:` in the user guide; a second writer of the columns an enforcer writes is
 reported as `UNGUARDED_WRITER`, info, and `lattice writers <table>[.<column>]` lists who
-writes a table). A parameterized
+writes a table; an invariant may declare `columns:` to say which columns it is about, and
+`ENFORCER_EXPOSED` states whether the function reads the caller's identity). A parameterized
 TypeScript test (`test.each`, a template-literal title in a loop) is one test
 whose report results join by its expanded names, so it passes only when every
 run passed.

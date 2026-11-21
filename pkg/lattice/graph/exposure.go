@@ -249,8 +249,15 @@ func containsRole(list []string, role string) bool {
 // told from the migrations, and once for the workspace when there are SQL
 // enforcers but sql.api_roles is not declared.
 //
+// Each ENFORCER_EXPOSED states whether the function's body reads the caller's
+// identity (auth.uid(), auth.jwt(), a request.jwt claim, current_user or
+// session_user), citing the first read, or that it reads none; the findings
+// that read none come first. It is a fact about the body, never a pass: the
+// finding fires either way, because a caller-supplied parameter can still
+// decide the outcome.
+//
 // Both are info and stay on: a code that were off would hide an unknown.
-// @enforces adapters.postgres:INV-6
+// @enforces adapters.postgres:INV-6, graph:INV-9
 func CheckExposure(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string, defaultExecute *[]string) []schema.Violation {
 	var mem []ir.Membership
 	for _, m := range mods {
@@ -303,6 +310,9 @@ func CheckExposure(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string
 
 	verified := verifiedCases(kg)
 	var out []schema.Violation
+	// readsNone marks the ENFORCER_EXPOSED findings whose body reads no
+	// caller identity, which sort first.
+	readsNone := map[int]bool{}
 	for _, fqn := range fqns {
 		sym := fns[fqn]
 		loc := &schema.Location{File: sym.File, Line: sym.Line}
@@ -336,22 +346,50 @@ func CheckExposure(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string
 		if sym.Execute.SecurityDefiner {
 			definer = fmt.Sprintf("; it is SECURITY DEFINER (%s:%d)", sym.Execute.DefinerFile, sym.Execute.DefinerLine)
 		}
+		identity := identityFact(sym.Execute.Identity)
 		for _, ref := range enforces[fqn] {
 			if secured(kg, verified, fqn, ref) {
 				continue
 			}
 			f, inv, _ := strings.Cut(ref, ":")
+			if sym.Execute.Identity == nil {
+				readsNone[len(out)] = true
+			}
 			out = append(out, schema.Violation{
 				Code: schema.CodeEnforcerExposed, Severity: schema.SeverityInfo,
 				FeatureID: f, InvariantID: inv, Subject: fqn, Location: loc,
-				Message: fmt.Sprintf("%s enforces %s and is executable by %s%s: a client can call it directly, so its inputs are the client's",
-					fqn, ref, strings.Join(exposed, ", "), definer),
+				Message: fmt.Sprintf("%s enforces %s and is executable by %s%s: a client can call it directly, so its inputs are the client's. %s",
+					fqn, ref, strings.Join(exposed, ", "), definer, identity),
 				NextAction: &schema.NextAction{Kind: "revoke_or_test", Ref: ref,
 					Detail: "revoke EXECUTE from the API role, or add a security case naming this function as its enforcer and a test tagged @verifies " + ref + "#<case> that calls it as that role with forged inputs"},
 			})
 		}
 	}
-	return out
+	rank := func(i int) int {
+		if readsNone[i] {
+			return 0
+		}
+		return 1
+	}
+	idx := make([]int, len(out))
+	for i := range idx {
+		idx[i] = i
+	}
+	sort.SliceStable(idx, func(a, b int) bool { return rank(idx[a]) < rank(idx[b]) })
+	sorted := make([]schema.Violation, len(out))
+	for i, j := range idx {
+		sorted[i] = out[j]
+	}
+	return sorted
+}
+
+// identityFact states whether a function body reads the caller's identity.
+// It is a fact, not a verdict: neither answer says the function is safe.
+func identityFact(id *ir.CallerIdentity) string {
+	if id == nil {
+		return "Its body reads no caller identity (auth.uid(), auth.jwt(), a request.jwt claim, current_user or session_user)."
+	}
+	return fmt.Sprintf("Its body reads the caller's identity (%s at %s:%d); a caller-supplied parameter can still decide the outcome.", id.Via, id.File, id.Line)
 }
 
 // cite says which statement decides a privilege.

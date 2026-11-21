@@ -489,3 +489,138 @@ func TestDefaultWrite(t *testing.T) {
 		t.Errorf("writers: %v\n%s", err, out)
 	}
 }
+
+// writersFeatureColumns is writersFeature with the invariant's columns
+// declared.
+func writersFeatureColumns(columns ...string) string {
+	body := strings.TrimRight(writersFeature, "\n") + "\n    columns:\n"
+	for _, c := range columns {
+		body += "      - " + c + "\n"
+	}
+	return body
+}
+
+// Declared columns replace the columns derived from the enforcers' writes. The
+// enforcer writes status, run_after and updated_at, so claim_jobs, which also
+// writes status and updated_at, is reported when nothing is declared. Declaring
+// the promise's columns as run_after alone ties it to the writers of run_after,
+// and claim_jobs, which never writes it, is no longer reported; declaring
+// attempts reports it for attempts, a column no enforcer writes.
+// @verifies graph:INV-8
+func TestDeclaredColumnsReplaceDerived(t *testing.T) {
+	jobs := func(columns ...string) map[string]string {
+		if len(columns) == 0 {
+			return nil
+		}
+		return map[string]string{"lattice/features/queue/jobs.yaml": writersFeatureColumns(columns...)}
+	}
+	t.Run("derived", func(t *testing.T) {
+		got, _ := validateWriters(t, writersRepo(t, "", "", nil))
+		if len(got) != 1 || !strings.Contains(got[0].Message, "derived") || !strings.Contains(got[0].Message, "status") {
+			t.Fatalf("findings = %+v, want one finding on the derived columns", got)
+		}
+	})
+	t.Run("declared and not written by the writer", func(t *testing.T) {
+		got, _ := validateWriters(t, writersRepo(t, "", "", jobs("public.jobs.run_after")))
+		if len(got) != 0 {
+			t.Errorf("findings = %+v, want none: claim_jobs does not write run_after", got)
+		}
+	})
+	t.Run("declared and written by the writer", func(t *testing.T) {
+		got, _ := validateWriters(t, writersRepo(t, "", "", jobs("public.jobs.attempts")))
+		if len(got) != 1 || got[0].Subject != "sql.public.claim_jobs" {
+			t.Fatalf("findings = %+v, want claim_jobs", got)
+		}
+		m := got[0].Message
+		if !strings.Contains(m, "declares") || !strings.Contains(m, "attempts") || strings.Contains(m, "status") || strings.Contains(m, "derived") {
+			t.Errorf("message = %q: want the declared column attempts only", m)
+		}
+	})
+	t.Run("case is folded", func(t *testing.T) {
+		got, _ := validateWriters(t, writersRepo(t, "", "", jobs("Public.Jobs.Attempts")))
+		if len(got) != 1 {
+			t.Errorf("findings = %+v, want one: names fold to lower case", got)
+		}
+	})
+}
+
+// The writers command says, for each promise a writer is guarded or unguarded
+// for, whether its columns were declared or derived.
+// @verifies graph:INV-8
+func TestWritersReportsColumnSource(t *testing.T) {
+	var rep struct {
+		Writers []struct {
+			Name        string            `json:"name"`
+			Unguarded   []string          `json:"unguarded"`
+			ColumnsFrom map[string]string `json:"columns_from"`
+		} `json:"writers"`
+	}
+	source := func(files map[string]string) string {
+		out, err := run(t, writersRepo(t, "", "", files), newWritersCommand, "public.jobs.status")
+		if err != nil {
+			t.Fatalf("writers: %v\n%s", err, out)
+		}
+		if err := json.Unmarshal([]byte(out), &rep); err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range rep.Writers {
+			if w.Name == "sql.public.claim_jobs" {
+				return w.ColumnsFrom["queue.jobs:INV-1"]
+			}
+		}
+		t.Fatalf("claim_jobs is not a writer of status: %s", out)
+		return ""
+	}
+	if got := source(nil); got != "derived" {
+		t.Errorf("columns_from = %q, want derived", got)
+	}
+	if got := source(map[string]string{"lattice/features/queue/jobs.yaml": writersFeatureColumns("public.jobs.status")}); got != "declared" {
+		t.Errorf("columns_from = %q, want declared", got)
+	}
+}
+
+// A declared column the migrations do not leave is an error, never a column
+// that silently matches nothing: a malformed entry, a table the migrations do
+// not create and a column a known table does not have.
+// @verifies graph:INV-8
+func TestDeclaredColumnsAreChecked(t *testing.T) {
+	for _, tc := range []struct{ entry, want string }{
+		{"jobs.status", "is not <schema>.<table>.<column>"},
+		{"public.jobs.*", "is not <schema>.<table>.<column>"},
+		{"public.tasks.status", "table public.tasks, which the migrations do not create"},
+		{"public.jobs.statuss", "column statuss, which table public.jobs does not have"},
+	} {
+		t.Run(tc.entry, func(t *testing.T) {
+			repo := writersRepo(t, "", "", map[string]string{"lattice/features/queue/jobs.yaml": writersFeatureColumns(tc.entry)})
+			out, _ := run(t, repo, newValidateCommand)
+			var rep validateReport
+			if err := json.Unmarshal([]byte(out), &rep); err != nil {
+				t.Fatal(err)
+			}
+			var found *schema.Violation
+			for i, f := range rep.Violations {
+				if f.Code == schema.CodeValidatePolicy && strings.Contains(f.Message, "queue.jobs:INV-1") {
+					found = &rep.Violations[i]
+				}
+			}
+			if found == nil || found.Severity != schema.SeverityError || !strings.Contains(found.Message, tc.want) {
+				t.Fatalf("want a VALIDATE_POLICY error containing %q, got %+v", tc.want, rep.Violations)
+			}
+			if rep.OK {
+				t.Errorf("a bad declared column must fail validate")
+			}
+		})
+	}
+}
+
+// The finding on declared columns is info like the rest, so a workspace that
+// fails on warnings stays green.
+// @verifies graph:INV-8
+func TestDeclaredColumnWriterNeverFailsByDefault(t *testing.T) {
+	const failOnWarning = "validate:\n  fail_on: warning\n  severity:\n    FEATURE_NO_BRD: off\n"
+	got, rep := validateWriters(t, writersRepo(t, "", failOnWarning,
+		map[string]string{"lattice/features/queue/jobs.yaml": writersFeatureColumns("public.jobs.attempts")}))
+	if len(got) != 1 || got[0].Severity != schema.SeverityInfo || !rep.OK {
+		t.Errorf("findings = %+v, ok = %v: want one info finding and a green gate", got, rep.OK)
+	}
+}

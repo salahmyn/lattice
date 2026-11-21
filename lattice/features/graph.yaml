@@ -22,3 +22,7 @@ invariants:
     statement: A layer comes only from an adapter fact or a declared path rule; otherwise it is unknown.
   - id: INV-7
     statement: A writer of an invariant's columns that is neither its enforcer nor under a guard of it is reported.
+  - id: INV-8
+    statement: An invariant's declared columns, when present, are its columns exactly and its enforcers' writes are not used; a declared column that names no table or column the migrations leave is an error.
+  - id: INV-9
+    statement: Each ENFORCER_EXPOSED states whether the function body reads the caller's identity, citing the first read, or that it reads none; the finding fires either way and those that read none come first.
