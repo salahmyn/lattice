@@ -19,6 +19,19 @@ var globalObjects = map[string]bool{"window": true, "globalThis": true, "self": 
 // functionsPrefix is where the platform serves an edge function by its name.
 const functionsPrefix = "/functions/v1/"
 
+// @enforces reachability:INV-11
+// callee is the function a call_expression calls. The grammar reads
+// await f<T>(x) as a call whose function is the await_expression around f, so
+// the awaited operand is the callee; without this a call with type arguments
+// after an await matched no call shape and was dropped.
+func callee(call *sitter.Node) *sitter.Node {
+	fn := call.ChildByFieldName("function")
+	for fn != nil && fn.Kind() == "await_expression" && fn.NamedChildCount() > 0 {
+		fn = fn.NamedChild(0)
+	}
+	return fn
+}
+
 // httpRef records a request the call sends, as a ref of kind http keyed by
 // method and path (ir.HTTPKey): fetch(url, {method}), axios.get(url),
 // axios({method, url}), supabase.functions.invoke('name'). The key is empty

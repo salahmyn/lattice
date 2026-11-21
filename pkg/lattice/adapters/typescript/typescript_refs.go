@@ -286,7 +286,7 @@ func (w *tsRefWalker) schemaOf(obj *sitter.Node) string {
 	if obj == nil || obj.Kind() != "call_expression" {
 		return ""
 	}
-	fn := obj.ChildByFieldName("function")
+	fn := callee(obj)
 	if fn == nil || fn.Kind() != "member_expression" {
 		return ""
 	}
@@ -467,7 +467,7 @@ func (w *tsRefWalker) dynamicImport(call, args *sitter.Node) {
 
 // isServe reports a call of serve(...) or Deno.serve(...).
 func (w *tsRefWalker) isServe(call *sitter.Node) bool {
-	fn := call.ChildByFieldName("function")
+	fn := callee(call)
 	if fn == nil {
 		return false
 	}
@@ -476,7 +476,7 @@ func (w *tsRefWalker) isServe(call *sitter.Node) bool {
 }
 
 func (w *tsRefWalker) call(n *sitter.Node) {
-	fn := n.ChildByFieldName("function")
+	fn := callee(n)
 	args := n.ChildByFieldName("arguments")
 	w.httpRef(fn, args)
 	w.channelCall(fn, args)

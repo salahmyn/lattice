@@ -3,6 +3,8 @@ package typescript
 import (
 	"context"
 	"testing"
+
+	"github.com/salahmyn/lattice/pkg/lattice/schema/ir"
 )
 
 const tsSample = `/**
@@ -786,6 +788,75 @@ func TestRecordsLiteralSpans(t *testing.T) {
 		"table|orders|'orders'",
 		"http||", // computed
 		"rpc||",  // a name that is not a literal
+	}
+	if len(got) != len(want) {
+		t.Fatalf("refs %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("ref %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// A call with type arguments records the same refs as one without, awaited or
+// not: the grammar reads await f<T>(x) as a call whose function is the await
+// expression, and a first argument past the type arguments that is not a
+// literal reads as dynamic rather than vanishing.
+// @verifies reachability:INV-11
+func TestTypeArgumentsDoNotHideCalls(t *testing.T) {
+	src := "export async function calls(db: any, name: string) {\n" +
+		"  await supabase.functions.invoke<AddResult>('add-source', { body });\n" +
+		"  const r = await supabase.functions.invoke<Result<A, B>>('nested');\n" +
+		"  supabase.functions.invoke<unknown>('plain');\n" +
+		"  await supabase.functions.invoke<T>(name);\n" +
+		"  await fetch<Res>('/api/a');\n" +
+		"  await axios.get<Res>('/api/b');\n" +
+		"  await axios.post<Res, Req>(name);\n" +
+		"  await axios<Res>({ url: '/api/c', method: 'put' });\n" +
+		"  await window.fetch<Res>('/api/d');\n" +
+		"  await db.rpc<Row>('do_it', {});\n" +
+		"  await db.rpc<Row>(name);\n" +
+		"  await db.from<Row>('orders').select();\n" +
+		"  await db.rpc<Row>('pgmq_send', { queue_name: 'jobs' });\n" +
+		"  await jobs.enqueue<Payload>('emails');\n" +
+		"  await jobs.register<Payload>('emails', handler);\n" +
+		"}\n"
+	a := New()
+	a.SetChannelWrappers([]ir.ChannelWrapper{
+		{Call: "jobs.enqueue", Arg: 0, Kind: ir.ChannelQueue, HandlerArg: -1},
+		{Call: "jobs.register", Arg: 0, Kind: ir.ChannelQueue, Consume: true, HandlerArg: 1},
+	})
+	mod, err := a.Parse(context.Background(), "web/calls.ts", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, s := range mod.Symbols {
+		for _, r := range s.Refs {
+			switch r.Kind {
+			case "http", "rpc", "table", "publish", "consume":
+				got = append(got, r.Kind+"|"+r.Name)
+			}
+		}
+	}
+	want := []string{
+		"http|POST /functions/v1/add-source",
+		"http|POST /functions/v1/nested",
+		"http|POST /functions/v1/plain",
+		"http|", // computed name: dynamic, not dropped
+		"http|GET /api/a",
+		"http|GET /api/b",
+		"http|", // computed URL
+		"http|PUT /api/c",
+		"http|GET /api/d",
+		"rpc|do_it",
+		"rpc|", // computed name
+		"table|orders",
+		"publish|queue:jobs",
+		"rpc|pgmq_send",
+		"publish|queue:emails",
+		"consume|queue:emails",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("refs %q, want %q", got, want)
