@@ -754,6 +754,31 @@ func resolveWrites(mods []ir.Module, order []int, eff map[string][2]int, pending
 	gaps := append([]ir.WriterGap(nil), tf.gaps...)
 	for _, fqn := range fqns {
 		s := symOf(fqn)
+		if len(s.CondReads) == 0 {
+			continue
+		}
+		var kept []ir.CondRead
+		seen := map[ir.CondRead]bool{}
+		add := func(c ir.CondRead) {
+			if !seen[c] {
+				seen[c] = true
+				kept = append(kept, c)
+			}
+		}
+		for _, c := range s.CondReads {
+			if c.Table != newTable {
+				add(c)
+				continue
+			}
+			for _, g := range triggers[fqn] {
+				c.Table = g.Table
+				add(c)
+			}
+		}
+		s.CondReads = kept
+	}
+	for _, fqn := range fqns {
+		s := symOf(fqn)
 		if len(s.Writes) == 0 {
 			continue
 		}

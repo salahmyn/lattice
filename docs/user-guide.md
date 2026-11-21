@@ -3655,8 +3655,9 @@ and `jobs.status`, with no cap. It carries no tag, so no break ever targets it, 
 reads as break-tested while production breaks it. Lattice reads who writes a table from the
 migrations and says so.
 
-**What counts as a writer.** The columns of an invariant are the columns its enforcers write
-(reads are not counted). Any other writer of one of them is a writer of the promise:
+**What counts as a writer.** The columns of an invariant are the columns its enforcers test in a
+condition (see 4z); where an enforcer's conditions are not known, the columns it writes. Any
+other writer of one of them is a writer of the promise:
 
 - a SQL function, procedure or `DO` block whose body has an `INSERT INTO t [(cols)]` (with no
   column list, every column of `t` as `CREATE TABLE` and `ALTER TABLE ... ADD COLUMN` leave
@@ -3696,7 +3697,7 @@ block, a function body or an `EXECUTE` string leaves that table's role writers u
 unless you set it in `validate.severity`; `fail_on: warning` still passes:
 
 ```
-info  UNGUARDED_WRITER  sql.public.claim_jobs writes columns that queue.jobs:INV-1's enforcers write (derived; declare columns: on the invariant to narrow them), and is neither an enforcer of queue.jobs:INV-1 nor under a trigger or policy that enforces it, so no break ever targets it. public.jobs by update: status (supabase/migrations/20260101000000_jobs.sql:12), updated_at (supabase/migrations/20260101000000_jobs.sql:12)
+info  UNGUARDED_WRITER  sql.public.claim_jobs writes columns that queue.jobs:INV-1's enforcers test (columns from conditions: read in an IF, CASE WHEN, WHERE or CHECK of an enforcer, on a table it writes; declare columns: on the invariant to override), and is neither an enforcer of queue.jobs:INV-1 nor under a trigger or policy that enforces it, so no break ever targets it. public.jobs by update: attempts (supabase/migrations/20260101000000_jobs.sql:12)
 info  WRITERS_UNKNOWN   the writers of queue.jobs:INV-1's columns (public.jobs.attempts,run_after,status,updated_at) are not completely known, so an unguarded writer may exist: an EXECUTE at supabase/migrations/20260301000000_dyn.sql:2 runs a write statement that names no table literally, so it may write any table
 ```
 
@@ -3707,8 +3708,8 @@ columns lie on a table with an incomplete writer set, with the reasons. Both go 
 allowlist like any finding; the subject of a function writer is its FQN, of a role
 `sql.role.<role>`, of a migration its file.
 
-On a project where every enforcer writes `status` or `updated_at`, the derived columns link
-unrelated promises. Declare the columns the promise is about; see 4z.
+Columns are decided from the conditions the enforcers test, not from everything they assign, so
+a `status` or `updated_at` every enforcer sets does not link unrelated promises; see 4z.
 
 **To clear `UNGUARDED_WRITER`**, do one of:
 
@@ -4268,11 +4269,43 @@ invariants:
   migrations do not create and a column a known table does not have are
   `VALIDATE_POLICY` errors, so a typo cannot silently match nothing. A table whose columns
   the adapter cannot list (`LIKE`, inheritance) accepts any column.
-- `lattice writers` prints `(columns declared)` or `(columns derived)` after each promise a
-  writer is guarded or unguarded for, and `--json` adds `columns_from` to each writer. The
-  `UNGUARDED_WRITER` message says `declares (columns: in its feature YAML)` or `derived`.
+- `lattice writers` prints `(columns declared)`, `(columns from conditions)` or `(columns from
+  writes)` after each promise a writer is guarded or unguarded for, and `--json` adds
+  `columns_from` (`declared`, `conditions` or `derived`) to each writer. The `UNGUARDED_WRITER`
+  message says `declares (columns: in its feature YAML)`, `columns from conditions` or
+  `columns derived from writes`.
 - It applies to an invariant that has SQL enforcers; the field stays in canonical order,
   after `verifiable_by` and before `cases`, and `lattice fmt` keeps it there.
+
+**Columns from conditions.** With no `columns:` declared, a promise's columns are the columns
+its enforcers test, not every column they assign. For each enforcer, the columns it reads in a
+condition on a table it writes:
+
+- a column in an `IF` / `ELSIF` / `CASE WHEN` condition;
+- a column in the `WHERE` of its own `UPDATE`, `DELETE` or `SELECT ... INTO`;
+- a column in a `CHECK` that enforces the promise (on a table another enforcer of it writes);
+- a column loaded by `SELECT col INTO v ... FROM t` and then tested as `v` in an `IF`: one
+  simple flow inside one body, nothing deeper; `NEW.col` and `OLD.col` in a trigger function
+  count on the table of each trigger that runs it.
+
+The enforcer does not have to write the column: `fail_job` tests `attempts` and assigns
+`status`, so the promise is about `attempts`, and `claim_jobs`, which increments `attempts`, is
+still reported while a function that only sets `updated_at` is not. A bare name counts only if
+its table has a column of that name, so a parameter or variable is never a column.
+
+A column that only picks the row is not a condition read: one compared by `=`, `IN (...)` or
+`= ANY(...)` with a function parameter (or a variable assigned only from parameters) in the
+`WHERE` of the enforcer's own `UPDATE`, `DELETE` or `SELECT ... INTO`. `WHERE status = 'running'
+AND id = p_id` reads `status`, not `id`. Comparisons with a literal, another column or a
+function, and `<`, `>`, `>=`, `<>`, still count, as do `IF`, `CASE` and `CHECK`. An enforcer
+whose only conditions are row selectors falls back to the columns it writes (below).
+
+When an enforcer has no condition read on the tables it writes, or its body could not be read,
+that enforcer falls back to the columns it writes, and the message says so (`no condition read
+was known, so its columns derived from writes`). The set never shrinks to nothing, because that
+would read as "no column". Declared `columns:` still replace all of this. It is a reading of
+the code, not a verdict: a condition hidden in a called function, an `EXECUTE` string or a view
+is not seen, so declare the columns when the promise is about one of those.
 
 **Caller identity on `ENFORCER_EXPOSED`.** Each finding now says whether the function's body
 reads the caller's identity: `auth.uid()`, `auth.jwt()`, `current_setting('request.jwt...')`,
@@ -4286,6 +4319,34 @@ info  ENFORCER_EXPOSED  sql.public.finish_submission enforces review.submissions
 This is a fact, never a pass: the finding fires either way, and a function that reads the
 caller's identity can still let a parameter decide. Findings whose body reads none are listed
 first. The finding stays info and always on, so `fail_on: warning` stays green.
+
+**Three more facts on `ENFORCER_EXPOSED`.** Each is read from the migrations and stated only
+when it holds:
+
+- *Identity through a helper.* A function whose body reads no identity itself but calls a SQL
+  function of the workspace that does (a bare name resolves to `public`, as PostgreSQL's default
+  search path does) reads it through that helper, one level: the helper's own read, not what its
+  helpers read. The finding cites both: `reads the caller's identity (via public.is_admin() →
+  auth.uid() at supabase/migrations/20260102000000_access.sql:5)`. A builtin, a function no
+  migration creates and a name created with more than one argument list are not followed.
+- *Authentication by a hash.* A hash function (`digest`, `crypt`, `md5`, `sha224` to `sha512`,
+  `hmac`, also inside `encode(...)` or a cast) applied to an expression that names one of the
+  function's parameters, by name or `$n`, and compared with `=` to a name in a `WHERE` or an
+  `IF`, reads as `authenticates by a hash of parameter p_token (file:line)`. It is a different
+  kind of identity from `auth.uid()`: the finding says which. A hash of a column or a literal, a
+  hash that is only assigned or returned, and one inside a comment or a string are not read.
+- *Boolean parameters.* Each parameter declared `boolean` or `bool` is listed:
+  `It takes boolean parameter(s): p_ok.` Only the declared type counts; no name is read for a
+  meaning, and an output parameter or an array is not listed.
+
+```
+info  ENFORCER_EXPOSED  sql.public.device_ping enforces review.access:INV-2 and is executable by authenticated (...:29); it is SECURITY DEFINER (...:18): a client can call it directly, so its inputs are the client's. Its body reads no caller identity (auth.uid(), auth.jwt(), a request.jwt claim, current_user or session_user); it authenticates by a hash of parameter p_token (supabase/migrations/20260102000000_access.sql:20).
+```
+
+Findings are listed in four groups: reads no identity and takes a boolean parameter; reads no
+identity; takes a boolean parameter; the rest. A function that authenticates by a hash counts as
+reading an identity. The facts are about the body, never a pass: a function that reads an identity
+or hashes a token still fires, and the finding stays info and always on.
 
 ## 5. Day-to-day commands
 

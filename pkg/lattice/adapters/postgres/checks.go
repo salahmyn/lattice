@@ -311,6 +311,7 @@ func parseConstraints(mod *ir.Module, st statement, outer []ir.Annotation) (used
 		toks := stmtToks{text: st.text, toks: lexText(st.text)}
 		expr := st.text[toks.toks[cl.open].end:toks.toks[cl.closeAt].off]
 		sym.Refs = callRefs(statement{text: expr, line: st.lineAt(toks.toks[cl.open].end)}, false)
+		sym.CondReads = checkReads(expr, schemaName+"."+table, cl.line)
 		mod.Symbols = append(mod.Symbols, sym)
 		mod.Nodes = append(mod.Nodes, ir.Node{FQN: tableFQN(schemaName, table), Kind: ir.NodeTable, Line: cl.line,
 			Refs: []ir.Ref{{Name: sym.Name, Target: sym.FQN, Kind: ir.RefValue, Line: cl.line}}})

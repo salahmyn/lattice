@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -190,14 +191,17 @@ func TestUnguardedWriterExample(t *testing.T) {
 		if f.Subject != "sql.public.claim_jobs" || f.FeatureID != "queue.jobs" || f.InvariantID != "INV-1" || f.Severity != schema.SeverityInfo {
 			t.Errorf("finding = %+v", f)
 		}
+		// fail_job tests attempts (SELECT attempts INTO v ... IF v >= 3), so
+		// attempts is the promise's column; the status and updated_at that
+		// both functions merely assign are not.
 		const file = "supabase/migrations/20260101000000_jobs.sql:12"
-		for _, want := range []string{"status (" + file + ")", "updated_at (" + file + ")", "public.jobs by update", "queue.jobs:INV-1"} {
+		for _, want := range []string{"attempts (" + file + ")", "public.jobs by update", "queue.jobs:INV-1", "columns from conditions"} {
 			if !strings.Contains(f.Message, want) {
 				t.Errorf("message %q lacks %q", f.Message, want)
 			}
 		}
-		if strings.Contains(f.Message, "attempts") || strings.Contains(f.Message, "run_after") {
-			t.Errorf("only the columns both write are shared: %q", f.Message)
+		if strings.Contains(f.Message, "status (") || strings.Contains(f.Message, "updated_at (") || strings.Contains(f.Message, "run_after (") {
+			t.Errorf("columns that are only assigned are not the promise's: %q", f.Message)
 		}
 		if !rep.OK {
 			t.Errorf("an info finding must not fail validate")
@@ -336,7 +340,8 @@ func TestWritersCommand(t *testing.T) {
 	for _, want := range []string{
 		"public.jobs: 3 writer(s)",
 		"sql.public.claim_jobs  update  attempts, status, updated_at  supabase/migrations/20260101000000_jobs.sql:12\n    unguarded for queue.jobs:INV-1",
-		"sql.public.fail_job  update  status, updated_at  supabase/migrations/20260101000000_jobs.sql:28\n    guarded for queue.jobs:INV-1 by enforcer",
+		"sql.public.fail_job  update  status, updated_at  supabase/migrations/20260101000000_jobs.sql:28\n\n",
+		"unguarded for queue.jobs:INV-1 (columns from conditions)",
 		"writer set not known to be complete",
 		"sql.api_roles is not declared",
 	} {
@@ -500,9 +505,9 @@ func writersFeatureColumns(columns ...string) string {
 	return body
 }
 
-// Declared columns replace the columns derived from the enforcers' writes. The
-// enforcer writes status, run_after and updated_at, so claim_jobs, which also
-// writes status and updated_at, is reported when nothing is declared. Declaring
+// Declared columns replace the columns the enforcers' conditions name. The
+// enforcer tests attempts, so claim_jobs, which increments it, is reported when
+// nothing is declared. Declaring
 // the promise's columns as run_after alone ties it to the writers of run_after,
 // and claim_jobs, which never writes it, is no longer reported; declaring
 // attempts reports it for attempts, a column no enforcer writes.
@@ -514,10 +519,10 @@ func TestDeclaredColumnsReplaceDerived(t *testing.T) {
 		}
 		return map[string]string{"lattice/features/queue/jobs.yaml": writersFeatureColumns(columns...)}
 	}
-	t.Run("derived", func(t *testing.T) {
+	t.Run("from conditions", func(t *testing.T) {
 		got, _ := validateWriters(t, writersRepo(t, "", "", nil))
-		if len(got) != 1 || !strings.Contains(got[0].Message, "derived") || !strings.Contains(got[0].Message, "status") {
-			t.Fatalf("findings = %+v, want one finding on the derived columns", got)
+		if len(got) != 1 || !strings.Contains(got[0].Message, "from conditions") || !strings.Contains(got[0].Message, "attempts") {
+			t.Fatalf("findings = %+v, want one finding on the columns from conditions", got)
 		}
 	})
 	t.Run("declared and not written by the writer", func(t *testing.T) {
@@ -532,7 +537,7 @@ func TestDeclaredColumnsReplaceDerived(t *testing.T) {
 			t.Fatalf("findings = %+v, want claim_jobs", got)
 		}
 		m := got[0].Message
-		if !strings.Contains(m, "declares") || !strings.Contains(m, "attempts") || strings.Contains(m, "status") || strings.Contains(m, "derived") {
+		if !strings.Contains(m, "declares") || !strings.Contains(m, "attempts") || strings.Contains(m, "status") || strings.Contains(m, "derived") || strings.Contains(m, "from conditions") {
 			t.Errorf("message = %q: want the declared column attempts only", m)
 		}
 	})
@@ -571,8 +576,8 @@ func TestWritersReportsColumnSource(t *testing.T) {
 		t.Fatalf("claim_jobs is not a writer of status: %s", out)
 		return ""
 	}
-	if got := source(nil); got != "derived" {
-		t.Errorf("columns_from = %q, want derived", got)
+	if got := source(nil); got != "conditions" {
+		t.Errorf("columns_from = %q, want conditions", got)
 	}
 	if got := source(map[string]string{"lattice/features/queue/jobs.yaml": writersFeatureColumns("public.jobs.status")}); got != "declared" {
 		t.Errorf("columns_from = %q, want declared", got)
@@ -622,5 +627,160 @@ func TestDeclaredColumnWriterNeverFailsByDefault(t *testing.T) {
 		map[string]string{"lattice/features/queue/jobs.yaml": writersFeatureColumns("public.jobs.attempts")}))
 	if len(got) != 1 || got[0].Severity != schema.SeverityInfo || !rep.OK {
 		t.Errorf("findings = %+v, ok = %v: want one info finding and a green gate", got, rep.OK)
+	}
+}
+
+// A second promise on the same table whose enforcer assigns status and
+// updated_at but tests only owner_id, and a function that touches updated_at
+// alone. The assigned columns are bookkeeping, not what the promise is about.
+const writersOwner = `alter table public.jobs add column owner_id uuid;
+
+-- @enforces queue.jobs:INV-2
+create function public.reassign_job(p_id bigint, p_owner uuid) returns text
+language plpgsql security definer set search_path = '' as $$
+declare v_owner uuid;
+begin
+  select j.owner_id into v_owner from public.jobs j where j.id = p_id for update;
+  if v_owner is not null then
+    return 'owned';
+  end if;
+  update public.jobs j set status = 'pending', updated_at = now() where j.id = p_id;
+  return 'reassigned';
+end $$;
+
+create function public.touch_job(p_id bigint) returns void
+language sql security definer set search_path = '' as $$
+  update public.jobs set updated_at = now() where id = p_id;
+$$;
+
+-- Renumbering writes id, which the other functions only use to pick a row.
+create function public.renumber_job(p_id bigint, p_new bigint) returns void
+language sql security definer set search_path = '' as $$
+  update public.jobs set id = p_new where id = p_id;
+$$;
+
+create function public.assign_owner(p_id bigint, p_owner uuid) returns void
+language sql security definer set search_path = '' as $$
+  update public.jobs set owner_id = p_owner where id = p_id;
+$$;
+`
+
+const writersOwnerFeature = `    verifiable_by:
+      - test
+  - id: INV-2
+    statement: A job that has an owner is never handed to another one.
+    verifiable_by:
+      - test
+`
+
+const writersOwnerTest = `begin;
+select plan(1);
+-- @verifies queue.jobs:INV-2
+select is(public.reassign_job(1, null), 'owned', 'an owned job is not reassigned');
+select * from finish();
+rollback;
+`
+
+func writersOwnerRepo(t *testing.T, configExtra string) string {
+	t.Helper()
+	feature := strings.Replace(writersFeature, "    verifiable_by:\n      - test\n", writersOwnerFeature, 1)
+	return writersRepo(t, "", configExtra, map[string]string{
+		"supabase/migrations/20260115000000_owner.sql": writersOwner,
+		"supabase/tests/02_owner.sql":                  writersOwnerTest,
+		"lattice/features/queue/jobs.yaml":             feature,
+	})
+}
+
+// Two promises on one table. INV-1 is about attempts (fail_job tests it) and
+// INV-2 about owner_id (reassign_job tests it); both enforcers assign status and
+// updated_at. Only a writer of a promise's own column is reported for it:
+// claim_jobs, which increments attempts, for INV-1; assign_owner for INV-2.
+// touch_job writes updated_at alone and renumber_job writes id, which the
+// enforcers only use as a row selector (WHERE id = p_id); neither is linked. Counted by
+// columns derived from writes (what the enforcers assign) and from conditions.
+// @verifies graph:INV-11
+func TestWritersColumnsFromConditionsExample(t *testing.T) {
+	got, _ := validateWriters(t, writersOwnerRepo(t, ""))
+	var pairs []string
+	for _, f := range got {
+		if f.Code == schema.CodeUnguardedWriter {
+			pairs = append(pairs, f.Subject+" "+f.InvariantID)
+			if !strings.Contains(f.Message, "columns from conditions") {
+				t.Errorf("%s: message lacks the source: %q", f.Subject, f.Message)
+			}
+		}
+	}
+	want := "sql.public.assign_owner INV-2, sql.public.claim_jobs INV-1"
+	if g := strings.Join(sorted(pairs), ", "); g != want {
+		t.Errorf("unguarded writers = %s, want %s", g, want)
+	}
+	// claim_jobs still breaks the attempts promise.
+	for _, f := range got {
+		if f.Subject == "sql.public.claim_jobs" && !strings.Contains(f.Message, "attempts") {
+			t.Errorf("claim_jobs must stay unguarded on attempts: %q", f.Message)
+		}
+	}
+}
+
+func sorted(in []string) []string {
+	out := append([]string(nil), in...)
+	sort.Strings(out)
+	return out
+}
+
+// The finding is info and always on: a gate that fails on warnings stays green
+// with condition-derived columns.
+// @verifies graph:INV-11
+func TestColumnsFromConditionsStayInfo(t *testing.T) {
+	const failOnWarning = "validate:\n  fail_on: warning\n  severity:\n    FEATURE_NO_BRD: off\n"
+	got, rep := validateWriters(t, writersOwnerRepo(t, failOnWarning))
+	if len(got) == 0 || !rep.OK {
+		t.Fatalf("findings = %d, ok = %v: want findings and a green gate: %+v", len(got), rep.OK, rep.Violations)
+	}
+	for _, f := range got {
+		if f.Severity != schema.SeverityInfo {
+			t.Errorf("%s %s is %s, want info", f.Code, f.Subject, f.Severity)
+		}
+	}
+}
+
+// An enforcer whose only condition is a row selector (WHERE id = p_id) has no
+// condition read, so its columns are the ones it writes, and the message says
+// so; the id it selects by is not a column of the promise.
+// @verifies graph:INV-11
+func TestRowSelectorOnlyFallsBackToWrites(t *testing.T) {
+	const only = `-- @enforces queue.jobs:INV-2
+create function public.reassign_job(p_id bigint) returns void
+language sql security definer set search_path = '' as $$
+  update public.jobs set status = 'pending' where id = p_id;
+$$;
+create function public.renumber_job(p_id bigint, p_new bigint) returns void
+language sql security definer set search_path = '' as $$
+  update public.jobs set id = p_new where id = p_id;
+$$;
+create function public.park_job(p_id bigint) returns void
+language sql security definer set search_path = '' as $$
+  update public.jobs set status = 'parked' where id = p_id;
+$$;
+`
+	feature := strings.Replace(writersFeature, "    verifiable_by:\n      - test\n", writersOwnerFeature, 1)
+	repo := writersRepo(t, "", "", map[string]string{
+		"supabase/migrations/20260115000000_owner.sql": only,
+		"supabase/tests/02_owner.sql":                  strings.Replace(writersOwnerTest, "reassign_job(1, null)", "reassign_job(1)", 1),
+		"lattice/features/queue/jobs.yaml":             feature,
+	})
+	got, _ := validateWriters(t, repo)
+	var inv2 []string
+	for _, f := range got {
+		if f.InvariantID == "INV-2" {
+			inv2 = append(inv2, f.Subject)
+			if !strings.Contains(f.Message, "columns derived from writes") || strings.Contains(f.Message, "id (") {
+				t.Errorf("%s: message = %q", f.Subject, f.Message)
+			}
+		}
+	}
+	// park_job writes status, which the enforcer writes; renumber_job writes only id.
+	if g := strings.Join(sorted(inv2), ", "); !strings.Contains(g, "sql.public.park_job") || strings.Contains(g, "renumber_job") {
+		t.Errorf("INV-2 writers = %s, want park_job and not renumber_job", g)
 	}
 }

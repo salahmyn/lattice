@@ -39,9 +39,11 @@ and a role that holds INSERT, UPDATE or DELETE on the table through a GRANT.
 For each writer it prints the operation, the columns, the file and line, and,
 for every promise (<feature>:INV-n) whose columns it writes, whether it is
 guarded for it (it enforces it, or a trigger or policy that enforces it applies
-to its table and command) or unguarded for it, and whether that promise's columns were declared (columns: on
-the invariant in its feature YAML) or derived from the columns its enforcers
-write. 'lattice validate' reports an
+to its table and command) or unguarded for it, and where that promise's columns
+came from: declared (columns: on the invariant in its feature YAML), from
+conditions (the columns its enforcers read in an IF, CASE WHEN, WHERE or CHECK,
+on a table they write), or from writes (the columns its enforcers write, used
+for an enforcer whose conditions are not known). 'lattice validate' reports an
 unguarded writer as UNGUARDED_WRITER (info).
 
 It ends with the reasons the table's writer set is incomplete (an EXECUTE of a
@@ -73,6 +75,17 @@ public. --json prints lattice.writers/1. Read-only.`,
 	}
 }
 
+// columnsSource words where an invariant's columns came from.
+func columnsSource(from string) string {
+	switch from {
+	case graph.ColumnsConditions:
+		return "from conditions"
+	case graph.ColumnsDerived:
+		return "from writes"
+	}
+	return from
+}
+
 func writeWriters(io *IO, rep graph.WriterReport) {
 	target := rep.Table
 	if rep.Column != "" {
@@ -100,10 +113,10 @@ func writeWriters(io *IO, rep graph.WriterReport) {
 			io.printf("    %s\n", w.Via)
 		}
 		for _, g := range w.Guarded {
-			io.printf("    guarded for %s by %s (columns %s)\n", g.Invariant, g.By, w.ColumnsFrom[g.Invariant])
+			io.printf("    guarded for %s by %s (columns %s)\n", g.Invariant, g.By, columnsSource(w.ColumnsFrom[g.Invariant]))
 		}
 		for _, ref := range w.Unguarded {
-			io.printf("    unguarded for %s (columns %s)\n", ref, w.ColumnsFrom[ref])
+			io.printf("    unguarded for %s (columns %s)\n", ref, columnsSource(w.ColumnsFrom[ref]))
 		}
 	}
 	io.printf("\n")
