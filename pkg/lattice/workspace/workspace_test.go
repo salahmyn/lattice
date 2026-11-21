@@ -162,3 +162,15 @@ func TestExcludeGlobs(t *testing.T) {
 		t.Error("an invalid exclude glob should fail to open")
 	}
 }
+
+func TestOpenReadsLayerRules(t *testing.T) {
+	root := t.TempDir()
+	writeLatticeDir(t, filepath.Join(root, "lattice"), "layers:\n  - glob: \"web/**\"\n    layer: ui\n  - glob: \"jobs/**\"\n    layer: async\n")
+	w, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(w.Layers) != 2 || w.Layers[0].Glob != "web/**" || w.Layers[0].Layer != "ui" || w.Layers[1].Layer != "async" {
+		t.Errorf("layers = %+v", w.Layers)
+	}
+}
