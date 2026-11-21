@@ -67,13 +67,8 @@ func AssignLayers(kg *schema.KnowledgeGraph, rules []schema.LayerRule) []schema.
 			s.Layer, s.LayerSource = l, schema.LayerSourceAdapter
 			continue
 		}
-		for _, r := range valid {
-			if ok, _ := doublestar.Match(r.Glob, s.File); ok {
-				if r.Layer != schema.LayerUnknown {
-					s.Layer, s.LayerSource = r.Layer, schema.LayerSourceRule
-				}
-				break
-			}
+		if l := schema.LayerOfFile(valid, s.File); l != schema.LayerUnknown {
+			s.Layer, s.LayerSource = l, schema.LayerSourceRule
 		}
 	}
 	return viol

@@ -1,0 +1,76 @@
+{
+  "contract": "lattice.slice/1",
+  "invariant": "orders:INV-2",
+  "commit": "abc123",
+  "reading": "unknown_from_hop",
+  "hop": 2,
+  "why": "hop 2 of the path from web.other to sql.policy.public.orders.reads is an ambiguous reference followed to one of its candidates, so it is not known to run",
+  "enforcers": [
+    {
+      "fqn": "sql.policy.public.orders.reads",
+      "layer": "data",
+      "reach": "entry"
+    }
+  ],
+  "paths": [
+    {
+      "root": {
+        "fqn": "web.other",
+        "reason": "entry file web/main.ts"
+      },
+      "enforcer": "sql.policy.public.orders.reads",
+      "hops": [
+        {
+          "from": "web.other",
+          "to": "lib.helper",
+          "kind": "call",
+          "from_layer": "service",
+          "to_layer": "service",
+          "truth": "resolved"
+        },
+        {
+          "from": "lib.helper",
+          "to": "sql.policy.public.orders.reads",
+          "kind": "call",
+          "from_layer": "service",
+          "to_layer": "data",
+          "truth": "unknown"
+        }
+      ],
+      "carried_by": [
+        "service",
+        "data"
+      ]
+    },
+    {
+      "root": {
+        "fqn": "web.orders.load",
+        "reason": "entry point ep.http.get_orders",
+        "entry_point": "ep.http.get_orders"
+      },
+      "enforcer": "sql.policy.public.orders.reads",
+      "hops": [
+        {
+          "from": "web.orders.load",
+          "to": "sql.table.public.orders",
+          "kind": "table",
+          "from_layer": "ui",
+          "to_layer": "data",
+          "truth": "resolved"
+        },
+        {
+          "from": "sql.table.public.orders",
+          "to": "sql.policy.public.orders.reads",
+          "kind": "table",
+          "from_layer": "data",
+          "to_layer": "data",
+          "truth": "resolved"
+        }
+      ],
+      "carried_by": [
+        "ui",
+        "data"
+      ]
+    }
+  ]
+}

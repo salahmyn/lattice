@@ -24,6 +24,7 @@ import (
 
 	"github.com/salahmyn/lattice/pkg/lattice/impact"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
+	"github.com/salahmyn/lattice/pkg/lattice/slice"
 	"github.com/salahmyn/lattice/pkg/lattice/store"
 	"github.com/salahmyn/lattice/pkg/lattice/workspace"
 )
@@ -63,6 +64,12 @@ type Options struct {
 	// for /api/v2/check, as `lattice check` builds them. Nil falls back to
 	// ReadOnlyGraphBuilder, with no call graph.
 	CheckGraphBuilder func(ctx context.Context) (schema.KnowledgeGraph, impact.CallGraph, error)
+	// SliceBuilder builds the read-only graph and the slice graph over its
+	// reach result, for the promise slice (/api/v2/promises/{id}/slice and
+	// the audit page). When set, the facts cache takes its graph from it; it
+	// may return a nil slice graph (review mode), which reads unknown. Nil
+	// leaves every slice reading unknown.
+	SliceBuilder func(ctx context.Context) (schema.KnowledgeGraph, *slice.Graph, error)
 	// Actor is the identity `lattice serve` runs as (--actor, LATTICE_ACTOR).
 	// POST /api/v2/prepare refuses an agent actor, as the CLI does.
 	Actor string

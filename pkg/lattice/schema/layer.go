@@ -2,7 +2,11 @@ package schema
 
 // @module-feature schema
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/bmatcuk/doublestar/v4"
+)
 
 // Layers are the runtime kinds of code, a closed vocabulary. A layer says what
 // kind of runtime a symbol or block lives in; it is not a system (who owns and
@@ -74,4 +78,20 @@ func LayerSet(ls []string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// LayerOfFile is the layer a file's path gets from rules: the first rule whose
+// glob matches decides, and a rule that is not valid is skipped. A file no
+// rule matches, or one the matching rule gives the unknown layer, reads
+// LayerUnknown.
+func LayerOfFile(rules []LayerRule, file string) string {
+	for _, r := range rules {
+		if !ValidLayer(r.Layer) || r.Glob == "" || !doublestar.ValidatePattern(r.Glob) {
+			continue
+		}
+		if ok, _ := doublestar.Match(r.Glob, file); ok {
+			return r.Layer
+		}
+	}
+	return LayerUnknown
 }

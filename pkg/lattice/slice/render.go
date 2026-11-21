@@ -1,0 +1,110 @@
+package slice
+
+// @module-feature reachability
+
+import (
+	"fmt"
+	"io"
+	"strings"
+)
+
+// WriteText prints a record: the reading first, the enforcers, then one line
+// per path, root to enforcer, with the layer of each node in brackets and the
+// edge kind between nodes. An unknown hop reads kind? instead of kind.
+func WriteText(w io.Writer, r Record) {
+	fmt.Fprintf(w, "slice %s\n", r.Invariant)
+	fmt.Fprintf(w, "reading: %s", r.Reading)
+	if r.Hop > 0 {
+		fmt.Fprintf(w, " (hop %d)", r.Hop)
+	}
+	fmt.Fprintf(w, "\n  %s\n", r.Why)
+
+	fmt.Fprintf(w, "\nenforcers (%d)\n", len(r.Enforcers))
+	for _, e := range r.Enforcers {
+		fmt.Fprintf(w, "  %s  [%s]  reach: %s\n", e.FQN, orDash(e.Layer), orDash(e.Reach))
+	}
+
+	shown := len(r.Paths)
+	fmt.Fprintf(w, "\npaths (%d)\n", shown+r.Truncated)
+	for _, p := range r.Paths {
+		fmt.Fprintf(w, "  %s\n", PathLine(p))
+		fmt.Fprintf(w, "      root: %s; carried by %s; %s\n", rootLabel(p.Root), strings.Join(p.CarriedBy, " -> "), hopCount(len(p.Hops)))
+	}
+	if r.Truncated > 0 {
+		fmt.Fprintf(w, "  ... %d more path(s) not shown\n", r.Truncated)
+	}
+	if len(r.Paths) > 0 {
+		fmt.Fprintln(w, "\nkind? marks an unknown hop: an ambiguous reference followed to one of its candidates.")
+		fmt.Fprintln(w, "--json lists every hop of every path.")
+	}
+}
+
+// maxShownHops is the longest path printed in full; a longer one keeps its
+// ends and every unknown hop, and counts the hops it leaves out.
+const maxShownHops = 4
+
+// PathLine is one path on a line: the root, then each node with its layer and
+// the edge kind before it.
+func PathLine(p Path) string {
+	layer := ""
+	if len(p.CarriedBy) > 0 {
+		layer = p.CarriedBy[0]
+	}
+	if len(p.Hops) > 0 {
+		layer = p.Hops[0].FromLayer
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s [%s]", p.Root.FQN, layer)
+	n := len(p.Hops)
+	show := make([]bool, n+1) // node i is the start of hop i and the end of hop i-1
+	for i := range show {
+		show[i] = n <= maxShownHops || i == 0 || i == n
+	}
+	for i, h := range p.Hops {
+		if h.Truth != TruthResolved {
+			show[i], show[i+1] = true, true
+		}
+	}
+	gap := 0
+	for i, h := range p.Hops {
+		if !show[i+1] {
+			gap++
+			continue
+		}
+		if gap > 0 {
+			fmt.Fprintf(&b, " -> ... %d nodes ...", gap)
+			gap = 0
+		}
+		kind := h.Kind
+		if h.Truth != TruthResolved {
+			kind += "?"
+		}
+		if i > 0 && !show[i] {
+			fmt.Fprintf(&b, " -> %s [%s]", h.To, h.ToLayer)
+			continue
+		}
+		fmt.Fprintf(&b, " -%s-> %s [%s]", kind, h.To, h.ToLayer)
+	}
+	return b.String()
+}
+
+func hopCount(n int) string {
+	if n == 1 {
+		return "1 hop"
+	}
+	return fmt.Sprintf("%d hops", n)
+}
+
+func rootLabel(r Root) string {
+	if r.EntryPoint != "" {
+		return "entry point " + r.EntryPoint
+	}
+	return r.Reason
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}

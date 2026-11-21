@@ -20,6 +20,8 @@ type auditRowView struct {
 	Open  bool   // fakes open by default
 	// CaseViews are the row's acceptance cases with their badges.
 	CaseViews []auditCaseView
+	// Slice is the promise's slice: which ways in reach its enforcers.
+	Slice sliceView
 }
 
 // auditCaseView is one acceptance case of a row as the audit computed it,
@@ -119,10 +121,11 @@ func (s *Server) pageAudit(w http.ResponseWriter, r *http.Request) {
 	for _, c := range audit.Classes {
 		chips = append(chips, auditClassChip{Class: c, Count: full.Summary.ByClass[c], Badge: badgeFor(c)})
 	}
+	sg := s.sliceGraph(r.Context())
 	rows := make([]auditRowView, 0, len(shown.Rows))
 	for _, row := range shown.Rows {
 		rows = append(rows, auditRowView{Row: row, Badge: badgeFor(row.Class), Open: row.Class == audit.ClassFake,
-			CaseViews: caseViews(row.Cases)})
+			CaseViews: caseViews(row.Cases), Slice: sliceViewOf(sg, row)})
 	}
 
 	s.render(w, "audit.html", pageData{
