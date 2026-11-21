@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -62,6 +63,41 @@ var (
 	otherMarkers = []string{"error collecting", "indentationerror", "modulenotfounderror", "importerror"}
 )
 
+// ansiEscape matches the terminal escape sequences tools print to colour
+// their output: CSI sequences such as "\x1b[0m" and OSC sequences such as
+// hyperlinks. They sit inside the text a build marker is matched against
+// (Deno prints "\x1b[0m\x1b[1mTS18046 \x1b[0m[ERROR]: ..."), so they are
+// removed before classifying.
+var ansiEscape = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)`)
+
+// stripANSI removes terminal escape sequences from runner output.
+func stripANSI(s string) string {
+	if !strings.Contains(s, "\x1b") {
+		return s
+	}
+	return ansiEscape.ReplaceAllString(s, "")
+}
+
+// noColorEnv asks runner processes not to colour their output, the
+// NO_COLOR convention and the FORCE_COLOR switch most JavaScript tools read,
+// unless the environment already sets them. Classification does not depend
+// on it: escapes are stripped either way.
+func noColorEnv(env []string) []string {
+	has := map[string]bool{}
+	for _, kv := range env {
+		if i := strings.IndexByte(kv, '='); i > 0 {
+			has[kv[:i]] = true
+		}
+	}
+	if !has["NO_COLOR"] {
+		env = append(env, "NO_COLOR=1")
+	}
+	if !has["FORCE_COLOR"] {
+		env = append(env, "FORCE_COLOR=0")
+	}
+	return env
+}
+
 // NotAppliedExit is the exit code a runner uses to say the code under test
 // could not be set up, e.g. a database reset failed because a generated SQL
 // break did not apply. As in git bisect (125: "this revision cannot be
@@ -91,8 +127,11 @@ func buildLine(out string) string {
 // classify decides how a runner invocation ended. exit is the process exit
 // code (-1 when it did not start); timedOut says the timeout killed it. kind
 // is "go" for `go test` output, "" for any other runner's.
+// Terminal escape sequences are stripped first, so a coloured build marker
+// still reads as one and never as a failing test.
 // @enforces breaktest:INV-3
 func classify(kind string, exit int, out string, timedOut bool) execResult {
+	out = stripANSI(out)
 	switch {
 	case timedOut:
 		return execResult{status: statusTimeout, reason: "timed out", output: out}
@@ -244,6 +283,7 @@ func command(ctx context.Context, kind, dir string, timeout time.Duration, name 
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	cmd.Env = noColorEnv(os.Environ())
 	var buf bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &buf, &buf
 	setProcessGroup(cmd)

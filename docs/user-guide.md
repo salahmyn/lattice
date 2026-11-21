@@ -1458,12 +1458,15 @@ not run: …"). A group that fails after the break still makes the run `killed`.
 
 Only an explicit build marker reads as "does not compile": Go's `[build
 failed]` or `[setup failed]`, an esbuild or transform `file:line:col: ERROR:`
-line, Deno's `error: TS...`, `error: Module not found` or `Check file`,
-pytest's collection and import errors, and PHP's `PHP Parse error` or `Parse
-error: syntax error`. A runtime failure with a stack trace is a failing test,
-so it reads `killed` when the baseline passed, and so is a TAP harness's
-`Parse errors: Bad plan` (a pgTAP script that stopped partway). The reason
-names the failing tests, else the first error line.
+line, Deno's `error: TS...`, `TS... [ERROR]`, `error: Module not found` or
+`Check file`, pytest's collection and import errors, and PHP's `PHP Parse
+error` or `Parse error: syntax error`. A runtime failure with a stack trace is
+a failing test, so it reads `killed` when the baseline passed, and so is a TAP
+harness's `Parse errors: Bad plan` (a pgTAP script that stopped partway). The
+reason names the failing tests, else the first error line. Terminal colour
+codes are removed before the markers are matched, so a coloured type error
+still reads "does not compile", and runners are started with `NO_COLOR=1` and
+`FORCE_COLOR=0` unless the environment already sets them.
 
 **Exit 125: the code could not be set up.** A runner that exits 125 says the
 code under test could not be prepared, for example because a database reset
