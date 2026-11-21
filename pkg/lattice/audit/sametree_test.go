@@ -49,7 +49,7 @@ func TestMatchesHeadByStamp(t *testing.T) {
 	kg := graph(inv("INV-1"), []string{"INV-1"}, map[string][]string{"INV-1": {"f.TestOne"}})
 	for _, tc := range []struct {
 		name, stamp, head string
-		want             bool
+		want              bool
 	}{
 		{"same commit", "abc123", "abc123", true},
 		{"unstamped results", "", "abc123", true},
