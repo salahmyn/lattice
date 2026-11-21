@@ -353,7 +353,9 @@ type CaseRow struct {
 	// Confirmation is the case's own confirmation state, from the audit: pass
 	// (CASE_CONFIRMED) only for a case as the confirming decision recorded
 	// it under a current decision; drifted for one edited or retired since,
-	// or one unchanged under a stale decision (CASE_DECISION_STALE); unknown for one added
+	// or one unchanged under a stale decision (CASE_DECISION_STALE); fail when
+	// the decision's case list contradicts its packet (CASE_STAMP_MISMATCH);
+	// unknown for one added
 	// since, one whose decision recorded no cases, or one never confirmed.
 	// params.state is the audit's confirmed or unconfirmed.
 	Confirmation Assurance `json:"confirmation"`

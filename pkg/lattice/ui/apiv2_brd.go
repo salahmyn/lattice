@@ -265,6 +265,8 @@ func caseConfirmation(c audit.CaseConfirmation) contract.Assurance {
 	switch {
 	case c.State == audit.CaseConfirmed && c.Code == audit.CaseCodeConfirmed:
 		a.State = contract.StatePass
+	case c.Code == audit.CaseCodeStampMismatch:
+		a.State = contract.StateFail
 	case c.Code == audit.CaseCodeEdited || c.Code == audit.CaseCodeRetired || c.Code == audit.CaseCodeDecisionStale:
 		a.State = contract.StateDrifted
 	default:

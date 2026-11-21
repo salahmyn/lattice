@@ -554,7 +554,8 @@ func TestPacketDiffNamesCaseEdits(t *testing.T) {
 	env := f.env("")
 	held := confirm.CasesFor(env.Report.Rows, []string{"f:INV-1", "f:INV-2"})
 	env.Cache = &confirm.File{Records: []confirm.Record{{ID: "brd.x", Version: 1, Action: confirm.ActionApprove,
-		State: confirm.StateConfirmed, ApproverLogin: "ana", PR: 7, MergedSHA: f.git("rev-parse", "HEAD"), Cases: held}}}
+		State: confirm.StateConfirmed, ApproverLogin: "ana", PR: 7, MergedSHA: f.git("rev-parse", "HEAD"), Cases: held,
+		CasesCheck: confirm.CasesVerified}}}
 	if p := env.Packet(*f.brd("brd.x"), ""); p.Friction != confirm.FrictionFull || len(p.Diff) != 1 || p.Diff[0] != "initial" {
 		t.Errorf("unchanged cases add nothing: %v %s", p.Diff, p.Friction)
 	}

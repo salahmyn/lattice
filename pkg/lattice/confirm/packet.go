@@ -274,10 +274,10 @@ func StructuralDiff(prev *schema.BRD, cur schema.BRD) []string {
 // one, else the confirmed decision of the latest earlier version. found is
 // false when no such decision exists (or the current version was returned
 // or overturned); recorded is false when it was prepared before decisions
-// recorded their cases.
-func LastCases(cache *File, b schema.BRD, promise string) (stamps []schema.CaseStamp, recorded, found bool) {
+// recorded their cases. check is the record's CasesCheck.
+func LastCases(cache *File, b schema.BRD, promise string) (stamps []schema.CaseStamp, check string, recorded, found bool) {
 	if cache == nil || cache.SetAside() != "" {
-		return nil, false, false
+		return nil, "", false, false
 	}
 	var current, stale, older *Record
 	for i := range cache.Records {
@@ -286,7 +286,7 @@ func LastCases(cache *File, b schema.BRD, promise string) (stamps []schema.CaseS
 			continue
 		}
 		if r.Version == b.Version && r.State == StateConfirmed && (r.Action == ActionReturn || r.Action == ActionOverturn) {
-			return nil, false, false
+			return nil, "", false, false
 		}
 		covers := r.Action == ActionApprove || r.Action == ActionAck || (r.Action == ActionPromiseConfirm && containsString(r.Rows, promise))
 		switch {
@@ -307,10 +307,10 @@ func LastCases(cache *File, b schema.BRD, promise string) (stamps []schema.CaseS
 		rec = older
 	}
 	if rec == nil {
-		return nil, false, false
+		return nil, "", false, false
 	}
 	stamps, recorded = schema.CasesOf(rec.Cases, promise)
-	return stamps, recorded, true
+	return stamps, rec.CasesCheck, recorded, true
 }
 
 func containsString(list []string, s string) bool {
@@ -327,8 +327,11 @@ func containsString(list []string, s string) bool {
 // f:INV-1 edited: kind edge->error", "case 1c of f:INV-1 added", "case 1a of
 // f:INV-1 retired", "case 1d of f:INV-1 removed", or, for a promise with
 // cases whose confirmation recorded none, "cases of f:INV-1 not recorded at
-// the last confirmation". A promise never confirmed adds nothing: its
-// review is a first one. Any line here is a structural change.
+// the last confirmation". A case list that contradicts its packet reads
+// "... do not match its packet", and one never bound to its packet that
+// shows no change reads "... not checked against its packet", so a list
+// edited by hand never turns a review light. A promise never confirmed adds
+// nothing: its review is a first one. Any line here is a structural change.
 // @enforces confirm:INV-21
 func CaseDiff(cache *File, b schema.BRD, rows []audit.Row) []string {
 	by := map[string]audit.Row{}
@@ -337,7 +340,7 @@ func CaseDiff(cache *File, b schema.BRD, rows []audit.Row) []string {
 	}
 	var out []string
 	for _, ref := range PromisesOf(b) {
-		stamps, recorded, found := LastCases(cache, b, ref)
+		stamps, check, recorded, found := LastCases(cache, b, ref)
 		cur := by[ref].Cases
 		inv := ref[strings.LastIndex(ref, ":")+1:]
 		switch {
@@ -348,7 +351,11 @@ func CaseDiff(cache *File, b schema.BRD, rows []audit.Row) []string {
 				out = append(out, "cases of "+ref+" not recorded at the last confirmation")
 			}
 			continue
+		case check == CasesMismatch:
+			out = append(out, "cases of "+ref+" recorded at the last confirmation do not match its packet")
+			continue
 		}
+		before := len(out)
 		label := func(id string) string { return "case " + schema.CaseLabel(inv, id) + " of " + ref }
 		held := map[string]schema.CaseStamp{}
 		for _, s := range stamps {
@@ -375,6 +382,9 @@ func CaseDiff(cache *File, b schema.BRD, rows []audit.Row) []string {
 			if !now[s.ID] {
 				out = append(out, label(s.ID)+" removed")
 			}
+		}
+		if len(out) == before && check != CasesVerified && len(cur) > 0 {
+			out = append(out, "cases of "+ref+" at the last confirmation were not checked against its packet")
 		}
 	}
 	sort.Strings(out)

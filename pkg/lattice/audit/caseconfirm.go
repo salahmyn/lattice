@@ -63,7 +63,9 @@ func caseBasis(b schema.BRD, promise string, cd *ConfirmData) (rec *ConfirmRecor
 // confirmation; a newly retired case reads retired after confirmation; a
 // decision prepared before decisions recorded their cases leaves every case
 // unconfirmed with that reason; and no confirmation at all leaves them
-// unconfirmed. The least confirmed BRD decides. The promise's own confirmed
+// unconfirmed. A case list lattice confirm did not bind to the confirmed
+// packet confirms nothing: a list that contradicts it reads stamp mismatch,
+// one never checked reads stamp unverified. The least confirmed BRD decides. The promise's own confirmed
 // signal is untouched: it still reads the packet as a whole.
 // @enforces confirm:INV-20
 func caseConfirmations(rows []CaseRow, crit []criterionRef, promise string, cd *ConfirmData) {
@@ -99,6 +101,12 @@ func caseConfirmations(rows []CaseRow, crit []criterionRef, promise string, cd *
 			case !recorded:
 				cc = CaseConfirmation{State: CaseUnconfirmed, Code: CaseCodeNotRecorded,
 					Reason: c.brd.ID + " v" + strconv.Itoa(rec.Version) + " was confirmed (" + rec.Method() + ") before decisions recorded their cases: prepare and confirm it again to record them"}
+			case rec.CasesCheck == "mismatch":
+				cc = CaseConfirmation{State: CaseUnconfirmed, Code: CaseCodeStampMismatch,
+					Reason: "the case list of " + c.brd.ID + " v" + strconv.Itoa(rec.Version) + "'s decision does not match the cases its packet hashed: it was edited after the packet was pinned; prepare and confirm again"}
+			case current && rec.CasesCheck != "verified":
+				cc = CaseConfirmation{State: CaseUnconfirmed, Code: CaseCodeStampUnverified,
+					Reason: "the case list of " + c.brd.ID + " v" + strconv.Itoa(rec.Version) + "'s decision was not checked against its packet (run `lattice confirm`)"}
 			default:
 				cc = caseAgainst(rows[i], stamps, c.brd, rec, current, local)
 			}

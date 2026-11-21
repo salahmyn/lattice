@@ -69,6 +69,12 @@ const (
 	// recorded it, but that decision is stale (its packet changed) or for an
 	// earlier version of the BRD, so it confirms nothing now.
 	CaseCodeDecisionStale = "CASE_DECISION_STALE"
+	// CaseCodeStampMismatch: the decision's case list does not match the
+	// cases its packet hashed (it was edited after the packet was pinned).
+	CaseCodeStampMismatch = "CASE_STAMP_MISMATCH"
+	// CaseCodeStampUnverified: the decision's case list was not checked
+	// against its packet (lattice confirm checks it).
+	CaseCodeStampUnverified = "CASE_STAMP_UNVERIFIED"
 	// CaseCodeNotRecorded: the confirming decision was prepared before
 	// decisions recorded their cases.
 	CaseCodeNotRecorded = "CASE_NOT_RECORDED"

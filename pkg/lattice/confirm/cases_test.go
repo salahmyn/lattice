@@ -161,7 +161,7 @@ func TestStructuralDiffNamesCaseEdits(t *testing.T) {
 		return schema.NewCaseStamp(id, kind, st, "", false)
 	}
 	rec := func(state string, version int, cases []schema.PromiseCases) Record {
-		return Record{ID: "brd.x", Version: version, Action: ActionApprove, State: state, ApproverLogin: "ana", PR: 7, Cases: cases}
+		return Record{ID: "brd.x", Version: version, Action: ActionApprove, State: state, ApproverLogin: "ana", PR: 7, Cases: cases, CasesCheck: CasesVerified}
 	}
 	held := []schema.PromiseCases{{Promise: "f:INV-1", Cases: []schema.CaseStamp{
 		stamp("a", schema.CaseHappy, "A 100.00 withdrawal pays at most 5.00."),
@@ -212,6 +212,18 @@ func TestStructuralDiffNamesCaseEdits(t *testing.T) {
 	if got := CaseDiff(&File{Records: []Record{rec(StateConfirmed, 1, held)}}, b, same); len(got) != 0 {
 		t.Errorf("unchanged: %v", got)
 	}
+	// A case list that contradicts its packet, or one never bound to it,
+	// is never read as unchanged: the review stays full.
+	mismatch, unchecked := rec(StateConfirmed, 1, held), rec(StateConfirmed, 1, held)
+	mismatch.CasesCheck, unchecked.CasesCheck = CasesMismatch, ""
+	if got := CaseDiff(&File{Records: []Record{mismatch}}, b, same); len(got) != 2 ||
+		got[0] != "cases of f:INV-1 recorded at the last confirmation do not match its packet" || FrictionOf(WithCaseDiff([]string{"none"}, got)) != FrictionFull {
+		t.Errorf("mismatch: %v", got)
+	}
+	if got := CaseDiff(&File{Records: []Record{unchecked}}, b, same); len(got) != 1 ||
+		got[0] != "cases of f:INV-1 at the last confirmation were not checked against its packet" {
+		t.Errorf("unchecked: %v", got)
+	}
 	// A confirmation that recorded no cases says so; none at all adds nothing.
 	if got := CaseDiff(&File{Records: []Record{rec(StateConfirmed, 2, nil)}}, b, rows); len(got) != 2 ||
 		got[0] != "cases of f:INV-1 not recorded at the last confirmation" {
@@ -220,6 +232,88 @@ func TestStructuralDiffNamesCaseEdits(t *testing.T) {
 	for name, c := range map[string]*File{"no cache": nil, "no record": {}, "pending": {Records: []Record{rec(StatePending, 2, held)}}} {
 		if got := CaseDiff(c, b, rows); len(got) != 0 {
 			t.Errorf("%s: %v", name, got)
+		}
+	}
+}
+
+// A decision's case list counts only when lattice confirm binds it to the
+// packet the decision pinned. Its cases are hashed in the packet, so while
+// the packet still matches, the cases now are the confirmed ones and the
+// list must equal them. Here the decision's cases: list is edited by hand
+// after confirmation (the packet and the cases are untouched): the record
+// reads mismatch, and the audit reads the edited case CASE_STAMP_MISMATCH,
+// never confirmed. The honest list is verified, a verified list is carried
+// from an intact cache once the packet moves on, and nothing else is.
+// @verifies confirm:INV-20#f
+func TestHandEditedCaseListIsNotConfirmed(t *testing.T) {
+	cases := []audit.CaseRow{{ID: "a", Kind: "happy", Statement: "A 100.00 withdrawal pays at most 5.00."},
+		{ID: "b", Kind: "edge", Statement: "A 0.01 withdrawal pays no fee."}}
+	rows := []audit.Row{{Promise: "f:INV-1", Cases: cases}}
+	current := func(refs []string) []schema.PromiseCases { return CasesFor(rows, refs) }
+
+	honest := decision(ActionApprove)
+	honest.Rows = []Row{{Promise: "f:INV-1"}}
+	honest.Cases = CasesFor(rows, []string{"f:INV-1"})
+	// After confirmation, someone edits the decision file to claim case b
+	// was confirmed as an error case (say, to cover a later edit).
+	forged := honest
+	forged.Cases = []schema.PromiseCases{{Promise: "f:INV-1", Cases: append([]schema.CaseStamp(nil), honest.Cases[0].Cases...)}}
+	forged.Cases[0].Cases[1] = schema.NewCaseStamp("b", schema.CaseError, "A 0.01 withdrawal pays no fee.", "", false)
+	// Or adds an entry for a promise the decision does not cover.
+	extra := honest
+	extra.Cases = append(append([]schema.PromiseCases(nil), honest.Cases...), schema.PromiseCases{Promise: "g:INV-9", Cases: []schema.CaseStamp{}})
+
+	compute := func(d Decision, matches bool, cache *File) Record {
+		plat := &fake{pr: merged("dev", "h2"), reviews: []Review{approval("ana", "h2")}}
+		in := Input{Commit: "head1", Branch: "main", Found: foundOne(d), Platform: plat, Now: fixedNow, CurrentCases: current, Cache: cache}
+		in.Packet = func(Decision) (string, bool) {
+			if matches {
+				return d.PacketHash, true
+			}
+			return "sha256:other", true
+		}
+		return Compute(context.Background(), in).Records[0]
+	}
+	if r := compute(honest, true, nil); r.CasesCheck != CasesVerified {
+		t.Errorf("honest list: %q", r.CasesCheck)
+	}
+	for name, d := range map[string]Decision{"edited stamp": forged, "extra promise": extra} {
+		if r := compute(d, true, nil); r.State != StateConfirmed || r.CasesCheck != CasesMismatch {
+			t.Errorf("%s: state %s, check %q", name, r.State, r.CasesCheck)
+		}
+	}
+	if r := compute(honest, false, nil); r.State != StateStale || r.CasesCheck != "" {
+		t.Errorf("a stale packet cannot vouch for the list: %s %q", r.State, r.CasesCheck)
+	}
+	verified := compute(honest, true, nil)
+	cache := Seal(File{Contract: Schema, Commit: "head0", Records: []Record{verified}}, Stamp{CIRun: "local"})
+	if r := compute(honest, false, &cache); r.CasesCheck != CasesVerified {
+		t.Errorf("a list an intact cache verified stays verified: %q", r.CasesCheck)
+	}
+	if r := compute(forged, false, &cache); r.CasesCheck != "" {
+		t.Errorf("a list the cache did not verify is unchecked: %q", r.CasesCheck)
+	}
+
+	// The audit reads the record from confirm.json and does not confirm the
+	// edited case, while the promise still reads human.
+	body, _ := json.Marshal(compute(forged, true, nil))
+	var rec audit.ConfirmRecord
+	if err := json.Unmarshal(body, &rec); err != nil {
+		t.Fatal(err)
+	}
+	rec.ID = "brd.x"
+	kg := schema.KnowledgeGraph{GeneratedFromCommit: "head1",
+		Features: []schema.Manifest{{ID: "f", Invariants: []schema.Invariant{{ID: "INV-1", Statement: "s", Cases: []schema.InvariantCase{
+			{ID: "a", Kind: schema.CaseHappy, Statement: cases[0].Statement}, {ID: "b", Kind: schema.CaseError, Statement: cases[1].Statement}}}}}},
+		BRDs: []schema.BRD{{ID: "brd.x", Version: 2, SuccessCriteria: []schema.BRDCriterion{{ID: "SC-1", MapsToInvariant: schema.InvariantRefs{"f:INV-1"}}}}},
+	}
+	row := audit.Compute(audit.Sources{KG: kg, Confirm: &audit.ConfirmData{Records: []audit.ConfirmRecord{rec}}}).Rows[0]
+	if row.Signals.Confirmed.Value != audit.ConfirmedHuman {
+		t.Errorf("promise = %s", row.Signals.Confirmed.Value)
+	}
+	for _, c := range row.Cases {
+		if c.Confirmation.State == audit.CaseConfirmed || c.Confirmation.Code != audit.CaseCodeStampMismatch {
+			t.Errorf("%s = %+v", c.Label, c.Confirmation)
 		}
 	}
 }

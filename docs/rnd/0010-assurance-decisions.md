@@ -98,7 +98,9 @@ names a paragraph, not a claim.
   statement, enforcer, retired, hash); the audit compares them with the cases now
   and gives each `confirmed` (only under a current decision for the current
   version) or `unconfirmed` with a code (added, edited, retired after
-  confirmation; decision stale; not recorded; never confirmed). The promise's own signal is
+  confirmation; decision stale; stamp mismatch or unverified; not recorded;
+  never confirmed). `lattice confirm` binds the list to the pinned packet,
+  which already hashes the cases, so a hand-edited list never confirms. The promise's own signal is
   unchanged (confirm:INV-20).
 - Coverage per case is computed by the kernel, never typed:
   - `covered`: a tagged verifier passed, and breaking the enforcer killed it;

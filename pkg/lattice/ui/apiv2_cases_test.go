@@ -71,6 +71,8 @@ func TestPromiseCaseConfirmation(t *testing.T) {
 		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeEdited, Reason: "edited"}, contract.StateDrifted},
 		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeRetired, Reason: "retired"}, contract.StateDrifted},
 		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeDecisionStale, Reason: "stale"}, contract.StateDrifted},
+		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeStampMismatch, Reason: "edited list"}, contract.StateFail},
+		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeStampUnverified, Reason: "unchecked"}, contract.StateUnknown},
 		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeAdded, Reason: "added"}, contract.StateUnknown},
 		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeNotRecorded, Reason: "old"}, contract.StateUnknown},
 		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeNeverConfirmed, Reason: "none"}, contract.StateUnknown},

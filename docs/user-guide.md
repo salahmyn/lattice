@@ -1480,7 +1480,12 @@ can mark a case confirmed or covered.
 Each case also has its own confirmation state. A decision that `lattice prepare` writes
 records the cases of each of its promises (`cases:` in the decision file: id, kind,
 statement, enforcer, retired, and a hash of kind, statement and enforcer), and `lattice
-confirm` carries them into `confirm.json`. The audit compares each case with the one the
+confirm` carries them into `confirm.json`. The list is bound to what was confirmed: the
+packet hash already covers every case, so while a decision's packet still matches,
+`lattice confirm` requires the list to equal the cases now and records `cases_check:
+verified` (or `mismatch`); an intact earlier `confirm.json` that verified the same list
+carries the check once the packet moves on. The decision format and the packet hash are
+unchanged, so no confirmed decision goes stale. The audit compares each case with the one the
 confirming decision recorded (the current version's confirmed decision, else its stale one,
 else the latest earlier version's):
 
@@ -1491,13 +1496,15 @@ else the latest earlier version's):
 | `unconfirmed` | `CASE_ADDED_AFTER_CONFIRMATION` | the decision did not hold the case |
 | `unconfirmed` | `CASE_EDITED_AFTER_CONFIRMATION` | its kind, statement or enforcer changed, or it was restored; the reason names what, e.g. `kind edge->error` |
 | `unconfirmed` | `CASE_RETIRED_AFTER_CONFIRMATION` | it was retired since |
+| `unconfirmed` | `CASE_STAMP_MISMATCH` | the decision's `cases:` list does not match the cases its packet hashed (it was edited after the packet was pinned) |
+| `unconfirmed` | `CASE_STAMP_UNVERIFIED` | the list was not checked against its packet; `lattice confirm` checks it |
 | `unconfirmed` | `CASE_NOT_RECORDED` | the decision was prepared before decisions recorded their cases; prepare and confirm again |
 | `unconfirmed` | `CASE_NEVER_CONFIRMED` | no human confirmation covers the promise |
 
 The state is on each case of the audit row (`confirmation: {state, code, reason}`), under
 each case in `lattice feature show`, and in `/api/v2` `case_rows` (`confirmation`: `pass`
 only for a confirmed case, `drifted` for an edited or retired one or one under a stale
-decision, `unknown` otherwise).
+decision, `fail` for a stamp mismatch, `unknown` otherwise).
 The `/audit` page of `lattice serve` lists each row's cases with their kind, coverage and
 confirmation; only `covered` and `confirmed` are drawn in the positive colour. It
 never changes the promise's `confirmed` signal: any case change still makes the decision
@@ -1747,7 +1754,9 @@ left out, so a better test run never voids a confirmation.
 The review packet's structural diff (`/api/v2/brds/{id}`, `packet.diff.structural`) also
 names each acceptance case changed since the last confirmation that recorded it:
 `case 1b of wallet.fees:INV-1 edited: kind edge->error`, `case 1c of … added`, `… retired`,
-`… removed`, or `cases of … not recorded at the last confirmation`. Any edit to a promise,
+`… removed`, or `cases of … not recorded at the last confirmation` (a list that does not
+match its packet, or was never checked against it, is named too, so it never makes a
+review light). Any edit to a promise,
 criterion or case is structural, so `packet.diff.friction` reads `full` (type the version,
 view the key sections); it reads `light` only when the diff is `none`. The case lines are
 not hashed through the diff (the cases are hashed with their promises), so a decision

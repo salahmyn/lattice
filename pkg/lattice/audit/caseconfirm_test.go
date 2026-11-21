@@ -31,9 +31,15 @@ func caseRowsWith(t *testing.T, cd *ConfirmData, change func(kg *schema.Knowledg
 	return rowOf(t, Compute(Sources{KG: kg, Results: pass("f.TestHundred"), Confirm: cd}), "f:INV-1")
 }
 
+// approvedWith is a confirm.json with one approval of b v2 whose case list
+// lattice confirm verified against the packet.
 func approvedWith(cases []schema.PromiseCases, state string) *ConfirmData {
+	check := ""
+	if cases != nil {
+		check = "verified"
+	}
 	return &ConfirmData{Records: []ConfirmRecord{{ID: "b", Version: 2, Action: "brd.approve", State: state,
-		ApproverLogin: "ana", PR: 7, Cases: cases}}}
+		ApproverLogin: "ana", PR: 7, Cases: cases, CasesCheck: check}}}
 }
 
 // Unchanged cases under a current, confirmed decision stay confirmed, with
@@ -166,5 +172,24 @@ func TestCaseOldDecisionReadsUnconfirmed(t *testing.T) {
 	body, _ := json.Marshal(r.Cases[0])
 	if !strings.Contains(string(body), `"confirmation":{"state":"unconfirmed","code":"CASE_NOT_RECORDED"`) {
 		t.Errorf("json = %s", body)
+	}
+}
+
+// A case list lattice confirm found to contradict the confirmed packet, or
+// never checked, confirms no case, even one that matches it.
+// @verifies confirm:INV-20#f
+func TestCaseStampMustBeBoundToThePacket(t *testing.T) {
+	for check, code := range map[string]string{"mismatch": CaseCodeStampMismatch, "": CaseCodeStampUnverified} {
+		cd := approvedWith(stampsOf(nil), "confirmed")
+		cd.Records[0].CasesCheck = check
+		r := caseRowsWith(t, cd, nil)
+		if r.Signals.Confirmed.Value != ConfirmedHuman {
+			t.Errorf("%q: the promise signal keeps its meaning: %s", check, r.Signals.Confirmed.Value)
+		}
+		for _, c := range r.Cases {
+			if c.Confirmation.State != CaseUnconfirmed || c.Confirmation.Code != code {
+				t.Errorf("%q: %s = %+v", check, c.Label, c.Confirmation)
+			}
+		}
 	}
 }
