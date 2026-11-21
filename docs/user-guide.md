@@ -535,9 +535,42 @@ create or replace function public.refund(p_payment uuid) returns void ...;
 create policy "Owners read own refunds" on public.refunds for select using (owner = auth.uid());
 ```
 
-Symbols are `sql.<schema>.<function>`, `sql.policy.<schema>.<table>.<name>`
-and `sql.trigger.<schema>.<table>.<name>`. A feature-qualified `@enforces`
+Symbols are `sql.<schema>.<function>`, `sql.policy.<schema>.<table>.<name>`,
+`sql.trigger.<schema>.<table>.<name>` and, for a `CHECK` constraint,
+`sql.check.<schema>.<table>.<name>`. A feature-qualified `@enforces`
 attributes the symbol to that feature; `@feature` overrides it.
+
+**CHECK constraints** are enforcers like a policy or a trigger: the database
+applies them to every row written. A **named** constraint is a symbol, in either
+form that names it:
+
+```sql
+-- @enforces orders:INV-3
+alter table public.orders add constraint paid_has_date
+  check (status <> 'paid' or paid_at is not null);
+
+create table public.orders (
+  total numeric not null,
+  -- @enforces orders:INV-4
+  constraint total_not_negative check (total >= 0)
+);
+```
+
+The tag is the comment directly above the line the constraint starts on, so one
+`create table` can carry several, each with its own. For an `alter table` with a
+single constraint, a tag above the statement binds it, as it binds a function or
+a policy. A `CHECK` with no name (`total numeric check (total >= 0)`, a table
+`check (...)`, `add check (...)`) is **not** a symbol, because PostgreSQL makes up
+its name and nothing stable names it; a tag above one attaches to nothing and
+raises `ANNOTATION_ORPHANED`. Constraints are in the `data` layer, from the
+adapter, and a table read through `.from('orders')` reaches them as it reaches
+its policies. A later `alter table … drop constraint <name>` removes the symbol,
+and adding the name again (even in the same statement, `drop constraint c, add
+constraint c check (…)`) makes the last statement the definition, with the tags it
+carries. `rename constraint a to b` renames the symbol, and `validate constraint`
+is recorded on it as a later statement that touches the object. Only these
+forms are read: a constraint added in an `add column … constraint c check (…)`,
+and a table renamed after the constraint was added, are not.
 
 **Migrations are applied in filename order.**
 - The last `create or replace` is the effective definition, and a
@@ -1446,6 +1479,7 @@ insertion that keeps the statement valid SQL:
 | Enforcer | Break |
 |---|---|
 | `CREATE POLICY … USING (expr) WITH CHECK (expr)` | each clause becomes `(true OR (expr))`, so the policy admits every row |
+| a named `CHECK (expr)` (in `CREATE TABLE`, or `ALTER TABLE … ADD CONSTRAINT`) | `CHECK (true OR (expr))`, so the constraint admits every row |
 | `CREATE [CONSTRAINT] TRIGGER …` with no `WHEN` | ` WHEN (false)` before `EXECUTE FUNCTION` (or `PROCEDURE`) |
 | a trigger with `WHEN (cond)` | `WHEN (false AND (cond))` |
 | a `LANGUAGE plpgsql` function or procedure | an early return right after the top-level `BEGIN` (after any `DECLARE`), inside the dollar-quoted body |
@@ -1608,6 +1642,20 @@ break:
   example `{patched_sql} not available for this break: altered later in
   db/migrations/005_roles.sql:1`. Use the full reset for those; it replays the
   migrations in order and never needs this rule.
+
+  For a `CHECK` added by `ALTER TABLE … ADD CONSTRAINT`, the swap is the table's
+  `DROP CONSTRAINT IF EXISTS` and the `ADD CONSTRAINT` clause alone (with what
+  follows it in its action, such as `NOT VALID`), broken and as written:
+
+  ```sql
+  alter table public.orders DROP CONSTRAINT IF EXISTS paid_has_date;
+  alter table public.orders add constraint paid_has_date check (true OR (status <> 'paid' or paid_at is not null));
+  ```
+
+  A `CHECK` inside `CREATE TABLE` cannot be re-applied on its own: its swap is not
+  available (`{patched_sql} not available for this break: the CHECK is inside CREATE
+  TABLE, which cannot be re-applied on its own`) and the full reset runs it. A
+  constraint dropped and added again is broken where the last statement adds it.
 
   **Restoring the original.** A one-line runner is easier to get right than the
   script above: apply the broken object, run the tests, and let

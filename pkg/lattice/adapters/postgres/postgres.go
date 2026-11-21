@@ -8,6 +8,8 @@
 //	create [or replace] function|procedure <schema>.<name>   sql.<schema>.<name>
 //	create policy <name> on <schema>.<table>                 sql.policy.<schema>.<table>.<name>
 //	create [or replace] trigger <name> ... on <schema>.<table> sql.trigger.<schema>.<table>.<name>
+//	constraint <name> check (...) of a create table or an
+//	  alter table ... add constraint                          sql.check.<schema>.<table>.<name>
 //
 // Tags are SQL comments directly above the statement:
 //
@@ -353,6 +355,7 @@ func parseDefinitions(mod *ir.Module, stmts []statement) {
 			markDrop(mod, triggerFQN(s, t, unquote(m[1])), st.line)
 		}
 		if sym == nil {
+			used := parseConstraints(mod, st, anns)
 			if n, ok := cronNode(mod, st); ok {
 				mod.Nodes = append(mod.Nodes, n)
 			} else if refs := appliedRefs(st); len(refs) > 0 {
@@ -361,7 +364,9 @@ func parseDefinitions(mod *ir.Module, stmts []statement) {
 				}
 				applied = append(applied, refs...)
 			}
-			orphan(mod, anns, st)
+			if !used {
+				orphan(mod, anns, st)
+			}
 			continue
 		}
 		// Policies and triggers are guards like functions: each rejects or
@@ -537,8 +542,21 @@ func orphan(mod *ir.Module, anns []ir.Annotation, st statement) {
 	}
 	mod.Diagnostics = append(mod.Diagnostics, ir.Diagnostic{
 		Line: anns[0].Line, Code: schema.CodeAnnotationOrphaned,
-		Message: fmt.Sprintf("%s attaches to no symbol: it is followed by %q, which is not a function, policy or trigger",
+		Message: fmt.Sprintf("%s attaches to no symbol: it is followed by %q, which is not a function, policy, trigger or named CHECK constraint",
 			strings.Join(kinds, ", "), strings.Join(head, " ")),
+	})
+}
+
+// orphanAt is orphan for a tag inside a statement: want says what it could
+// have bound to.
+func orphanAt(mod *ir.Module, anns []ir.Annotation, want string) {
+	kinds := make([]string, 0, len(anns))
+	for _, a := range anns {
+		kinds = append(kinds, "@"+annotationTags[a.Kind])
+	}
+	mod.Diagnostics = append(mod.Diagnostics, ir.Diagnostic{
+		Line: anns[0].Line, Code: schema.CodeAnnotationOrphaned,
+		Message: fmt.Sprintf("%s attaches to no symbol: it would have to sit directly above %s", strings.Join(kinds, ", "), want),
 	})
 }
 

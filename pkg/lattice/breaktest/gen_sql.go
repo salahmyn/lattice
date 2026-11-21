@@ -328,6 +328,13 @@ func (s sqlStmt) header() (sqlEnforcer, string, int, bool) {
 // this cannot place exactly is a *NoBreak.
 // @enforces breaktest:INV-1
 func generateSQL(src []byte, sym Symbol) (Break, error) {
+	if isCheckSymbol(sym) {
+		c, err := locateCheck(src, sym)
+		if err != nil {
+			return Break{}, err
+		}
+		return c.checkBreak()
+	}
 	st, kind, next, err := locateSQL(src, sym)
 	if err != nil {
 		return Break{}, err

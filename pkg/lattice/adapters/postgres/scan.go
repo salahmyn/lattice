@@ -19,6 +19,10 @@ type statement struct {
 	line     int
 	endLine  int
 	comments []comment
+	// inner are the comments inside the statement that stand alone on their
+	// line(s), where a tag above a clause (one constraint of a CREATE TABLE)
+	// can sit. Their text is not in the statement's text.
+	inner []comment
 }
 
 // scan splits SQL source into top-level statements. It understands line and
@@ -27,10 +31,11 @@ type statement struct {
 // semicolon inside a function body never ends the statement.
 func scan(src string) []statement {
 	var out []statement
-	var pending []comment
+	var pending, inner []comment
 	var cur strings.Builder
 	start, ln := 0, 1
 	inStmt := false
+	lineHasToken := false // a token of the statement is on the current line
 
 	begin := func() {
 		if !inStmt {
@@ -40,11 +45,11 @@ func scan(src string) []statement {
 	}
 	flush := func(endLine int) {
 		if inStmt {
-			out = append(out, statement{text: strings.TrimSpace(cur.String()), line: start, endLine: endLine, comments: pending})
-			pending = nil
+			out = append(out, statement{text: strings.TrimSpace(cur.String()), line: start, endLine: endLine, comments: pending, inner: inner})
+			pending, inner = nil, nil
 		}
 		cur.Reset()
-		inStmt = false
+		inStmt, lineHasToken = false, false
 	}
 
 	n := len(src)
@@ -55,6 +60,7 @@ func scan(src string) []statement {
 			if inStmt {
 				cur.WriteByte(c)
 			}
+			lineHasToken = false
 			ln++
 			i++
 		case c == '-' && i+1 < n && src[i+1] == '-':
@@ -64,6 +70,8 @@ func scan(src string) []statement {
 			}
 			if !inStmt {
 				pending = append(pending, comment{text: src[i : i+j], line: ln, endLine: ln})
+			} else if !lineHasToken {
+				inner = append(inner, comment{text: src[i : i+j], line: ln, endLine: ln})
 			}
 			i += j
 		case c == '/' && i+1 < n && src[i+1] == '*':
@@ -84,7 +92,14 @@ func scan(src string) []statement {
 				}
 			}
 			if inStmt {
-				cur.WriteString(" ")
+				// The newlines stay, so a line in the text is a line of the file.
+				cur.WriteString(" " + strings.Repeat("\n", ln-startLn))
+				if !lineHasToken {
+					inner = append(inner, comment{text: src[i:j], line: startLn, endLine: ln})
+				}
+				if ln > startLn {
+					lineHasToken = false
+				}
 			} else {
 				pending = append(pending, comment{text: src[i:j], line: startLn, endLine: ln})
 			}
@@ -102,6 +117,7 @@ func scan(src string) []statement {
 			i++
 		default:
 			begin()
+			lineHasToken = true
 			j := skipToken(src, i, &ln)
 			cur.WriteString(src[i:j])
 			i = j

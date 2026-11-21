@@ -71,6 +71,9 @@ func anyUsesSQLFiles(groups []group) bool {
 // ok is false when the statement cannot be isolated.
 // @enforces breaktest:INV-15
 func swapStatements(src []byte, brk Break, sym Symbol) (patched, original string, ok bool) {
+	if isCheckSymbol(sym) {
+		return swapCheck(src, brk, sym)
+	}
 	st, kind, next, err := locateSQL(src, sym)
 	if err != nil || len(st.toks) == 0 {
 		return "", "", false
