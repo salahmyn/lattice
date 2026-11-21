@@ -202,7 +202,11 @@ func (w *tsRefWalker) queueAdd(obj, at *sitter.Node) {
 			w.emit(at, ir.Ref{Name: key, Kind: ir.RefPublish})
 		}
 	case w.isQueueCtor(obj):
-		w.emit(at, ir.Ref{Name: w.constructedChannel(obj, ir.ChannelQueue), Kind: ir.RefPublish})
+		var lit *sitter.Node
+		if args := obj.ChildByFieldName("arguments"); args != nil && args.NamedChildCount() > 0 {
+			lit = args.NamedChild(0)
+		}
+		w.emit(at, withLit(ir.Ref{Name: w.constructedChannel(obj, ir.ChannelQueue), Kind: ir.RefPublish}, lit))
 	}
 }
 
@@ -224,12 +228,16 @@ func (w *tsRefWalker) pgmqRPC(obj, at, args *sitter.Node) {
 		return
 	}
 	key := ""
+	var lit *sitter.Node
 	if args.NamedChildCount() > 1 && args.NamedChild(1).Kind() == "object" {
 		if val, state := w.property(args.NamedChild(1), "queue_name"); state == propFound {
 			key = w.keyOf(ir.ChannelQueue, val)
+			if kind == ir.RefPublish {
+				lit = val
+			}
 		}
 	}
-	w.emit(at, ir.Ref{Name: key, Kind: kind})
+	w.emit(at, withLit(ir.Ref{Name: key, Kind: kind}, lit))
 }
 
 // workerRef records new Worker('name', handler) of bullmq: the handler is the
@@ -297,6 +305,9 @@ func (w *tsRefWalker) wrapperRef(fn, args *sitter.Node) {
 			arg = args.NamedChild(uint(wr.Arg))
 		}
 		r := ir.Ref{Name: w.keyOf(wr.Kind, arg), Kind: ir.RefPublish}
+		if !wr.Consume {
+			r = withLit(r, arg)
+		}
 		if wr.Consume {
 			r.Kind = ir.RefConsume
 			if wr.HandlerArg >= 0 && wr.HandlerArg < int(args.NamedChildCount()) {

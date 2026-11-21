@@ -132,7 +132,18 @@ type Ref struct {
 	// it in the owner's scope. Empty when the handler is not a named
 	// function, and then the owner of the reference is the consumer.
 	Handler string `json:"handler,omitempty"`
+	// LitStart and LitEnd are the byte offsets, in the file as parsed, of
+	// the string literal (quotes included) that carries a request, database
+	// or channel name: the out end of an http, rpc, table or publish
+	// reference. Both are 0 when the name is not a literal in source or the
+	// adapter does not record where it is. A consumer that alters the key
+	// edits exactly this span and nothing else.
+	LitStart int `json:"lit_start,omitempty"`
+	LitEnd   int `json:"lit_end,omitempty"`
 }
+
+// HasLiteral reports whether the reference records where its literal is.
+func (r Ref) HasLiteral() bool { return r.LitEnd > r.LitStart && r.LitStart >= 0 }
 
 // Import is one import (or re-export) of a module.
 type Import struct {

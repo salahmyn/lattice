@@ -145,6 +145,12 @@ func (e httpEnds) match(key string) []string {
 	return out
 }
 
+// HTTPServes reports whether a route the workspace serves answers the key
+// "METHOD /path": the join a request resolves by. A consumer that alters a
+// request's path asks it whether the altered request would still be served
+// (a path parameter matches any literal segment).
+func (g *Graph) HTTPServes(key string) bool { return len(g.http.match(key)) > 0 }
+
 // resolveHTTP joins one request to the route that serves it, by key. Only a
 // path-only URL, an edge function call and an absolute URL on a declared
 // origin take part: an absolute URL on any other origin is external, makes

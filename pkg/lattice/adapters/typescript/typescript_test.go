@@ -742,3 +742,57 @@ func TestAxiosCallIsNotARoute(t *testing.T) {
 		t.Errorf("surfaces = %+v, want only the app.get on line 3", mod.Surfaces)
 	}
 }
+
+// A reference keyed by a literal records where the literal is: the byte span,
+// quotes included, of the string that carries the name. A computed URL, a
+// reference with no name and a literal that is not the name records none.
+// @verifies reachability:INV-11
+func TestRecordsLiteralSpans(t *testing.T) {
+	src := "export function calls(base: string, db: any) {\n" +
+		"  fetch('/api/orders');\n" +
+		"  fetch(`/api/plain`, { method: 'PUT' });\n" +
+		"  axios.get(\"/api/axios\");\n" +
+		"  axios({ url: '/api/cfg', method: 'patch' });\n" +
+		"  supabase.functions.invoke('charge');\n" +
+		"  db.rpc('refund_order', { id: 1 });\n" +
+		"  db.from('orders').select();\n" +
+		"  fetch(`${base}/computed`);\n" +
+		"  db.rpc(name);\n" +
+		"}\n"
+	mod, err := New().Parse(context.Background(), "web/calls.ts", []byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, s := range mod.Symbols {
+		for _, r := range s.Refs {
+			switch r.Kind {
+			case "http", "rpc", "table":
+				lit := ""
+				if r.HasLiteral() {
+					lit = src[r.LitStart:r.LitEnd]
+				}
+				got = append(got, r.Kind+"|"+r.Name+"|"+lit)
+			}
+		}
+	}
+	want := []string{
+		"http|GET /api/orders|'/api/orders'",
+		"http|PUT /api/plain|`/api/plain`",
+		"http|GET /api/axios|\"/api/axios\"",
+		"http|PATCH /api/cfg|'/api/cfg'",
+		"http|POST /functions/v1/charge|'charge'",
+		"rpc|refund_order|'refund_order'",
+		"table|orders|'orders'",
+		"http||", // computed
+		"rpc||",  // a name that is not a literal
+	}
+	if len(got) != len(want) {
+		t.Fatalf("refs %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("ref %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+}

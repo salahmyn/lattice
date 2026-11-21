@@ -59,6 +59,11 @@ func (r *runner) inputsHash(ctx context.Context, t target, groups []group) strin
 	for _, e := range t.enforcers {
 		implicit[e.File] = true
 	}
+	if t.hop != nil {
+		for _, st := range t.hop.Sites {
+			implicit[st.File] = true
+		}
+	}
 	for _, v := range t.tests {
 		implicit[v.File] = true
 	}

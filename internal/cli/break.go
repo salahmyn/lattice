@@ -23,7 +23,7 @@ func newBreakCommand(io *IO) *cobra.Command {
 	var promise, feature, failsOnBase string
 	var failOn []string
 	var timeout time.Duration
-	var allowDirty, noPreflight bool
+	var allowDirty, noPreflight, edges bool
 	cmd := &cobra.Command{
 		Use:   "break",
 		Short: "Break each promise's enforcer and see whether its verifiers notice",
@@ -49,6 +49,18 @@ func newBreakCommand(io *IO) *cobra.Command {
 			"(else each enforcer of the invariant) against only the tests tagged\n" +
 			"@verifies <feature>:INV-n#<case>. The runs are recorded under the case ref, so\n" +
 			"they count for the case's coverage and never for the promise's break signal.\n" +
+			"\n" +
+			"--edges (or break.edges: true in config.yaml) also breaks each hop on a promise's\n" +
+			"slice paths, where the reach graph resolved it and its out end is a string literal\n" +
+			"in source: an http request's path (the method is kept), a functions.invoke name, an\n" +
+			"rpc or table name, or a channel name at the publisher gets \"-lattice-break\" appended\n" +
+			"(for a request, to the last path segment no route still serves), so the key no\n" +
+			"longer matches, and the promise's verifiers run. Each is a run with method edge and\n" +
+			"a hop (from, to, kind); a hop that is unknown, or whose out end is not a literal at\n" +
+			"a known position, reads unknown with the reason and is never guessed at. A survived\n" +
+			"edge break (EDGE_BREAK_SURVIVED, info) means no verifier noticed the hop breaking;\n" +
+			"a killed one marks the hop break_tested in lattice slice. Verifiers that run SQL\n" +
+			"object files ({patched_sql}) are left out of edge runs. At most 20 hops per promise.\n" +
 			"\n" +
 			"The working tree is never edited. A tree with uncommitted changes is refused\n" +
 			"unless --allow-dirty, which tests the tree as it stands and records dirty: true.\n" +
@@ -109,7 +121,7 @@ func newBreakCommand(io *IO) *cobra.Command {
 					return err
 				}
 			}
-			kg, err := buildGraph(ctx, ws, false)
+			kg, rr, err := buildGraphReach(ctx, ws, buildOptions{})
 			if err != nil {
 				return io.fail("EXTRACT_FAILED", err.Error(), nil)
 			}
@@ -128,6 +140,10 @@ func newBreakCommand(io *IO) *cobra.Command {
 				LatticeDir: ws.LatticeDir,
 				CodeRoot:   ws.PrimaryCodeRoot().Abs,
 				Warn:       io.Err,
+				Edges:      edges || cfg.Break.Edges,
+			}
+			if opts.Edges && failsOnBase == "" {
+				opts.EdgeHops = edgeHopsOf(kg, rr, ws.Layers, opts)
 			}
 			if failsOnBase != "" {
 				return runFailsOnBase(ctx, io, kg, ws, failsOnBase, opts, want)
@@ -171,6 +187,7 @@ func newBreakCommand(io *IO) *cobra.Command {
 			}
 			rep.Runs = shown
 			printBreakTable(io, rep, sum)
+			printEdgeNotes(io, rep.Runs)
 			if failMsg != "" {
 				return io.fail(failOnCode, failMsg, nil)
 			}
@@ -181,6 +198,7 @@ func newBreakCommand(io *IO) *cobra.Command {
 	cmd.Flags().StringVar(&feature, "feature", "", "break the promises of one feature")
 	cmd.Flags().DurationVar(&timeout, "timeout", 120*time.Second, "timeout for each test run (a timeout reads unknown)")
 	cmd.Flags().BoolVar(&allowDirty, "allow-dirty", false, "test a working tree with uncommitted changes")
+	cmd.Flags().BoolVar(&edges, "edges", false, "also break each hop of a promise's slice paths (a request, rpc, table or channel literal at the out end) and see whether a verifier notices; adds a run per hop (or break.edges: true)")
 	cmd.Flags().BoolVar(&noPreflight, "no-preflight", false, noPreflightUsage)
 	cmd.Flags().StringSliceVar(&failOn, "fail-on", nil, "exit 1 when a shown run has one of these outcomes: survived, unknown (repeatable, or a comma list)")
 	cmd.Flags().StringVar(&failsOnBase, "fails-on-base", "", "run the new and changed verifiers on the code of merge-base(<rev>, HEAD) instead of breaking")
@@ -205,8 +223,12 @@ func printBreakTable(io *IO, rep breaktest.Report, sum breakSummary) {
 		if r.Cached {
 			reason = "(cached) " + reason
 		}
+		enforcer := r.Enforcer
+		if r.Hop != nil {
+			enforcer = breaktest.EdgeSummary(r)
+		}
 		io.printf("%-26s %-34s %-12s %-9s %s\n",
-			truncate(r.Promise, 26), truncate(r.Enforcer, 34), r.Method, r.Outcome, reason)
+			truncate(r.Promise, 26), truncate(enforcer, 34), r.Method, r.Outcome, reason)
 	}
 	io.printf("\n%d killed, %d survived, %d unknown", sum.Killed, sum.Survived, sum.Unknown)
 	if b := sum.Baselines; b.Run+b.Reused > 0 {

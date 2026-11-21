@@ -40,6 +40,9 @@ func WriteText(w io.Writer, r Record) {
 		if p.ExercisedHops != nil {
 			fmt.Fprintf(w, "; exercised %d of %d", *p.ExercisedHops, len(p.Hops))
 		}
+		if p.BreakTestedHops != nil {
+			fmt.Fprintf(w, "; break-tested %d of %d", *p.BreakTestedHops, len(p.Hops))
+		}
 		fmt.Fprintln(w)
 	}
 	if r.Truncated > 0 {
@@ -48,9 +51,24 @@ func WriteText(w io.Writer, r Record) {
 	if len(r.Paths) > 0 {
 		fmt.Fprintln(w, "\nkind? marks an unknown hop: an ambiguous reference followed to one of its candidates.")
 		fmt.Fprintln(w, "=kind=> marks an exercised hop: one verifier's own run executed symbols on both sides of it; -kind-> is a hop no verifier showed.")
+		if anyBreakTested(r) {
+			fmt.Fprintln(w, "kind* marks a break-tested hop: an edge break of it (its out-end key altered) was killed by a verifier.")
+		}
 		fmt.Fprintln(w, "--json lists every hop of every path.")
 	}
 	writeExercise(w, r)
+}
+
+// anyBreakTested reports whether a hop of a listed path is break-tested.
+func anyBreakTested(r Record) bool {
+	for _, p := range r.Paths {
+		for _, h := range p.Hops {
+			if h.BreakTested {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // writeExercise prints the verifiers with the layers their own runs covered,
@@ -117,6 +135,9 @@ func PathLine(p Path) string {
 		kind := h.Kind
 		if h.Truth != TruthResolved {
 			kind += "?"
+		}
+		if h.BreakTested {
+			kind += "*"
 		}
 		if i > 0 && !show[i] {
 			fmt.Fprintf(&b, " -> %s [%s]", h.To, h.ToLayer)

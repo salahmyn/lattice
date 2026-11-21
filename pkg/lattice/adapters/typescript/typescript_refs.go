@@ -512,10 +512,10 @@ func (w *tsRefWalker) call(n *sitter.Node) {
 			if !isLit {
 				lit = ""
 			}
-			w.emit(prop, ir.Ref{Name: lit, Qualifier: w.schemaOf(obj), Kind: ir.RefRPC})
+			w.emit(prop, withLit(ir.Ref{Name: lit, Qualifier: w.schemaOf(obj), Kind: ir.RefRPC}, args.NamedChild(0)))
 			w.visit(obj)
 		case name == "from" && isLit && !(obj.Kind() == "identifier" && notTables[w.text(obj)]):
-			w.emit(prop, ir.Ref{Name: lit, Qualifier: w.schemaOf(obj), Kind: ir.RefTable})
+			w.emit(prop, withLit(ir.Ref{Name: lit, Qualifier: w.schemaOf(obj), Kind: ir.RefTable}, args.NamedChild(0)))
 			w.visit(obj)
 		default:
 			q, plain := w.receiver(obj)

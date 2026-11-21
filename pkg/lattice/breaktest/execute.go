@@ -24,7 +24,7 @@ type runner struct {
 	opts  Options
 	repo  Repo
 	wt    *Worktree
-	prior map[[6]string]Run
+	prior map[[7]string]Run
 	// shared are this run's baseline invocations by invocationKey, shared by
 	// the promises whose groups render the same command.
 	shared map[string]invocation
@@ -77,7 +77,7 @@ func Execute(ctx context.Context, kg schema.KnowledgeGraph, opts Options) (Repor
 
 	targets := plan(kg, opts)
 	prior := Read(opts.LatticeDir)
-	r := &runner{opts: opts, repo: repo, prior: map[[6]string]Run{}, shared: map[string]invocation{}}
+	r := &runner{opts: opts, repo: repo, prior: map[[7]string]Run{}, shared: map[string]invocation{}}
 	for _, p := range prior.Runs {
 		if p.cacheable() {
 			r.prior[p.cacheKey()] = p
@@ -156,7 +156,13 @@ func (r *runner) spanHash(sym schema.GraphSymbol) (string, error) {
 // unknown state is an error; everything else is an outcome.
 func (r *runner) runTarget(ctx context.Context, t target) (Run, error) {
 	start := time.Now()
-	run, err := r.runTargetOutcome(ctx, t)
+	var run Run
+	var err error
+	if t.hop != nil {
+		run, err = r.runEdge(ctx, t)
+	} else {
+		run, err = r.runTargetOutcome(ctx, t)
+	}
 	run.DurationMS = time.Since(start).Milliseconds()
 	return run, err
 }
@@ -296,6 +302,19 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 		run.EnforcerFile = plan.edits[0].file
 	}
 
+	if err := r.measure(ctx, &run, t, enf, plan, patch, groups, noRunner); err != nil {
+		return run, err
+	}
+	return run, nil
+}
+
+// measure is the part of a run that is the same for an enforcer break and an
+// edge break: with the break planned, it runs the baseline, applies the
+// break, runs the verifiers and reads the outcome into run. enf is the
+// symbol whose language says whether a SQL object swap can be offered. Only
+// a failure that leaves the worktree in an unknown state is an error.
+func (r *runner) measure(ctx context.Context, run *Run, t target, enf schema.GraphSymbol, plan breakPlan, patch []byte,
+	groups []group, noRunner []results.Selector) error {
 	notRunWhy := map[string]string{}
 	for _, s := range noRunner {
 		notRunWhy[s.Test] = "no runner matches " + s.File
@@ -309,22 +328,22 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 		var err error
 		if sw, why, err = r.swapFiles(enf.Language, t.script != "", plan, symbolOf(enf)); err != nil {
 			run.Reason = "SQL object files: " + err.Error()
-			return run, nil
+			return nil
 		}
 		if !sw.ok() {
 			run.Reason = sqlUnavailable + why
-			return run, nil
+			return nil
 		}
 	}
 	if len(groups) == 0 {
 		run.Baseline = BaselineError
 		run.NotRunVerifiers = run.Verifiers
 		run.Reason = noRunnerReason(noRunner)
-		return run, nil
+		return nil
 	}
 	if err := r.ensureSetup(ctx); err != nil {
 		run.Baseline, run.Reason = BaselineError, err.Error()
-		return run, nil
+		return nil
 	}
 
 	// Baseline: the verifiers on the unbroken code. After a SQL swap since
@@ -343,7 +362,7 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 			run.NotRunVerifiers = append(run.NotRunVerifiers, s.Test)
 		}
 		sort.Strings(run.NotRunVerifiers)
-		return run, nil
+		return nil
 	}
 	run.RanVerifiers = base.ran
 	ran := map[string]bool{}
@@ -363,7 +382,7 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 	swapped = r.swapInvokes
 	res, err := r.broken(ctx, t, plan, patch, groups, sw)
 	if err != nil {
-		return run, err
+		return err
 	}
 	// The worktree is back to the unbroken code, so a setup the restore asks
 	// for builds the original database. The outcome below is not changed.
@@ -376,7 +395,7 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 	case statusFail:
 		run.Outcome, run.Reason, run.FailedTests = Killed, res.reason+note, res.failed
 	case statusOK:
-		run.Outcome, run.Reason = survivedOrPartial(&run, res.ran, notRunWhy)
+		run.Outcome, run.Reason = survivedOrPartial(run, res.ran, notRunWhy)
 		run.Reason += note
 	case statusBuild:
 		run.Reason = "break " + res.reason
@@ -385,7 +404,7 @@ func (r *runner) runTargetOutcome(ctx context.Context, t target) (Run, error) {
 	default:
 		run.Reason = res.reason
 	}
-	return run, nil
+	return nil
 }
 
 // survivedOrPartial reads a break that every group passed. It is survived

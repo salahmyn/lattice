@@ -185,3 +185,25 @@ func TestCaseBreakRunCountsForTheCaseOnly(t *testing.T) {
 		t.Errorf("case runs must not reach the promise: break_tested %s, breaks %+v, class %s", r.Signals.BreakTested.Value, r.Evidence.Breaks, r.Class)
 	}
 }
+
+// An edge run breaks a hop, not an enforcer: even a survived one never reads
+// as the promise's break signal, and EdgeRuns lists it for the commit the
+// graph is at only.
+// @verifies audit:INV-3
+func TestEdgeRunsAreNotTheBreakSignal(t *testing.T) {
+	kg := graph(inv("INV-1"), []string{"INV-1"}, map[string][]string{"INV-1": {"f.TestOne"}})
+	set := pass("f.TestOne")
+	edge := run("f:INV-1", "f.client", "survived")
+	edge.Method, edge.Hop = MethodEdge, &BreakHop{From: "f.client", To: "f.handler", Kind: "http"}
+	bf := breaks("abc123", run("f:INV-1", "f.EnfINV-1", "killed"), edge)
+	row := Compute(Sources{KG: kg, Results: set, Breaks: bf}).Rows[0]
+	if row.Signals.BreakTested.Value != "killed" || row.Class != ClassBreakTested || len(row.Evidence.Breaks) != 1 {
+		t.Errorf("a survived edge run changed the break signal: %s %+v", row.Class, row.Signals.BreakTested)
+	}
+	if got := EdgeRuns(bf, "abc123")["f:INV-1"]; len(got) != 1 || got[0].Hop.To != "f.handler" {
+		t.Errorf("edge runs = %+v", got)
+	}
+	if got := EdgeRuns(bf, "old999"); len(got) != 0 {
+		t.Errorf("edge runs of another commit were listed: %+v", got)
+	}
+}

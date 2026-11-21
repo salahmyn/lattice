@@ -88,6 +88,9 @@ type breakSummary struct {
 const (
 	noRunnerReason = "no runner configured"
 	partialReason  = "partial: some verifiers did not run"
+	// edgeSkippedReason groups the hops an edge run did not break: each has
+	// its own reason in the run, naming the file and line.
+	edgeSkippedReason = "edge hop skipped"
 )
 
 // breakOutput is what `lattice break --json` prints: the report as written
@@ -128,6 +131,10 @@ func summarize(runs []breaktest.Run) breakSummary {
 			}
 			if breaktest.IsPartial(r.Reason) {
 				reasons[partialReason]++
+				continue
+			}
+			if r.Hop != nil && strings.HasPrefix(r.Reason, "skipped: ") {
+				reasons[edgeSkippedReason]++
 				continue
 			}
 			reasons[r.Reason]++

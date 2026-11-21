@@ -22,6 +22,7 @@ const Schema = "lattice.breaks/1"
 const (
 	MethodEarlyReturn = "early_return"
 	MethodScripted    = "scripted"
+	// MethodEdge, a run that broke a hop, is in edge.go.
 )
 
 // Baseline is the verifiers' result before the break.
@@ -71,6 +72,14 @@ type Run struct {
 	VerifierHash string   `json:"verifier_hash"`
 	Method       string   `json:"method"`
 	Script       string   `json:"script,omitempty"`
+	// Hop is set on an edge run (Method "edge"): the hop whose out-end key
+	// was altered. Enforcer is then the symbol that holds the out end, and
+	// EnforcerFile and EnforcerHash are its file. An addition to the
+	// lattice.breaks/1 contract.
+	Hop *Hop `json:"hop,omitempty"`
+	// Finding is CodeEdgeBreakSurvived on a survived edge run, which names a
+	// hop no verifier noticed breaking. An addition to the contract.
+	Finding string `json:"finding,omitempty"`
 	// ScriptHash is the sha256 of the script, part of the cache key. It is
 	// an addition to the lattice.breaks/1 contract; readers ignore it.
 	ScriptHash string `json:"script_hash,omitempty"`
@@ -122,10 +131,15 @@ const GeneratorVersion = "4"
 // source, the same verifier source, the same way of breaking it, the same
 // way of running the verifiers, and the same inputs (by default, the same
 // tree): an outcome is a measurement of one tree, and says nothing about
-// another unless the runners declare which files they read.
+// another unless the runners declare which files they read. An edge run adds
+// the hop, and its enforcer hash is the hash of the out end's file.
 // @enforces breaktest:INV-16
-func (r Run) cacheKey() [6]string {
-	return [6]string{r.EnforcerHash, r.VerifierHash, r.Method, r.ScriptHash, r.ConfigHash, r.InputsHash}
+func (r Run) cacheKey() [7]string {
+	hop := ""
+	if r.Hop != nil {
+		hop = r.Hop.From + "\x00" + r.Hop.To + "\x00" + r.Hop.Kind
+	}
+	return [7]string{r.EnforcerHash, r.VerifierHash, r.Method, r.ScriptHash, r.ConfigHash, r.InputsHash, hop}
 }
 
 // cacheable reports whether the outcome may be reused later. Unknown never
@@ -172,10 +186,23 @@ func Write(latticeDir string, r Report) error {
 		r.Runs = []Run{}
 	}
 	sort.SliceStable(r.Runs, func(i, j int) bool {
-		if r.Runs[i].Promise != r.Runs[j].Promise {
-			return r.Runs[i].Promise < r.Runs[j].Promise
+		a, b := r.Runs[i], r.Runs[j]
+		if a.Promise != b.Promise {
+			return a.Promise < b.Promise
 		}
-		return r.Runs[i].Enforcer < r.Runs[j].Enforcer
+		if a.Enforcer != b.Enforcer {
+			return a.Enforcer < b.Enforcer
+		}
+		if a.Method != b.Method {
+			return a.Method < b.Method
+		}
+		if a.Hop != nil && b.Hop != nil {
+			if a.Hop.To != b.Hop.To {
+				return a.Hop.To < b.Hop.To
+			}
+			return a.Hop.Kind < b.Hop.Kind
+		}
+		return false
 	})
 	data, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {

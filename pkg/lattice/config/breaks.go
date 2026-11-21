@@ -62,6 +62,11 @@ type Break struct {
 	// a local API). The preflight checks each answers on TCP; Lattice never
 	// starts them.
 	Services []Service `yaml:"services,omitempty"`
+
+	// Edges turns on edge breaks (lattice break --edges): besides each
+	// enforcer, every hop on a promise's slice paths is broken at its out end
+	// and the promise's verifiers run, a run per hop.
+	Edges bool `yaml:"edges,omitempty"`
 }
 
 // Defaults of the co-change window.

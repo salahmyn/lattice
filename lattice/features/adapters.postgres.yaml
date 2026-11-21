@@ -15,3 +15,5 @@ invariants:
     statement: A feature-qualified @enforces attributes the database symbol to that feature.
   - id: INV-3
     statement: An ALTER POLICY, ALTER FUNCTION or ALTER TRIGGER after the effective definition is recorded on its symbol in apply order (which parts it sets, and where), a rename gives the symbol its new name, and a later create or a drop discards the alterations before it.
+  - id: INV-4
+    statement: A named CHECK constraint, in a CREATE TABLE or an ALTER TABLE ... ADD CONSTRAINT, is a symbol sql.check.<schema>.<table>.<name> bound by the tag directly above its line, a CHECK with no name is never a symbol, and a drop, a re-add, a rename or a validate follow the effective-definition rules of policies.

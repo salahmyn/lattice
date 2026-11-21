@@ -45,3 +45,5 @@ invariants:
     statement: A SQL break edits the statement that sets the object's effective definition (for a policy, the last ALTER POLICY that sets USING or WITH CHECK, else its CREATE, in whichever file that statement is), and the object swap is offered only when no later statement touches the object.
   - id: INV-18
     statement: When a run used the SQL object swap, a failed break.restore re-runs break.setup, and a baseline that fails after a swap since the last setup is retried once after a fresh setup; the outcome of a run whose verifiers already ran is never changed.
+  - id: INV-19
+    statement: A hop is break-tested only by a verifier that failed with that hop's out-end key altered; an unknown hop, a hop whose out end is not a literal at a known position, and a computed key are never broken.

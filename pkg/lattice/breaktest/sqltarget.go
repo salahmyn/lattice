@@ -65,6 +65,9 @@ func planBreak(language, file string, src []byte, sym Symbol, read func(file str
 // entry that sets an expression is the statement whose value the database
 // ends up with.
 func planSQL(file string, src []byte, sym Symbol, read func(string) ([]byte, error)) (breakPlan, error) {
+	if isCheckSymbol(sym) {
+		return planCheck(file, src, sym)
+	}
 	st, kind, next, err := locateSQL(src, sym)
 	if err != nil {
 		return breakPlan{}, err

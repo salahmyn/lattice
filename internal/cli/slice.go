@@ -64,6 +64,11 @@ each path says how many of its hops are exercised, and the verifiers are listed
 with the layers their own runs covered. Without ingested per-test coverage the
 slice says so once and no hop reads exercised; this never changes the reading.
 
+A hop is break-tested (kind*, break_tested in --json) when an edge break of it,
+recorded by 'lattice break --edges' for this commit, was killed: the literal
+that names the hop's target at its out end was altered, and a verifier failed.
+A hop no edge break killed shows nothing; this never changes the reading either.
+
 A slice with an unknown hop is never complete. At most 50 paths are listed
 (unknown ones first); the rest are counted. --json prints lattice.slice/1.
 An unknown id is a usage error (exit 2).`,
@@ -91,6 +96,7 @@ An unknown id is a usage error (exit 2).`,
 			}
 			rec := slice.Compute(sg, id, slice.EnforcersOf(row))
 			slice.Exercise(&rec, sg, slice.VerifiersOf(row))
+			slice.MarkBreakTested(&rec, edgeRunsOf(ws.LatticeDir, kg.GeneratedFromCommit, id))
 			rec.Commit = kg.GeneratedFromCommit
 			if io.JSON {
 				return io.printJSON(rec)
@@ -100,4 +106,22 @@ An unknown id is a usage error (exit 2).`,
 		},
 	}
 	return cmd
+}
+
+// edgeRunsOf reads the edge breaks of one promise from breaks.json, when the
+// file is for the commit the graph is at.
+func edgeRunsOf(latticeDir, head, promise string) []slice.EdgeRun {
+	bf, _, err := audit.LoadBreaks(latticeDir)
+	if err != nil {
+		return nil
+	}
+	var out []slice.EdgeRun
+	for _, r := range audit.EdgeRuns(bf, head)[promise] {
+		by := r.FailedTests
+		if len(by) == 0 {
+			by = r.Verifiers
+		}
+		out = append(out, slice.EdgeRun{From: r.Hop.From, To: r.Hop.To, Kind: r.Hop.Kind, Killed: r.Outcome == "killed", By: by})
+	}
+	return out
 }
