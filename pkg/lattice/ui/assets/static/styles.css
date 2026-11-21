@@ -1,10 +1,43 @@
 /* Lattice v0.5.0 — Crystal brand system.
    Tokens come from the brand handoff (pkg/lattice/ui/assets/static/
    tokens.js mirrored from the design canvas). Tailwind colours are
-   re-pointed to these values in layout.html; this file defines the
-   brand-specific atoms (wordmark, mark, lifecycle badges, primitive
-   glyphs) and overrides the few default Tailwind classes that don't
-   fit the dark-by-default Crystal direction. */
+   re-pointed to these values in scripts/tailwind/tailwind.config.js,
+   which generates tailwind.css; this file defines the brand fonts and
+   atoms (wordmark, mark, lifecycle badges, primitive glyphs) and
+   overrides the few default Tailwind classes that don't fit the
+   dark-by-default Crystal direction. layout.html loads tailwind.css
+   after this file. */
+
+/* --- Brand fonts, served by the binary (assets/vendor/fonts, SIL Open
+   Font License 1.1; see THIRD_PARTY_NOTICES.md). These are the Google
+   Fonts files and unicode ranges the UI used to fetch. Geist and
+   JetBrains Mono are variable fonts: one file per range covers every
+   weight. IBM Plex Serif is only used at 400. --- */
+@font-face {
+  font-family: "Geist"; font-style: normal; font-weight: 300 700; font-display: swap;
+  src: url("/vendor/fonts/geist-v5-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Geist"; font-style: normal; font-weight: 300 700; font-display: swap;
+  src: url("/vendor/fonts/geist-v5-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "JetBrains Mono"; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url("/vendor/fonts/jetbrains-mono-v24-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "JetBrains Mono"; font-style: normal; font-weight: 400 700; font-display: swap;
+  src: url("/vendor/fonts/jetbrains-mono-v24-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "IBM Plex Serif"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("/vendor/fonts/ibm-plex-serif-v20-400-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 :root {
   /* Neutral ramp — built around hue 235°. */
@@ -47,13 +80,9 @@ body {
 }
 
 /* Cards in the v0.4 templates use bg-white. Crystal has no "white"
-   surface — re-point to n2 here rather than override in JS because
-   Tailwind doesn't expose "white" as a customisable colour. */
+   surface, so re-point it to n2 here; !important because tailwind.css
+   loads later and defines bg-white too. */
 .bg-white { background-color: var(--n2) !important; }
-
-/* `text-slate-900` (headings) gets `--n8`, but Tailwind's text-slate-900
-   default is mapped via config. Defensive override matches the config
-   so a stale CDN snapshot still reads correctly. */
 
 /* --- Wordmark + mark --- */
 .lattice-wordmark {
@@ -150,8 +179,8 @@ a:focus-visible { outline: 2px solid var(--mica-400); outline-offset: 2px; }
 /* --- Selection colour matches the brand accent. --- */
 ::selection { background: var(--mica-600); color: var(--n8); }
 
-/* --- Graceful fallback when the Tailwind CDN is unreachable
-   (air-gapped dogfood). The page is still readable. --- */
+/* --- Fallback if tailwind.css fails to load: the page is still
+   readable. tailwind.css loads after this file and wins. --- */
 .bg-slate-50  { background: var(--n1); }
 .bg-slate-100 { background: var(--n2); }
 .bg-slate-200 { background: var(--n3); }
