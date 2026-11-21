@@ -653,6 +653,12 @@ language sql security definer set search_path = '' as $$
   update public.jobs set updated_at = now() where id = p_id;
 $$;
 
+-- Renumbering writes id, which the other functions only use to pick a row.
+create function public.renumber_job(p_id bigint, p_new bigint) returns void
+language sql security definer set search_path = '' as $$
+  update public.jobs set id = p_new where id = p_id;
+$$;
+
 create function public.assign_owner(p_id bigint, p_owner uuid) returns void
 language sql security definer set search_path = '' as $$
   update public.jobs set owner_id = p_owner where id = p_id;
@@ -689,7 +695,8 @@ func writersOwnerRepo(t *testing.T, configExtra string) string {
 // INV-2 about owner_id (reassign_job tests it); both enforcers assign status and
 // updated_at. Only a writer of a promise's own column is reported for it:
 // claim_jobs, which increments attempts, for INV-1; assign_owner for INV-2.
-// touch_job writes updated_at alone and is linked to neither. Counted by
+// touch_job writes updated_at alone and renumber_job writes id, which the
+// enforcers only use as a row selector (WHERE id = p_id); neither is linked. Counted by
 // columns derived from writes (what the enforcers assign) and from conditions.
 // @verifies graph:INV-10
 func TestWritersColumnsFromConditionsExample(t *testing.T) {
@@ -734,5 +741,46 @@ func TestColumnsFromConditionsStayInfo(t *testing.T) {
 		if f.Severity != schema.SeverityInfo {
 			t.Errorf("%s %s is %s, want info", f.Code, f.Subject, f.Severity)
 		}
+	}
+}
+
+// An enforcer whose only condition is a row selector (WHERE id = p_id) has no
+// condition read, so its columns are the ones it writes, and the message says
+// so; the id it selects by is not a column of the promise.
+// @verifies graph:INV-10
+func TestRowSelectorOnlyFallsBackToWrites(t *testing.T) {
+	const only = `-- @enforces queue.jobs:INV-2
+create function public.reassign_job(p_id bigint) returns void
+language sql security definer set search_path = '' as $$
+  update public.jobs set status = 'pending' where id = p_id;
+$$;
+create function public.renumber_job(p_id bigint, p_new bigint) returns void
+language sql security definer set search_path = '' as $$
+  update public.jobs set id = p_new where id = p_id;
+$$;
+create function public.park_job(p_id bigint) returns void
+language sql security definer set search_path = '' as $$
+  update public.jobs set status = 'parked' where id = p_id;
+$$;
+`
+	feature := strings.Replace(writersFeature, "    verifiable_by:\n      - test\n", writersOwnerFeature, 1)
+	repo := writersRepo(t, "", "", map[string]string{
+		"supabase/migrations/20260115000000_owner.sql": only,
+		"supabase/tests/02_owner.sql":                  strings.Replace(writersOwnerTest, "reassign_job(1, null)", "reassign_job(1)", 1),
+		"lattice/features/queue/jobs.yaml":             feature,
+	})
+	got, _ := validateWriters(t, repo)
+	var inv2 []string
+	for _, f := range got {
+		if f.InvariantID == "INV-2" {
+			inv2 = append(inv2, f.Subject)
+			if !strings.Contains(f.Message, "columns derived from writes") || strings.Contains(f.Message, "id (") {
+				t.Errorf("%s: message = %q", f.Subject, f.Message)
+			}
+		}
+	}
+	// park_job writes status, which the enforcer writes; renumber_job writes only id.
+	if g := strings.Join(sorted(inv2), ", "); !strings.Contains(g, "sql.public.park_job") || strings.Contains(g, "renumber_job") {
+		t.Errorf("INV-2 writers = %s, want park_job and not renumber_job", g)
 	}
 }

@@ -4277,6 +4277,13 @@ The enforcer does not have to write the column: `fail_job` tests `attempts` and 
 still reported while a function that only sets `updated_at` is not. A bare name counts only if
 its table has a column of that name, so a parameter or variable is never a column.
 
+A column that only picks the row is not a condition read: one compared by `=`, `IN (...)` or
+`= ANY(...)` with a function parameter (or a variable assigned only from parameters) in the
+`WHERE` of the enforcer's own `UPDATE`, `DELETE` or `SELECT ... INTO`. `WHERE status = 'running'
+AND id = p_id` reads `status`, not `id`. Comparisons with a literal, another column or a
+function, and `<`, `>`, `>=`, `<>`, still count, as do `IF`, `CASE` and `CHECK`. An enforcer
+whose only conditions are row selectors falls back to the columns it writes (below).
+
 When an enforcer has no condition read on the tables it writes, or its body could not be read,
 that enforcer falls back to the columns it writes, and the message says so (`no condition read
 was known, so its columns derived from writes`). The set never shrinks to nothing, because that

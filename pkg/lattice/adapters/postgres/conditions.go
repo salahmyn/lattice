@@ -24,6 +24,13 @@ import (
 //     each trigger that runs it;
 //   - for a named CHECK, the columns of its expression.
 //
+// A row selector is not a condition read. A column compared by plain = (or IN,
+// or = ANY) with a parameter of the function, or with a variable whose only
+// assignments are parameters, only picks the row the function acts on
+// (WHERE id = p_id); it is not what a promise is about, and it is left out.
+// Comparisons with a literal, another column, now() or another function, and <,
+// >, >= and <>, still count.
+//
 // It records only what it parsed. Which names are columns is decided where the
 // table's columns are known: a bare name counts only if its table has a column
 // of that name.
@@ -193,8 +200,9 @@ type condVar struct{ table, column string }
 // file line base. A read of NEW or OLD is on the table newTable, which Resolve
 // turns into the table of each trigger that runs the function.
 // @enforces adapters.postgres:INV-9
-func readConditions(code string, base int) []ir.CondRead {
+func readConditions(code string, base int, params map[string]bool) []ir.CondRead {
 	mask := maskCode(code)
+	isParam := paramVars(mask, params)
 	lines := newLineIndex(code)
 	line := func(off int) int { return base + lines.before(off) }
 
@@ -297,7 +305,11 @@ func readConditions(code string, base int) []ir.CondRead {
 		if stop < 0 {
 			stop = st.end
 		}
-		emit(mask[w+5:stop], st.table, w)
+		for _, pred := range splitAnd(mask[w+5 : stop]) {
+			if !isSelector(pred, isParam) {
+				emit(pred, st.table, w)
+			}
+		}
 	}
 
 	// IF, ELSIF and CASE WHEN conditions.
@@ -373,4 +385,148 @@ func checkReads(expr string, table string, line int) []ir.CondRead {
 		out = append(out, ir.CondRead{Table: table, Column: ref.name, Line: line})
 	}
 	return out
+}
+
+var (
+	reAssign   = regexp.MustCompile(`(?is)(?:^|[;\s(])(` + ident + `)\s*:=\s*([^;]*);`)
+	reDeclare  = regexp.MustCompile(`(?is)(?:\bdeclare|;)\s*(` + ident + `)\s+[A-Za-z_][A-Za-z0-9_.\[\]]*(?:\s*\(\s*\d+(?:\s*,\s*\d+)?\s*\))?\s*(?::=|=|\bdefault\b)\s*([^;]*);`)
+	reIntoVars = regexp.MustCompile(`(?is)\binto\s+(?:strict\s+)?([^;]*?)\s+from\b`)
+	reSelector = regexp.MustCompile(`(?is)^\s*((?:` + ident + `)(?:\s*\.\s*(?:` + ident + `))*)\s*(=|\bin\b)\s*(.+?)\s*$`)
+	reParamEq  = regexp.MustCompile(`(?is)^\s*(.+?)\s*=\s*((?:` + ident + `)(?:\s*\.\s*(?:` + ident + `))*)\s*$`)
+	reCastTail = regexp.MustCompile(`(?is)\s*::\s*[A-Za-z_][A-Za-z0-9_ .]*(?:\[\])?\s*$`)
+)
+
+// functionParams reads the parameter names of the CREATE FUNCTION statement in
+// text: the first word of each entry of the list after the name, past an IN,
+// OUT, INOUT or VARIADIC mode.
+func functionParams(text string) map[string]bool {
+	m := reFunction.FindStringIndex(text)
+	if m == nil {
+		return nil
+	}
+	open := m[1] - 1
+	closeAt := matchParen(maskCode(text), open)
+	if closeAt < 0 {
+		return nil
+	}
+	out := map[string]bool{}
+	for _, item := range splitTop(text[open+1 : closeAt]) {
+		words := strings.Fields(item)
+		for len(words) > 0 {
+			switch strings.ToLower(words[0]) {
+			case "in", "out", "inout", "variadic":
+				words = words[1:]
+				continue
+			}
+			break
+		}
+		if len(words) >= 2 {
+			if n, ok := firstIdent(words[0]); ok {
+				out[n] = true
+			}
+		}
+	}
+	return out
+}
+
+// paramVars returns a test for the names that stand for a parameter: the
+// parameters, $n, and a variable whose every assignment (:=) is a parameter and
+// that no SELECT ... INTO loads.
+func paramVars(mask string, params map[string]bool) func(string) bool {
+	vars := map[string]bool{}
+	bad := map[string]bool{}
+	for _, m := range reIntoVars.FindAllStringSubmatch(mask, -1) {
+		for _, t := range splitTop(m[1]) {
+			if n, ok := firstIdent(strings.TrimSpace(t)); ok {
+				bad[n] = true
+			}
+		}
+	}
+	type assign struct{ name, rhs string }
+	var as []assign
+	for _, m := range reAssign.FindAllStringSubmatch(mask, -1) {
+		as = append(as, assign{unquote(m[1]), strings.TrimSpace(reCastTail.ReplaceAllString(strings.TrimSpace(m[2]), ""))})
+	}
+	for _, m := range reDeclare.FindAllStringSubmatch(mask, -1) {
+		as = append(as, assign{unquote(m[1]), strings.TrimSpace(reCastTail.ReplaceAllString(strings.TrimSpace(m[2]), ""))})
+	}
+	for _, a := range as {
+		if _, seen := vars[a.name]; !seen {
+			vars[a.name] = true
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, a := range as {
+			if !vars[a.name] {
+				continue
+			}
+			rhs := unquote(a.rhs)
+			if bad[a.name] || !(params[rhs] || vars[rhs] && rhs != a.name && !bad[rhs]) || !reIdentAt.MatchString(a.rhs) || reIdentAt.FindString(a.rhs) != a.rhs {
+				vars[a.name] = false
+				changed = true
+			}
+		}
+	}
+	return func(n string) bool {
+		if strings.HasPrefix(n, "$") {
+			return true
+		}
+		return params[n] || vars[n] && !bad[n]
+	}
+}
+
+// splitAnd splits a condition at its AND outside parentheses.
+func splitAnd(s string) []string {
+	var out []string
+	from := 0
+	for {
+		i := findWord(s, from, len(s), "and")
+		if i < 0 {
+			break
+		}
+		out = append(out, s[from:i])
+		from = i + 3
+	}
+	return append(out, s[from:])
+}
+
+// isParamExpr says whether e is one parameter (or a parameter variable), with
+// an optional cast, or a parenthesised list or ANY(...) of them.
+func isParamExpr(e string, isParam func(string) bool) bool {
+	e = strings.TrimSpace(reCastTail.ReplaceAllString(strings.TrimSpace(e), ""))
+	if w, n := firstWord(e); w == "any" || w == "some" || w == "all" {
+		e = strings.TrimSpace(e[n:])
+	}
+	if strings.HasPrefix(e, "(") && matchParen(e, 0) == len(e)-1 {
+		items := splitTop(e[1 : len(e)-1])
+		for _, it := range items {
+			if !isParamExpr(it, isParam) {
+				return false
+			}
+		}
+		return len(items) > 0
+	}
+	if strings.HasPrefix(e, "$") {
+		return true
+	}
+	if m := reIdentAt.FindString(e); m != "" && m == e {
+		return isParam(unquote(e))
+	}
+	return false
+}
+
+// isSelector says whether a predicate only picks a row by a parameter:
+// <column> = <parameter>, <column> IN (<parameters>), <column> = ANY(<parameter>),
+// or the same with the sides swapped.
+func isSelector(pred string, isParam func(string) bool) bool {
+	if m := reSelector.FindStringSubmatch(pred); m != nil && !isParam(strings.TrimSpace(m[1])) {
+		if isParamExpr(m[3], isParam) {
+			return true
+		}
+	}
+	if m := reParamEq.FindStringSubmatch(pred); m != nil && isParamExpr(m[1], isParam) && !isParam(strings.TrimSpace(m[2])) {
+		return true
+	}
+	return false
 }
