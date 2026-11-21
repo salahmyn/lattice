@@ -131,6 +131,24 @@
         {{else}}<p class="text-slate-500">none anchored</p>{{end}}
       </div>
 
+      <div class="audit-slice">
+        <h3 class="uppercase tracking-wide text-slate-500 mb-1">Slice (which ways in reach the enforcers, and through which layers)</h3>
+        <p class="text-slate-700"><span class="badge {{.Slice.Badge}}">{{.Slice.Reading}}</span>{{if .Slice.Hop}} <span class="font-mono text-slate-500">hop {{.Slice.Hop}}</span>{{end}} {{.Slice.Why}}</p>
+        {{if .Slice.Lines}}
+        <ul class="mt-1 space-y-1">
+          {{range .Slice.Lines}}
+          <li>
+            <span class="text-slate-500">{{.Root}}</span>
+            {{range $i, $l := .Layers}}{{if $i}}<span class="text-slate-500"> &rarr; </span>{{end}}<span class="font-mono">{{$l}}</span>{{end}}
+            {{if .Unknown}}<span class="badge is-warn">unknown hop</span>{{end}}
+            <div class="font-mono text-slate-800" style="overflow-wrap:anywhere">{{.Chain}}</div>
+          </li>
+          {{end}}
+        </ul>
+        {{if .Slice.Truncated}}<p class="text-slate-500">{{.Slice.Truncated}} more path(s) are not listed: a slice lists at most {{len .Slice.Paths}}.</p>{{end}}
+        {{end}}
+      </div>
+
       {{if .ShowsEnforcers}}
       <div class="audit-enforcers">
         <h3 class="uppercase tracking-wide text-slate-500 mb-1">What breaking each enforcer did</h3>

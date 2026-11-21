@@ -19,6 +19,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/contract"
 	"github.com/salahmyn/lattice/pkg/lattice/results"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
+	"github.com/salahmyn/lattice/pkg/lattice/slice"
 )
 
 // The /api/v2 payloads are the contracts the React UI and agents bind to
@@ -48,6 +49,7 @@ func (s *Server) routesV2(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v2/features/{id}", s.v2Feature)
 	mux.HandleFunc("GET /api/v2/check", s.v2Check)
 	mux.HandleFunc("GET /api/v2/health", s.v2Health)
+	mux.HandleFunc("GET /api/v2/promises/{id}/slice", s.v2PromiseSlice)
 	mux.HandleFunc("POST /api/v2/prepare", s.v2Prepare)
 }
 
@@ -64,6 +66,7 @@ type v2world struct {
 	ev      check.Evidence
 	waivers []check.Waiver
 	rows    map[string]audit.Row
+	sg      *slice.Graph // nil: no reach graph
 }
 
 // readGraph builds the graph without writing anything: the read-only builder
@@ -97,7 +100,7 @@ func (s *Server) loadWorld(ctx context.Context) (w *v2world, cache string, err e
 	if err != nil {
 		return nil, cache, err
 	}
-	w = &v2world{s: s, kg: f.kg, report: f.report, dirty: f.dirty}
+	w = &v2world{s: s, kg: f.kg, report: f.report, dirty: f.dirty, sg: f.sg}
 	w.head = f.kg.GeneratedFromCommit
 	if w.head == "" {
 		w.head = f.head

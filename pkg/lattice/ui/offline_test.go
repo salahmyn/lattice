@@ -276,7 +276,7 @@ func TestVendoredFilesHaveNotices(t *testing.T) {
 
 // hookClasses are class names the templates use as script or test hooks,
 // with no style of their own.
-var hookClasses = map[string]bool{"crystal": true, "audit-cases": true, "audit-enforcers": true, "root-checkbox": true}
+var hookClasses = map[string]bool{"crystal": true, "audit-cases": true, "audit-enforcers": true, "audit-slice": true, "root-checkbox": true}
 
 // tailwind.css is generated once, not in the browser: a template that uses a
 // utility class the committed stylesheet lacks would render it unstyled.

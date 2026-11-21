@@ -67,6 +67,8 @@ reverse proxy in front and run Lattice with --host 127.0.0.1.`,
 				ReadOnlyGraphBuilder: func(ctx context.Context) (schema.KnowledgeGraph, error) {
 					return buildGraphWith(ctx, ws, buildOptions{readOnly: true})
 				},
+				// the promise slice reads the call graph of the same read-only build
+				SliceBuilder: sliceBuilder(ws),
 				CheckGraphBuilder: func(ctx context.Context) (schema.KnowledgeGraph, impact.CallGraph, error) {
 					return graphCalls(ctx, ws)
 				},

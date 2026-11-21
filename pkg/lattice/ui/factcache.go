@@ -9,6 +9,7 @@ import (
 
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
+	"github.com/salahmyn/lattice/pkg/lattice/slice"
 )
 
 // The knowledge graph the read-only builder makes, and the audit over it,
@@ -40,6 +41,9 @@ type facts struct {
 	report audit.Report
 	head   string // HEAD of the repository holding lattice/, "" when none
 	dirty  *bool  // nil when git could not say
+	// sg is the slice graph over the same build as kg; nil when the server
+	// has no SliceBuilder or the build had no reach graph.
+	sg *slice.Graph
 }
 
 type factsEntry struct {
@@ -129,13 +133,23 @@ func (s *Server) facts(ctx context.Context) (facts, string, error) {
 	return s.cache.get(ctx, key, s.computeFacts)
 }
 
-// computeFacts builds the graph read-only and audits it.
+// computeFacts builds the graph read-only (with its slice graph, when the
+// server has a SliceBuilder) and audits it.
 func (s *Server) computeFacts(ctx context.Context) (facts, error) {
-	kg, err := s.readGraph(ctx)
+	var (
+		kg  schema.KnowledgeGraph
+		sg  *slice.Graph
+		err error
+	)
+	if s.opts.SliceBuilder != nil {
+		kg, sg, err = s.opts.SliceBuilder(ctx)
+	} else {
+		kg, err = s.readGraph(ctx)
+	}
 	if err != nil {
 		return facts{}, err
 	}
 	head, dirty := s.gitState()
 	rep := audit.Compute(audit.Collect(s.ws.LatticeDir, kg, dirty != nil && *dirty))
-	return facts{kg: kg, report: rep, head: head, dirty: dirty}, nil
+	return facts{kg: kg, report: rep, head: head, dirty: dirty, sg: sg}, nil
 }

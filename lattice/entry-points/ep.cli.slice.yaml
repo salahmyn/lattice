@@ -1,0 +1,16 @@
+id: ep.cli.slice
+version: 1
+status: production
+kind: cli
+purpose: Show which ways into the system reach the code that keeps a promise, and through which layers
+owners:
+  business: lattice-maintainers
+  engineering: lattice-core
+trigger:
+  command: lattice slice
+handler:
+  symbol: internal.cli.newSliceCommand
+  file: internal/cli/slice.go
+flow:
+  - feature: cli
+  - feature: reachability

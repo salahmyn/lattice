@@ -2511,6 +2511,7 @@ Notes:
 | `GET /api/v2/brds/{id}?version=N` | `lattice.brd/1` | the review packet: the structural diff since the last confirmed version, the `packet_hash` exactly as `lattice prepare` pins it, the promise counts, the out-of-reach promises |
 | `GET /api/v2/features/{id}` | `lattice.brd/1` | the feature drawer: promises with signals, gaps, enforcers and verifiers, entry points, related features |
 | `GET /api/v2/check?base=<rev>[&ci=1]` | `lattice.check/1` | exactly `lattice check --json` |
+| `GET /api/v2/promises/{id}/slice` | `lattice.slice/1` | exactly `lattice slice <id> --json`: the paths from the roots to the promise's enforcers, with their layers and the reading (section 4p) |
 | `GET /api/v2/health` | `lattice.health/1` | the evidence matrix per feature: results, per-test coverage, breaks, confirm data, each with its commit and whether CI stamped it |
 | `POST /api/v2/prepare` | `lattice.prepare/1` | what `lattice prepare` prints: `{branch, files, packet_hash, command}`, or its refusal `{refused, params, text, next}` |
 
@@ -2601,6 +2602,72 @@ be declared.
 - The block map's **Group by > Layer** lens groups blocks by layer, colours each
   group, gives blocks that span several layers a neutral colour and `unknown` its
   own, and shows a legend with a count per layer.
+
+## 4p. Slices: which ways in reach a promise?
+
+`lattice audit` says whether the code that keeps a promise is reached. A **slice**
+says from where, and through which layers. For one invariant it lists, for every
+root of the call graph (entry points, entry files, jobs, triggers) that reaches
+an enforcer, one shortest path, hop by hop:
+
+```sh
+lattice slice orders:INV-1          # text
+lattice slice orders:INV-1 --json   # lattice.slice/1
+```
+
+```
+slice orders:INV-1
+reading: complete
+  every enforcer is reached, and every hop on every path is resolved
+
+enforcers (1)
+  sql.policy.public.orders.owner_reads  [data]  reach: entry
+
+paths (2)
+  sql.policy.public.orders.owner_reads [data]
+      root: policy; carried by data; 0 hops
+  web.main.<top> [ui] -call-> web.orders.loadOrders [ui] -table-> sql.table.public.orders [data] -ref-> sql.policy.public.orders.owner_reads [data]
+      root: index.html; carried by ui -> data; 3 hops
+```
+
+Each hop is an edge of the reach graph (`call`, `new`, `rpc`, `table`, `jsx`,
+`ref`, and the structural `import`, `member`, `use`) with the layer of both ends
+(see [Layers](#4o-layers-what-kind-of-runtime-is-this-code)); a node that is not
+a symbol (a module's top-level code, a table) takes `data` from the Postgres
+adapter, else the layer a `layers:` rule gives its file. `carried_by` lists the
+layers along the path in order, a run of one layer counted once. The path is the
+same on every run: breadth first, neighbours in sorted order. A path over resolved
+edges only is preferred to a shorter one through an unknown hop.
+
+A hop is **resolved** when the graph resolved the reference. It is **unknown**
+when the only edge is an ambiguous reference (a method called on a value of
+unknown type, with several members of that name) followed to one of the
+candidates the graph recorded; it prints as `-call?->`. A reference with no
+recorded candidate (a dynamic `.rpc(name)`, a missing symbol) is not followed.
+Nothing is guessed, and unknown is never complete. The reading is the first that
+applies:
+
+| Reading | When |
+|---|---|
+| `no_enforcer` | the promise has no enforcer to slice |
+| `unknown` | there is no reach graph (review mode has no source), or it has no roots |
+| `unreached` | some enforcer has no path from any root (`unreached` lists them) |
+| `unknown_from_hop` | every enforcer has a path and a path has an unknown hop; `hop` is the 1-based index of the first unknown hop on the first path listed |
+| `complete` | every enforcer has a path and every hop on every path is resolved |
+
+A slice lists at most 50 paths, those with an unknown hop first and then by root;
+`truncated` counts the rest. The reading is decided from every path before the list
+is cut. The JSON carries `contract`, `invariant`, `commit`, `why` (the reading in a
+sentence), each enforcer's `layer` and `reach`, and per path the `root` (`fqn`,
+`reason`, and `entry_point` when it is an entry point's handler), the `enforcer`,
+its `hops` (`from`, `to`, `kind`, `from_layer`, `to_layer`, `truth`) and
+`carried_by`. A slice says which ways in reach the code; it is a path the code
+allows, not one that ran, and it never changes an audit class. An unknown promise
+id is a usage error (exit 2).
+
+`GET /api/v2/promises/{id}/slice` returns the same JSON, and each promise on the
+`lattice serve` audit page has a **Slice** section with its reading and one line per
+path.
 
 ## 5. Day-to-day commands
 
