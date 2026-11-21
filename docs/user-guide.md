@@ -1201,8 +1201,16 @@ breaking the enforcer and running only that promise's verifiers:
 ```sh
 lattice break                          # every promise with an enforcer
 lattice break --promise cart:INV-2     # one promise
+lattice break --promise cart:INV-2#b   # one acceptance case
 lattice break --feature cart --json
 ```
+
+`--promise <promise>#<case>` breaks one acceptance case: the case's own `enforcer`,
+or each enforcer of the invariant when it names none, against only the tests tagged
+`@verifies <promise>#<case>`. Its runs are written under the case ref (`"promise":
+"cart:INV-2#b"` in `breaks.json`) next to the promise's runs, which are kept. They count
+for that case's coverage in the audit and never for the promise's break signal, which
+still needs a run of all its verifiers. An unknown case is refused (`CASE_NOT_FOUND`).
 
 For each enforcer it makes a temporary detached `git worktree` at HEAD,
 runs the verifiers unbroken (the **baseline**), applies the break, runs
@@ -1509,8 +1517,41 @@ promise, so a case added, edited or retired after confirmation makes the decisio
 and the promise reads unconfirmed until it is confirmed again. A promise with no cases
 hashes as it did before. An agent may draft cases (`lattice agent draft-proposal`); the
 schema has no field that records a confirmation or a coverage, so nothing an agent writes
-can mark a case confirmed or covered. Each case's own confirmation state is not computed
-yet: today the promise is confirmed or not as a whole.
+can mark a case confirmed or covered.
+
+Each case also has its own confirmation state. A decision that `lattice prepare` writes
+records the cases of each of its promises (`cases:` in the decision file: id, kind,
+statement, enforcer, retired, and a hash of kind, statement and enforcer), and `lattice
+confirm` carries them into `confirm.json`. The list is bound to what was confirmed: the
+packet hash already covers every case, so while a decision's packet still matches,
+`lattice confirm` requires the list to equal the cases now and records `cases_check:
+verified` (or `mismatch`); an intact earlier `confirm.json` that verified the same list
+carries the check once the packet moves on. The decision format and the packet hash are
+unchanged, so no confirmed decision goes stale. The audit compares each case with the one the
+confirming decision recorded (the current version's confirmed decision, else its stale one,
+else the latest earlier version's):
+
+| Confirmation | Code | Means |
+|---|---|---|
+| `confirmed` | `CASE_CONFIRMED` | the case is as a current, confirmed decision for the BRD's current version recorded it |
+| `unconfirmed` | `CASE_DECISION_STALE` | the case is unchanged since the last confirmation, but that decision is stale (its packet changed) or for an earlier version: the promise needs confirming again |
+| `unconfirmed` | `CASE_ADDED_AFTER_CONFIRMATION` | the decision did not hold the case |
+| `unconfirmed` | `CASE_EDITED_AFTER_CONFIRMATION` | its kind, statement or enforcer changed, or it was restored; the reason names what, e.g. `kind edge->error` |
+| `unconfirmed` | `CASE_RETIRED_AFTER_CONFIRMATION` | it was retired since |
+| `unconfirmed` | `CASE_STAMP_MISMATCH` | the decision's `cases:` list does not match the cases its packet hashed (it was edited after the packet was pinned) |
+| `unconfirmed` | `CASE_STAMP_UNVERIFIED` | the list was not checked against its packet; `lattice confirm` checks it |
+| `unconfirmed` | `CASE_NOT_RECORDED` | the decision was prepared before decisions recorded their cases; prepare and confirm again |
+| `unconfirmed` | `CASE_NEVER_CONFIRMED` | no human confirmation covers the promise |
+
+The state is on each case of the audit row (`confirmation: {state, code, reason}`), under
+each case in `lattice feature show`, and in `/api/v2` `case_rows` (`confirmation`: `pass`
+only for a confirmed case, `drifted` for an edited or retired one or one under a stale
+decision, `fail` for a stamp mismatch, `unknown` otherwise).
+The `/audit` page of `lattice serve` lists each row's cases with their kind, coverage and
+confirmation; only `covered` and `confirmed` are drawn in the positive colour. It
+never changes the promise's `confirmed` signal: any case change still makes the decision
+stale, as above. Only a current decision confirms a case; under a stale one, the cases
+that changed name their change and the others read `CASE_DECISION_STALE`.
 
 ### Second readers
 
@@ -1744,12 +1785,24 @@ Refusal codes: `BRD_NOT_FOUND`, `VERSION_REQUIRED`, `VERSION_MISMATCH`,
 `generated_code`, `out_of_reach` and `accepted_risk` (the last two need an ADR). A
 waiver is shown and never counted as proof.
 
-The decision file records `{action, id, version, packet_hash, rows, reason,
-prepared_by, prepared_at}`. `prepared_by` is your git identity, for display only.
+The decision file records `{action, id, version, packet_hash, rows, cases, reason,
+prepared_by, prepared_at}`. `prepared_by` is your git identity, for display only;
+`cases` lists each row's acceptance cases (see "Acceptance cases").
 The `packet_hash` covers the BRD version's content (not its status, its approval
-block or a source's checked mark), each promise's structural signals (text, tier, enforcers, verifiers) and
+block or a source's checked mark), each promise's structural signals (text, tier, enforcers, verifiers, cases) and
 the structural diff since the last confirmed version. Run-dependent signals are
 left out, so a better test run never voids a confirmation.
+
+The review packet's structural diff (`/api/v2/brds/{id}`, `packet.diff.structural`) also
+names each acceptance case changed since the last confirmation that recorded it:
+`case 1b of wallet.fees:INV-1 edited: kind edge->error`, `case 1c of … added`, `… retired`,
+`… removed`, or `cases of … not recorded at the last confirmation` (a list that does not
+match its packet, or was never checked against it, is named too, so it never makes a
+review light). Any edit to a promise,
+criterion or case is structural, so `packet.diff.friction` reads `full` (type the version,
+view the key sections); it reads `light` only when the diff is `none`. The case lines are
+not hashed through the diff (the cases are hashed with their promises), so a decision
+pinned before they existed still matches.
 
 ### Confirm
 
@@ -2272,6 +2325,13 @@ The report has five sections:
 | Removed enforcement | A base-side enforcer that no longer enforces its invariant: the symbol was deleted, its `@enforces` tag was dropped (the tag sits above the symbol, outside its lines, so this compares each file's (symbol, invariant) pairs on both sides), or its file was deleted or moved out of the scanned tree. A file moved elsewhere in the scanned tree is not a removal. |
 | Manifest changes | Features, BRDs and entry points added, removed, renamed and changed, with every changed field named (`invariants[INV-1].verifiable_by`, `user_scenarios[US-1].then`, `success_criteria[SC-2].maps_to_invariant`). The walk is generic over the schema, so a new field is compared without a code change. A manifest moved out of `lattice/features/` is removed; one moved within it is renamed, compared by id. |
 | Code roll-up | With a SCIP code graph (`lattice extract --with-code-graph`), the blast radius of each changed or removed enforcer, rolled up to referencing modules, test files and entry points (through each entry point's handler and `flow`). `--max-symbols N` (default 50) caps how many are expanded, enforcers of approved criteria first, and the report says when it truncated. Without a code graph the section says "code graph unavailable" and the command still succeeds. |
+
+When the change touches an acceptance case, the report adds a **Touched cases** section
+(`touched_cases` in `--json`, always present): each case whose own `enforcer` changed
+(`why: enforcer_changed`) and each case a changed test is tagged with (`@verifies
+<promise>#<case>`, `why: verifier_changed`), with the symbol and its change. A change to
+an enforcer of the invariant that the case does not name touches the promise, not the
+case. `lattice break --promise <promise>#<case>` re-breaks one of them.
 
 When an enforcer's own lines change and its invariant's statement and tier do
 not, the report adds a **Notes** section with a `STATEMENT_UNCHANGED` note for that

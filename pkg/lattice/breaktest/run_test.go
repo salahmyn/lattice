@@ -160,3 +160,54 @@ func TestTemplateArgs(t *testing.T) {
 		t.Errorf("python filter = %s", f)
 	}
 }
+
+// --promise <promise>#<case> breaks the case's own enforcer, or each of the
+// invariant's when it names none, against only the tests tagged with the
+// case, and records the runs under the case ref. An unknown case plans
+// nothing, and the promise's own plan is unchanged.
+// @verifies breaktest:INV-11
+func TestPlanCase(t *testing.T) {
+	dir := t.TempDir()
+	sym := func(fqn string) schema.GraphSymbol {
+		return schema.GraphSymbol{FQN: fqn, Name: fqn, Feature: "pay", EnforcesInvariants: []string{"INV-1"}, File: "a.go", Language: "go"}
+	}
+	test := func(name string, refs ...string) schema.GraphSymbol {
+		g := schema.GraphSymbol{FQN: "pkg." + name, Name: name, Language: "go", File: "a_test.go", Feature: "pay", Verifies: []string{"pay:INV-1"}}
+		for _, r := range refs {
+			g.VerifiesCases = append(g.VerifiesCases, r)
+		}
+		return g
+	}
+	kg := schema.KnowledgeGraph{
+		Features: []schema.Manifest{{ID: "pay", Invariants: []schema.Invariant{{ID: "INV-1", Statement: "s", Cases: []schema.InvariantCase{
+			{ID: "a", Kind: schema.CaseHappy, Statement: "x"},
+			{ID: "b", Kind: schema.CaseError, Statement: "y", Enforcer: "Check"},
+		}}}}},
+		Symbols: []schema.GraphSymbol{sym("Cap"), sym("Check")},
+		Tests:   []schema.GraphSymbol{test("TestHigh", "pay:INV-1#a"), test("TestNegative", "INV-1#b"), test("TestOther")},
+	}
+	show := func(p []target) []string {
+		var out []string
+		for _, tg := range p {
+			var tests []string
+			for _, v := range tg.tests {
+				tests = append(tests, v.Name)
+			}
+			out = append(out, tg.promise+"="+tg.enforcers[0].FQN+":"+strings.Join(tests, "+"))
+		}
+		return out
+	}
+	for ref, want := range map[string][]string{
+		"pay:INV-1#a": {"pay:INV-1#a=Cap:TestHigh", "pay:INV-1#a=Check:TestHigh"},
+		"pay:INV-1#b": {"pay:INV-1#b=Check:TestNegative"},
+		"pay:INV-1#z": nil,
+		"pay:INV-1":   {"pay:INV-1=Cap:TestHigh+TestNegative+TestOther", "pay:INV-1=Check:TestHigh+TestNegative+TestOther"},
+	} {
+		if got := show(plan(kg, Options{LatticeDir: dir, Promise: ref})); !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: plan = %v, want %v", ref, got, want)
+		}
+	}
+	if o := (Options{Promise: "pay:INV-1#a"}); !o.Selects("pay:INV-1#a") || o.Selects("pay:INV-1") {
+		t.Error("a case run selects the case ref only, so the promise's runs are kept")
+	}
+}

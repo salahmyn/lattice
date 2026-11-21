@@ -144,7 +144,8 @@ writes nothing (lattice.confirm-unsigned/1).`,
 				Commit: head, Branch: branch, Found: found, Platform: plat, Packet: packet,
 				Cache: cache, Refresh: refresh,
 				CIRun: results.CIRunID(), PlatformName: platform, Repository: repo,
-				Signed: &signature.Repo{Dir: top, LatticeRel: rel, Ref: branch, Repository: signature.RepositoryOf(top)},
+				Signed:       &signature.Repo{Dir: top, LatticeRel: rel, Ref: branch, Repository: signature.RepositoryOf(top)},
+				CurrentCases: func(refs []string) []schema.PromiseCases { return confirm.CasesFor(rows, refs) },
 			})
 			f.Warnings = warnings
 			if plat != nil {

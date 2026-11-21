@@ -53,3 +53,41 @@ func TestPromiseCases(t *testing.T) {
 		}
 	}
 }
+
+// Each case row carries the audit's confirmation state: pass only for a
+// confirmed case, drifted for one edited or retired since or resting on a
+// stale decision (never pass), unknown for one
+// added since, not recorded or never confirmed, and unknown for a row the
+// audit gave no state. Every one passes the contract lint.
+// @verifies api:INV-2
+// @verifies confirm:INV-20
+func TestPromiseCaseConfirmation(t *testing.T) {
+	row := audit.Row{Promise: "f:INV-1", Feature: "f", Statement: "s", Tier: 1, Class: audit.ClassBreakTested}
+	for _, tc := range []struct {
+		conf  audit.CaseConfirmation
+		state string
+	}{
+		{audit.CaseConfirmation{State: audit.CaseConfirmed, Code: audit.CaseCodeConfirmed, Reason: "as confirmed"}, contract.StatePass},
+		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeEdited, Reason: "edited"}, contract.StateDrifted},
+		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeRetired, Reason: "retired"}, contract.StateDrifted},
+		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeDecisionStale, Reason: "stale"}, contract.StateDrifted},
+		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeStampMismatch, Reason: "edited list"}, contract.StateFail},
+		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeStampUnverified, Reason: "unchecked"}, contract.StateUnknown},
+		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeAdded, Reason: "added"}, contract.StateUnknown},
+		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeNotRecorded, Reason: "old"}, contract.StateUnknown},
+		{audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeNeverConfirmed, Reason: "none"}, contract.StateUnknown},
+		{audit.CaseConfirmation{}, contract.StateUnknown},
+	} {
+		r := row
+		r.Cases = []audit.CaseRow{{ID: "a", Label: "1a", Kind: "happy", Statement: "x", Coverage: audit.CaseCovered, Confirmation: tc.conf}}
+		p := (&v2world{}).promiseOf(r, nil)
+		got := p.CaseRows[0].Confirmation
+		if got.State != tc.state || got.Code == "" || got.Honesty != contract.Proxy {
+			t.Errorf("%+v: confirmation = %+v", tc.conf, got)
+		}
+		part, _ := json.Marshal(map[string]interface{}{"case_rows": p.CaseRows})
+		if bad, err := contract.Lint(part, contract.LintOptions{}); err != nil || len(bad) > 0 {
+			t.Errorf("%+v: lint %v %v", tc.conf, bad, err)
+		}
+	}
+}

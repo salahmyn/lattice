@@ -77,6 +77,10 @@ type Report struct {
 	// check reads it to tell an enforcer moved within a change from one
 	// removed. It is an addition to the report.
 	AddedEnforcement []EnforcerChange `json:"added_enforcement"`
+	// TouchedCases are the acceptance cases the change touches: a case whose
+	// own enforcer changed, or one a changed test is tagged with
+	// (@verifies <promise>#<case>). It is an addition to the report.
+	TouchedCases []TouchedCase `json:"touched_cases"`
 	// Notes are informational readings of touched promises, such as an
 	// enforcer that changed under a statement that did not. They never
 	// change a verdict.
@@ -217,6 +221,7 @@ func Compute(ctx context.Context, in Input) (Report, error) {
 	rep.ChangedSymbols = cc.symbols
 	rep.RemovedEnforcement = cc.removed
 	rep.AddedEnforcement = cc.gained
+	rep.TouchedCases = touchedCases(in.Graph, cc)
 
 	approved, drafts := affectedCriteria(in.Graph.BRDs, cc)
 	rep.AffectedCriteria = approved
@@ -281,6 +286,9 @@ func normalize(r *Report) {
 	}
 	if r.Notes == nil {
 		r.Notes = []Note{}
+	}
+	if r.TouchedCases == nil {
+		r.TouchedCases = []TouchedCase{}
 	}
 	for _, k := range []*KindDiff{&r.ManifestDiff.Features, &r.ManifestDiff.BRDs, &r.ManifestDiff.EntryPoints} {
 		k.normalize()

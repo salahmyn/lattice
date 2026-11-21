@@ -52,6 +52,17 @@ type Record struct {
 	VerifiedAt  string `json:"verified_at,omitempty"`
 	// Rows are the promises a promise.confirm decision covers.
 	Rows []string `json:"rows,omitempty"`
+	// Cases are the acceptance cases the decision recorded for its promises,
+	// copied from the decision file. A reader compares them with the cases
+	// now to give each case its own confirmation state.
+	Cases []schema.PromiseCases `json:"cases,omitempty"`
+	// CasesCheck says whether Cases is bound to what was confirmed:
+	// "verified" when the decision's packet hash matched the workspace when
+	// confirm ran, so the cases now are the ones the packet hashed, and Cases
+	// equals them (or an intact cache verified the same list before);
+	// "mismatch" when the packet matched and Cases does not; empty when it
+	// could not be checked. Readers confirm a case only on "verified".
+	CasesCheck string `json:"cases_check,omitempty"`
 	// DecisionSHA is the commit that added the decision file on the default branch.
 	DecisionSHA string `json:"decision_sha,omitempty"`
 	// DecisionPath is the decision file a signature verdict is about, from
@@ -192,7 +203,18 @@ type Input struct {
 	// Signed reads the signatures beside decision files on the default
 	// branch. Nil leaves the signature route out.
 	Signed *signature.Repo
+	// CurrentCases stamps the cases of the given promises as they are now
+	// (CasesFor over the audit rows the Packet func hashes). With it, the
+	// case list of a decision whose packet still matches is checked against
+	// them. Nil leaves every case list unchecked.
+	CurrentCases func(promises []string) []schema.PromiseCases
 }
+
+// Case-list checks of a record.
+const (
+	CasesVerified = "verified"
+	CasesMismatch = "mismatch"
+)
 
 func (r Record) key() string {
 	return r.ID + "|" + itoa(r.Version) + "|" + r.Action + "|" + r.DecisionSHA
@@ -231,7 +253,7 @@ func Compute(ctx context.Context, in Input) File {
 	keys := signingKeys{platform: in.Platform, lists: map[string]keyList{}}
 	for _, fd := range in.Found {
 		d := fd.Decision
-		rec := Record{ID: d.ID, Version: d.Version, Action: d.Action, DecisionSHA: fd.AddedSHA}
+		rec := Record{ID: d.ID, Version: d.Version, Action: d.Action, DecisionSHA: fd.AddedSHA, Cases: d.Cases}
 		for _, r := range d.Rows {
 			if d.Action == ActionPromiseConfirm {
 				rec.Rows = append(rec.Rows, r.Promise)
@@ -274,8 +296,11 @@ func Compute(ctx context.Context, in Input) File {
 		if o.Via == ViaSignature {
 			rec.PRAuthor, rec.PRAuthorBot = pullAuthor(ctx, in.Platform, fd.AddedSHA)
 		}
+		packetMatched := false
 		if o.State == StateConfirmed && in.Packet != nil {
-			if hash, current := in.Packet(d); current && hash != d.PacketHash {
+			hash, current := in.Packet(d)
+			packetMatched = current && hash == d.PacketHash
+			if current && hash != d.PacketHash {
 				verb := "approved by "
 				if o.Via == ViaSignature {
 					verb = "signed by "
@@ -285,6 +310,7 @@ func Compute(ctx context.Context, in Input) File {
 				o.Params = map[string]interface{}{"prepared": d.PacketHash, "now": hash}
 			}
 		}
+		rec.CasesCheck = casesCheck(d, packetMatched, in.CurrentCases, cached[rec.key()])
 		rec.State, rec.ApproverLogin, rec.PR, rec.MergedSHA = o.State, o.Approver, o.PR, o.Merged
 		rec.Via, rec.Fingerprint, rec.SignatureBase = o.Via, o.Fingerprint, o.Base
 		if o.Via == ViaSignature {
@@ -308,6 +334,58 @@ func Compute(ctx context.Context, in Input) File {
 		return a.Action < b.Action
 	})
 	return Seal(f, Stamp{Commit: in.Commit, CIRun: ciRun, Platform: in.PlatformName, Repository: in.Repository})
+}
+
+// casesCheck binds a decision's case list to what was confirmed. While the
+// decision's packet hash still matches the workspace, the cases now are the
+// ones the packet hashed, so the list must equal them, promise by promise,
+// for rows of the decision only: verified, else mismatch. A list that cannot
+// be checked now (the packet changed, or the BRD moved on) stays verified
+// only when an intact cache verified this very list for this decision.
+// Anything else is unchecked, and no reader confirms a case on it.
+// @enforces confirm:INV-20
+func casesCheck(d Decision, packetMatched bool, current func([]string) []schema.PromiseCases, cached Record) string {
+	if len(d.Cases) == 0 {
+		return ""
+	}
+	if packetMatched && current != nil {
+		rows := map[string]bool{}
+		for _, r := range d.Rows {
+			rows[r.Promise] = true
+		}
+		refs := make([]string, 0, len(d.Cases))
+		for _, pc := range d.Cases {
+			if !rows[pc.Promise] {
+				return CasesMismatch
+			}
+			refs = append(refs, pc.Promise)
+		}
+		if !sameCases(d.Cases, current(refs)) {
+			return CasesMismatch
+		}
+		return CasesVerified
+	}
+	if cached.CasesCheck == CasesVerified && sameCases(cached.Cases, d.Cases) {
+		return CasesVerified
+	}
+	return ""
+}
+
+func sameCases(a, b []schema.PromiseCases) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Promise != b[i].Promise || len(a[i].Cases) != len(b[i].Cases) {
+			return false
+		}
+		for j := range a[i].Cases {
+			if a[i].Cases[j] != b[i].Cases[j] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // pullAuthor names who opened the pull request that merged a signed

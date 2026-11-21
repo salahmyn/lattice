@@ -77,6 +77,14 @@ func Markdown(w io.Writer, r Report) {
 		p("\n")
 	}
 
+	if len(r.TouchedCases) > 0 {
+		p("### Touched cases\n\n| Case | Promise | Touched by | Statement |\n|---|---|---|---|\n")
+		for _, c := range r.TouchedCases {
+			p("| %s | %s | %s | %s |\n", c.Label, code(c.Promise), cell(touchedWhy(c)), cell(c.Statement))
+		}
+		p("\n")
+	}
+
 	if len(r.Notes) > 0 {
 		p("### Notes\n\n_Informational: a note never changes a verdict._\n\n")
 		for _, n := range r.Notes {
@@ -264,6 +272,13 @@ func Text(w io.Writer, r Report) {
 	}
 	for _, re := range r.RemovedEnforcement {
 		p("  %s  %s  %s:%d  %s\n", re.Symbol, re.Invariant, re.File, re.Line, ReasonText(re))
+	}
+
+	if len(r.TouchedCases) > 0 {
+		p("\nTOUCHED CASES\n")
+		for _, c := range r.TouchedCases {
+			p("  %-4s %s  %s  %s\n", c.Label, c.Promise, touchedWhy(c), c.Statement)
+		}
 	}
 
 	if len(r.Notes) > 0 {
@@ -471,4 +486,16 @@ func errSuffix(e string) string {
 		return ""
 	}
 	return " (does not parse: " + e + ")"
+}
+
+// touchedWhy says in words what touches a case: "enforcer f.Validate
+// modified" or "verifier f.TestFee added".
+func touchedWhy(c TouchedCase) string {
+	switch c.Why {
+	case CaseEnforcerChanged:
+		return "enforcer " + c.Symbol + " " + c.Change
+	case CaseVerifierChanged:
+		return "verifier " + c.Symbol + " " + c.Change
+	}
+	return c.Why + " " + c.Symbol
 }

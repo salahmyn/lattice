@@ -464,3 +464,39 @@ func TestBreakAllowDirtyRecordsDirty(t *testing.T) {
 		t.Errorf("the untracked file was not in the tested tree: %+v", r)
 	}
 }
+
+// `lattice break --promise <promise>#<case>` breaks the case's enforcer
+// against only its tagged tests, records the run under the case ref and
+// keeps the promise's own runs; an unknown case is refused.
+// @verifies breaktest:INV-11
+func TestBreakOneCase(t *testing.T) {
+	dir := breakFixture(t)
+	feature := strings.Replace(breakFixtureFeature, "    statement: Zero is not positive.\n",
+		"    statement: Zero is not positive.\n    cases:\n      - id: a\n        kind: edge\n        statement: One is positive.\n", 1)
+	tests := breakFixtureTests + "\n// @verifies guard:INV-1#a\nfunc TestPositiveOne(t *testing.T) {\n\tif !Positive(1) {\n\t\tt.Fatal(\"one\")\n\t}\n}\n"
+	for name, body := range map[string]string{"lattice/features/guard.yaml": feature, "guard/guard_test.go": tests} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGit(t, dir, "commit", "-q", "-am", "cases")
+
+	if _, out, err := runBreak(t, dir, "--promise", "guard:INV-1"); err != nil {
+		t.Fatalf("promise break: %v\n%s", err, out)
+	}
+	rep, out, err := runBreak(t, dir, "--promise", "guard:INV-1#a")
+	if err != nil {
+		t.Fatalf("case break: %v\n%s", err, out)
+	}
+	runs := byPromise(rep)
+	c, p := runs["guard:INV-1#a"], runs["guard:INV-1"]
+	if c.Outcome != breaktest.Killed || len(c.Verifiers) != 1 || !strings.HasSuffix(c.Verifiers[0], "TestPositiveOne") {
+		t.Errorf("case run = %+v", c)
+	}
+	if p.Outcome != breaktest.Killed || len(p.Verifiers) != 2 {
+		t.Errorf("the promise's run must be kept with all its verifiers: %+v", p)
+	}
+	if _, out, err := runBreak(t, dir, "--promise", "guard:INV-1#z"); err == nil || !strings.Contains(out, "CASE_NOT_FOUND") {
+		t.Errorf("an unknown case must be refused: %v\n%s", err, out)
+	}
+}

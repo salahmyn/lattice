@@ -94,7 +94,14 @@ names a paragraph, not a claim.
 - **B3.** `kind` is `happy`, `edge`, `error` or `security`.
 - **B5.** Agents may draft cases. Each case has its own confirmation state, so a
   case added or edited after confirmation reads unconfirmed. Editing a case is a
-  structural change.
+  structural change. *Built:* a decision records its promises' cases (id, kind,
+  statement, enforcer, retired, hash); the audit compares them with the cases now
+  and gives each `confirmed` (only under a current decision for the current
+  version) or `unconfirmed` with a code (added, edited, retired after
+  confirmation; decision stale; stamp mismatch or unverified; not recorded;
+  never confirmed). `lattice confirm` binds the list to the pinned packet,
+  which already hashes the cases, so a hand-edited list never confirms. The promise's own signal is
+  unchanged (confirm:INV-20).
 - Coverage per case is computed by the kernel, never typed:
   - `covered`: a tagged verifier passed, and breaking the enforcer killed it;
   - `partial`;
@@ -111,6 +118,12 @@ invariants:
       - { id: b, kind: edge,  statement: A 0.01 withdrawal pays no fee. }
       - { id: c, kind: error, statement: A negative amount is rejected first., enforcer: wallet.fees.validateAmount }
 ```
+
+*Built:* `lattice impact` names the cases a change touches (a case's own
+enforcer changed, or a `#case` verifier changed; impact:INV-10), and `lattice
+break --promise f:INV-1#a` breaks one case against its tagged tests, recorded
+under the case ref so it never reaches the promise's break signal
+(breaktest:INV-11).
 
 Cases are also the answer to "split the broad invariants". Splitting is still
 right only where one invariant holds unrelated claims.
@@ -135,7 +148,9 @@ name must be settled first.
 - **A2.** First approvals and structural drift take full friction: the reviewer
   types the version, and the key sections must have been viewed. Text-only drift
   gets a lighter dialog. Any edit to a promise, criterion or case statement is
-  structural.
+  structural. *Built:* the packet's structural diff names case adds, edits (with
+  what changed), retirements and removals, and `packet.diff.friction` is `full`
+  for any structural line (confirm:INV-21).
 - **A3.** Batching is allowed within one BRD only.
 - **A4.** Before the new UI, the existing map gets an assurance lens. Every colour
   comes from a kernel field. Unknown or `UNPROVEN` is never drawn as a pass.

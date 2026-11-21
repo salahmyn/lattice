@@ -505,3 +505,70 @@ func TestPrepareNeverOverwritesADecision(t *testing.T) {
 		t.Errorf("a same-named branch without this decision: %+v", ref)
 	}
 }
+
+// The decision file records each row's acceptance cases as the packet held
+// them, so a reader can tell later which case a human confirmed: a promise
+// with cases lists them with their hashes, one without lists none, and the
+// list leaves the packet hash as it was.
+// @verifies confirm:INV-20
+func TestPrepareRecordsCases(t *testing.T) {
+	f := newFixture(t)
+	plain, ref := Run(f.env(""), approveReq("brd.x", 1))
+	if ref != nil {
+		t.Fatalf("refused: %+v", ref)
+	}
+	f.kg.Features[0].Invariants[0].Cases = []schema.InvariantCase{
+		{ID: "a", Kind: schema.CaseHappy, Statement: "A 100.00 withdrawal pays at most 5.00."},
+		{ID: "b", Kind: schema.CaseEdge, Statement: "A 0.01 withdrawal pays no fee.", Enforcer: "f.EnfINV-1"},
+	}
+	res, ref := Run(f.env(""), approveReq("brd.x", 1))
+	if ref != nil {
+		t.Fatalf("refused: %+v", ref)
+	}
+	if res.PacketHash == plain.PacketHash {
+		t.Fatal("cases are part of the packet")
+	}
+	d, err := confirm.ParseDecision([]byte(f.git("show", res.Branch+":"+res.Files[0])))
+	if err != nil {
+		t.Fatal(err)
+	}
+	one, ok1 := schema.CasesOf(d.Cases, "f:INV-1")
+	two, ok2 := schema.CasesOf(d.Cases, "f:INV-2")
+	if !ok1 || !ok2 || len(one) != 2 || len(two) != 0 {
+		t.Fatalf("cases = %+v", d.Cases)
+	}
+	if one[1].ID != "b" || one[1].Enforcer != "f.EnfINV-1" || one[1].Hash != schema.CaseHash(schema.CaseEdge, "A 0.01 withdrawal pays no fee.", "f.EnfINV-1") {
+		t.Errorf("b = %+v", one[1])
+	}
+}
+
+// The review packet's diff names a case edited since the confirmation that
+// recorded it, and the review takes full friction for it; the packet hash
+// stays the one a decision pins (the case is hashed with its promise, not
+// through the diff lines).
+// @verifies confirm:INV-21
+func TestPacketDiffNamesCaseEdits(t *testing.T) {
+	f := newFixture(t)
+	cases := []schema.InvariantCase{{ID: "a", Kind: schema.CaseHappy, Statement: "A 100.00 withdrawal pays at most 5.00."}}
+	f.kg.Features[0].Invariants[0].Cases = cases
+	env := f.env("")
+	held := confirm.CasesFor(env.Report.Rows, []string{"f:INV-1", "f:INV-2"})
+	env.Cache = &confirm.File{Records: []confirm.Record{{ID: "brd.x", Version: 1, Action: confirm.ActionApprove,
+		State: confirm.StateConfirmed, ApproverLogin: "ana", PR: 7, MergedSHA: f.git("rev-parse", "HEAD"), Cases: held,
+		CasesCheck: confirm.CasesVerified}}}
+	if p := env.Packet(*f.brd("brd.x"), ""); p.Friction != confirm.FrictionFull || len(p.Diff) != 1 || p.Diff[0] != "initial" {
+		t.Errorf("unchanged cases add nothing: %v %s", p.Diff, p.Friction)
+	}
+
+	f.kg.Features[0].Invariants[0].Cases = []schema.InvariantCase{{ID: "a", Kind: schema.CaseEdge, Statement: "A 100.00 withdrawal pays 5.00."}}
+	env.Report = audit.Compute(audit.Sources{KG: f.kg})
+	p := env.Packet(*f.brd("brd.x"), "")
+	if p.Err != nil || !contains(p.Diff, "case 1a of f:INV-1 edited: kind happy->edge, statement") || p.Friction != confirm.FrictionFull {
+		t.Errorf("diff = %v, friction %s, err %v", p.Diff, p.Friction, p.Err)
+	}
+	bare := env
+	bare.Cache = nil
+	if q := bare.Packet(*f.brd("brd.x"), ""); q.Hash != p.Hash || contains(q.Diff, "case 1a of f:INV-1 edited: kind happy->edge, statement") {
+		t.Errorf("the case lines must not change the hash: %s vs %s (%v)", q.Hash, p.Hash, q.Diff)
+	}
+}

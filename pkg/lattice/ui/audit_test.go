@@ -112,3 +112,58 @@ func TestAuditPage(t *testing.T) {
 		t.Error("promise filter on the page")
 	}
 }
+
+// The audit page draws each acceptance case with its coverage and its own
+// confirmation, both from the kernel's fields. Only covered and confirmed
+// get the positive colour; uncovered, partial, unconfirmed and a missing
+// state never do.
+// @verifies audit:INV-2
+// @verifies confirm:INV-20
+func TestAuditPageCases(t *testing.T) {
+	views := caseViews([]audit.CaseRow{
+		{ID: "a", Coverage: audit.CaseCovered, Confirmation: audit.CaseConfirmation{State: audit.CaseConfirmed, Code: audit.CaseCodeConfirmed}},
+		{ID: "b", Coverage: audit.CasePartial, Confirmation: audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeEdited}},
+		{ID: "c", Coverage: audit.CaseFailing, Confirmation: audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeAdded}},
+		{ID: "d", Coverage: audit.CaseUncovered, Confirmation: audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeDecisionStale}},
+		{ID: "e", Coverage: "", Confirmation: audit.CaseConfirmation{State: audit.CaseConfirmed}},
+		{ID: "f", Coverage: audit.CaseCovered, Confirmation: audit.CaseConfirmation{State: audit.CaseUnconfirmed, Code: audit.CaseCodeStampMismatch}},
+	})
+	got := []string{}
+	for _, v := range views {
+		got = append(got, v.ID+":"+v.CoverageBadge+","+v.ConfirmBadge)
+	}
+	want := "a:is-ok,is-ok b:is-warn,is-warn c:is-error,is-info d:is-warn,is-warn e:is-info,is-info f:is-ok,is-error"
+	if strings.Join(got, " ") != want {
+		t.Errorf("badges = %s, want %s", strings.Join(got, " "), want)
+	}
+
+	kg := schema.KnowledgeGraph{
+		Features: []schema.Manifest{{ID: "pay", Version: 1, Status: schema.StatusProduction, Invariants: []schema.Invariant{
+			{ID: "INV-1", Statement: "guard holds", Cases: []schema.InvariantCase{{ID: "a", Kind: schema.CaseEdge, Statement: "A zero amount is refused."}}}}}},
+		Symbols: []schema.GraphSymbol{{FQN: "pay.Guard", Feature: "pay", EnforcesInvariants: []string{"INV-1"}, File: "pay.go", Line: 4}},
+	}
+	srv := New(&workspace.Workspace{LatticeDir: t.TempDir()}, Options{
+		GraphBuilder: func(context.Context) (schema.KnowledgeGraph, error) { return kg, nil },
+	})
+	w := httptest.NewRecorder()
+	srv.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/audit", nil))
+	body := w.Body.String()
+	if w.Code != 200 {
+		t.Fatalf("/audit = %d %s", w.Code, body)
+	}
+	i := strings.Index(body, "audit-cases")
+	if i < 0 {
+		t.Fatalf("no cases section:\n%s", body)
+	}
+	section := body[i:]
+	section = section[:strings.Index(section, "</table>")]
+	for _, want := range []string{">1a<", "A zero amount is refused.", `badge is-warn" title="no test is tagged @verifies pay:INV-1#a">uncovered`,
+		`badge is-info" title="no confirmation: no BRD criterion maps to this promise">unconfirmed`} {
+		if !strings.Contains(section, want) {
+			t.Errorf("cases section lacks %q:\n%s", want, section)
+		}
+	}
+	if strings.Contains(section, "is-ok") {
+		t.Errorf("an uncovered, unconfirmed case is drawn positive:\n%s", section)
+	}
+}

@@ -43,6 +43,13 @@ type ConfirmRecord struct {
 	PR            int      `json:"pr,omitempty"`
 	Rows          []string `json:"rows,omitempty"`
 	DecisionPath  string   `json:"decision_path,omitempty"`
+	// Cases are the acceptance cases the decision recorded for its
+	// promises: what the human confirmed case by case.
+	Cases []schema.PromiseCases `json:"cases,omitempty"`
+	// CasesCheck is "verified" when lattice confirm bound Cases to the
+	// packet the decision pinned, "mismatch" when Cases contradicts it, and
+	// empty when it was not checked. Only a verified list confirms a case.
+	CasesCheck string `json:"cases_check,omitempty"`
 	// Note says why a signature verdict was set aside when it was re-verified.
 	Note string `json:"-"`
 }
