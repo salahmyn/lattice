@@ -749,6 +749,7 @@ coverage:
     feature: 60                         # a feature's runtime symbols, over the suite
     invariant: 80                       # an invariant's enforcers, over its verifiers' runs
     tier: {2: 90, 3: 100}               # a BRD criterion's weakest invariant, by tier
+    verified_lines: 70                  # a feature's lines run by their own verifiers (4u)
 ```
 
 Paths are relative to the directory holding `lattice/`. When a path given
@@ -1425,6 +1426,7 @@ lattice break --promise cart:INV-2     # one promise
 lattice break --promise cart:INV-2#b   # one acceptance case
 lattice break --feature cart --json
 lattice break --fail-on survived,unknown   # exit 1 when a shown run survived or is unknown
+lattice break --lines                  # also record which lines each promise's verifiers run (4u)
 ```
 
 `--promise <promise>#<case>` breaks one acceptance case: the case's own `enforcer`,
@@ -1588,6 +1590,9 @@ break:
   the promise's verifiers reads `unknown` ("the filter matched no tests"), never
   `survived`: vitest's `-t` with no match exits 0. Without `{junit}` the executed
   count cannot be checked, and the reason says so.
+- `{coverage}` is the path where a runner writes a coverage report, for
+  `lattice break --lines` (section 4u). It is filled for every invocation, but
+  the report is read only with `--lines`.
 - Paths in `{files}` are relative to the directory that holds `lattice/`, but a
   runner may resolve them against its own root. For vitest, pass `--root
   apps/client` rather than `cd apps/client && vitest {files}`, which finds
@@ -2132,6 +2137,9 @@ lattice audit --promise wallet:INV-1          # one promise (repeat, or a comma 
 `--promise`, `--feature` and `--class` only narrow what is printed; the audit
 is always computed over the whole workspace, so a row reads the same filtered
 or not. An unknown `--promise` id is a usage error (exit 2).
+
+`lattice audit --lines` adds what each block of code is for and how many of
+its lines its own verifiers ran (section 4u).
 
 `inputs.results.matches_head` and `inputs.coverage.matches_head` say whether
 the evidence is of the graph's commit, by the rule validate uses for
@@ -3742,6 +3750,207 @@ public.jobs: 3 writer(s)
 
 writer set complete (from the migrations and sql.default_write)
 ```
+
+## 4u. Lines: what is each block for, and do its verifiers reach it?
+
+Every line of code should have a **known intent** and be **reached by the
+verifiers of that intent**. The intent of a line is the invariant its block
+serves, which links up to a feature and a BRD criterion. A line is reached when
+a verifier of that invariant ran it in its own run; some other test running it
+does not count. Lattice computes both, and a line it has no evidence for reads
+`unknown`, never covered.
+
+```sh
+lattice break --lines          # record which lines each promise's verifiers run
+lattice audit --lines          # what each block is for, and how far its verifiers reach
+lattice audit --lines --json   # the same, as a lines section of lattice.audit/1
+```
+
+### Record the lines: `lattice break --lines`
+
+`lattice break` already runs each promise's own verifiers, unbroken, as its
+baseline. With `--lines` each of those invocations also writes a coverage
+report, which Lattice keeps (only the files of the workspace) in
+`lattice/.cache/results/verifier-lines.json` (`lattice.verifier-lines/1`) for
+the tree. Per promise it records, for each runner group: the invocation, the
+verifiers that ran, whether the invocation also ran a test that is not a
+verifier of the promise (`shared`), and per file the instrumented lines and the
+ones that ran. A later `--lines` run on the same tree reuses it. The line data
+is of HEAD's tree, so `--lines` needs a clean tree and is skipped, with a note,
+on a dirty one; it does nothing with `--fails-on-base`.
+
+A baseline run with coverage is keyed apart from the same command without it,
+so a plain cached baseline is never taken as having line data, and a plain
+`lattice break` renders, runs and caches exactly as it did before.
+
+**Go** needs nothing: the built-in `go test -run` gets `-coverprofile=<file>
+-coverpkg=./...`, run from the module's own directory, so the profile covers
+every package of that module. The profile's import paths are mapped back to
+workspace files through the module path in `go.mod`.
+
+**Other runners** ask for the report with `{coverage}`, in a runner's `command` or
+a `break.commands.<lang>` template. It is a path unique to the invocation inside
+the break's temporary directory. The report's format is detected from its
+content (LCOV, istanbul, coverage.py JSON, Cobertura, Clover, Go). A tool that
+can write one exact file gets `{coverage}` as that file; a tool that can only write
+into a directory is given `{coverage}` as the directory, and Lattice reads the one
+coverage report among the files directly inside it (a report written in a
+subdirectory, such as vitest's `lcov-report/` HTML, is not read; several coverage
+reports in the directory read unknown, with that reason). Examples, each run
+against a one-file project:
+
+```yaml
+break:
+  runners:
+    # vitest writes into a directory: lcov.info (and an HTML report beside it).
+    - name: vitest
+      match: ["web/**/*.test.ts"]
+      dir: web
+      command: [npx, vitest, run, "--reporter=junit", "--outputFile.junit={junit}",
+                "--coverage.enabled", "--coverage.reporter=lcov",
+                "--coverage.reportsDirectory={coverage}", "--coverage.include=src/**",
+                -t, "{filter}", "{files}"]
+    # pytest-cov writes one exact file.
+    - name: pytest
+      match: ["tests/**/*.py"]
+      command: [python, -m, pytest, "--junitxml={junit}", "--cov=src",
+                "--cov-report=lcov:{coverage}", -k, "{filter}", "{files}"]
+    # Node's built-in runner takes a reporter per destination.
+    - name: node
+      match: ["test/**/*.test.js"]
+      command: [node, --test, --experimental-test-coverage, --test-reporter=junit,
+                "--test-reporter-destination={junit}", --test-reporter=lcov,
+                "--test-reporter-destination={coverage}", "{files}"]
+  commands:
+    # coverage.py itself: a template is run by sh.
+    python: coverage run -m pytest {files} -k {filter} --junitxml={junit} && coverage lcov -o {coverage}
+```
+
+A report's relative paths start from the runner's `dir` (the code root when it has
+none). `{coverage}` is always filled, so a command that names it never runs with
+the placeholder unfilled; without `--lines` the report is written and not read.
+Each of the four commands above was run with its placeholders filled by hand (vitest
+5, pytest-cov, Node 22 and coverage.py) and wrote the report described.
+
+**What reads unknown, and why.** Nothing is invented. A group has no line data
+of its own when:
+
+- its runner has no `{coverage}` (the reason says so);
+- the baseline did not pass, or did not run;
+- no report was written to `{coverage}`, the report could not be parsed, or it lists
+  no file of the workspace;
+- it is a **SQL** group. pgTAP and `pg_stat_user_functions` report calls per
+  function, not lines, so a SQL block's lines are unknown with the reason "pgTAP
+  reports calls per function, not lines", and when an ingested per-test call count
+  says a verifier called the function, the block says so at function level.
+  Line coverage inside SQL bodies is out of scope.
+
+A generated break also records, on its run in `breaks.json`, the first and last
+line of the enforcer's file it edits (`"lines": [start, end]`, an addition to
+`lattice.breaks/1`; runs written before it lack the field) when the edit targets those
+lines' own logic: a SQL policy or trigger expression. An early return (and a SQL
+function's) records `"whole": true` instead, and no lines. A scripted or an edge break
+records neither.
+
+### Show it: `lattice audit --lines`
+
+A **block** is a non-test symbol with a line extent: a function, a method, a SQL
+policy or trigger, or any symbol that carries `@enforces`. Lines outside every
+block (top-level code, declarations) are counted apart as `outside` and never enter
+a percentage. A line of a nested block belongs to the inner one.
+
+**Intent of a block**, from `@enforces` and the call graph (`callgraph.json`, or the
+graph just built):
+
+| Intent | Meaning |
+|---|---|
+| `enforces f:INV-n` | the block carries `@enforces` (or a BRD criterion names it in `enforced_by`, as `lattice check` counts a guarded symbol) |
+| `serves f:INV-n` | every caller of the block is an enforcer of that invariant, or a block that serves it |
+| `shared f:INV-n, ...` | it is reached from enforcers and from blocks with no intent, such as a logger |
+| `none` | it has no intent |
+
+The fixed point is computed in two least passes, so a cycle of helpers reads the
+same on every run: intent flows from enforcers to what they call; then a block is
+`shared` when any caller has no intent (a caller that is not a block, such as
+module-level code, counts), or is itself `shared`. An enforcer's own callers never
+make what it calls shared. A test is never a block and never a caller: its intent
+is what it `@verifies`. Each invariant of an intent is marked `required` when a BRD
+criterion maps to it (`maps_to_invariant`), else `unrequired`.
+
+**Level of each instrumented line** of a block (a line some report lists; blank
+lines and comments are not lines), strongest first:
+
+| Level | Meaning |
+|---|---|
+| `checked` | a killed break that targets this line's own logic edited it (`lines` on the run is exactly the edited lines), and nothing shows no verifier ran it |
+| `run` | an unshared invocation of a verifier group of the intent ran it (or a verifier's own per-test run did) |
+| `run_shared` | only a shared invocation, one that also ran other tests, ran it |
+| `other` | the ingested suite coverage (`coverage.reports`), or another intent's verifiers, ran it, but no verifier of its intent did; for a block with intent `none`, any run is `other` |
+| `not_run` | instrumented, and nothing ran it |
+| `unknown` | no line data for the block: not instrumented, SQL, or not yet run with `--lines`; the reason is given |
+
+An early-return break skips a whole body, so killing it proves nothing about any one
+line: it records no `lines`, sets `whole: true` on its run, and the block shows
+`checked as a whole (early return killed)`. Its lines keep their coverage levels and
+the verified count does not rise. `checked` is the strongest, but a line the verifiers' own data shows none of them
+ran cannot be what a break was noticed by, so it keeps its other level. Line data
+that is of another tree than HEAD, or of a dirty working tree, is ignored and its
+lines read unknown.
+
+```text
+workspace  verified lines 60.0% (6 of 10 known lines, 6 unknown)
+  blocks with no intent: other 2, not_run 0, unknown 0
+  outside any block: 0 instrumented lines (0 run by something)
+
+feature fees  verified lines 60.0% (6 of 10 known lines, 6 unknown)
+  db/migrations/0001_fees.sql:4  sql.public.check_fee  enforces fees:INV-3 (unrequired)
+      checked 0, run 0, run_shared 0, other 0, not_run 0, unknown 6
+      unknown: pgTAP reports calls per function, not lines
+  src/cap.js:4  src.cap.cap  enforces fees:INV-4 (unrequired)
+      checked 0, run 2, run_shared 0, other 0, not_run 0, unknown 0
+      checked as a whole (early return killed)
+  src/fees.js:4  src.fees.charge  enforces fees:INV-1 (unrequired)
+      checked 0, run 3, run_shared 0, other 0, not_run 1, unknown 0
+      not_run: 7
+  src/fees.js:12  src.fees.round  serves fees:INV-1 (unrequired)
+      checked 0, run 1, run_shared 0, other 0, not_run 0, unknown 0
+  src/guard.js:4  src.guard.guard  enforces fees:INV-2 (unrequired)
+      checked 0, run 0, run_shared 2, other 0, not_run 0, unknown 0
+      run_shared: 5–6
+  src/util.js:3  src.util.logLine  none
+      checked 0, run 0, run_shared 0, other 2, not_run 0, unknown 0
+      other: 4–5
+```
+
+Per block it shows the intent, the count of each level and the compressed line
+ranges of the `not_run`, `other` and `run_shared` lines, the ones to look at. Per
+feature and for the workspace, **verified lines** are `(checked + run)` over the
+lines of blocks with an intent that have a level, always printed with the unknown
+count beside the percentage; with no known line it prints "no line data" and never
+a percentage. Blocks with intent `none` and `outside` are counted apart. Everything is
+sorted by feature, then file, then line.
+
+`--feature`, `--promise` and `--class` narrow the lines too (the blocks whose intent
+names a shown promise, or of the feature), and `outside` is then not counted.
+`--markdown` prints one table per feature. With `--json` the lines are a `lines`
+section of the `lattice.audit/1` report (its own schema tag, `lattice.audit-lines/1`):
+an addition that is absent without `--lines`, so the audit's contract does not change
+and one JSON document still holds the rows and the lines.
+
+### The floor
+
+```yaml
+# lattice/config.yaml
+coverage:
+  floors:
+    verified_lines: 70
+```
+
+Declaring `coverage.floors.verified_lines` (0-100) makes `lattice validate` report
+`VERIFIED_LINES_BELOW_FLOOR` (warning) for each feature whose verified lines are
+below it. A feature with only unknown lines has nothing to compare: it reports "no
+line data" as info. Unknown lines never count as verified. Without the floor the
+code does not exist for validate, and no line data is read.
 
 ## 5. Day-to-day commands
 

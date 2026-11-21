@@ -51,6 +51,11 @@ its evidence basis: `per_test`, `per_file` or `suite`.
 - `COVERAGE_BELOW_FLOOR` (warning) — a feature, invariant or criterion tier
   is under its declared floor. Add tests for the unrun lines; lowering the
   floor is the owner's call, not yours.
+- `VERIFIED_LINES_BELOW_FLOOR` (warning; info, "no line data", for a feature
+  whose lines have none) — only with `coverage.floors.verified_lines`: a
+  feature's lines run by their own verifiers (`lattice break --lines`, then
+  `lattice audit --lines`) are under the floor. Add verifiers for the
+  `not_run` ranges it lists; unknown lines never count as verified.
 
 A row reads `exercised` when it is demonstrated and a verifier's own
 per-test run executed an enforcer; only per-test coverage promotes to it.

@@ -42,3 +42,5 @@ invariants:
         statement: A case is uncovered when no verifier is tagged with it, or no tagged verifier has a result.
   - id: INV-9
     statement: The results and coverage inputs match head when their commit stamp is head's, either side is unknown, or git shows the two commits differ only in Lattice's own ledger and cache (for coverage, only when it was ingested from a clean tree); another commit that git cannot compare with head never matches.
+  - id: INV-10
+    statement: A line counts as reached by an invariant's verifiers only from the coverage of an invocation that ran those verifiers (or a verifier's own per-test run), and a line with no such data is unknown, never run, verified or counted toward a floor.

@@ -29,6 +29,10 @@ var defaultSeverity = map[string]string{
 	schema.CodeVerifierUnproven:       SeverityOff,
 	schema.CodeCoverageStale:          SeverityOff,
 	schema.CodeCoverageBelowFloor:     SeverityOff,
+	// Verified lines: off until the floor is declared. Once it is, the
+	// finding keeps the severity it is raised with (a warning below the
+	// floor, info for "no line data"), unless validate.severity says more.
+	schema.CodeVerifiedLinesBelowFloor: SeverityOff,
 	// Reachability (rnd/0009 phase 2): off until each is enabled, whatever
 	// the coverage: block says, because they depend on the call graph.
 	schema.CodeSymbolUnreached:     SeverityOff,
@@ -69,6 +73,9 @@ func severityDefaults(cfg config.Config) map[string]string {
 		if cfg.CoverageConfig().Floors.Declared() {
 			out[schema.CodeCoverageBelowFloor] = string(schema.SeverityWarning)
 		}
+	}
+	if cfg.CoverageConfig().Floors.VerifiedLinesDeclared() {
+		delete(out, schema.CodeVerifiedLinesBelowFloor)
 	}
 	for _, code := range reachCodes {
 		if name, set := cfg.Validate.Severity[code]; set {

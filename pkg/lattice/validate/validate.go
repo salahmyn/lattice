@@ -13,6 +13,7 @@ import (
 	"github.com/salahmyn/lattice/pkg/lattice/coverage"
 	"github.com/salahmyn/lattice/pkg/lattice/lease"
 	"github.com/salahmyn/lattice/pkg/lattice/ledger"
+	"github.com/salahmyn/lattice/pkg/lattice/lines"
 	"github.com/salahmyn/lattice/pkg/lattice/reach"
 	"github.com/salahmyn/lattice/pkg/lattice/rtm"
 	"github.com/salahmyn/lattice/pkg/lattice/schema"
@@ -133,6 +134,11 @@ type Options struct {
 	// exercised.
 	Coverage *coverage.Index
 
+	// Lines is the lines section of `lattice audit --lines`, computed by the
+	// caller when coverage.floors.verified_lines is declared. nil means none:
+	// VERIFIED_LINES_BELOW_FLOOR does not fire.
+	Lines *lines.Report
+
 	// Reach is the classified call graph (rnd/0009, phase 2). nil means
 	// none was built: no reachability finding fires, and FEATURE_UNREACHED
 	// keeps its flow-based rule.
@@ -203,6 +209,7 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 			v = append(v, c.checkMeaning()...) // v0.8 δ — meaning fidelity
 			// rnd/0009 — coverage findings, only on ingested data.
 			v = append(v, coverage.Findings(kg, c.opts.Coverage, cfg.CoverageConfig())...)
+			v = append(v, lines.Findings(c.opts.Lines, cfg.CoverageConfig().Floors.VerifiedLines, featureLocations(kg))...)
 			// rnd/0009 phase 2 — reachability and suite overlap, off until
 			// enabled in validate.severity.
 			var ran reach.Executed
@@ -217,6 +224,15 @@ func Validate(kg schema.KnowledgeGraph, cfg config.Config, opts Options) []schem
 	v = applySeverityWith(v, cfg.Validate.Severity, severityDefaults(cfg))
 	sortViolations(v)
 	return dedupe(v)
+}
+
+// featureLocations maps each feature to the manifest that declares it.
+func featureLocations(kg schema.KnowledgeGraph) map[string]*schema.Location {
+	out := map[string]*schema.Location{}
+	for _, m := range kg.Features {
+		out[m.ID] = &schema.Location{File: m.SourcePath}
+	}
+	return out
 }
 
 // CodeCoupledChecks names the validation categories that review mode defers.

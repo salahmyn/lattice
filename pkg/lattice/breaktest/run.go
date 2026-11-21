@@ -42,6 +42,11 @@ type Options struct {
 	// EdgeHops are the hops on each promise's slice paths ("feature:INV-n"),
 	// read from the reach graph by the caller. Only used with Edges.
 	EdgeHops map[string][]EdgeHop
+	// Lines records, for each promise, which lines its own verifiers ran: each
+	// baseline invocation runs with coverage on and the report is kept in
+	// verifier-lines.json (see the lines package). It needs a clean tree, and
+	// without it commands render and are cached exactly as before.
+	Lines bool
 }
 
 // warn is where notes go.

@@ -84,3 +84,17 @@ func Compute(in Input) *Result {
 	r.ClassifyHandlers(g.Handlers(in.EntryPoints))
 	return r
 }
+
+// LoadCache reads lattice/.cache/callgraph.json; ok is false when there is
+// none, or it cannot be read or is of another version.
+func LoadCache(latticeDir string) (Cache, bool) {
+	data, err := os.ReadFile(filepath.Join(latticeDir, filepath.FromSlash(CacheFile)))
+	if err != nil {
+		return Cache{}, false
+	}
+	var c Cache
+	if json.Unmarshal(data, &c) != nil || c.Version != cacheVersion {
+		return Cache{}, false
+	}
+	return c, true
+}

@@ -171,6 +171,12 @@ const (
 	CodeCoverageStale          = "COVERAGE_STALE"           // coverage is of another commit, or a dirty tree (warning)
 	CodeCoverageBelowFloor     = "COVERAGE_BELOW_FLOOR"     // a feature, invariant or tier is under its declared floor (warning)
 
+	// CodeVerifiedLinesBelowFloor: a feature's verified lines (the lines of
+	// its blocks that their own verifiers ran, from lattice break --lines)
+	// are under coverage.floors.verified_lines (warning); a feature with no
+	// line data reads "no line data" as info. Never fires without the floor.
+	CodeVerifiedLinesBelowFloor = "VERIFIED_LINES_BELOW_FLOOR"
+
 	// CodeResultsStale: the ingested test results are of another commit
 	// than the graph's (info, always on). It names the evidence and never
 	// changes a level.
