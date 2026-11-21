@@ -5,6 +5,7 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/salahmyn/lattice/internal/preflight"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/runsclean"
 )
@@ -15,6 +16,7 @@ import (
 // finding, not progress — run this at the end of every slice and before
 // reporting anything demonstrated.
 func newRunsCleanCommand(io *IO) *cobra.Command {
+	var noPreflight bool
 	cmd := &cobra.Command{
 		Use:     "runs-clean",
 		Aliases: []string{"v0"},
@@ -35,7 +37,16 @@ any failing step; configure the block in lattice/config.yaml:
     boot: "npm start"
     boot_wait_ms: 5000
     probes:
-      - { url: "http://localhost:3000/health", expect_status: 200 }`,
+      - { url: "http://localhost:3000/health", expect_status: 200 }
+    services:                     # must answer before install (optional)
+      - { name: postgres, address: "localhost:5432" }
+
+A preflight runs first, in seconds: every executable the commands name is
+on PATH, a Node minimum declared in package.json engines.node is met, the
+Docker daemon answers for a command that runs docker, and each
+runtime.services address answers on TCP. It reports every problem at
+once (code, config key, fix) and exits 2 before any step runs.
+--no-preflight skips it.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ws, err := openWorkspace(io)
 			if err != nil {
@@ -51,6 +62,12 @@ any failing step; configure the block in lattice/config.yaml:
 					map[string]interface{}{
 						"next_action": "add a runtime: block (see lattice runs-clean --help)",
 					})
+			}
+
+			if !noPreflight {
+				if err := runPreflight(cmd.Context(), io, "runs-clean", preflight.Runtime(cfg.Runtime, io.Repo)); err != nil {
+					return err
+				}
 			}
 
 			rep := runsclean.Run(cmd.Context(), io.Repo, cfg.Runtime)
@@ -86,5 +103,6 @@ any failing step; configure the block in lattice/config.yaml:
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&noPreflight, "no-preflight", false, noPreflightUsage)
 	return cmd
 }

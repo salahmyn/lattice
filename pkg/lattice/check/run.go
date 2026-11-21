@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/salahmyn/lattice/internal/preflight"
 	"github.com/salahmyn/lattice/pkg/lattice/adapters/all"
 	"github.com/salahmyn/lattice/pkg/lattice/audit"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
@@ -53,6 +54,8 @@ type RunOptions struct {
 	// find the tests that reach a touched line no promise guards. Nil leaves
 	// that to coverage and the file heuristic.
 	Calls impact.CallGraph
+	// NoPreflight skips the preflight of break.runners, and so its note.
+	NoPreflight bool
 }
 
 // Run is `lattice check --base`, as a function: the one verdict for a change.
@@ -97,8 +100,12 @@ func Run(ctx context.Context, ws *workspace.Workspace, kg schema.KnowledgeGraph,
 		return Report{}, runErr(RunExtract, err)
 	}
 	in := impact.Input{Workspace: ws, Registry: all.Registry(adCfg), Graph: kg, Since: opt.Base, IncludeDrafts: true}
+	var pre *Preflight
 	if cfg, cerr := config.Load(ws.LatticeDir); cerr == nil {
 		in.Break = &cfg.Break
+		if !opt.NoPreflight {
+			pre = runnersPreflight(ctx, cfg.Break, filepath.Dir(ws.LatticeDir))
+		}
 	}
 	if corpus, cerr := scip.Load(SCIPIndexPaths(ws)...); cerr == nil {
 		in.Corpus = corpus
@@ -113,11 +120,38 @@ func Run(ctx context.Context, ws *workspace.Workspace, kg schema.KnowledgeGraph,
 	}
 
 	baseAudit, note := LoadSnapshot(ws.LatticeDir, im.Base)
-	return Compute(Input{
+	rep := Compute(Input{
 		Rev: opt.Base, CI: opt.CI, Head: headAudit, Base: baseAudit, BaseNote: note,
 		Impact: im, KG: kg, Evidence: ev, Waivers: LoadWaivers(ws.LatticeDir),
 		Reconfirm: reconfirmedBy(ws, im, kg), FailsOnBase: LoadBaseProof(ws.LatticeDir),
-	}), nil
+	})
+	rep.Preflight = pre
+	return rep, nil
+}
+
+// runnersPreflight checks what the test listing's break.runners need (each
+// runner's executable, dir, Node minimum and Docker daemon) and returns the
+// problems as a note, or nil when there is none. check runs no test, so a
+// problem is a note on the report, never a refusal: the verdict, the merge
+// rule and the exit code stay as they are.
+// @enforces cli:INV-4
+func runnersPreflight(ctx context.Context, b config.Break, base string) *Preflight {
+	if len(b.Runners) == 0 {
+		return nil
+	}
+	problems := preflight.Problems(preflight.Check(ctx, preflight.Runners(b, base)))
+	if len(problems) == 0 {
+		return nil
+	}
+	n := fmt.Sprintf("%d problems", len(problems))
+	if len(problems) == 1 {
+		n = "1 problem"
+	}
+	return &Preflight{
+		Text: "the break.runners commands the test listing names may not run here (" + n + "); " +
+			"this never changes the verdict, the merge rule or the exit code",
+		Problems: problems,
+	}
 }
 
 // SCIPIndexPaths lists the SCIP index file of every registered language.

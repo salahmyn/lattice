@@ -39,7 +39,8 @@ sudo mv dist/lattice /usr/local/bin/        # or anywhere on PATH
 lattice version
 ```
 
-Check optional tooling (SCIP indexers, mutation runners, LLM keys):
+Check optional tooling (SCIP indexers, mutation runners, LLM keys) and, in a
+workspace, the preflight checks of what `runtime:` and `break:` declare:
 
 ```sh
 lattice doctor
@@ -1326,6 +1327,72 @@ The result is `lattice/.cache/results/breaks.json` (`lattice.breaks/1`,
 derived and gitignored). A promise with several enforcers has one run each.
 Nothing blocks on it yet: it is evidence for `lattice audit`.
 
+### Preflight: refuse in seconds, before a long run
+
+`lattice break`, `lattice runs-clean` (`v0`) and `lattice demonstrate` (when V0
+runs) first check, in seconds and without running a test, what their config
+declares, and refuse when a check fails. `lattice check` runs the checks of
+`break.runners` when it is declared, and only notes a failure (see below).
+Nothing is guessed from the stack: a command the config does not name is not
+checked.
+
+| Check | `break` | `runs-clean`, `demonstrate` | `check` |
+|---|---|---|---|
+| executables on PATH (`EXEC_NOT_FOUND`) | `break.setup`, `break.runners`, `break.commands` | `runtime.clean_install`, `build`, `boot` | `break.runners` |
+| a runner's `dir` exists (`PATH_NOT_FOUND`) | yes | | yes |
+| Node meets `package.json` `engines.node` (`VERSION_TOO_OLD`) | for `node`, `npx`, `npm`, `pnpm`, `yarn` | the same | the same |
+| the Docker daemon answers (`DOCKER_UNAVAILABLE`) | for a command that runs `docker` or `docker-compose` | the same | the same |
+| each service answers on TCP (`SERVICE_UNREACHABLE`, `SERVICE_BAD_ADDRESS`) | `break.services` | `runtime.services` | |
+| a clean tree (`DIRTY_TREE`) | unless `--allow-dirty` | | |
+
+An executable is read from each simple command of a shell line (`FOO=1 npm ci
+&& cd web && pnpm build` checks `npm` and `pnpm`); builtins, variables and
+placeholders are not looked up, and a relative path such as
+`node_modules/.bin/vitest` is checked only when no earlier step could have made
+it. Only a Node minimum that reads for certain counts (`>=18`, `^20.11`, `18.x`);
+a range with `||` is not checked. Each service dial times out after 2 seconds,
+and the dials run together.
+
+Services are declared, never started:
+
+```yaml
+runtime:
+  services:                      # must answer before install, build and boot
+    - { name: postgres, address: "localhost:5432" }
+break:
+  services:                      # must answer before the suites run
+    - { name: postgres, address: "localhost:54322" }
+```
+
+In `break`, `runs-clean` and `demonstrate`, a failure refuses the command
+before any step runs, lists every problem at once, and exits 2, the
+setup-error code, never a verdict code:
+
+```text
+error: break preflight failed: 2 problems found; nothing was run
+  EXEC_NOT_FOUND       break.runners[0].command: vitest is not on PATH
+                       next: install vitest or put it on PATH, or change break.runners[0].command
+  SERVICE_UNREACHABLE  break.services[0].address: postgres (localhost:54322) does not answer on TCP: ...
+                       next: start postgres (localhost:54322) before running this command, or fix break.services[0].address
+fix each problem, or pass --no-preflight to skip these checks
+```
+
+With `--json` it is one error, `{"error", "code": "PREFLIGHT_FAILED",
+"next_action", "problems": [{"code", "key", "detail", "next"}]}`.
+
+`lattice check` runs no test: it only lists the verifiers to run by
+`break.runners`, and a verdict-only CI job may not have the runners'
+toolchain. So it never refuses on a preflight problem. The report carries
+the problems as an informational `preflight` field, `{"text", "problems":
+[{"code", "key", "detail", "next"}]}` (absent when every check passes), and
+shows them under `PREFLIGHT` in text and `### Preflight` in Markdown. The
+verdict, `merge_allowed` and the exit code are those of the same check
+without it. `GET /api/v2/check` carries the same field.
+
+`--no-preflight` skips the checks, and check's note with them. `lattice doctor`
+runs the same checks (all but the dirty tree) under the `preflight` category,
+and a failed one makes its `ok` false.
+
 ### Prove a new test fails on the old code
 
 For a fix, the proof that matters is that the new test fails on the code
@@ -1665,7 +1732,10 @@ not already in `untraced` (reached only by an entry point, or removed).
 `lattice.check/1` also carries `tests`: the verifier tests of the touched
 promises grouped by `break.runners`, the listing of `lattice impact --tests`
 (see [Run only the tests a change touches](#run-only-the-tests-a-change-touches)).
-It is for a script and never changes the verdict.
+It is for a script and never changes the verdict. When `break.runners` is
+declared and a runner may not run here, the report also carries a
+[`preflight`](#preflight-refuse-in-seconds-before-a-long-run) note, which
+never changes the verdict either.
 
 ### The base audit, and how CI gets it
 
@@ -1715,6 +1785,8 @@ Only CI's verdict counts; a local run is advice.
 
 `0` for `ASSURED` or an allowed `UNPROVEN`; `1` for `BROKEN` or a disallowed
 `UNPROVEN`; `2` for a usage error (no `--base`, a base that is not a commit).
+A [preflight](#preflight-refuse-in-seconds-before-a-long-run) problem of
+`break.runners` is a note in the report and never changes the exit code.
 
 ## 4l. Confirmation: `lattice prepare`, `lattice confirm` and `lattice sign`
 
