@@ -207,3 +207,60 @@ func TestSummaryKeepsRounds(t *testing.T) {
 		t.Errorf("summary order wrong:\n%s", got)
 	}
 }
+
+// With require_pinned_tiers off an unpinned criterion reads as tier 1 and the
+// council decides as it always has, in Assess and when an approval is
+// re-checked; with it on, an absent or out-of-range tier blocks both.
+// @verifies brds.council:INV-7
+func TestRequirePinnedTiers(t *testing.T) {
+	unpinned := map[string]int{"absent": 0, "out of range": 4}
+	for name, tier := range unpinned {
+		b := councilBRD()
+		b.SuccessCriteria[0].Tier = tier
+		auto := councilAutonomy()
+
+		if got := Assess(b, auto, "m-council", allApprove(), today); !got.Approved {
+			t.Errorf("%s, field off: want approved as before, got %+v", name, got)
+		}
+		b.Status = schema.BRDApproved
+		b.Approval = &schema.BRDApproval{
+			ApprovedAt: today + "T09:00:00Z", Mandate: "m-council", DelegatedBy: "owner@example.com",
+			Decision: &schema.BRDCouncilDecision{Outcome: "approved", Votes: allApprove()},
+		}
+		if why := RecheckApproval(b, auto); len(why) != 0 {
+			t.Errorf("%s, field off: an existing approval stays valid, got %v", name, why)
+		}
+
+		auto.Mandates[0].RequirePinnedTiers = true
+		got := Assess(b, auto, "m-council", allApprove(), today)
+		if got.Approved || !strings.Contains(strings.Join(got.Blockers, "; "), "requires pinned tiers, and 1 of 2 criteria have no pinned tier") {
+			t.Errorf("%s, field on: want a pinned-tier blocker, got %+v", name, got)
+		}
+		if why := RecheckApproval(b, auto); len(why) == 0 {
+			t.Errorf("%s, field on: the approval must be re-checked and fail", name)
+		}
+
+		b.SuccessCriteria[0].Tier = 1
+		if got := Assess(b, auto, "m-council", allApprove(), today); !got.Approved {
+			t.Errorf("%s, field on, all pinned: want approved, got %+v", name, got)
+		}
+	}
+}
+
+// The summary always states unpinned tiers, as text only.
+// @verifies brds.council:INV-8
+func TestSummaryStatesUnpinnedTiers(t *testing.T) {
+	m := councilAutonomy().Mandates[0]
+	d := schema.BRDCouncilDecision{Outcome: "approved", Summary: "s", Votes: allApprove()}
+	b := councilBRD() // SC-1 has no tier, SC-2 is tier 2
+	if got := RenderSummary(b, d, m, today); !strings.Contains(got, "- **Tiers:** 1 of 2 criteria have no pinned tier; treated as tier 1") {
+		t.Errorf("summary lacks the unpinned-tier line:\n%s", got)
+	}
+	b.SuccessCriteria[0].Tier = 1
+	if got := RenderSummary(b, d, m, today); !strings.Contains(got, "- **Tiers:** all 2 criteria have a pinned tier") {
+		t.Errorf("a fully pinned BRD says so:\n%s", got)
+	}
+	if got := Assess(councilBRD(), councilAutonomy(), "m-council", allApprove(), today); !got.Approved {
+		t.Error("the note changes no decision")
+	}
+}

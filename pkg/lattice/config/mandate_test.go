@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestMandateCovers(t *testing.T) {
@@ -90,5 +92,19 @@ func TestLoadAdaptersStrict(t *testing.T) {
 	cfg, err := LoadAdapters(write("adapters:\n  postgres:\n    enabled: true\n    migrations: [\"db/*.sql\"]\n"))
 	if err != nil || !cfg.IsEnabled("postgres") || cfg.Adapters["postgres"].Migrations[0] != "db/*.sql" {
 		t.Errorf("valid postgres config: %+v, %v", cfg, err)
+	}
+}
+
+// require_pinned_tiers is a mandate field the owner sets; it is off unless
+// the file names it.
+// @verifies brds.council:INV-7
+func TestMandateRequirePinnedTiersParses(t *testing.T) {
+	var a Autonomy
+	src := "mandates:\n  - {id: m-on, grants: brd_approve, require_pinned_tiers: true}\n  - {id: m-off, grants: brd_approve}\n"
+	if err := yaml.Unmarshal([]byte(src), &a); err != nil {
+		t.Fatal(err)
+	}
+	if !a.Mandates[0].RequirePinnedTiers || a.Mandates[1].RequirePinnedTiers {
+		t.Errorf("parsed %+v", a.Mandates)
 	}
 }

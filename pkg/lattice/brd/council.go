@@ -151,6 +151,32 @@ func MaxTier(b schema.BRD) int {
 	return max
 }
 
+// UnpinnedTiers returns the criteria whose tier is not 1, 2 or 3. MaxTier and
+// HumanOnly read each of them as tier 1.
+func UnpinnedTiers(b schema.BRD) []schema.BRDCriterion {
+	var out []schema.BRDCriterion
+	for _, c := range b.SuccessCriteria {
+		if !c.TierPinned() {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// TierNote says how many criteria have no pinned tier, for the council
+// summary: "1 of 3 criteria have no pinned tier; treated as tier 1". It is
+// text only and changes no decision.
+func TierNote(b schema.BRD) string {
+	n, m := len(UnpinnedTiers(b)), len(b.SuccessCriteria)
+	switch {
+	case m == 0:
+		return "the BRD has no criteria"
+	case n == 0:
+		return fmt.Sprintf("all %d criteria have a pinned tier", m)
+	}
+	return fmt.Sprintf("%d of %d criteria have no pinned tier; treated as tier 1", n, m)
+}
+
 // regulatedKinds are constraint kinds only a human may sign off.
 var regulatedKinds = map[schema.BRDConstraintKind]bool{
 	schema.ConstraintRegulatory: true, schema.ConstraintLegal: true, schema.ConstraintFinancial: true,
@@ -222,7 +248,7 @@ func RecheckApproval(b schema.BRD, auto config.Autonomy) []string {
 	return out
 }
 
-// @enforces brds.council:INV-1, brds.council:INV-3, brds.council:INV-4
+// @enforces brds.council:INV-1, brds.council:INV-3, brds.council:INV-4, brds.council:INV-7
 func assess(b schema.BRD, auto config.Autonomy, mandateID string, votes []schema.BRDCouncilVote, today string, checkMode bool) CouncilVerdict {
 	var out CouncilVerdict
 	block := func(format string, args ...any) { out.Blockers = append(out.Blockers, fmt.Sprintf(format, args...)) }
@@ -244,6 +270,8 @@ func assess(b schema.BRD, auto config.Autonomy, mandateID string, votes []schema
 		block("mandate %s quorum %q: only unanimous is supported", m.ID, m.Council.Quorum)
 	case !m.CoversBRD(MaxTier(b), today):
 		block("mandate %s does not cover this BRD (tier %d, tier_max %d, expires %q)", m.ID, MaxTier(b), max(m.TierMax, 1), m.Expires)
+	case m.RequirePinnedTiers && len(UnpinnedTiers(b)) > 0:
+		block("mandate %s requires pinned tiers, and %s", m.ID, TierNote(b))
 	}
 	for _, why := range HumanOnly(b) {
 		block("human-only: %s", why)
@@ -279,13 +307,16 @@ func assess(b schema.BRD, auto config.Autonomy, mandateID string, votes []schema
 }
 
 // RenderSummary is the decision as the human reads it: what was decided,
-// why, the evidence the engine computed, and each seat's vote.
+// why, the evidence the engine computed, and each seat's vote. It always
+// states how many criteria have no pinned tier.
+// @enforces brds.council:INV-8
 func RenderSummary(b schema.BRD, d schema.BRDCouncilDecision, mandate config.Mandate, at string) string {
 	var s strings.Builder
 	fmt.Fprintf(&s, "# Council decision: %s v%d\n\n", b.ID, b.Version)
 	fmt.Fprintf(&s, "- **Outcome:** %s\n", d.Outcome)
 	fmt.Fprintf(&s, "- **BRD:** %s\n", b.Title)
 	fmt.Fprintf(&s, "- **Decided:** %s, under mandate `%s` for %s\n", at, mandate.ID, mandate.DelegatedBy)
+	fmt.Fprintf(&s, "- **Tiers:** %s\n", TierNote(b))
 	if d.Evidence != "" {
 		fmt.Fprintf(&s, "- **Evidence:** %s\n", d.Evidence)
 	}

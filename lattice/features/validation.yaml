@@ -56,3 +56,5 @@ invariants:
     statement: An invariant with a red verifier in the results of the graph's commit, or of a commit whose tree differs from it only in Lattice's own ledger and cache, is VERIFIER_FAILING whether or not a BRD criterion maps it, and a criterion that reports the same invariant names its failing tests instead.
   - id: INV-17
     statement: Validate names ingested results that are of another commit than the graph's (RESULTS_STALE, info by default) and never lets them change a level; a commit that git shows differs only in Lattice's own ledger and cache is not another, and one git cannot compare is.
+  - id: INV-18
+    statement: CRITERION_TIER_UNSET is an info finding, always on, one per BRD listing every criterion whose tier is not 1, 2 or 3; it never suggests a tier.

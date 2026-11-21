@@ -21,3 +21,7 @@ invariants:
     statement: Votes belong to one version, one per seat; a vote on an overturned version or from a seat off the council is refused.
   - id: INV-6
     statement: A council approval that no pinned mandate, floor or unanimous vote supports is BRD_COUNCIL_INVALID.
+  - id: INV-7
+    statement: A mandate with require_pinned_tiers set approves no BRD that has a criterion whose tier is not 1, 2 or 3, and re-checking an approval honours it; with it unset an unpinned tier reads as tier 1 and every approval holds as before.
+  - id: INV-8
+    statement: The council summary always says how many criteria have no pinned tier and that they are treated as tier 1; it changes no decision.
