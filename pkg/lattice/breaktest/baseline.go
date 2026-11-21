@@ -80,6 +80,13 @@ func (inv invocation) persistable() bool {
 	return inv.res.status == statusOK && inv.reusable()
 }
 
+// failedBaseline reports whether the invocation ran and did not pass: its
+// tests failed or the code did not build or load. A timeout or an error says
+// nothing about the tree.
+func (inv invocation) failedBaseline() bool {
+	return inv.res.status == statusFail || inv.res.status == statusBuild
+}
+
 // Placeholders that stand for the worktree and the JUnit report in an
 // invocation key, which must not depend on either temporary path.
 const (
@@ -171,6 +178,8 @@ func (r *runner) baselineGroup(ctx context.Context, g group, sql sqlFiles) execR
 	}
 	if inv.persistable() {
 		r.store.put(key, g, inv)
+	} else if inv.failedBaseline() {
+		r.store.putFailed(key, inv.res.reason)
 	}
 	return inv.result(g)
 }
@@ -191,6 +200,11 @@ type baselineFile struct {
 	Tree      string                       `json:"tree"`
 	Stamp     string                       `json:"stamp"`
 	Baselines map[string]persistedBaseline `json:"baselines"`
+	// Failed are the invocations that ran at this tree and did not pass,
+	// with the reason. A failed baseline is never reused (it can be the
+	// environment, so it runs again); it only keeps a cached break outcome
+	// from being reused over it.
+	Failed map[string]string `json:"failed,omitempty"`
 }
 
 // persistedBaseline is a passing invocation: its JUnit report for a runner
@@ -216,7 +230,7 @@ func baselineStamp(tree, prefix string, cfg config.Break) string {
 // loadBaselines reads the kept baselines for a tree and stamp; a missing,
 // unreadable or stale file is an empty one.
 func loadBaselines(latticeDir, tree, stamp string) *baselineFile {
-	f := &baselineFile{Schema: BaselineSchema, Tree: tree, Stamp: stamp, Baselines: map[string]persistedBaseline{}}
+	f := &baselineFile{Schema: BaselineSchema, Tree: tree, Stamp: stamp, Baselines: map[string]persistedBaseline{}, Failed: map[string]string{}}
 	data, err := os.ReadFile(BaselinesPath(latticeDir))
 	if err != nil {
 		return f
@@ -227,6 +241,9 @@ func loadBaselines(latticeDir, tree, stamp string) *baselineFile {
 	}
 	for k, v := range old.Baselines {
 		f.Baselines[k] = v
+	}
+	for k, v := range old.Failed {
+		f.Failed[k] = v
 	}
 	return f
 }
@@ -267,6 +284,29 @@ func (f *baselineFile) put(key string, g group, inv invocation) {
 		p.JUnit = string(inv.report)
 	}
 	f.Baselines[key] = p
+	delete(f.Failed, key)
+}
+
+// putFailed notes that an invocation did not pass at this tree. A nil file
+// keeps nothing.
+func (f *baselineFile) putFailed(key, reason string) {
+	if f == nil {
+		return
+	}
+	if f.Failed == nil {
+		f.Failed = map[string]string{}
+	}
+	f.Failed[key] = reason
+	delete(f.Baselines, key)
+}
+
+// failed reports whether an invocation is known not to pass at this tree.
+func (f *baselineFile) failed(key string) bool {
+	if f == nil {
+		return false
+	}
+	_, ok := f.Failed[key]
+	return ok
 }
 
 // write saves the file next to breaks.json.

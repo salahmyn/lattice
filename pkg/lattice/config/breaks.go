@@ -135,6 +135,13 @@ type Runner struct {
 	// Dir is the directory to run in, relative to the directory that holds
 	// lattice/. Empty runs from that directory.
 	Dir string `yaml:"dir,omitempty" json:"dir,omitempty"`
+	// Inputs are doublestar globs over the repository files this runner
+	// reads besides the verifiers and the enforcer (migrations, fixtures,
+	// seeds), relative to the directory that holds lattice/. When every
+	// runner of a break declares them, a cached outcome is reused across
+	// commits that change none of those files; otherwise only on the same
+	// tree. Declare too few and a stale outcome is reused.
+	Inputs []string `yaml:"inputs,omitempty" json:"inputs,omitempty"`
 }
 
 // Command returns the command template for a language. JavaScript falls back
