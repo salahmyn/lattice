@@ -40,11 +40,20 @@ func TestClassify(t *testing.T) {
 		{"", "SyntaxError: in an assertion message\n at test (a.test.ts:1:1)\n", 1, false, statusFail},
 		{"go", "", -1, false, statusError},
 		{"go", "partial output", 1, true, statusTimeout},
+		// Exit 125: the runner could not set the code up (a database reset
+		// failed because a SQL break did not apply). Unknown, never killed,
+		// even with a test failure or SQL error in the output.
+		{"", "Applying migration 001_init.sql...\nERROR: syntax error at or near \"OR\" (SQLSTATE 42601)\n", 125, false, statusBuild},
+		{"", "not ok 1 - policy denies\n", 125, false, statusBuild},
+		{"go", "--- FAIL: TestX\n", 125, false, statusBuild},
 	}
 	for i, c := range cases {
 		if got := classify(c.kind, c.exit, c.out, c.timedOut); got.status != c.want {
 			t.Errorf("case %d (%q): status %d, want %d (%s)", i, c.out, got.status, c.want, got.reason)
 		}
+	}
+	if got := classify("", 125, "Applying migration 001_init.sql...\nERROR: syntax error at or near \"OR\" (SQLSTATE 42601)\n", false); got.reason != `did not apply (runner exit 125): ERROR: syntax error at or near "OR" (SQLSTATE 42601)` {
+		t.Errorf("reason = %q", got.reason)
 	}
 }
 
