@@ -18,6 +18,44 @@ type auditRowView struct {
 	audit.Row
 	Badge string // a .badge modifier, or is-ok-weak (the page's own style)
 	Open  bool   // fakes open by default
+	// CaseViews are the row's acceptance cases with their badges.
+	CaseViews []auditCaseView
+}
+
+// auditCaseView is one acceptance case of a row as the audit computed it,
+// plus the badge of its coverage and of its confirmation. Both come from the
+// kernel's fields; only covered and confirmed get the positive colour.
+type auditCaseView struct {
+	audit.CaseRow
+	CoverageBadge string
+	ConfirmBadge  string
+}
+
+// caseViews draws the cases of a row: covered and confirmed are the only
+// positive colours; failing is an error; an edit after confirmation is a
+// warning; every other state, unknown included, stays out of green.
+// @enforces audit:INV-2
+func caseViews(cases []audit.CaseRow) []auditCaseView {
+	out := make([]auditCaseView, 0, len(cases))
+	for _, c := range cases {
+		v := auditCaseView{CaseRow: c, CoverageBadge: "is-info", ConfirmBadge: "is-info"}
+		switch c.Coverage {
+		case audit.CaseCovered:
+			v.CoverageBadge = "is-ok"
+		case audit.CaseFailing:
+			v.CoverageBadge = "is-error"
+		case audit.CasePartial, audit.CaseUncovered:
+			v.CoverageBadge = "is-warn"
+		}
+		switch {
+		case c.Confirmation.State == audit.CaseConfirmed && c.Confirmation.Code == audit.CaseCodeConfirmed:
+			v.ConfirmBadge = "is-ok"
+		case c.Confirmation.Code == audit.CaseCodeEdited || c.Confirmation.Code == audit.CaseCodeRetired:
+			v.ConfirmBadge = "is-warn"
+		}
+		out = append(out, v)
+	}
+	return out
 }
 
 // @enforces audit:INV-2
@@ -80,7 +118,8 @@ func (s *Server) pageAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	rows := make([]auditRowView, 0, len(shown.Rows))
 	for _, row := range shown.Rows {
-		rows = append(rows, auditRowView{Row: row, Badge: badgeFor(row.Class), Open: row.Class == audit.ClassFake})
+		rows = append(rows, auditRowView{Row: row, Badge: badgeFor(row.Class), Open: row.Class == audit.ClassFake,
+			CaseViews: caseViews(row.Cases)})
 	}
 
 	s.render(w, "audit.html", pageData{

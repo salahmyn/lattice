@@ -1495,7 +1495,9 @@ else the latest earlier version's):
 
 The state is on each case of the audit row (`confirmation: {state, code, reason}`), under
 each case in `lattice feature show`, and in `/api/v2` `case_rows` (`confirmation`: `pass`
-only for a confirmed case, `drifted` for an edited or retired one, `unknown` otherwise). It
+only for a confirmed case, `drifted` for an edited or retired one, `unknown` otherwise).
+The `/audit` page of `lattice serve` lists each row's cases with their kind, coverage and
+confirmation; only `covered` and `confirmed` are drawn in the positive colour. It
 never changes the promise's `confirmed` signal: any case change still makes the decision
 stale, as above. A case unchanged under a stale decision reads `confirmed` and says the
 promise needs confirming again as a whole.

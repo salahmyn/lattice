@@ -96,6 +96,32 @@
         {{else}}<p class="text-slate-500">none anchored</p>{{end}}
       </div>
 
+      {{if .CaseViews}}
+      <div class="audit-cases">
+        <h3 class="uppercase tracking-wide text-slate-500 mb-1">Cases (only covered and confirmed are positive)</h3>
+        <table class="w-full">
+          <thead class="text-slate-500"><tr>
+            <th class="text-left font-medium pb-1 pr-4">case</th><th class="text-left font-medium pb-1 pr-4">kind</th>
+            <th class="text-left font-medium pb-1 pr-4">coverage</th><th class="text-left font-medium pb-1 pr-4">confirmation</th>
+            <th class="text-left font-medium pb-1">statement</th>
+          </tr></thead>
+          <tbody>
+          {{range .CaseViews}}
+          <tr class="align-top">
+            <td class="py-0.5 pr-4 font-mono text-slate-800">{{.Label}}</td>
+            <td class="py-0.5 pr-4 font-mono">{{.Kind}}</td>
+            <td class="py-0.5 pr-4"><span class="badge {{.CoverageBadge}}" title="{{.Reason}}">{{.Coverage}}</span></td>
+            <td class="py-0.5 pr-4"><span class="badge {{.ConfirmBadge}}" title="{{.Confirmation.Reason}}">{{if .Confirmation.State}}{{.Confirmation.State}}{{else}}unknown{{end}}</span></td>
+            <td class="py-0.5 text-slate-700">{{.Statement}}{{if .Retired}} <span class="text-slate-500">(retired)</span>{{end}}
+              <div class="text-slate-500">{{.Reason}}</div>
+              {{if .Confirmation.Reason}}<div class="text-slate-500">{{.Confirmation.Reason}}</div>{{end}}</td>
+          </tr>
+          {{end}}
+          </tbody>
+        </table>
+      </div>
+      {{end}}
+
       <div>
         <h3 class="uppercase tracking-wide text-slate-500 mb-1">Enforcers</h3>
         {{if .Evidence.Enforcers}}
