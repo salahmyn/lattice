@@ -83,6 +83,10 @@ type Symbol struct {
 	// CondReads are the columns the body of a SQL function, or a CHECK, reads
 	// in a condition (SQL only; nil for every other symbol): see CondRead.
 	CondReads []CondRead `json:"cond_reads,omitempty"`
+	// HasGuardClause is true when the body has an IF or ELSIF whose branch
+	// raises (RAISE EXCEPTION) or returns before the end of the body (SQL
+	// functions only).
+	HasGuardClause bool `json:"guard_clause,omitempty"`
 	// Guard says which table and commands a SQL policy or trigger applies
 	// to (nil for every other symbol).
 	Guard *Guard `json:"guard,omitempty"`
@@ -126,6 +130,19 @@ type CondRead struct {
 	// name that is a column only if Table has one of that name.
 	Qualified bool `json:"qualified,omitempty"`
 	Line      int  `json:"line"`
+	// OwnerVia, when set, says the column is compared with an expression that
+	// is the caller's identity: auth.uid() or another identity read, a variable
+	// assigned only from one, or a function the workspace defines that reads one
+	// (see OwnerCall). It says what the column is compared with, so the column is
+	// a column of ownership: a writer can reassign whose row it is.
+	OwnerVia string `json:"owner_via,omitempty"`
+	// OwnerCall is the FQN of a function called with no arguments that the
+	// column is compared with. Resolve turns it into OwnerVia when the function
+	// reads the caller's identity directly and clears it otherwise.
+	OwnerCall string `json:"owner_call,omitempty"`
+	// Guard is true when the read is in the condition of an IF or ELSIF whose
+	// branch raises or returns early.
+	Guard bool `json:"guard,omitempty"`
 }
 
 // Guard kinds.

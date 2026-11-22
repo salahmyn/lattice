@@ -301,3 +301,36 @@ func resolveHelperIdentity(mods []ir.Module, eff map[string][2]int, overloaded m
 		}
 	}
 }
+
+// resolveOwnerCalls settles the columns a body compares with a function called
+// with no arguments. The column is a column of ownership when that function is a
+// function of the workspace, created once, that reads the caller's identity
+// itself; the identity read is then cited through the function. For any other
+// call (a builtin, an unknown or overloaded name, a function that reads no
+// identity) the comparison is an ordinary one, and it is recorded without an
+// owner. It runs where every module is known, with the identity reads recorded
+// on the effective functions.
+// @enforces adapters.postgres:INV-15
+func resolveOwnerCalls(mods []ir.Module, eff map[string][2]int, overloaded map[string]string) {
+	direct := map[string]*ir.CallerIdentity{}
+	for fqn, at := range eff {
+		if ex := mods[at[0]].Symbols[at[1]].Execute; ex != nil && ex.Identity != nil && !strings.HasPrefix(ex.Identity.Via, "via ") {
+			if _, many := overloaded[fqn]; !many {
+				direct[fqn] = ex.Identity
+			}
+		}
+	}
+	for _, at := range eff {
+		sym := &mods[at[0]].Symbols[at[1]]
+		for i := range sym.CondReads {
+			c := &sym.CondReads[i]
+			if c.OwnerCall == "" {
+				continue
+			}
+			if h, ok := direct[c.OwnerCall]; ok {
+				c.OwnerVia = strings.TrimPrefix(c.OwnerCall, "sql.") + "() → " + h.Via
+			}
+			c.OwnerCall = ""
+		}
+	}
+}

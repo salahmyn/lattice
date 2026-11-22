@@ -206,7 +206,17 @@ type condVar struct{ table, column string }
 // turns into the table of each trigger that runs the function.
 // @enforces adapters.postgres:INV-12, adapters.postgres:INV-14
 func readConditions(code string, base int, params map[string]bool, readOnly bool) []ir.CondRead {
+	reads, _ := readConditionSet(code, base, params, readOnly)
+	return reads
+}
+
+// readConditionSet is readConditions with whether the body has a guard clause:
+// an IF or ELSIF whose branch raises or returns before the end of the body.
+// A read in the condition of such a branch carries Guard.
+// @enforces adapters.postgres:INV-15, adapters.postgres:INV-16
+func readConditionSet(code string, base int, params map[string]bool, readOnly bool) ([]ir.CondRead, bool) {
 	mask := maskCode(code)
+	idVars := identityVars(mask)
 	isParam := paramVars(mask, params)
 	records := declaredVars(mask)
 	lines := newLineIndex(code)
@@ -356,18 +366,32 @@ func readConditions(code string, base int, params map[string]bool, readOnly bool
 
 	var out []ir.CondRead
 	seen := map[ir.CondRead]bool{}
-	emit := func(text string, primary string, off int) {
+	add := func(cr ir.CondRead) {
+		if !seen[cr] {
+			seen[cr] = true
+			out = append(out, cr)
+		}
+	}
+	emit := func(text string, primary string, off int, guard bool) {
 		for _, ref := range refsIn(text) {
 			t, col, qualified, ok := resolveRef(ref, primary, aliasesAt(off), vars)
 			if !ok {
 				continue
 			}
-			cr := ir.CondRead{Table: t, Column: col, Qualified: qualified, Line: line(off)}
-			if !seen[cr] {
-				seen[cr] = true
-				out = append(out, cr)
+			add(ir.CondRead{Table: t, Column: col, Qualified: qualified, Line: line(off), Guard: guard})
+		}
+	}
+	// emitPred emits one predicate. A column compared with the caller's
+	// identity is recorded as such; any other predicate as plain reads.
+	emitPred := func(pred string, primary string, off int, guard bool) {
+		if ref, via, call, ok := ownerCompare(pred, idVars); ok {
+			if t, col, qualified, good := resolveRef(ref, primary, aliasesAt(off), vars); good {
+				add(ir.CondRead{Table: t, Column: col, Qualified: qualified, Line: line(off), Guard: guard,
+					OwnerVia: via, OwnerCall: call})
+				return
 			}
 		}
+		emit(pred, primary, off, guard)
 	}
 
 	// The WHERE of the function's own UPDATE, DELETE and SELECT ... INTO.
@@ -382,12 +406,13 @@ func readConditions(code string, base int, params map[string]bool, readOnly bool
 		}
 		for _, pred := range splitAnd(mask[w+5 : stop]) {
 			if !isSelector(pred, isParam, isRecord) {
-				emit(pred, st.table, w)
+				emitPred(pred, st.table, w, false)
 			}
 		}
 	}
 
 	// IF, ELSIF and CASE WHEN conditions.
+	guarded := false
 	for _, loc := range reCondWord.FindAllStringIndex(mask, -1) {
 		kw := strings.ToLower(mask[loc[0]:loc[1]])
 		if kw != "when" && !statementStart[prevWord(mask, loc[0])] {
@@ -419,9 +444,278 @@ func readConditions(code string, base int, params map[string]bool, readOnly bool
 				primary = tableOf(cond[m[2]:m[3]], second)
 			}
 		}
-		emit(cond, primary, loc[0])
+		guard := false
+		if kw != "when" {
+			guard = branchGuards(mask, then+len("then"))
+			guarded = guarded || guard
+		}
+		for _, pred := range splitAnd(cond) {
+			emitPred(pred, primary, loc[0], guard)
+		}
 	}
-	return out
+	return out, guarded
+}
+
+var (
+	reIdentityExpr = regexp.MustCompile(`(?i)^(?:auth\s*\.\s*(?:uid|jwt)\s*\(\s*\)|current_user|session_user)$`)
+	reNoArgCall    = regexp.MustCompile(`(?is)^(?:(` + ident + `)\s*\.\s*)?(` + ident + `)\s*\(\s*\)$`)
+	reDistinct     = regexp.MustCompile(`(?is)\s+is\s+(?:not\s+)?distinct\s+from\s+`)
+	reNoFromInto   = regexp.MustCompile(`(?is)\bselect\s+([^;]*?)\s+into\s+(?:strict\s+)?(` + ident + `)\s*;`)
+	reRaiseNoise   = map[string]bool{"notice": true, "warning": true, "info": true, "log": true, "debug": true}
+	reOnlyEnd      = regexp.MustCompile(`(?is)^(?:end\b[\s\w"]*;?)?\s*$`)
+)
+
+// stripWrappers removes the casts, outer parentheses and a leading SELECT around
+// an expression: (select auth.uid())::uuid is auth.uid().
+func stripWrappers(e string) string {
+	for {
+		before := e
+		e = strings.TrimSpace(reCondCastTail.ReplaceAllString(strings.TrimSpace(e), ""))
+		if strings.HasPrefix(e, "(") && matchParen(e, 0) == len(e)-1 {
+			e = strings.TrimSpace(e[1 : len(e)-1])
+		}
+		if w, n := firstWord(e); w == "select" {
+			e = strings.TrimSpace(e[n:])
+		}
+		if e == before {
+			return e
+		}
+	}
+}
+
+// identityExpr says whether e, as a whole, is a read of the caller's identity:
+// auth.uid(), auth.jwt(), current_user or session_user, with optional casts,
+// parentheses and a leading SELECT. It returns the read as the adapter records
+// one elsewhere, lower case with no spaces.
+func identityExpr(e string) (string, bool) {
+	e = stripWrappers(e)
+	if !reIdentityExpr.MatchString(e) {
+		return "", false
+	}
+	return strings.Join(strings.Fields(strings.ToLower(e)), ""), true
+}
+
+// identityVars lists the variables whose every assignment is a read of the
+// caller's identity, with that read: v_uid := auth.uid(), a DECLARE default, or
+// SELECT auth.uid() INTO v_uid. A variable any other statement loads, or that is
+// ever assigned something else, is not one.
+func identityVars(mask string) map[string]string {
+	bad := map[string]bool{}
+	for _, m := range reIntoVars.FindAllStringSubmatch(mask, -1) {
+		for _, t := range splitTop(m[1]) {
+			if n, ok := firstIdent(strings.TrimSpace(t)); ok {
+				bad[n] = true
+			}
+		}
+	}
+	via := map[string]string{}
+	assign := func(name, rhs string) {
+		name = unquote(name)
+		v, ok := identityExpr(rhs)
+		if !ok {
+			bad[name] = true
+			return
+		}
+		if _, seen := via[name]; !seen {
+			via[name] = v
+		}
+	}
+	for _, m := range reAssign.FindAllStringSubmatch(mask, -1) {
+		assign(m[1], m[2])
+	}
+	for _, m := range reDeclare.FindAllStringSubmatch(mask, -1) {
+		assign(m[1], m[2])
+	}
+	for _, m := range reNoFromInto.FindAllStringSubmatch(mask, -1) {
+		if !strings.Contains(strings.ToLower(m[1]), " from ") {
+			assign(m[2], m[1])
+		}
+	}
+	for n := range bad {
+		delete(via, n)
+	}
+	return via
+}
+
+// splitCompare splits a predicate at its first comparison outside parentheses:
+// =, <>, !=, IS DISTINCT FROM or IS NOT DISTINCT FROM.
+func splitCompare(pred string) (lhs, rhs string, ok bool) {
+	depth := 0
+	for i := 0; i < len(pred); i++ {
+		switch pred[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case '=':
+			if depth == 0 && (i == 0 || !strings.ContainsRune("<>!:=", rune(pred[i-1]))) && (i+1 >= len(pred) || pred[i+1] != '>' && pred[i+1] != '=') {
+				return pred[:i], pred[i+1:], true
+			}
+		case '<', '!':
+			if depth == 0 && i+1 < len(pred) && (pred[i] == '<' && pred[i+1] == '>' || pred[i] == '!' && pred[i+1] == '=') {
+				return pred[:i], pred[i+2:], true
+			}
+		case ' ', '\t', '\n', '\r':
+			if depth == 0 {
+				if loc := reDistinct.FindStringIndex(pred[i:]); loc != nil && loc[0] == 0 {
+					return pred[:i], pred[i+loc[1]:], true
+				}
+			}
+		}
+	}
+	return "", "", false
+}
+
+// ownerCompare reads a predicate that compares one column with the caller's
+// identity, either side first: the column, and what it is compared with. That
+// is a direct identity read (auth.uid(), also in (select auth.uid())), a
+// variable assigned only from one, or a function called with no arguments, for
+// Resolve to settle (call is its FQN). Anything else is not one.
+func ownerCompare(pred string, idVars map[string]string) (ref colRef, via, call string, ok bool) {
+	l, r, found := splitCompare(pred)
+	if !found {
+		return colRef{}, "", "", false
+	}
+	for _, sides := range [][2]string{{l, r}, {r, l}} {
+		col, other := strings.TrimSpace(sides[0]), strings.TrimSpace(sides[1])
+		col = strings.TrimSpace(reCondCastTail.ReplaceAllString(col, ""))
+		if !(reIdentAt.FindString(col) == col || reFieldChain.MatchString(col)) {
+			continue
+		}
+		refs := refsIn(col)
+		if len(refs) != 1 {
+			continue
+		}
+		if _, isVar := idVars[refs[0].name]; isVar && len(refs[0].qual) == 0 {
+			continue
+		}
+		if v, yes := identityExpr(other); yes {
+			return refs[0], v, "", true
+		}
+		o := stripWrappers(other)
+		if reIdentAt.FindString(o) == o {
+			if v, yes := idVars[unquote(o)]; yes {
+				return refs[0], unquote(o) + ", assigned only from " + v, "", true
+			}
+		}
+		if m := reNoArgCall.FindStringSubmatch(o); m != nil {
+			first, second := m[1], m[2]
+			s, name := qualify(second, "")
+			if first != "" {
+				s, name = qualify(first, second)
+			}
+			return refs[0], "", functionFQN(s, name), true
+		}
+	}
+	return colRef{}, "", "", false
+}
+
+// branchGuards reads the branch of the IF or ELSIF whose THEN ends at from, up
+// to the next ELSIF, ELSE or END IF at its own level, and says whether it is a
+// guard: a statement of the branch itself raises (RAISE EXCEPTION, or RAISE with
+// no level) or returns (RETURN, RETURN NULL, RETURN QUERY; not RETURN NEXT),
+// and, for a return, more of the body follows the whole IF. A raise or a return
+// inside a nested IF is conditional and does not make the branch a guard.
+func branchGuards(mask string, from int) bool {
+	depth := 0
+	raises, returns := false, false
+	for i := from; i < len(mask); {
+		c := mask[i]
+		if c == '"' {
+			ln := 0
+			i = skipToken(mask, i, &ln)
+			continue
+		}
+		if !isWordByte(c) || i > 0 && isWordByte(mask[i-1]) {
+			i++
+			continue
+		}
+		j := i
+		for j < len(mask) && isWordByte(mask[j]) {
+			j++
+		}
+		w := strings.ToLower(mask[i:j])
+		next, _ := firstWord(mask[skipWS(mask, j):])
+		switch w {
+		case "if":
+			if statementStart[prevWord(mask, i)] {
+				depth++
+			}
+		case "end":
+			if next == "if" {
+				if depth == 0 {
+					if raises {
+						return true
+					}
+					if !returns {
+						return false
+					}
+					rest := mask[skipWS(mask, j):]
+					if semi := strings.IndexByte(rest, ';'); semi >= 0 {
+						return !reOnlyEnd.MatchString(strings.TrimSpace(rest[semi+1:]))
+					}
+					return false
+				}
+				depth--
+			}
+		case "elsif", "elseif", "else":
+			if depth == 0 {
+				if raises {
+					return true
+				}
+				// The branch ends here; whether more of the body follows
+				// the whole IF is read at its END IF.
+				if !returns {
+					return false
+				}
+				return returnsBeforeEnd(mask, j)
+			}
+		case "raise":
+			if depth == 0 && !reRaiseNoise[next] {
+				raises = true
+			}
+		case "return":
+			if depth == 0 && next != "next" {
+				returns = true
+			}
+		}
+		i = j
+	}
+	return raises
+}
+
+// returnsBeforeEnd says whether more of the body follows the END IF that closes
+// the IF the scan is inside, which starts at from.
+func returnsBeforeEnd(mask string, from int) bool {
+	depth := 0
+	for i := from; i < len(mask); {
+		c := mask[i]
+		if !isWordByte(c) || i > 0 && isWordByte(mask[i-1]) {
+			i++
+			continue
+		}
+		j := i
+		for j < len(mask) && isWordByte(mask[j]) {
+			j++
+		}
+		w := strings.ToLower(mask[i:j])
+		next, _ := firstWord(mask[skipWS(mask, j):])
+		if w == "if" && statementStart[prevWord(mask, i)] {
+			depth++
+		}
+		if w == "end" && next == "if" {
+			if depth == 0 {
+				rest := mask[skipWS(mask, j):]
+				if semi := strings.IndexByte(rest, ';'); semi >= 0 {
+					return !reOnlyEnd.MatchString(strings.TrimSpace(rest[semi+1:]))
+				}
+				return false
+			}
+			depth--
+		}
+		i = j
+	}
+	return false
 }
 
 // resolveRef says which table and column a name in a condition stands for.

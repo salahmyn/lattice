@@ -43,8 +43,10 @@ to its table and command) or unguarded for it, and where that promise's columns
 came from: declared (columns: on the invariant in its feature YAML), from
 conditions (the columns its enforcers read in an IF, CASE WHEN, WHERE or CHECK,
 on a table they write), or from writes (the columns its enforcers write, used
-for an enforcer whose conditions are not known). 'lattice validate' reports an
-unguarded writer as UNGUARDED_WRITER (info).
+for an enforcer whose conditions are not known). A column an enforcer compares
+with the caller's identity is marked (ownership): it links only the writers that
+UPDATE it. 'lattice validate' reports an unguarded writer as UNGUARDED_WRITER
+(info).
 
 It ends with the reasons the table's writer set is incomplete (an EXECUTE of a
 string, a write through a view, a foreign-key action, a statement it could not
@@ -97,7 +99,16 @@ func writeWriters(io *IO, rep graph.WriterReport) {
 		io.printf("%s: %d writer(s)\n", target, len(rep.Writers))
 	}
 	for _, w := range rep.Writers {
-		cols := strings.Join(w.Columns, ", ")
+		shown := make([]string, len(w.Columns))
+		for i, c := range w.Columns {
+			shown[i] = c
+			for _, o := range w.OwnershipColumns {
+				if o == c {
+					shown[i] = c + " (ownership)"
+				}
+			}
+		}
+		cols := strings.Join(shown, ", ")
 		switch {
 		case w.Op == ir.WriteDelete:
 			cols = "the row"

@@ -320,8 +320,31 @@ type Violation struct {
 	// "<feature>:<INV-N>"). Empty for a finding about one thing.
 	Refs []string `json:"refs,omitempty"`
 
+	// Rank orders findings of one code that the rule itself has put in a
+	// deliberate order, 1 first. Zero means the rule sets none. Output keeps
+	// that order across files, so a finding's place in a long list does not
+	// depend on the file it is located in.
+	Rank int `json:"rank,omitempty"`
+
 	Location   *Location   `json:"location,omitempty"`
 	NextAction *NextAction `json:"next_action,omitempty"`
+}
+
+// rankedFile sorts after every real file name.
+const rankedFile = "\U0010FFFF"
+
+// SortFile is the file a violation sorts under in validate output: its
+// location's file, or, for a ranked finding, a key after every file so that
+// the findings of one code stay together and ordered by Rank.
+// @enforces graph:INV-10
+func (v Violation) SortFile() string {
+	if v.Rank > 0 {
+		return rankedFile
+	}
+	if v.Location != nil {
+		return v.Location.File
+	}
+	return ""
 }
 
 // IsError reports whether the violation should fail validation.

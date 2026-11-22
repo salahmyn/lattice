@@ -398,6 +398,9 @@ func CheckExposure(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string
 	sorted := make([]schema.Violation, len(out))
 	for i, j := range idx {
 		sorted[i] = out[j]
+		if r, ok := rankOf[j]; ok {
+			sorted[i].Rank = r + 1
+		}
 	}
 	return sorted
 }

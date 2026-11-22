@@ -27,8 +27,12 @@ invariants:
   - id: INV-9
     statement: Each ENFORCER_EXPOSED states whether the function body reads the caller's identity, citing the first read, or that it reads none; the finding fires either way.
   - id: INV-10
-    statement: Each ENFORCER_EXPOSED states the identity the function reads directly or through a helper, the parameter it hashes to authenticate and its boolean parameters, each only when it holds; findings are ordered takes a boolean parameter and reads no identity, takes a boolean parameter, reads no identity and no hash, authenticates by a hash only, the rest, and stay info.
+    statement: Each ENFORCER_EXPOSED states the identity the function reads directly or through a helper, the parameter it hashes to authenticate and its boolean parameters, each only when it holds; findings are ordered takes a boolean parameter and reads no identity, takes a boolean parameter, reads no identity and no hash, authenticates by a hash only, the rest, and stay info; the order is carried by the finding's rank and holds in every output, across files.
   - id: INV-11
     statement: Without declared columns, an invariant's columns are the columns its enforcers read in a condition on a table they write; an enforcer with no known condition read falls back to the columns it writes, never to an empty set, and the source is stated as conditions, writes or declared.
   - id: INV-12
     statement: An enforcer that writes nothing contributes its condition reads on any table to its invariant's columns, and one that writes only those on the tables it writes; either way the source is stated as columns from conditions.
+  - id: INV-13
+    statement: A column every condition read of which compares it with the caller's identity (auth.uid(), a variable assigned only from it, or a function of the workspace that reads it) is a column of ownership; it links only the writers that UPDATE it, also by ON CONFLICT DO UPDATE and MERGE ... UPDATE, and an INSERT writer links only through the invariant's other columns; the finding and lattice writers name it as ownership.
+  - id: INV-14
+    statement: A read-only enforcer with a guard clause (an IF or ELSIF whose branch raises or returns before the end of the body) contributes only the columns its guard reads; when the guard reads no column the invariant says it ties no column to its writers, as an info finding, and never reads as an empty pass; an enforcer with no guard clause, and one that writes, keep their rule.

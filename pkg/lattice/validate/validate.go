@@ -276,18 +276,15 @@ func resolveRef(ref, fallbackFeature string) (feature, item string) {
 
 func sortViolations(v []schema.Violation) {
 	sort.SliceStable(v, func(i, j int) bool {
-		fi, fj := "", ""
-		if v[i].Location != nil {
-			fi = v[i].Location.File
-		}
-		if v[j].Location != nil {
-			fj = v[j].Location.File
-		}
+		fi, fj := v[i].SortFile(), v[j].SortFile()
 		if fi != fj {
 			return fi < fj
 		}
 		if v[i].Code != v[j].Code {
 			return v[i].Code < v[j].Code
+		}
+		if v[i].Rank != v[j].Rank {
+			return v[i].Rank < v[j].Rank
 		}
 		return v[i].Message < v[j].Message
 	})

@@ -337,3 +337,126 @@ end $$;
 		t.Errorf("reads %v lack %q", got, r)
 	}
 }
+
+// A predicate that compares one column with the caller's identity, either side
+// first, is read as such: auth.uid() (also in a sub-select, or cast), a variable
+// assigned only from it, and a function called with no arguments for Resolve to
+// settle. A comparison with anything else, or between two columns, is not.
+// @verifies adapters.postgres:INV-15
+func TestOwnerCompare(t *testing.T) {
+	idVars := identityVars(maskCode(`declare v_uid uuid := auth.uid(); v_other uuid; begin v_other := p_x; v_uid2 := auth.uid(); v_uid2 := p_y; end`))
+	if _, ok := idVars["v_uid"]; !ok {
+		t.Fatalf("v_uid assigned only from auth.uid() is an identity variable: %v", idVars)
+	}
+	if _, ok := idVars["v_other"]; ok {
+		t.Errorf("v_other is assigned a parameter: %v", idVars)
+	}
+	if _, ok := idVars["v_uid2"]; ok {
+		t.Errorf("v_uid2 is also assigned a parameter: %v", idVars)
+	}
+	for _, tc := range []struct {
+		pred, col, via, call string
+		ok                   bool
+	}{
+		{"d.parent_id = auth.uid()", "parent_id", "auth.uid()", "", true},
+		{"auth.uid() = d.parent_id", "parent_id", "auth.uid()", "", true},
+		{"d.parent_id = (select auth.uid())", "parent_id", "auth.uid()", "", true},
+		{"parent_id = auth.uid()::uuid", "parent_id", "auth.uid()", "", true},
+		{"d.parent_id <> auth.uid()", "parent_id", "auth.uid()", "", true},
+		{"d.parent_id is distinct from auth.uid()", "parent_id", "auth.uid()", "", true},
+		{"d.parent_id = v_uid", "parent_id", "v_uid, assigned only from auth.uid()", "", true},
+		{"d.parent_id = public.current_family()", "parent_id", "", "sql.public.current_family", true},
+		{"d.parent_id = current_family()", "parent_id", "", "sql.public.current_family", true},
+		{"d.parent_id = v_other", "", "", "", false},
+		{"d.parent_id = d.owner_id", "", "", "", false},
+		{"d.kind = 'a'", "", "", "", false},
+		{"d.parent_id >= auth.uid()", "", "", "", false},
+		{"d.parent_id in (auth.uid())", "", "", "", false},
+		{"coalesce(d.parent_id, auth.uid()) = auth.uid()", "", "", "", false},
+	} {
+		ref, via, call, ok := ownerCompare(maskCode(tc.pred), idVars)
+		if ok != tc.ok || ok && (ref.name != tc.col || via != tc.via || call != tc.call) {
+			t.Errorf("%q: got (%v, %q, %q, %v), want (%q, %q, %q, %v)", tc.pred, ref, via, call, ok, tc.col, tc.via, tc.call, tc.ok)
+		}
+	}
+}
+
+// An ownership comparison is recorded on the read, and a function called with
+// no arguments is settled only when it is a function of the workspace, created
+// once, that reads the caller's identity itself.
+// @verifies adapters.postgres:INV-15
+func TestOwnerReadsResolve(t *testing.T) {
+	mods := resolveModules(t, "m.sql", `create table public.devices (id bigint primary key, parent_id uuid, kind text);
+create function public.current_family() returns uuid language sql stable as $$ select auth.uid() $$;
+create function public.constant() returns uuid language sql stable as $$ select null::uuid $$;
+create function public.mine() returns setof public.devices language plpgsql stable as $$
+declare v_uid uuid := auth.uid();
+begin
+  return query select * from public.devices d where d.parent_id = public.current_family();
+  return query select * from public.devices d where d.parent_id = v_uid;
+  return query select * from public.devices d where d.parent_id = public.constant();
+  return query select * from public.devices d where d.kind = 'a';
+end $$;
+`)
+	var got []string
+	for _, m := range mods {
+		for _, s := range m.Symbols {
+			if s.FQN == "sql.public.mine" {
+				for _, c := range s.CondReads {
+					got = append(got, c.Column+"|"+c.OwnerVia+"|"+c.OwnerCall)
+				}
+			}
+		}
+	}
+	want := []string{"parent_id|public.current_family() → auth.uid()|", "parent_id|v_uid, assigned only from auth.uid()|",
+		"parent_id||", "kind||"}
+	if strings.Join(got, ";") != strings.Join(want, ";") {
+		t.Errorf("reads = %q, want %q", got, want)
+	}
+}
+
+// A guard clause is an IF or ELSIF whose branch, at its own level, raises or
+// returns before the end of the body. A notice, a raise only in a nested branch, an
+// IF with no raise or return, and a RETURN that is the end of the body are not.
+// @verifies adapters.postgres:INV-16
+func TestGuardClause(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		want       bool
+	}{
+		{"raise", `begin if not public.is_admin() then raise exception 'forbidden'; end if; return 1; end`, true},
+		{"raise with no level", `begin if x then raise 'no'; end if; return 1; end`, true},
+		{"notice", `begin if x then raise notice 'hi'; end if; return 1; end`, false},
+		{"early return", `begin if x then return null; end if; select 1; return 2; end`, true},
+		{"return query before the end", `begin if x then return query select 1; return; end if; return query select 2; end`, true},
+		{"return that ends the body", `begin if x then return 1; end if; end`, false},
+		{"return next", `begin if x then return next; end if; return; end`, false},
+		{"no raise or return", `begin if x is null then x := 1; end if; return x; end`, false},
+		{"raise in a nested branch only", `begin if x then if y then null; end if; y := 1; end if; return 1; end`, false},
+		{"elsif raises", `begin if x then y := 1; elsif z then raise exception 'a'; end if; return 1; end`, true},
+		{"case when", `begin return case when x then raise_it() else 1 end; end`, false},
+	} {
+		_, got := readConditionSet(tc.body, 1, nil, true)
+		if got != tc.want {
+			t.Errorf("%s: guard clause = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+	reads, _ := readConditionSet(`begin
+  if (select s.locked from public.settings s) then raise exception 'locked'; end if;
+  return (select count(*) from public.devices d where d.last_seen_at > now());
+end`, 1, nil, true)
+	var guard, payload []string
+	for _, c := range reads {
+		if c.Column == "s" {
+			continue // the alias after a table name; Resolve drops it, the table has no such column
+		}
+		if c.Guard {
+			guard = append(guard, c.Column)
+		} else {
+			payload = append(payload, c.Column)
+		}
+	}
+	if strings.Join(guard, ",") != "locked" || strings.Join(payload, ",") != "last_seen_at" {
+		t.Errorf("guard reads = %v, payload reads = %v", guard, payload)
+	}
+}
