@@ -154,3 +154,186 @@ end $$;
 		t.Errorf("an IF is not filtered: %v", d)
 	}
 }
+
+// A column compared with a field of a local record variable, or with a hash of
+// a parameter, only picks the row: it is not a condition read. A column
+// compared with now() in the same WHERE still is.
+// @verifies adapters.postgres:INV-13
+func TestCondReadsRowSelectorRecordAndHash(t *testing.T) {
+	const devices = `create table public.devices (
+  id bigint primary key,
+  token_hash text,
+  last_seen_at timestamptz
+);
+`
+	for _, tc := range []struct {
+		name, args, decl, where string
+		reads, notReads         []string
+	}{
+		{"record field", "p_token text", "v_dev public.devices;",
+			"d.id = v_dev.id and (d.last_seen_at is null or d.last_seen_at < now() - interval '1 minute')",
+			[]string{"public.devices.last_seen_at"}, []string{"public.devices.id"}},
+		{"record field, swapped", "p_token text", "v_dev record;",
+			"v_dev.id = d.id and d.last_seen_at < now()",
+			[]string{"public.devices.last_seen_at"}, []string{"public.devices.id"}},
+		{"record field, IN and ANY", "p_token text", "v_dev record;",
+			"d.id in (v_dev.id, v_dev.parent_id) and d.token_hash = any(v_dev.hashes)",
+			nil, []string{"public.devices.id", "public.devices.token_hash"}},
+		{"hash of a parameter", "p_token text", "v int;",
+			"d.token_hash = encode(sha256(convert_to(p_token,'UTF8')),'hex') and d.last_seen_at < now()",
+			[]string{"public.devices.last_seen_at"}, []string{"public.devices.token_hash"}},
+		{"hash of a parameter, swapped", "p_token text", "v int;",
+			"encode(digest(p_token, 'sha256'), 'hex') = d.token_hash",
+			nil, []string{"public.devices.token_hash"}},
+		{"not a selector: hash of a column", "p_token text", "v int;",
+			"d.token_hash = encode(sha256(convert_to(d.salt,'UTF8')),'hex')",
+			[]string{"public.devices.token_hash"}, nil},
+		{"not a selector: a record that is a table alias", "p_token text", "d public.devices;",
+			"d.id = d.parent_id",
+			[]string{"public.devices.id"}, nil},
+		{"not a selector: an undeclared name", "p_token text", "v int;",
+			"d.id = v_other.id",
+			[]string{"public.devices.id"}, nil},
+		{"not a selector: <>", "p_token text", "v_dev record;",
+			"d.id <> v_dev.id",
+			[]string{"public.devices.id"}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mods := resolveModules(t, "m.sql", devices+"create function public.ping("+tc.args+") returns void\nlanguage plpgsql as $$\ndeclare "+tc.decl+"\nbegin\n  update public.devices d set last_seen_at = now()\n where "+tc.where+";\nend $$;\n")
+			got := readsOf(t, mods, "sql.public.ping")
+			for _, w := range tc.reads {
+				if !hasRead(got, w) {
+					t.Errorf("reads %v lack %s", got, w)
+				}
+			}
+			for _, n := range tc.notReads {
+				if hasRead(got, n) {
+					t.Errorf("reads %v include %s, which only picks the row", got, n)
+				}
+			}
+		})
+	}
+}
+
+// Two tables with the same column names: a function that reads one of them
+// records its reads on that table only, through the alias or the schema
+// qualified name, and a bare name goes to the table the statement is on.
+// @verifies adapters.postgres:INV-14
+func TestCondReadsSameColumnsOnTwoTables(t *testing.T) {
+	const tables = `create table public.invites (id bigint primary key, email text, expires_at timestamptz);
+create table public.family_invites (id bigint primary key, email text, expires_at timestamptz);
+`
+	mods := resolveModules(t, "m.sql", tables+`create function public.check_invite(p_id bigint) returns boolean
+language plpgsql as $$
+declare v_email text;
+begin
+  select i.email into v_email from public.invites i where i.id = p_id and i.expires_at > now();
+  if v_email is null then
+    return false;
+  end if;
+  return true;
+end $$;
+create function public.close_family_invite(p_id bigint) returns void
+language sql as $$
+  update public.family_invites set expires_at = now() where id = p_id and email is not null;
+$$;
+`)
+	got := readsOf(t, mods, "sql.public.check_invite")
+	for _, want := range []string{"public.invites.expires_at", "public.invites.email"} {
+		if !hasRead(got, want) {
+			t.Errorf("reads %v lack %s", got, want)
+		}
+	}
+	for _, r := range got {
+		if strings.Contains(r, "family_invites") {
+			t.Errorf("a read of invites is attributed to family_invites: %v", got)
+		}
+	}
+	other := readsOf(t, mods, "sql.public.close_family_invite")
+	if !hasRead(other, "public.family_invites.email") {
+		t.Errorf("reads %v lack public.family_invites.email", other)
+	}
+	for _, r := range other {
+		if strings.Contains(r, "public.invites.") {
+			t.Errorf("a read of family_invites is attributed to invites: %v", other)
+		}
+	}
+}
+
+// A function that writes nothing is read-only: the WHERE of its own SELECT is
+// a condition read. In a function that writes, a plain SELECT is not read, as
+// before.
+// @verifies adapters.postgres:INV-12
+func TestCondReadsOfReadOnlyFunction(t *testing.T) {
+	const videos = `create table public.videos (id bigint primary key, ai_pending boolean, title text, owner_id uuid);
+`
+	mods := resolveModules(t, "m.sql", videos+`create function public.visible(p_owner uuid) returns setof public.videos
+language sql stable as $$
+  select v.* from public.videos v where not v.ai_pending and v.owner_id = p_owner;
+$$;
+create function public.visible_plpgsql() returns setof public.videos
+language plpgsql stable as $$
+begin
+  return query select * from public.videos where not ai_pending;
+end $$;
+create function public.rename(p_id bigint) returns void
+language plpgsql as $$
+begin
+  perform 1 from public.videos v where not v.ai_pending;
+  update public.videos set title = 'x' where id = p_id;
+end $$;
+`)
+	for _, fqn := range []string{"sql.public.visible", "sql.public.visible_plpgsql"} {
+		got := readsOf(t, mods, fqn)
+		if !hasRead(got, "public.videos.ai_pending") {
+			t.Errorf("%s: reads %v lack public.videos.ai_pending", fqn, got)
+		}
+	}
+	if got := readsOf(t, mods, "sql.public.visible"); hasRead(got, "public.videos.owner_id") {
+		t.Errorf("reads %v include owner_id, a row selector by a parameter", got)
+	}
+	if got := readsOf(t, mods, "sql.public.rename"); len(got) != 0 {
+		t.Errorf("a function that writes reads %v, want only the WHERE of its own UPDATE (a selector)", got)
+	}
+}
+
+// An alias belongs to its statement: the same alias on two tables in one body
+// names each table in its own statement.
+// @verifies adapters.postgres:INV-14
+func TestCondReadsAliasReusedOnTwoTables(t *testing.T) {
+	const tables = `create table public.invites (id bigint primary key, email text, expires_at timestamptz);
+create table public.family_invites (id bigint primary key, email text, expires_at timestamptz, accepted boolean);
+`
+	mods := resolveModules(t, "m.sql", tables+`create function public.accept(p_id bigint) returns boolean
+language plpgsql as $$
+declare v_email text;
+begin
+  select i.email into v_email from public.invites i where i.id = p_id and i.expires_at > now();
+  if v_email is null then
+    return false;
+  end if;
+  update public.family_invites i set accepted = true where i.id = p_id and i.expires_at < now() and i.email = v_email;
+  return true;
+end $$;
+`)
+	got := readsOf(t, mods, "sql.public.accept")
+	for _, want := range []string{"public.invites.email", "public.invites.expires_at", "public.family_invites.expires_at"} {
+		if !hasRead(got, want) {
+			t.Errorf("reads %v lack %s", got, want)
+		}
+	}
+	// The SELECT's own read stays on invites (line 7), as does the variable it
+	// loaded and the IF that tests it (line 8); the UPDATE's reads are on
+	// family_invites (line 11), where the loaded variable is still invites.email.
+	want := map[string]bool{"public.invites.expires_at q 7": true, "public.invites.email q 8": true,
+		"public.invites.email q 11": true, "public.family_invites.expires_at q 11": true, "public.family_invites.email q 11": true}
+	for _, r := range got {
+		if !want[r] {
+			t.Errorf("unexpected read %q in %v", r, got)
+		}
+		delete(want, r)
+	}
+	for r := range want {
+		t.Errorf("reads %v lack %q", got, r)
+	}
+}

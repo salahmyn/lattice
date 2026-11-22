@@ -25,9 +25,12 @@ import (
 //   - for a named CHECK, the columns of its expression.
 //
 // A row selector is not a condition read. A column compared by plain = (or IN,
-// or = ANY) with a parameter of the function, or with a variable whose only
-// assignments are parameters, only picks the row the function acts on
-// (WHERE id = p_id); it is not what a promise is about, and it is left out.
+// or = ANY) with a parameter of the function, with a variable whose only
+// assignments are parameters, with a field of a local record variable
+// (WHERE d.id = v_dev.id, v_dev declared in DECLARE), or with a hash function
+// of a parameter (WHERE token_hash = encode(sha256(p_token), 'hex')), only
+// picks the row the function acts on; it is not what a promise is about, and
+// it is left out.
 // Comparisons with a literal, another column, now() or another function, and <,
 // >, >= and <>, still count.
 //
@@ -60,6 +63,7 @@ var aliasStop = map[string]bool{"where": true, "set": true, "on": true, "using":
 var (
 	reAliasTable = regexp.MustCompile(`(?is)\b(?:from|join|update|insert\s+into|merge\s+into|using)\s+(?:only\s+)?` + qname)
 	reSelectInto = regexp.MustCompile(`(?is)\bselect\s+([^;]*?)\s+into\s+(?:strict\s+)?([^;]*?)\s+from\s+(?:only\s+)?` + qname)
+	reSelectWord = regexp.MustCompile(`(?is)\bselect\b`)
 	reCondWord   = regexp.MustCompile(`(?is)\b(if|elsif|elseif|when)\b`)
 	reSimpleCol  = regexp.MustCompile(`(?is)^\s*((?:` + ident + `)(?:\s*\.\s*(?:` + ident + `))*)\s*(?:as\s+(?:` + ident + `))?\s*$`)
 )
@@ -197,16 +201,30 @@ type condStmt struct {
 type condVar struct{ table, column string }
 
 // readConditions reads the condition reads of a function body that starts at
-// file line base. A read of NEW or OLD is on the table newTable, which Resolve
+// file line base. When readOnly, the body writes nothing, and the WHERE of each
+// of its SELECTs counts as that of its own statement. A read of NEW or OLD is on the table newTable, which Resolve
 // turns into the table of each trigger that runs the function.
-// @enforces adapters.postgres:INV-12
-func readConditions(code string, base int, params map[string]bool) []ir.CondRead {
+// @enforces adapters.postgres:INV-12, adapters.postgres:INV-14
+func readConditions(code string, base int, params map[string]bool, readOnly bool) []ir.CondRead {
 	mask := maskCode(code)
 	isParam := paramVars(mask, params)
+	records := declaredVars(mask)
 	lines := newLineIndex(code)
 	line := func(off int) int { return base + lines.before(off) }
 
-	aliases := map[string]string{}
+	// An alias belongs to its statement: the same short alias may stand for
+	// one table in one statement and another in the next. Statements are the
+	// text between semicolons. A name that no statement of the reference's own
+	// segment binds falls back to the body's other statements only when they
+	// all agree on the table.
+	segOf := func(off int) int { return strings.Count(mask[:off], ";") }
+	segAliases := map[int]map[string]string{}
+	bodyAliases := map[string]string{}
+	bind := func(m map[string]string, key, table string, overwrite bool) {
+		if _, ok := m[key]; overwrite || !ok {
+			m[key] = table
+		}
+	}
 	for _, loc := range reAliasTable.FindAllStringSubmatchIndex(mask, -1) {
 		first, second := mask[loc[2]:loc[3]], ""
 		if loc[4] >= 0 {
@@ -217,13 +235,44 @@ func readConditions(code string, base int, params map[string]bool) []ir.CondRead
 		}
 		table := tableOf(first, second)
 		sch, name := qualify(first, second)
+		seg := segOf(loc[0])
+		if segAliases[seg] == nil {
+			segAliases[seg] = map[string]string{}
+		}
+		m := segAliases[seg]
+		keys := []string{}
 		if a := aliasAfter(mask, loc[1]); a != "" {
-			aliases[a] = table
+			bind(m, a, table, true)
+			keys = append(keys, a)
 		}
-		if _, ok := aliases[name]; !ok {
-			aliases[name] = table
+		bind(m, name, table, false)
+		m[sch+"."+name] = table
+		keys = append(keys, name, sch+"."+name)
+		for _, k := range keys {
+			if prev, ok := bodyAliases[k]; ok && prev != table {
+				bodyAliases[k] = "" // two tables: ambiguous in the body
+			} else if !ok {
+				bodyAliases[k] = table
+			}
 		}
-		aliases[sch+"."+name] = table
+	}
+	aliasCache := map[int]map[string]string{}
+	aliasesAt := func(off int) map[string]string {
+		seg := segOf(off)
+		if m, ok := aliasCache[seg]; ok {
+			return m
+		}
+		m := map[string]string{}
+		for k, v := range bodyAliases {
+			if v != "" {
+				m[k] = v
+			}
+		}
+		for k, v := range segAliases[seg] {
+			m[k] = v
+		}
+		aliasCache[seg] = m
+		return m
 	}
 
 	var stmts []condStmt
@@ -271,19 +320,45 @@ func readConditions(code string, base int, params map[string]bool) []ir.CondRead
 			if len(refs) != 1 {
 				continue
 			}
-			t, col, _, good := resolveRef(refs[0], table, aliases, nil)
+			t, col, _, good := resolveRef(refs[0], table, aliasesAt(loc[0]), nil)
 			if good {
 				vars[target] = condVar{t, col}
 			}
 		}
 	}
+	if readOnly {
+		for _, loc := range reSelectWord.FindAllStringIndex(mask, -1) {
+			end := stmtEnd(mask, loc[1])
+			dup := false
+			for _, st := range stmts {
+				dup = dup || st.start == loc[0]
+			}
+			table := ""
+			if m := reAliasTable.FindStringSubmatchIndex(mask[loc[1]:end]); m != nil {
+				second := ""
+				if m[4] >= 0 {
+					second = mask[loc[1]+m[4] : loc[1]+m[5]]
+				}
+				table = tableOf(mask[loc[1]+m[2]:loc[1]+m[3]], second)
+			}
+			if !dup && table != "" {
+				stmts = append(stmts, condStmt{loc[0], end, table})
+			}
+		}
+	}
 	sort.SliceStable(stmts, func(i, j int) bool { return stmts[i].start < stmts[j].start })
+	// A record variable is a DECLAREd name that is not a table alias of the
+	// body: a name that is both stays a possible column.
+	isRecord := func(name string) bool {
+		_, alias := bodyAliases[name]
+		return records[name] && !alias
+	}
 
 	var out []ir.CondRead
 	seen := map[ir.CondRead]bool{}
 	emit := func(text string, primary string, off int) {
 		for _, ref := range refsIn(text) {
-			t, col, qualified, ok := resolveRef(ref, primary, aliases, vars)
+			t, col, qualified, ok := resolveRef(ref, primary, aliasesAt(off), vars)
 			if !ok {
 				continue
 			}
@@ -306,7 +381,7 @@ func readConditions(code string, base int, params map[string]bool) []ir.CondRead
 			stop = st.end
 		}
 		for _, pred := range splitAnd(mask[w+5 : stop]) {
-			if !isSelector(pred, isParam) {
+			if !isSelector(pred, isParam, isRecord) {
 				emit(pred, st.table, w)
 			}
 		}
@@ -491,9 +566,11 @@ func splitAnd(s string) []string {
 	return append(out, s[from:])
 }
 
-// isParamExpr says whether e is one parameter (or a parameter variable), with
-// an optional cast, or a parenthesised list or ANY(...) of them.
-func isParamExpr(e string, isParam func(string) bool) bool {
+// isParamExpr says whether e is one value that picks a row without being a
+// column of it: a parameter (or a parameter variable), with an optional cast; a
+// field of a local record variable (v_dev.id); a hash function of a parameter
+// (the recogniser hashAuth uses); or a parenthesised list or ANY(...) of them.
+func isParamExpr(e string, isParam, isRecord func(string) bool) bool {
 	e = strings.TrimSpace(reCondCastTail.ReplaceAllString(strings.TrimSpace(e), ""))
 	if w, n := firstWord(e); w == "any" || w == "some" || w == "all" {
 		e = strings.TrimSpace(e[n:])
@@ -501,7 +578,7 @@ func isParamExpr(e string, isParam func(string) bool) bool {
 	if strings.HasPrefix(e, "(") && matchParen(e, 0) == len(e)-1 {
 		items := splitTop(e[1 : len(e)-1])
 		for _, it := range items {
-			if !isParamExpr(it, isParam) {
+			if !isParamExpr(it, isParam, isRecord) {
 				return false
 			}
 		}
@@ -513,20 +590,45 @@ func isParamExpr(e string, isParam func(string) bool) bool {
 	if m := reIdentAt.FindString(e); m != "" && m == e {
 		return isParam(unquote(e))
 	}
-	return false
+	if reFieldChain.MatchString(e) {
+		q, _ := firstIdent(e)
+		return isRecord(q)
+	}
+	return isHashOfParam(e, isParam)
 }
 
-// isSelector says whether a predicate only picks a row by a parameter:
-// <column> = <parameter>, <column> IN (<parameters>), <column> = ANY(<parameter>),
-// or the same with the sides swapped.
-func isSelector(pred string, isParam func(string) bool) bool {
+// reFieldChain is a dotted chain of at least two identifiers.
+var reFieldChain = regexp.MustCompile(`(?is)^(?:` + ident + `)(?:\s*\.\s*(?:` + ident + `))+$`)
+
+// isSelector says whether a predicate only picks a row: <column> = <value>,
+// <column> IN (<values>), <column> = ANY(<values>), or the same with the sides
+// swapped, where a value is a parameter, a field of a local record variable or
+// a hash of a parameter.
+// @enforces adapters.postgres:INV-13
+func isSelector(pred string, isParam, isRecord func(string) bool) bool {
 	if m := reSelector.FindStringSubmatch(pred); m != nil && !isParam(strings.TrimSpace(m[1])) {
-		if isParamExpr(m[3], isParam) {
+		if isParamExpr(m[3], isParam, isRecord) {
 			return true
 		}
 	}
-	if m := reParamEq.FindStringSubmatch(pred); m != nil && isParamExpr(m[1], isParam) && !isParam(strings.TrimSpace(m[2])) {
+	if m := reParamEq.FindStringSubmatch(pred); m != nil && isParamExpr(m[1], isParam, isRecord) && !isParam(strings.TrimSpace(m[2])) {
 		return true
 	}
 	return false
+}
+
+var reDeclareBlock = regexp.MustCompile(`(?is)\bdeclare\b(.*?)\bbegin\b`)
+
+// declaredVars lists the names a body declares in its DECLARE sections, of any
+// type. A name the loop variable of a FOR introduces is not declared there.
+func declaredVars(mask string) map[string]bool {
+	out := map[string]bool{}
+	for _, m := range reDeclareBlock.FindAllStringSubmatch(mask, -1) {
+		for _, entry := range strings.Split(m[1], ";") {
+			if n, ok := firstIdent(entry); ok {
+				out[n] = true
+			}
+		}
+	}
+	return out
 }

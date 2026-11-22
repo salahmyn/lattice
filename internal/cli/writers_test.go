@@ -784,3 +784,182 @@ $$;
 		t.Errorf("INV-2 writers = %s, want park_job and not renumber_job", g)
 	}
 }
+
+// writersInv2Repo adds a second promise, INV-2, enforced by the functions in
+// migration, to the job-queue example.
+func writersInv2Repo(t *testing.T, migration string) string {
+	t.Helper()
+	feature := strings.Replace(writersFeature, "    verifiable_by:\n      - test\n", writersOwnerFeature, 1)
+	return writersRepo(t, "", "", map[string]string{
+		"supabase/migrations/20260115000000_inv2.sql": migration,
+		"supabase/tests/02_inv2.sql":                  writersOwnerTest,
+		"lattice/features/queue/jobs.yaml":            feature,
+	})
+}
+
+// unguardedFor lists the writers reported for one invariant, with each message.
+func unguardedFor(got []schema.Violation, inv string) map[string]string {
+	out := map[string]string{}
+	for _, f := range got {
+		if f.Code == schema.CodeUnguardedWriter && f.InvariantID == inv {
+			out[f.Subject] = f.Message
+		}
+	}
+	return out
+}
+
+// A promise enforced by a function that only reads (a query that filters on a
+// column) is about that column: a function that flips it is reported, and one
+// that writes other columns of the table is not.
+// @verifies graph:INV-12
+func TestReadOnlyEnforcerLinksWriterOfItsFilter(t *testing.T) {
+	const mig = `create table public.videos (
+  id bigint primary key,
+  title text,
+  ai_pending boolean not null default true,
+  updated_at timestamptz not null default now()
+);
+-- @enforces queue.jobs:INV-2
+create function public.visible_videos() returns setof public.videos
+language sql stable security definer set search_path = '' as $$
+  select v.* from public.videos v where not v.ai_pending;
+$$;
+create function public.finish_enrich(p_id bigint) returns void
+language sql security definer set search_path = '' as $$
+  update public.videos set ai_pending = false, updated_at = now() where id = p_id;
+$$;
+create function public.rename_video(p_id bigint, p_title text) returns void
+language sql security definer set search_path = '' as $$
+  update public.videos set title = p_title, updated_at = now() where id = p_id;
+$$;
+`
+	got, rep := validateWriters(t, writersInv2Repo(t, mig))
+	inv2 := unguardedFor(got, "INV-2")
+	if len(inv2) != 1 || !strings.Contains(inv2["sql.public.finish_enrich"], "columns from conditions") ||
+		!strings.Contains(inv2["sql.public.finish_enrich"], "ai_pending (") {
+		t.Fatalf("INV-2 writers = %v, want only finish_enrich, on ai_pending from conditions", inv2)
+	}
+	if !rep.OK {
+		t.Errorf("an info finding must not fail validate")
+	}
+}
+
+// A row selector is not a condition read when the other side is a field of a
+// record variable or a hash of a parameter; what the function tests with now()
+// still is. A writer of the selector column is not linked; a writer of the
+// tested one is.
+// @verifies adapters.postgres:INV-13
+func TestRecordAndHashSelectorsAreNotColumns(t *testing.T) {
+	const mig = `create table public.devices (
+  id bigint primary key,
+  token_hash text,
+  name text,
+  last_seen_at timestamptz
+);
+-- @enforces queue.jobs:INV-2
+create function public.device_ping(p_token text) returns void
+language plpgsql security definer set search_path = '' as $$
+declare v_dev public.devices;
+begin
+  select * into v_dev from public.devices d
+   where d.token_hash = encode(sha256(convert_to(p_token,'UTF8')),'hex');
+  update public.devices d set last_seen_at = now()
+   where d.id = v_dev.id
+     and (d.last_seen_at is null or d.last_seen_at < now() - interval '1 minute');
+end $$;
+create function public.renumber_device(p_id bigint, p_new bigint) returns void
+language sql security definer set search_path = '' as $$
+  update public.devices set id = p_new where id = p_id;
+$$;
+create function public.rotate_token(p_id bigint, p_hash text) returns void
+language sql security definer set search_path = '' as $$
+  update public.devices set token_hash = p_hash where id = p_id;
+$$;
+create function public.mark_seen(p_id bigint) returns void
+language sql security definer set search_path = '' as $$
+  update public.devices set last_seen_at = null where id = p_id;
+$$;
+`
+	got, _ := validateWriters(t, writersInv2Repo(t, mig))
+	inv2 := unguardedFor(got, "INV-2")
+	var names []string
+	for n := range inv2 {
+		names = append(names, n)
+	}
+	if g := strings.Join(sorted(names), ", "); g != "sql.public.mark_seen" {
+		t.Fatalf("INV-2 writers = %s, want only mark_seen: id and token_hash only pick the row", g)
+	}
+	if m := inv2["sql.public.mark_seen"]; !strings.Contains(m, "columns from conditions") || !strings.Contains(m, "last_seen_at (") {
+		t.Errorf("message = %q", m)
+	}
+}
+
+// Two tables that share column names: an enforcer that reads invites is not
+// linked to a writer of family_invites, whether it names the table by alias,
+// by its schema-qualified name or not at all.
+// @verifies adapters.postgres:INV-14
+func TestSameColumnsOnTwoTablesAreNotLinked(t *testing.T) {
+	const mig = `create table public.invites (id bigint primary key, email text, expires_at timestamptz);
+create table public.family_invites (id bigint primary key, email text, expires_at timestamptz, accepted boolean);
+create table public.family_members (id bigint primary key, email text, expires_at timestamptz);
+-- @enforces queue.jobs:INV-2
+create function public.accept_invite(p_id bigint, p_email text) returns boolean
+language plpgsql security definer set search_path = '' as $$
+declare v_email text;
+begin
+  select email into v_email from public.invites where id = p_id and expires_at > now();
+  if v_email is distinct from p_email then
+    return false;
+  end if;
+  if exists (select 1 from public.invites i where i.id = p_id and i.expires_at < now()) then
+    return false;
+  end if;
+  return true;
+end $$;
+create function public.create_invite(p_email text) returns void
+language sql security definer set search_path = '' as $$
+  insert into public.family_invites (email, expires_at) values (p_email, now() + interval '7 days');
+$$;
+create function public.family_accept_invite(p_id bigint) returns void
+language plpgsql security definer set search_path = '' as $$
+begin
+  update public.family_invites fi set accepted = true, email = fi.email, expires_at = now() where fi.id = p_id;
+  insert into public.family_members (email, expires_at) select email, expires_at from public.family_invites where id = p_id;
+end $$;
+`
+	got, _ := validateWriters(t, writersInv2Repo(t, mig))
+	if inv2 := unguardedFor(got, "INV-2"); len(inv2) != 0 {
+		t.Errorf("INV-2 writers = %v, want none: the enforcer reads invites only", inv2)
+	}
+}
+
+// The same alias on two tables in one function names each in its own
+// statement. A read of invites through i is not a read of family_invites, so a
+// writer of family_invites.email and expires_at is not linked to a promise
+// whose enforcer only tests invites and sets accepted.
+// @verifies adapters.postgres:INV-14
+func TestAliasReusedAcrossStatementsIsNotLinked(t *testing.T) {
+	const mig = `create table public.invites (id bigint primary key, email text, expires_at timestamptz);
+create table public.family_invites (id bigint primary key, email text, expires_at timestamptz, accepted boolean);
+-- @enforces queue.jobs:INV-2
+create function public.accept_invite(p_id bigint) returns boolean
+language plpgsql security definer set search_path = '' as $$
+declare v_exp timestamptz;
+begin
+  select i.expires_at into v_exp from public.invites i where i.id = p_id;
+  if v_exp < now() then
+    return false;
+  end if;
+  update public.family_invites i set accepted = true where i.id = p_id;
+  return true;
+end $$;
+create function public.create_invite(p_email text) returns void
+language sql security definer set search_path = '' as $$
+  insert into public.family_invites (email, expires_at) values (p_email, now() + interval '7 days');
+$$;
+`
+	got, _ := validateWriters(t, writersInv2Repo(t, mig))
+	if inv2 := unguardedFor(got, "INV-2"); len(inv2) != 0 {
+		t.Errorf("INV-2 writers = %v, want none", inv2)
+	}
+}

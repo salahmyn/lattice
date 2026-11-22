@@ -253,9 +253,11 @@ func containsRole(list []string, role string) bool {
 // identity (auth.uid(), auth.jwt(), a request.jwt claim, current_user or
 // session_user, directly or through a SQL function it calls), citing the first
 // read; whether it authenticates by a hash of one of its parameters; and which
-// parameters are declared boolean. The findings order: reads no identity and
-// takes a boolean parameter, then reads no identity, then takes a boolean
-// parameter, then the rest. Each is a fact about the body, never a pass: the
+// parameters are declared boolean. The findings order: takes a boolean
+// parameter and reads no identity, then takes a boolean parameter, then reads
+// no identity and authenticates by no hash, then authenticates by a hash only,
+// then the rest. A boolean parameter is a caller-supplied verdict a function
+// may trust whatever else it reads. Each is a fact about the body, never a pass: the
 // finding fires either way, because a caller-supplied parameter can still
 // decide the outcome.
 //
@@ -313,9 +315,10 @@ func CheckExposure(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string
 
 	verified := verifiedCases(kg)
 	var out []schema.Violation
-	// rankOf is the sort rank of each ENFORCER_EXPOSED finding: 0 reads no
-	// identity and takes a boolean parameter, 1 reads no identity, 2 takes a
-	// boolean parameter, 3 the rest.
+	// rankOf is the sort rank of each ENFORCER_EXPOSED finding: 0 takes a
+	// boolean parameter and reads no identity, 1 takes a boolean parameter,
+	// 2 reads no identity and authenticates by no hash, 3 authenticates by a
+	// hash only, 4 the rest.
 	rankOf := map[int]int{}
 	for _, fqn := range fqns {
 		sym := fns[fqn]
@@ -351,16 +354,19 @@ func CheckExposure(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string
 			definer = fmt.Sprintf("; it is SECURITY DEFINER (%s:%d)", sym.Execute.DefinerFile, sym.Execute.DefinerLine)
 		}
 		identity := identityFact(sym.Execute)
-		reads := sym.Execute.Identity != nil || sym.Execute.HashAuth != nil
 		bools := len(sym.Execute.BoolParams) > 0
-		rank := 3
+		noIdentity := sym.Execute.Identity == nil
+		hashed := sym.Execute.HashAuth != nil
+		rank := 4
 		switch {
-		case !reads && bools:
+		case bools && noIdentity && !hashed:
 			rank = 0
-		case !reads:
-			rank = 1
 		case bools:
+			rank = 1
+		case noIdentity && !hashed:
 			rank = 2
+		case noIdentity:
+			rank = 3
 		}
 		for _, ref := range enforces[fqn] {
 			if secured(kg, verified, fqn, ref) {
@@ -382,7 +388,7 @@ func CheckExposure(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []string
 		if r, ok := rankOf[i]; ok {
 			return r
 		}
-		return 3 // EXPOSURE_UNKNOWN keeps its place among the rest
+		return 4 // EXPOSURE_UNKNOWN keeps its place among the rest
 	}
 	idx := make([]int, len(out))
 	for i := range idx {

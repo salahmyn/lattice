@@ -163,10 +163,12 @@ func TestExposureStatesCallerIdentity(t *testing.T) {
 	}
 }
 
-// ENFORCER_EXPOSED lists the findings in four ranks: reads no identity and
-// takes a boolean parameter, reads no identity, takes a boolean parameter, the
-// rest. A function that authenticates by a hash of a parameter reads an
-// identity of its own kind; each fact is stated, none is worded as a pass.
+// ENFORCER_EXPOSED lists the findings in five ranks: takes a boolean parameter
+// and reads no identity, takes a boolean parameter, reads no identity and
+// authenticates by no hash, authenticates by a hash only, the rest. A boolean
+// parameter that reads an identity still ranks before every function that has
+// none: a caller-supplied verdict is the likelier hole. Each fact is stated,
+// none is worded as a pass.
 // @verifies graph:INV-10
 func TestExposureFactsAndOrder(t *testing.T) {
 	open := []ir.ExecuteGrant{grant(ir.ExecPublic, ir.ExecGranted, 2)}
@@ -190,7 +192,7 @@ func TestExposureFactsAndOrder(t *testing.T) {
 	for _, f := range got {
 		order = append(order, strings.TrimPrefix(f.Subject, "sql.public."))
 	}
-	want := []string{"e_none_bool", "c_none", "b_bool_reads", "f_hash_bool", "a_rest", "d_hash"}
+	want := []string{"e_none_bool", "b_bool_reads", "f_hash_bool", "c_none", "d_hash", "a_rest"}
 	if strings.Join(order, ",") != strings.Join(want, ",") {
 		t.Fatalf("order = %v, want %v", order, want)
 	}

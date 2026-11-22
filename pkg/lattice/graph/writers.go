@@ -25,7 +25,8 @@ import (
 //  2. from conditions: for each enforcer, the columns it reads in a condition
 //     (an IF, ELSIF or CASE WHEN, the WHERE of its own UPDATE, DELETE or
 //     SELECT ... INTO, a CHECK, a column loaded by SELECT col INTO v and tested
-//     as v) on a table it writes. Whether the enforcer also writes the column
+//     as v) on a table it writes; an enforcer that writes nothing (a read-only
+//     function, a CHECK) counts its condition reads on any table. Whether the enforcer also writes the column
 //     does not matter: a function that tests attempts and sets status is about
 //     attempts, and a second writer of attempts can break the promise;
 //  3. from writes: for an enforcer whose condition reads on its tables are
@@ -320,18 +321,12 @@ func BuildWriterIndex(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []str
 // deriveColumns decides the columns of an invariant from its enforcers: for
 // each, the columns it reads in a condition on a table it writes, or, when it
 // has none on those tables, the columns it writes. An enforcer that writes
-// nothing (a CHECK) contributes its condition reads on the tables the
-// invariant's other enforcers write. A bare name in a condition is a column
+// nothing (a read-only function, a CHECK) contributes its condition reads on
+// any table. A bare name in a condition is a column
 // only if the table is known to have it.
-// @enforces graph:INV-11
+// @enforces graph:INV-11, graph:INV-12
 func (ix *WriterIndex) deriveColumns(iw *invWrites, syms map[string]ir.Symbol) {
 	enforcers := setList(iw.enforcers)
-	invTables := map[string]bool{}
-	for _, f := range enforcers {
-		for _, w := range syms[f].Writes {
-			invTables[w.Table] = true
-		}
-	}
 	add := func(table, col string) {
 		if iw.columns[table] == nil {
 			iw.columns[table] = map[string]bool{}
@@ -340,16 +335,18 @@ func (ix *WriterIndex) deriveColumns(iw *invWrites, syms map[string]ir.Symbol) {
 	}
 	for _, f := range enforcers {
 		sym := syms[f]
+		// An enforcer that writes nothing (a read-only function, a CHECK)
+		// contributes its condition reads on any table: a writer of what it
+		// filters on changes what it returns. One that writes keeps the
+		// tables it writes.
+		anyTable := len(sym.Writes) == 0
 		tables := map[string]bool{}
 		for _, w := range sym.Writes {
 			tables[w.Table] = true
 		}
-		if len(tables) == 0 {
-			tables = invTables
-		}
 		found := false
 		for _, c := range sym.CondReads {
-			if tables[c.Table] && ix.isColumn(c) {
+			if (anyTable || tables[c.Table]) && ix.isColumn(c) {
 				add(c.Table, c.Column)
 				found = true
 			}
