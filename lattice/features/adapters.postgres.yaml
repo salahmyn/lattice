@@ -43,3 +43,5 @@ invariants:
     statement: A body has a guard clause only when an IF or ELSIF branch, at its own level, raises (RAISE EXCEPTION, or RAISE with no level) or returns (not RETURN NEXT) with more of the body after the whole IF for a return; a notice, a raise or return only in a nested branch, and a return that ends the body are not, and the reads in the condition of a guard branch carry a guard mark.
   - id: INV-17
     statement: A condition read is recorded on the line of the column reference itself, so a predicate of a sub-select, or of a condition that spans lines, is cited where it is written, not where its statement's WHERE or its IF starts.
+  - id: INV-18
+    statement: Every declaration with an initial value (:=, = or DEFAULT) in a DECLARE section is read as an assignment of its variable, whatever its type and whatever declarations come before it; a cursor declaration is not one.

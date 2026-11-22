@@ -542,8 +542,8 @@ func assignedVars(mask string) (map[string]string, map[string]string) {
 	for _, m := range reAssign.FindAllStringSubmatch(mask, -1) {
 		assign(m[1], m[2])
 	}
-	for _, m := range reDeclare.FindAllStringSubmatch(mask, -1) {
-		assign(m[1], m[2])
+	for _, d := range declInits(mask) {
+		assign(d[0], d[1])
 	}
 	for _, m := range reNoFromInto.FindAllStringSubmatch(mask, -1) {
 		if !strings.Contains(strings.ToLower(m[1]), " from ") {
@@ -798,8 +798,9 @@ func checkReads(expr string, table string, line int) []ir.CondRead {
 }
 
 var (
-	reAssign       = regexp.MustCompile(`(?is)(?:^|[;\s(])(` + ident + `)\s*:=\s*([^;]*);`)
-	reDeclare      = regexp.MustCompile(`(?is)(?:\bdeclare|;)\s*(` + ident + `)\s+[A-Za-z_][A-Za-z0-9_.\[\]]*(?:\s*\(\s*\d+(?:\s*,\s*\d+)?\s*\))?\s*(?::=|=|\bdefault\b)\s*([^;]*);`)
+	// reAssign does not consume the ";" that ends an assignment, so the next
+	// statement keeps it as its anchor.
+	reAssign       = regexp.MustCompile(`(?is)(?:^|[;\s(])(` + ident + `)\s*:=\s*([^;]*)`)
 	reIntoVars     = regexp.MustCompile(`(?is)\binto\s+(?:strict\s+)?([^;]*?)\s+from\b`)
 	reSelector     = regexp.MustCompile(`(?is)^\s*((?:` + ident + `)(?:\s*\.\s*(?:` + ident + `))*)\s*(=|\bin\b)\s*(.+?)\s*$`)
 	reParamEq      = regexp.MustCompile(`(?is)^\s*(.+?)\s*=\s*((?:` + ident + `)(?:\s*\.\s*(?:` + ident + `))*)\s*$`)
@@ -857,8 +858,8 @@ func paramVars(mask string, params map[string]bool) func(string) bool {
 	for _, m := range reAssign.FindAllStringSubmatch(mask, -1) {
 		as = append(as, assign{unquote(m[1]), strings.TrimSpace(reCondCastTail.ReplaceAllString(strings.TrimSpace(m[2]), ""))})
 	}
-	for _, m := range reDeclare.FindAllStringSubmatch(mask, -1) {
-		as = append(as, assign{unquote(m[1]), strings.TrimSpace(reCondCastTail.ReplaceAllString(strings.TrimSpace(m[2]), ""))})
+	for _, d := range declInits(mask) {
+		as = append(as, assign{unquote(d[0]), strings.TrimSpace(reCondCastTail.ReplaceAllString(strings.TrimSpace(d[1]), ""))})
 	}
 	for _, a := range as {
 		if _, seen := vars[a.name]; !seen {
@@ -959,7 +960,51 @@ func isSelector(pred string, isParam, isRecord func(string) bool) bool {
 	return false
 }
 
-var reDeclareBlock = regexp.MustCompile(`(?is)\bdeclare\b(.*?)\bbegin\b`)
+var (
+	reDeclareBlock = regexp.MustCompile(`(?is)\bdeclare\b(.*?)\bbegin\b`)
+	reDeclDefault  = regexp.MustCompile(`(?i)\bdefault\b`)
+)
+
+// declInits lists the declarations with an initial value in a body's DECLARE
+// sections, as name and value: each entry between semicolons, in order, of any
+// type (a multi-word type, %TYPE, CONSTANT, NOT NULL). The value is what follows
+// the first :=, = or DEFAULT of the entry. A cursor declaration is not one.
+// @enforces adapters.postgres:INV-18
+func declInits(mask string) [][2]string {
+	var out [][2]string
+	for _, m := range reDeclareBlock.FindAllStringSubmatch(mask, -1) {
+		for _, entry := range strings.Split(m[1], ";") {
+			name, ok := firstIdent(strings.TrimSpace(entry))
+			if !ok {
+				continue
+			}
+			at, width := -1, 0
+			if i := strings.Index(entry, ":="); i >= 0 {
+				at, width = i, 2
+			}
+			if loc := reDeclDefault.FindStringIndex(entry); loc != nil && (at < 0 || loc[0] < at) {
+				at, width = loc[0], loc[1]-loc[0]
+			}
+			for i := 0; i < len(entry); i++ {
+				if entry[i] == '=' && (i == 0 || !strings.ContainsRune(":<>!", rune(entry[i-1]))) {
+					if at < 0 || i < at {
+						at, width = i, 1
+					}
+					break
+				}
+			}
+			head := ""
+			if at >= 0 {
+				head = strings.ToLower(entry[:at])
+			}
+			if at < 0 || strings.Contains(head, " cursor") {
+				continue
+			}
+			out = append(out, [2]string{name, strings.TrimSpace(entry[at+width:])})
+		}
+	}
+	return out
+}
 
 // declaredVars lists the names a body declares in its DECLARE sections, of any
 // type. A name the loop variable of a FOR introduces is not declared there.

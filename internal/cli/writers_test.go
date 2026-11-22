@@ -1323,3 +1323,27 @@ $$;
 		}
 	}
 }
+
+// A variable assigned only from an identity helper is an ownership comparison
+// also when another declaration with a value comes first in the DECLARE section.
+// @verifies adapters.postgres:INV-18
+func TestOwnershipVariableAfterAnotherDeclaration(t *testing.T) {
+	got, _ := validateWriters(t, writersInv2Repo(t, ownershipWith(`create function public.lock_device(p_device_id bigint) returns void
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_uid uuid := auth.uid();
+  v_family uuid := public.current_family();
+  v_dev public.devices;
+begin
+  select * into v_dev from public.devices d where d.id = p_device_id and d.parent_id = v_family for update;
+  update public.devices set kind = 'locked' where id = v_dev.id;
+end $$;
+`)))
+	inv2 := unguardedFor(got, "INV-2")
+	if msg, ok := inv2["sql.public.register_device"]; ok {
+		t.Errorf("register_device only inserts parent_id, an ownership column here, and must not link: %q", msg)
+	}
+	if msg, ok := inv2["sql.public.transfer_device"]; !ok || !strings.Contains(msg, "v_family, assigned only from public.current_family() → auth.uid()") {
+		t.Errorf("transfer_device updates parent_id and links through ownership: %q (%v)", msg, inv2)
+	}
+}

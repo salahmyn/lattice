@@ -4,10 +4,17 @@ All notable changes to Lattice are documented in this file.
 
 ## [0.25.5] — 2026-11-22
 
-A fix from a real project's reading of 0.25.4's column sources. Every finding is still info.
+Fixes from a real project's reading of 0.25.4's column sources. Every finding is still info.
 
 ### Fixed
 
+- **Every declaration in a `DECLARE` section is read.** A declaration with a value was skipped
+  when another declaration with a value came just before it, because the first one's semicolon
+  was taken as its own end and not as the next one's start. So `v_uid uuid := auth.uid();
+  v_family uuid := public.current_family();` left `v_family` unread, and 0.25.3's helper-variable
+  ownership never applied to such bodies. Declarations are now read entry by entry within each
+  `DECLARE` section, with any type (`timestamp with time zone`, `%TYPE`, `CONSTANT`) and `:=`, `=`
+  or `DEFAULT`. Two assignments with no space between them are both read.
 - **A condition read is cited on its own line.** 0.25.4 cited every read of a predicate at the line
   of its statement's `WHERE` or `IF`, so a column read in a sub-select on the next line pointed at
   the wrong line. Each read now carries the line of the column reference itself.
