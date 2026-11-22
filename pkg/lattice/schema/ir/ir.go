@@ -140,6 +140,10 @@ type CondRead struct {
 	// column is compared with. Resolve turns it into OwnerVia when the function
 	// reads the caller's identity directly and clears it otherwise.
 	OwnerCall string `json:"owner_call,omitempty"`
+	// OwnerCallVar, with OwnerCall, names the variable the column is compared
+	// with when every assignment of that variable is the call: v_family :=
+	// public.current_family(). Resolve clears it with OwnerCall.
+	OwnerCallVar string `json:"owner_call_var,omitempty"`
 	// Guard is true when the read is in the condition of an IF or ELSIF whose
 	// branch raises or returns early.
 	Guard bool `json:"guard,omitempty"`

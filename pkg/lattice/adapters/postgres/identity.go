@@ -303,7 +303,8 @@ func resolveHelperIdentity(mods []ir.Module, eff map[string][2]int, overloaded m
 }
 
 // resolveOwnerCalls settles the columns a body compares with a function called
-// with no arguments. The column is a column of ownership when that function is a
+// with no arguments, directly or through a variable every assignment of which is
+// that call. The column is a column of ownership when that function is a
 // function of the workspace, created once, that reads the caller's identity
 // itself; the identity read is then cited through the function. For any other
 // call (a builtin, an unknown or overloaded name, a function that reads no
@@ -329,8 +330,11 @@ func resolveOwnerCalls(mods []ir.Module, eff map[string][2]int, overloaded map[s
 			}
 			if h, ok := direct[c.OwnerCall]; ok {
 				c.OwnerVia = strings.TrimPrefix(c.OwnerCall, "sql.") + "() → " + h.Via
+				if c.OwnerCallVar != "" {
+					c.OwnerVia = c.OwnerCallVar + ", assigned only from " + c.OwnerVia
+				}
 			}
-			c.OwnerCall = ""
+			c.OwnerCall, c.OwnerCallVar = "", ""
 		}
 	}
 }
