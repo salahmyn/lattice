@@ -1028,6 +1028,13 @@ language sql stable security definer set search_path = '' as $$
   select d.* from public.devices d where d.parent_id = public.current_family();
 $$;
 `, "public.current_family() → auth.uid()"},
+		{"variable from an identity helper", `create function public.my_devices() returns setof public.devices
+language plpgsql stable security definer set search_path = '' as $$
+declare v_family uuid := public.current_family();
+begin
+  return query select d.* from public.devices d where d.parent_id = v_family;
+end $$;
+`, "v_family, assigned only from public.current_family() → auth.uid()"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, rep := validateWriters(t, writersInv2Repo(t, ownershipWith(tc.enforcer)))
@@ -1071,6 +1078,31 @@ $$;
 	}
 	if g := strings.Join(sorted(names), ", "); g != "sql.public.add_kind, sql.public.register_device, sql.public.rename_kind" {
 		t.Errorf("INV-2 writers = %s, want every writer of kind (add_kind and register_device insert it)", g)
+	}
+}
+
+// A column compared with a field of another row is not ownership, even in a
+// guard: the owner it is compared with is that row's, not the caller's. Its
+// INSERT writers still link.
+// @verifies graph:INV-13
+func TestColumnComparedWithRecordFieldIsNotOwnership(t *testing.T) {
+	got, _ := validateWriters(t, writersInv2Repo(t, ownershipWith(`create function public.same_family(p_a bigint, p_b bigint) returns void
+language plpgsql stable security definer set search_path = '' as $$
+declare v_dev public.devices;
+begin
+  select * into v_dev from public.devices d where d.id = p_a;
+  if not exists (select 1 from public.devices k where k.id = p_b and k.parent_id = v_dev.parent_id) then
+    raise exception 'another family';
+  end if;
+end $$;
+`)))
+	inv2 := unguardedFor(got, "INV-2")
+	msg, ok := inv2["sql.public.register_device"]
+	if !ok {
+		t.Fatalf("register_device inserts parent_id, compared with another row's owner, and must link: %v", inv2)
+	}
+	if strings.Contains(msg, "ownership") {
+		t.Errorf("parent_id compared with v_dev.parent_id is not ownership: %q", msg)
 	}
 }
 

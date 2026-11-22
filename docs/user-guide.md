@@ -4322,7 +4322,10 @@ keeps the rule above, its condition reads on the tables it writes.
 ownership: `WHERE d.parent_id = auth.uid()` (also `(select auth.uid())`, a cast, `<>`, `!=` and
 `IS [NOT] DISTINCT FROM`, either side first), `= v_uid` where `v_uid` is assigned only from
 `auth.uid()`, and `= public.current_family()` where that function of the workspace reads the
-identity itself (one helper level, the one `ENFORCER_EXPOSED` resolves). Only a predicate at the
+identity itself (one helper level, the one `ENFORCER_EXPOSED` resolves), called directly or through
+a variable every assignment of which is that one call (`v_family uuid := public.current_family()`).
+A comparison with a field of a record, such as `k.parent_id = v_dev.parent_id`, is not one: it
+compares with another row's owner, not the caller, and stays an ordinary condition. Only a predicate at the
 top level of a condition is read this way; one inside a sub-select, a `coalesce(...)` or an `IN`
 list is an ordinary condition. Such a column links only the writers that can reassign whose row it
 is: an `UPDATE` of it, an `INSERT ... ON CONFLICT DO UPDATE` and a `MERGE ... UPDATE`. A plain

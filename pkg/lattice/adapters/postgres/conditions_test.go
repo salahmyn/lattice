@@ -344,7 +344,19 @@ end $$;
 // settle. A comparison with anything else, or between two columns, is not.
 // @verifies adapters.postgres:INV-15
 func TestOwnerCompare(t *testing.T) {
-	idVars := identityVars(maskCode(`declare v_uid uuid := auth.uid(); v_other uuid; begin v_other := p_x; v_uid2 := auth.uid(); v_uid2 := p_y; end`))
+	idVars, callVars := assignedVars(maskCode(`declare v_uid uuid := auth.uid(); v_other uuid; v_family uuid := public.current_family(); v_rec public.devices;
+begin v_other := p_x; v_uid2 := auth.uid(); v_uid2 := p_y; v_fam2 := current_family(); v_fam2 := public.other(); v_mix := auth.uid(); v_mix := public.current_family(); end`))
+	if got := callVars["v_family"]; got != "sql.public.current_family" {
+		t.Errorf("v_family assigned only from public.current_family() = %q, want the call", got)
+	}
+	for _, n := range []string{"v_fam2", "v_mix", "v_other", "v_rec"} {
+		if _, ok := callVars[n]; ok {
+			t.Errorf("%s is not assigned only from one call: %v", n, callVars)
+		}
+	}
+	if _, ok := idVars["v_mix"]; ok {
+		t.Errorf("v_mix is also assigned a call: %v", idVars)
+	}
 	if _, ok := idVars["v_uid"]; !ok {
 		t.Fatalf("v_uid assigned only from auth.uid() is an identity variable: %v", idVars)
 	}
@@ -355,28 +367,31 @@ func TestOwnerCompare(t *testing.T) {
 		t.Errorf("v_uid2 is also assigned a parameter: %v", idVars)
 	}
 	for _, tc := range []struct {
-		pred, col, via, call string
-		ok                   bool
+		pred, col, via, call, callVar string
+		ok                            bool
 	}{
-		{"d.parent_id = auth.uid()", "parent_id", "auth.uid()", "", true},
-		{"auth.uid() = d.parent_id", "parent_id", "auth.uid()", "", true},
-		{"d.parent_id = (select auth.uid())", "parent_id", "auth.uid()", "", true},
-		{"parent_id = auth.uid()::uuid", "parent_id", "auth.uid()", "", true},
-		{"d.parent_id <> auth.uid()", "parent_id", "auth.uid()", "", true},
-		{"d.parent_id is distinct from auth.uid()", "parent_id", "auth.uid()", "", true},
-		{"d.parent_id = v_uid", "parent_id", "v_uid, assigned only from auth.uid()", "", true},
-		{"d.parent_id = public.current_family()", "parent_id", "", "sql.public.current_family", true},
-		{"d.parent_id = current_family()", "parent_id", "", "sql.public.current_family", true},
-		{"d.parent_id = v_other", "", "", "", false},
-		{"d.parent_id = d.owner_id", "", "", "", false},
-		{"d.kind = 'a'", "", "", "", false},
-		{"d.parent_id >= auth.uid()", "", "", "", false},
-		{"d.parent_id in (auth.uid())", "", "", "", false},
-		{"coalesce(d.parent_id, auth.uid()) = auth.uid()", "", "", "", false},
+		{"d.parent_id = auth.uid()", "parent_id", "auth.uid()", "", "", true},
+		{"auth.uid() = d.parent_id", "parent_id", "auth.uid()", "", "", true},
+		{"d.parent_id = (select auth.uid())", "parent_id", "auth.uid()", "", "", true},
+		{"parent_id = auth.uid()::uuid", "parent_id", "auth.uid()", "", "", true},
+		{"d.parent_id <> auth.uid()", "parent_id", "auth.uid()", "", "", true},
+		{"d.parent_id is distinct from auth.uid()", "parent_id", "auth.uid()", "", "", true},
+		{"d.parent_id = v_uid", "parent_id", "v_uid, assigned only from auth.uid()", "", "", true},
+		{"d.parent_id = public.current_family()", "parent_id", "", "sql.public.current_family", "", true},
+		{"d.parent_id = current_family()", "parent_id", "", "sql.public.current_family", "", true},
+		{"d.parent_id = v_other", "", "", "", "", false},
+		{"d.parent_id = v_family", "parent_id", "", "sql.public.current_family", "v_family", true},
+		{"d.parent_id = v_rec.parent_id", "", "", "", "", false},
+		{"k.parent_id = v_dev.parent_id", "", "", "", "", false},
+		{"d.parent_id = d.owner_id", "", "", "", "", false},
+		{"d.kind = 'a'", "", "", "", "", false},
+		{"d.parent_id >= auth.uid()", "", "", "", "", false},
+		{"d.parent_id in (auth.uid())", "", "", "", "", false},
+		{"coalesce(d.parent_id, auth.uid()) = auth.uid()", "", "", "", "", false},
 	} {
-		ref, via, call, ok := ownerCompare(maskCode(tc.pred), idVars)
-		if ok != tc.ok || ok && (ref.name != tc.col || via != tc.via || call != tc.call) {
-			t.Errorf("%q: got (%v, %q, %q, %v), want (%q, %q, %q, %v)", tc.pred, ref, via, call, ok, tc.col, tc.via, tc.call, tc.ok)
+		ref, via, call, callVar, ok := ownerCompare(maskCode(tc.pred), idVars, callVars)
+		if ok != tc.ok || ok && (ref.name != tc.col || via != tc.via || call != tc.call || callVar != tc.callVar) {
+			t.Errorf("%q: got (%v, %q, %q, %q, %v), want (%q, %q, %q, %q, %v)", tc.pred, ref, via, call, callVar, ok, tc.col, tc.via, tc.call, tc.callVar, tc.ok)
 		}
 	}
 }

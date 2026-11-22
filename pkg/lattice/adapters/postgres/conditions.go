@@ -210,7 +210,7 @@ type condVar struct{ table, column string }
 // @enforces adapters.postgres:INV-12, adapters.postgres:INV-14, adapters.postgres:INV-15, adapters.postgres:INV-16
 func readConditionSet(code string, base int, params map[string]bool, readOnly bool) ([]ir.CondRead, bool) {
 	mask := maskCode(code)
-	idVars := identityVars(mask)
+	idVars, callVars := assignedVars(mask)
 	isParam := paramVars(mask, params)
 	records := declaredVars(mask)
 	lines := newLineIndex(code)
@@ -378,10 +378,10 @@ func readConditionSet(code string, base int, params map[string]bool, readOnly bo
 	// emitPred emits one predicate. A column compared with the caller's
 	// identity is recorded as such; any other predicate as plain reads.
 	emitPred := func(pred string, primary string, off int, guard bool) {
-		if ref, via, call, ok := ownerCompare(pred, idVars); ok {
+		if ref, via, call, callVar, ok := ownerCompare(pred, idVars, callVars); ok {
 			if t, col, qualified, good := resolveRef(ref, primary, aliasesAt(off), vars); good {
 				add(ir.CondRead{Table: t, Column: col, Qualified: qualified, Line: line(off), Guard: guard,
-					OwnerVia: via, OwnerCall: call})
+					OwnerVia: via, OwnerCall: call, OwnerCallVar: callVar})
 				return
 			}
 		}
@@ -494,6 +494,16 @@ func identityExpr(e string) (string, bool) {
 // SELECT auth.uid() INTO v_uid. A variable any other statement loads, or that is
 // ever assigned something else, is not one.
 func identityVars(mask string) map[string]string {
+	via, _ := assignedVars(mask)
+	return via
+}
+
+// assignedVars is identityVars with the variables whose every assignment is a
+// call of one and the same function with no arguments, with that function's
+// FQN: v_family := public.current_family(). Whether such a call reads the
+// caller's identity is settled in Resolve. A variable assigned both an identity
+// read and a call, two different calls, or anything else, is in neither map.
+func assignedVars(mask string) (map[string]string, map[string]string) {
 	bad := map[string]bool{}
 	for _, m := range reIntoVars.FindAllStringSubmatch(mask, -1) {
 		for _, t := range splitTop(m[1]) {
@@ -502,17 +512,23 @@ func identityVars(mask string) map[string]string {
 			}
 		}
 	}
-	via := map[string]string{}
+	via, calls := map[string]string{}, map[string]string{}
 	assign := func(name, rhs string) {
 		name = unquote(name)
-		v, ok := identityExpr(rhs)
-		if !ok {
-			bad[name] = true
+		if v, ok := identityExpr(rhs); ok {
+			if _, seen := via[name]; !seen {
+				via[name] = v
+			}
 			return
 		}
-		if _, seen := via[name]; !seen {
-			via[name] = v
+		if fqn, ok := noArgCall(stripWrappers(rhs)); ok {
+			if prev, seen := calls[name]; seen && prev != fqn {
+				bad[name] = true
+			}
+			calls[name] = fqn
+			return
 		}
+		bad[name] = true
 	}
 	for _, m := range reAssign.FindAllStringSubmatch(mask, -1) {
 		assign(m[1], m[2])
@@ -525,10 +541,31 @@ func identityVars(mask string) map[string]string {
 			assign(m[2], m[1])
 		}
 	}
+	for n := range via {
+		if _, both := calls[n]; both {
+			bad[n] = true
+		}
+	}
 	for n := range bad {
 		delete(via, n)
+		delete(calls, n)
 	}
-	return via
+	return via, calls
+}
+
+// noArgCall reads e, as a whole, as a call with no arguments and returns the
+// FQN of the function it calls.
+func noArgCall(e string) (string, bool) {
+	m := reNoArgCall.FindStringSubmatch(e)
+	if m == nil {
+		return "", false
+	}
+	first, second := m[1], m[2]
+	s, name := qualify(second, "")
+	if first != "" {
+		s, name = qualify(first, second)
+	}
+	return functionFQN(s, name), true
 }
 
 // splitCompare splits a predicate at its first comparison outside parentheses:
@@ -565,10 +602,10 @@ func splitCompare(pred string) (lhs, rhs string, ok bool) {
 // is a direct identity read (auth.uid(), also in (select auth.uid())), a
 // variable assigned only from one, or a function called with no arguments, for
 // Resolve to settle (call is its FQN). Anything else is not one.
-func ownerCompare(pred string, idVars map[string]string) (ref colRef, via, call string, ok bool) {
+func ownerCompare(pred string, idVars, callVars map[string]string) (ref colRef, via, call, callVar string, ok bool) {
 	l, r, found := splitCompare(pred)
 	if !found {
-		return colRef{}, "", "", false
+		return colRef{}, "", "", "", false
 	}
 	for _, sides := range [][2]string{{l, r}, {r, l}} {
 		col, other := strings.TrimSpace(sides[0]), strings.TrimSpace(sides[1])
@@ -583,25 +620,26 @@ func ownerCompare(pred string, idVars map[string]string) (ref colRef, via, call 
 		if _, isVar := idVars[refs[0].name]; isVar && len(refs[0].qual) == 0 {
 			continue
 		}
+		if _, isVar := callVars[refs[0].name]; isVar && len(refs[0].qual) == 0 {
+			continue
+		}
 		if v, yes := identityExpr(other); yes {
-			return refs[0], v, "", true
+			return refs[0], v, "", "", true
 		}
 		o := stripWrappers(other)
 		if reIdentAt.FindString(o) == o {
 			if v, yes := idVars[unquote(o)]; yes {
-				return refs[0], unquote(o) + ", assigned only from " + v, "", true
+				return refs[0], unquote(o) + ", assigned only from " + v, "", "", true
+			}
+			if fqn, yes := callVars[unquote(o)]; yes {
+				return refs[0], "", fqn, unquote(o), true
 			}
 		}
-		if m := reNoArgCall.FindStringSubmatch(o); m != nil {
-			first, second := m[1], m[2]
-			s, name := qualify(second, "")
-			if first != "" {
-				s, name = qualify(first, second)
-			}
-			return refs[0], "", functionFQN(s, name), true
+		if fqn, yes := noArgCall(o); yes {
+			return refs[0], "", fqn, "", true
 		}
 	}
-	return colRef{}, "", "", false
+	return colRef{}, "", "", "", false
 }
 
 // branchGuards reads the branch of the IF or ELSIF whose THEN ends at from, up
