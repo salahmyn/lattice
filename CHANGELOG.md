@@ -2,6 +2,20 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.25.4] — 2026-11-22
+
+A real project could not tell why some writers were linked. Every finding is still info.
+
+### Added
+
+- **Each linked column names where it came from.** In `UNGUARDED_WRITER`, each column of an
+  invariant that was not declared now carries its sources, in brackets: `read by <enforcer> at
+  file:line`, `compared with the caller by <enforcer> at file:line` or `written by <enforcer> at
+  file:line`. A finding lists at most three per column. `lattice writers` prints them all under
+  each unguarded promise, and `--json` adds `column_sources` per promise. So a link can be judged
+  from the output alone: for instance, a column one enforcer compares with the caller and another
+  compares with a field of another row is an ordinary column, and both are named.
+
 ## [0.25.3] — 2026-11-22
 
 A fix from a real project's evaluation of 0.25.2. Every finding is still info.

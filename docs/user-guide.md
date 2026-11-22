@@ -3697,12 +3697,20 @@ block, a function body or an `EXECUTE` string leaves that table's role writers u
 unless you set it in `validate.severity`; `fail_on: warning` still passes:
 
 ```
-info  UNGUARDED_WRITER  sql.public.claim_jobs writes columns that queue.jobs:INV-1's enforcers test (columns from conditions: read in an IF, CASE WHEN, WHERE or CHECK of an enforcer, on a table it writes; declare columns: on the invariant to override), and is neither an enforcer of queue.jobs:INV-1 nor under a trigger or policy that enforces it, so no break ever targets it. public.jobs by update: attempts (supabase/migrations/20260101000000_jobs.sql:12)
+info  UNGUARDED_WRITER  sql.public.claim_jobs writes columns that queue.jobs:INV-1's enforcers test (columns from conditions: read in an IF, CASE WHEN, WHERE or CHECK of an enforcer, on a table it writes; declare columns: on the invariant to override), and is neither an enforcer of queue.jobs:INV-1 nor under a trigger or policy that enforces it, so no break ever targets it. public.jobs by update: attempts (supabase/migrations/20260101000000_jobs.sql:12) [read by sql.public.fail_job at supabase/migrations/20260101000000_jobs.sql:27]
 info  WRITERS_UNKNOWN   the writers of queue.jobs:INV-1's columns (public.jobs.attempts,run_after,status,updated_at) are not completely known, so an unguarded writer may exist: an EXECUTE at supabase/migrations/20260301000000_dyn.sql:2 runs a write statement that names no table literally, so it may write any table
 ```
 
 `UNGUARDED_WRITER` is one per (writer, invariant): it lists the columns both write, each with
-the file and line, and the operation; for a role it names the role and the grant. It never
+the file and line, and the operation; for a role it names the role and the grant. Each column
+also says where the invariant got it, in brackets after the writer's own lines: `read by <enforcer> at file:line` (a
+condition read), `compared with the caller by <enforcer> at file:line` (an identity comparison
+that did not make the column one of ownership, because another read of it is ordinary) or
+`written by <enforcer> at file:line` (an enforcer with no condition read). A finding lists at
+most three sources per column and says how many more; `lattice writers` prints every source
+under each unguarded promise, and `--json` adds `column_sources` (`table`, `column`,
+`enforcer`, `how`: `condition`, `ownership` or `write`, `file`, `line`) per promise. Declared
+columns carry none. It never
 fires on a writer that is itself an enforcer. `WRITERS_UNKNOWN` is one per invariant whose
 columns lie on a table with an incomplete writer set, with the reasons. Both go through the
 allowlist like any finding; the subject of a function writer is its FQN, of a role
