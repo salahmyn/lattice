@@ -2,6 +2,31 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.25.1] — 2026-11-22
+
+Fixes from a real project's evaluation of 0.25.0. Every finding is still info.
+
+### Fixed
+
+- **`PROPOSAL_REACHED_BY_ROOT` counts runtime roots only.** A migration's applied top-level node
+  (`sql.applied.*`) is a deploy step, so it is no longer named as a reach. A proposal reached only
+  from migrations gets no finding. `FEATURE_UNREACHED` is unchanged.
+- **More row selectors.** A comparison with a field of a declared record variable (`d.id = v_dev.id`)
+  or with a hash of a parameter is a row selector, not a condition read. A throttle such as
+  `last_seen_at < now() - interval …` still counts.
+- **Read-only enforcers count.** An enforcer that writes nothing contributes the `WHERE` of its own
+  `SELECT`s, on any table, so a writer of the column it filters on is linked.
+- **Aliases are bound per statement.** One alias reused for two tables in a function body no longer
+  records the first statement's reads on the second table.
+- **A hash comparison in a condition reads as authentication.** A hash of a parameter compared with
+  `=`, `<>`, `!=` or `IS [NOT] DISTINCT FROM` in an `IF`, `ELSIF` or `CASE WHEN` counts.
+- **`ENFORCER_EXPOSED` lists functions that take a boolean parameter first.** The new order is:
+  1. a boolean parameter and no identity;
+  2. any boolean parameter;
+  3. no identity and no hash;
+  4. hash only;
+  5. the rest.
+
 ## [0.25.0] — 2026-11-21
 
 More precise drift, exposure and writer findings, from a real project's run of 0.24.0. Every finding
