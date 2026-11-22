@@ -2,6 +2,25 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.26.0] — 2026-11-22
+
+A rule change from a real project's evaluation of 0.25.x quotas. Every finding is still info.
+
+### Changed
+
+- **A count of the caller's rows is not an ownership comparison.** Since 0.25.2, a column an
+  enforcer compares with the caller's identity linked only the writers that update it. That fits a
+  comparison that picks rows: a listing, a row loaded or changed. It does not fit a quota. For
+  `select count(*) into v_n from devices d where d.parent_id = v_family; if v_n >= 3 then raise`,
+  an insert writer of `devices` is exactly what can break "at most 3 devices". A comparison in the
+  `WHERE` of a `SELECT` whose select list counts or tests existence (`count`, `sum`, `exists` and
+  other aggregates) is now an ordinary condition read, so the insert writers of that column link.
+
+### Behaviour changes to plan for
+
+- `UNGUARDED_WRITER` can rise where a quota counts the caller's rows: one finding per insert-only
+  writer of the counted column. Each names the counting enforcer as its source.
+
 ## [0.25.5] — 2026-11-22
 
 Fixes from a real project's reading of 0.25.4's column sources. Every finding is still info.
