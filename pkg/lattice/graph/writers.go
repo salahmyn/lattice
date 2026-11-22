@@ -165,6 +165,9 @@ type invWrites struct {
 	// guardOnly are the read-only enforcers whose guard clause reads no column,
 	// so they add none.
 	guardOnly []string
+	// partial are the enforcers that add columns but whose guard also tests a
+	// value Lattice cannot read, so their columns may be incomplete.
+	partial []string
 }
 
 // ownerRead is where a column of ownership is compared with the caller's
@@ -440,7 +443,7 @@ func BuildWriterIndex(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []str
 // nothing (a read-only function, a CHECK) contributes its condition reads on
 // any table. A bare name in a condition is a column
 // only if the table is known to have it.
-// @enforces graph:INV-11, graph:INV-12, graph:INV-14
+// @enforces graph:INV-11, graph:INV-12, graph:INV-14, graph:INV-17
 func (ix *WriterIndex) deriveColumns(iw *invWrites, syms map[string]ir.Symbol) {
 	enforcers := setList(iw.enforcers)
 	// plain are the columns some condition read does not compare with the
@@ -500,6 +503,9 @@ func (ix *WriterIndex) deriveColumns(iw *invWrites, syms map[string]ir.Symbol) {
 		}
 		if found {
 			iw.fromConditions = append(iw.fromConditions, f)
+			if sym.GuardUnread != "" {
+				iw.partial = append(iw.partial, f+" (its guard also tests "+sym.GuardUnread+", which Lattice cannot read)")
+			}
 			continue
 		}
 		if guarded {
@@ -911,6 +917,9 @@ func (iw *invWrites) columnsPhrase(ref string) string {
 	}
 	if len(iw.guardOnly) > 0 {
 		phrase += "; " + strings.Join(iw.guardOnly, ", ") + " adds no column"
+	}
+	if len(iw.partial) > 0 {
+		phrase += "; the columns of " + strings.Join(iw.partial, ", ") + " may be incomplete"
 	}
 	if len(iw.ownership) > 0 {
 		phrase += "; a column of ownership, compared with the caller's identity, links only the writers that UPDATE it"

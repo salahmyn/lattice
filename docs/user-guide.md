@@ -4371,6 +4371,11 @@ variable and the line of the `EXECUTE`, because what the dynamic statement reads
 info  WRITERS_UNKNOWN  queue.jobs:INV-2 ties no column to its writers: the guard (an IF that raises or returns early) of each read-only enforcer adds no column: sql.public.admin_stats (its guard reads no column Lattice can place on a table, only the caller's identity, a function or a value it does not trace). So no writer of any column is linked, and the writers that could break it are not listed
 ```
 
+An enforcer whose guards read some columns and also test such a value adds the columns it reads,
+and `UNGUARDED_WRITER` says `the columns of <enforcer> (its guard also tests v_count, loaded by
+EXECUTE of a string at file:line, which Lattice cannot read) may be incomplete`, so the readable
+part does not make the set look complete.
+
 Declare `columns:` on the invariant to name what it is about.
 
 A table alias belongs to its statement: `i` may stand for `invites` in a `SELECT` and for

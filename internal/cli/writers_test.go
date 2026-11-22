@@ -1436,3 +1436,35 @@ create trigger t_quota before insert on public.devices for each row execute func
 		t.Errorf("an info finding must not fail validate")
 	}
 }
+
+// An enforcer whose guards read columns and also test a value an EXECUTE of a
+// string loaded adds the columns it reads, and the finding says its columns
+// may be incomplete: the readable part does not make the set look complete.
+// @verifies graph:INV-17
+func TestPartlyUnreadableGuardSaysColumnsMayBeIncomplete(t *testing.T) {
+	got, rep := validateWriters(t, writersInv2Repo(t, guardedWith(`create function public.check_quota(p_kind text) returns void
+language plpgsql stable security definer set search_path = '' as $$
+declare v_count int;
+begin
+  if exists (select 1 from public.devices v where v.kind = p_kind and v.last_seen_at is null) then raise exception 'duplicate'; end if;
+  execute format('select count(*) from public.%I', 'devices') into v_count;
+  if v_count >= 3 then raise exception 'quota'; end if;
+end $$;
+`)))
+	inv2 := unguardedFor(got, "INV-2")
+	msg, ok := inv2["sql.public.hide_device"]
+	if !ok {
+		t.Fatalf("hide_device writes kind, which the guard reads, and must link: %v", inv2)
+	}
+	for _, want := range []string{
+		"the columns of sql.public.check_quota (its guard also tests v_count, loaded by EXECUTE of a string at supabase/migrations/20260115000000_inv2.sql:",
+		"which Lattice cannot read) may be incomplete",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message lacks %q: %q", want, msg)
+		}
+	}
+	if !rep.OK {
+		t.Errorf("an info finding must not fail validate")
+	}
+}
