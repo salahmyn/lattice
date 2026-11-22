@@ -87,7 +87,32 @@ type WriterEntry struct {
 	// reads as ownership: compared with the caller's identity by an enforcer.
 	// A writer links through such a column only when it UPDATEs it.
 	OwnershipColumns []string `json:"ownership_columns,omitempty"`
+	// ColumnSources say, for each invariant the writer is linked to through
+	// columns its enforcers read or write, where each shared column came from:
+	// the enforcer, the file and line, and how (a condition read, a comparison
+	// with the caller's identity, or a write). Empty for declared columns.
+	ColumnSources map[string][]ColumnSource `json:"column_sources,omitempty"`
 }
+
+// ColumnSource is where an invariant's column came from.
+type ColumnSource struct {
+	Table    string `json:"table"`
+	Column   string `json:"column"`
+	Enforcer string `json:"enforcer"`
+	// How is "condition" (read in a condition), "ownership" (compared with the
+	// caller's identity) or "write" (written, when the enforcer had no
+	// condition read on its tables).
+	How  string `json:"how"`
+	File string `json:"file"`
+	Line int    `json:"line"`
+}
+
+// How a column source was found.
+const (
+	SourceCondition = "condition"
+	SourceOwnership = "ownership"
+	SourceWrite     = "write"
+)
 
 // How the columns of an invariant were decided.
 const (
@@ -134,6 +159,9 @@ type invWrites struct {
 	// ownership are the columns every condition read of which compares them
 	// with the caller's identity, by table and column.
 	ownership map[string]map[string]ownerRead
+	// sources are where each column came from, by table and column, in the
+	// order the enforcers were read; one per enforcer and kind.
+	sources map[string]map[string][]ColumnSource
 	// guardOnly are the read-only enforcers whose guard clause reads no column,
 	// so they add none.
 	guardOnly []string
@@ -145,6 +173,76 @@ type ownerRead struct {
 	via  string
 	file string
 	line int
+}
+
+// addSource records where a column came from, once per enforcer and kind.
+func (iw *invWrites) addSource(table, col string, src ColumnSource) {
+	src.Table, src.Column = table, col
+	if iw.sources == nil {
+		iw.sources = map[string]map[string][]ColumnSource{}
+	}
+	if iw.sources[table] == nil {
+		iw.sources[table] = map[string][]ColumnSource{}
+	}
+	for _, x := range iw.sources[table][col] {
+		if x.Enforcer == src.Enforcer && x.How == src.How {
+			return
+		}
+	}
+	iw.sources[table][col] = append(iw.sources[table][col], src)
+}
+
+// sourcesOf are where the invariant's column col of table came from. A write
+// of every column matches every source on the table, and a source that wrote
+// every column matches any column.
+// @enforces graph:INV-15
+func (iw *invWrites) sourcesOf(table, col string) []ColumnSource {
+	var out []ColumnSource
+	if col == wildcard {
+		cols := make([]string, 0, len(iw.sources[table]))
+		for c := range iw.sources[table] {
+			cols = append(cols, c)
+		}
+		sort.Strings(cols)
+		for _, c := range cols {
+			out = append(out, iw.sources[table][c]...)
+		}
+		return out
+	}
+	out = append(out, iw.sources[table][col]...)
+	return append(out, iw.sources[table][wildcard]...)
+}
+
+// SourceText says where one column came from.
+func SourceText(s ColumnSource) string {
+	at := fmt.Sprintf("%s at %s:%d", s.Enforcer, s.File, s.Line)
+	switch s.How {
+	case SourceOwnership:
+		return "compared with the caller by " + at
+	case SourceWrite:
+		return "written by " + at
+	}
+	return "read by " + at
+}
+
+// maxSourcesShown bounds the sources one column lists in a finding; --json of
+// lattice writers lists them all.
+const maxSourcesShown = 3
+
+// sourcesPhrase lists where a column came from, for a finding.
+func sourcesPhrase(srcs []ColumnSource) string {
+	if len(srcs) == 0 {
+		return ""
+	}
+	var parts []string
+	for i, s := range srcs {
+		if i == maxSourcesShown {
+			parts = append(parts, fmt.Sprintf("and %d more (lattice writers --json)", len(srcs)-maxSourcesShown))
+			break
+		}
+		parts = append(parts, SourceText(s))
+	}
+	return "[" + strings.Join(parts, "; ") + "]"
 }
 
 // columnsFrom is how the invariant's columns were decided: declared, from
@@ -349,11 +447,12 @@ func (ix *WriterIndex) deriveColumns(iw *invWrites, syms map[string]ir.Symbol) {
 	// caller's identity; owned are the first identity comparisons.
 	plain := map[string]map[string]bool{}
 	owned := map[string]map[string]ownerRead{}
-	add := func(table, col string, own *ownerRead) {
+	add := func(table, col string, own *ownerRead, src ColumnSource) {
 		if iw.columns[table] == nil {
 			iw.columns[table] = map[string]bool{}
 		}
 		iw.columns[table][col] = true
+		iw.addSource(table, col, src)
 		if own == nil {
 			if plain[table] == nil {
 				plain[table] = map[string]bool{}
@@ -390,10 +489,12 @@ func (ix *WriterIndex) deriveColumns(iw *invWrites, syms map[string]ir.Symbol) {
 			}
 			if (anyTable || tables[c.Table]) && ix.isColumn(c) {
 				var own *ownerRead
+				how := SourceCondition
 				if c.OwnerVia != "" {
 					own = &ownerRead{via: c.OwnerVia, file: sym.File, line: c.Line}
+					how = SourceOwnership
 				}
-				add(c.Table, c.Column, own)
+				add(c.Table, c.Column, own, ColumnSource{Enforcer: f, How: how, File: sym.File, Line: c.Line})
 				found = true
 			}
 		}
@@ -412,7 +513,7 @@ func (ix *WriterIndex) deriveColumns(iw *invWrites, syms map[string]ir.Symbol) {
 			}
 			wrote = true
 			for _, c := range w.Columns {
-				add(w.Table, c, nil)
+				add(w.Table, c, nil, ColumnSource{Enforcer: f, How: SourceWrite, File: sym.File, Line: w.Line})
 			}
 		}
 		if wrote {
@@ -513,7 +614,7 @@ func (ix *WriterIndex) declareColumns(kg schema.KnowledgeGraph) {
 				declared[table][col] = true
 			}
 			if iw := ix.invs[ref]; iw != nil {
-				iw.columns, iw.declared, iw.ownership = declared, true, nil
+				iw.columns, iw.declared, iw.ownership, iw.sources = declared, true, nil, nil
 			}
 		}
 	}
@@ -969,10 +1070,13 @@ func (ix *WriterIndex) Findings() []schema.Violation {
 					if c == wildcard {
 						name = "every column"
 					}
+					src := ""
 					if o, ok := iw.ownership[tableOfLabel(l)][c]; ok {
 						name = fmt.Sprintf("%s (ownership: compared with %s at %s:%d)", c, o.via, o.file, o.line)
+					} else if p := sourcesPhrase(iw.sourcesOf(tableOfLabel(l), c)); p != "" {
+						src = " " + p
 					}
-					cs = append(cs, fmt.Sprintf("%s (%s)", name, strings.Join(g.lines[l][c], "; ")))
+					cs = append(cs, fmt.Sprintf("%s (%s)%s", name, strings.Join(g.lines[l][c], "; "), src))
 				}
 				parts = append(parts, fmt.Sprintf("%s: %s", l, strings.Join(cs, ", ")))
 			}
@@ -1100,6 +1204,16 @@ func (ix *WriterIndex) Report(table, column string) WriterReport {
 				e.ColumnsFrom = map[string]string{}
 			}
 			e.ColumnsFrom[ref] = iw.columnsFrom()
+			var srcs []ColumnSource
+			for _, c := range iw.shared(w) {
+				srcs = append(srcs, iw.sourcesOf(w.Table, c)...)
+			}
+			if len(srcs) > 0 {
+				if e.ColumnSources == nil {
+					e.ColumnSources = map[string][]ColumnSource{}
+				}
+				e.ColumnSources[ref] = srcs
+			}
 			if by := iw.guardedBy(w); by != "" {
 				e.Guarded = append(e.Guarded, WriterGuard{Invariant: ref, By: by})
 			} else {

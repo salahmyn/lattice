@@ -128,6 +128,9 @@ func writeWriters(io *IO, rep graph.WriterReport) {
 		}
 		for _, ref := range w.Unguarded {
 			io.printf("    unguarded for %s (columns %s)\n", ref, columnsSource(w.ColumnsFrom[ref]))
+			for _, src := range w.ColumnSources[ref] {
+				io.printf("      %s: %s\n", src.Column, graph.SourceText(src))
+			}
 		}
 	}
 	io.printf("\n")

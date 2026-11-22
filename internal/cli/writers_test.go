@@ -1231,3 +1231,95 @@ end $$;
 		}
 	})
 }
+
+// Each column an UNGUARDED_WRITER links through names where it came from: the
+// enforcer and line that read it in a condition, compared it with the caller,
+// or wrote it. A column one enforcer compares with the caller and another reads
+// otherwise is an ordinary column, and both sources are named.
+// @verifies graph:INV-15
+func TestUnguardedWriterNamesColumnSources(t *testing.T) {
+	const file = "supabase/migrations/20260115000000_inv2.sql"
+	t.Run("condition and ownership readers of one column", func(t *testing.T) {
+		got, rep := validateWriters(t, writersInv2Repo(t, ownershipWith(`create function public.my_devices() returns setof public.devices
+language sql stable security definer set search_path = '' as $$
+  select d.* from public.devices d where d.parent_id = auth.uid();
+$$;
+-- @enforces queue.jobs:INV-2
+create function public.same_family(p_a bigint, p_b bigint) returns void
+language plpgsql stable security definer set search_path = '' as $$
+declare v_dev public.devices;
+begin
+  select * into v_dev from public.devices d where d.id = p_a;
+  if not exists (select 1 from public.devices k where k.id = p_b and k.parent_id = v_dev.parent_id) then
+    raise exception 'another family';
+  end if;
+end $$;
+`)))
+		msg, ok := unguardedFor(got, "INV-2")["sql.public.register_device"]
+		if !ok {
+			t.Fatalf("register_device must link through parent_id, an ordinary column: %v", unguardedFor(got, "INV-2"))
+		}
+		for _, want := range []string{
+			"compared with the caller by sql.public.my_devices at " + file + ":",
+			"read by sql.public.same_family at " + file + ":",
+		} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("message lacks %q: %q", want, msg)
+			}
+		}
+		if strings.Contains(msg, "(ownership:") {
+			t.Errorf("parent_id is not ownership here: %q", msg)
+		}
+		if !rep.OK {
+			t.Errorf("an info finding must not fail validate")
+		}
+	})
+	t.Run("written by an enforcer with no condition read", func(t *testing.T) {
+		got, _ := validateWriters(t, writersInv2Repo(t, ownershipWith(`create function public.retag(p_id bigint) returns void
+language sql security definer set search_path = '' as $$
+  update public.devices set kind = 'tv' where id = p_id;
+$$;
+`)))
+		msg, ok := unguardedFor(got, "INV-2")["sql.public.add_kind"]
+		if !ok {
+			t.Fatalf("add_kind writes kind, written by the enforcer: %v", unguardedFor(got, "INV-2"))
+		}
+		if want := "written by sql.public.retag at " + file + ":"; !strings.Contains(msg, want) {
+			t.Errorf("message lacks %q: %q", want, msg)
+		}
+	})
+}
+
+// `lattice writers` lists, under each unguarded invariant, where each shared
+// column came from, and --json carries the same as column_sources.
+// @verifies graph:INV-15
+func TestWritersCommandNamesColumnSources(t *testing.T) {
+	repo := writersInv2Repo(t, ownershipWith(`create function public.phones() returns setof public.devices
+language sql stable security definer set search_path = '' as $$
+  select d.* from public.devices d where d.kind = 'phone';
+$$;
+`))
+	run := func(json bool, args ...string) string {
+		var out bytes.Buffer
+		io := &IO{Repo: repo, Out: &out, Err: &out, Actor: "test", JSON: json}
+		cmd := newWritersCommand(io)
+		cmd.SilenceUsage, cmd.SilenceErrors = true, true
+		cmd.SetArgs(args)
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("writers: %v\n%s", err, out.String())
+		}
+		return out.String()
+	}
+	text := run(false, "devices")
+	if want := "      kind: read by sql.public.phones at supabase/migrations/20260115000000_inv2.sql:"; !strings.Contains(text, want) {
+		t.Errorf("output lacks %q:\n%s", want, text)
+	}
+	js := run(true, "devices")
+	for _, want := range []string{`"column_sources"`, `"enforcer": "sql.public.phones"`, `"how": "condition"`} {
+		if !strings.Contains(js, want) {
+			t.Errorf("--json lacks %s:\n%s", want, js)
+		}
+	}
+}
