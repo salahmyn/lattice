@@ -2,6 +2,16 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.25.5] — 2026-11-22
+
+A fix from a real project's reading of 0.25.4's column sources. Every finding is still info.
+
+### Fixed
+
+- **A condition read is cited on its own line.** 0.25.4 cited every read of a predicate at the line
+  of its statement's `WHERE` or `IF`, so a column read in a sub-select on the next line pointed at
+  the wrong line. Each read now carries the line of the column reference itself.
+
 ## [0.25.4] — 2026-11-22
 
 A real project could not tell why some writers were linked. Every finding is still info.
