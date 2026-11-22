@@ -2,6 +2,18 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.25.3] — 2026-11-22
+
+A fix from a real project's evaluation of 0.25.2. Every finding is still info.
+
+### Fixed
+
+- **A variable assigned only from an identity helper is an ownership comparison.** 0.25.2 read
+  `= v_uid` (assigned only from `auth.uid()`) and `= public.current_family()` (a helper that reads
+  it) as ownership, but not `= v_family` where `v_family uuid := public.current_family()`. It now
+  does, so the insert writers of such a column no longer link through it. A comparison with a
+  field of another row, such as `k.parent_id = v_dev.parent_id`, stays an ordinary condition.
+
 ## [0.25.2] — 2026-11-22
 
 Fixes from a real project's evaluation of 0.25.1. Every finding is still info.
