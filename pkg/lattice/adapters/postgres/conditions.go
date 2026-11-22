@@ -199,7 +199,14 @@ func aliasAfter(mask string, pos int) string {
 type condStmt struct {
 	start, end int
 	table      string
+	// aggregate is true when the statement's select list counts or tests
+	// existence (count(...), sum(...), exists(...)): its WHERE decides how
+	// many rows there are, not which row the function acts on.
+	aggregate bool
 }
+
+// reAggregate finds an aggregate or EXISTS call in a select list.
+var reAggregate = regexp.MustCompile(`(?i)\b(?:count|sum|avg|min|max|bool_and|bool_or|every|array_agg|string_agg|json_agg|jsonb_agg|exists)\s*\(`)
 
 type condVar struct{ table, column string }
 
@@ -210,7 +217,7 @@ type condVar struct{ table, column string }
 // nothing, and the WHERE of each of its SELECTs counts as that of its own
 // statement. A read of NEW or OLD is on the table newTable, which Resolve
 // turns into the table of each trigger that runs the function.
-// @enforces adapters.postgres:INV-12, adapters.postgres:INV-14, adapters.postgres:INV-15, adapters.postgres:INV-16, adapters.postgres:INV-17
+// @enforces adapters.postgres:INV-12, adapters.postgres:INV-14, adapters.postgres:INV-15, adapters.postgres:INV-16, adapters.postgres:INV-17, adapters.postgres:INV-19
 func readConditionSet(code string, base int, params map[string]bool, readOnly bool) ([]ir.CondRead, bool) {
 	mask := maskCode(code)
 	idVars, callVars := assignedVars(mask)
@@ -288,14 +295,14 @@ func readConditionSet(code string, base int, params map[string]bool, readOnly bo
 		if loc[4] >= 0 {
 			second = mask[loc[4]:loc[5]]
 		}
-		stmts = append(stmts, condStmt{loc[0], stmtEnd(mask, loc[1]), tableOf(first, second)})
+		stmts = append(stmts, condStmt{start: loc[0], end: stmtEnd(mask, loc[1]), table: tableOf(first, second)})
 	}
 	for _, loc := range reDeleteFrom.FindAllStringSubmatchIndex(mask, -1) {
 		first, second := mask[loc[2]:loc[3]], ""
 		if loc[4] >= 0 {
 			second = mask[loc[4]:loc[5]]
 		}
-		stmts = append(stmts, condStmt{loc[0], stmtEnd(mask, loc[1]), tableOf(first, second)})
+		stmts = append(stmts, condStmt{start: loc[0], end: stmtEnd(mask, loc[1]), table: tableOf(first, second)})
 	}
 	vars := map[string]condVar{}
 	for _, loc := range reSelectInto.FindAllStringSubmatchIndex(mask, -1) {
@@ -304,7 +311,7 @@ func readConditionSet(code string, base int, params map[string]bool, readOnly bo
 			second = mask[loc[8]:loc[9]]
 		}
 		table := tableOf(first, second)
-		stmts = append(stmts, condStmt{loc[0], stmtEnd(mask, loc[1]), table})
+		stmts = append(stmts, condStmt{loc[0], stmtEnd(mask, loc[1]), table, reAggregate.MatchString(mask[loc[2]:loc[3]])})
 		items := splitTop(mask[loc[2]:loc[3]])
 		var targets []string
 		for _, t := range splitTop(mask[loc[4]:loc[5]]) {
@@ -349,7 +356,11 @@ func readConditionSet(code string, base int, params map[string]bool, readOnly bo
 				table = tableOf(mask[loc[1]+m[2]:loc[1]+m[3]], second)
 			}
 			if !dup && table != "" {
-				stmts = append(stmts, condStmt{loc[0], end, table})
+				list := mask[loc[1]:end]
+				if from := findWord(list, 0, len(list), "from"); from >= 0 {
+					list = list[:from]
+				}
+				stmts = append(stmts, condStmt{loc[0], end, table, reAggregate.MatchString(list)})
 			}
 		}
 	}
@@ -408,9 +419,17 @@ func readConditionSet(code string, base int, params map[string]bool, readOnly bo
 			stop = st.end
 		}
 		for _, pred := range splitAndAt(mask[w+5:stop], w+5) {
-			if !isSelector(pred.text, isParam, isRecord) {
-				emitPred(pred, st.table, w, false)
+			if isSelector(pred.text, isParam, isRecord) {
+				continue
 			}
+			// A count or existence test of the caller's rows is about how
+			// many there are, which an INSERT changes: its comparisons with
+			// the caller's identity are ordinary reads, not ownership.
+			if st.aggregate {
+				emit(pred.text, st.table, w, pred.off, false)
+				continue
+			}
+			emitPred(pred, st.table, w, false)
 		}
 	}
 
