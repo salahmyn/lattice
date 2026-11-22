@@ -2,6 +2,20 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.26.2] — 2026-11-22
+
+A fix from a real project's evaluation of 0.26.1. Every finding is still info.
+
+### Fixed
+
+- **A partly unreadable guard says its columns may be incomplete.** 0.26.1 named a guard on a value
+  loaded by `EXECUTE` of a string only when that enforcer added no column at all. An enforcer that
+  also reads columns (`if exists (select 1 from videos v where v.parent_id = new.parent_id ...)`
+  next to `execute format(...) into v_count; if v_count >= v_limit then raise`) listed its readable
+  columns and said nothing of the rest. `UNGUARDED_WRITER` now adds `the columns of <enforcer> (its
+  guard also tests v_count, loaded by EXECUTE of a string at file:line, which Lattice cannot read)
+  may be incomplete`. No link changes.
+
 ## [0.26.1] — 2026-11-22
 
 A fix from a real project's evaluation of 0.26.0. Every finding is still info.
