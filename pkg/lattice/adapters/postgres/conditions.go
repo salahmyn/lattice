@@ -72,6 +72,8 @@ var (
 type colRef struct {
 	qual []string
 	name string
+	// at is the offset of the reference in the text refsIn read.
+	at int
 }
 
 // refsIn lists the names in an expression that may be columns: a word or a
@@ -96,6 +98,7 @@ func refsIn(text string) []colRef {
 				i++
 			}
 		case c == '"' || isWordByte(c):
+			start := i
 			var parts []string
 			for {
 				m := reIdentAt.FindString(text[i:])
@@ -125,7 +128,7 @@ func refsIn(text string) []colRef {
 			if call || cast || len(parts) == 1 && condSkip[parts[0]] {
 				continue
 			}
-			out = append(out, colRef{qual: parts[:len(parts)-1], name: parts[len(parts)-1]})
+			out = append(out, colRef{qual: parts[:len(parts)-1], name: parts[len(parts)-1], at: start})
 		default:
 			if c != ' ' && c != '\t' && c != '\n' && c != '\r' {
 				afterCast = false
@@ -207,7 +210,7 @@ type condVar struct{ table, column string }
 // nothing, and the WHERE of each of its SELECTs counts as that of its own
 // statement. A read of NEW or OLD is on the table newTable, which Resolve
 // turns into the table of each trigger that runs the function.
-// @enforces adapters.postgres:INV-12, adapters.postgres:INV-14, adapters.postgres:INV-15, adapters.postgres:INV-16
+// @enforces adapters.postgres:INV-12, adapters.postgres:INV-14, adapters.postgres:INV-15, adapters.postgres:INV-16, adapters.postgres:INV-17
 func readConditionSet(code string, base int, params map[string]bool, readOnly bool) ([]ir.CondRead, bool) {
 	mask := maskCode(code)
 	idVars, callVars := assignedVars(mask)
@@ -366,26 +369,32 @@ func readConditionSet(code string, base int, params map[string]bool, readOnly bo
 			out = append(out, cr)
 		}
 	}
-	emit := func(text string, primary string, off int, guard bool) {
+	// emit records the reads of a predicate that starts at offset at of the
+	// body; scope is the offset of its statement, which binds its aliases. Each
+	// read is on the line where the reference itself is, so a predicate of a
+	// sub-select on a later line is cited there.
+	emit := func(text string, primary string, scope, at int, guard bool) {
 		for _, ref := range refsIn(text) {
-			t, col, qualified, ok := resolveRef(ref, primary, aliasesAt(off), vars)
+			t, col, qualified, ok := resolveRef(ref, primary, aliasesAt(scope), vars)
 			if !ok {
 				continue
 			}
-			add(ir.CondRead{Table: t, Column: col, Qualified: qualified, Line: line(off), Guard: guard})
+			add(ir.CondRead{Table: t, Column: col, Qualified: qualified, Line: line(at + ref.at), Guard: guard})
 		}
 	}
 	// emitPred emits one predicate. A column compared with the caller's
 	// identity is recorded as such; any other predicate as plain reads.
-	emitPred := func(pred string, primary string, off int, guard bool) {
+	emitPred := func(p predAt, primary string, scope int, guard bool) {
+		pred := p.text
 		if ref, via, call, callVar, ok := ownerCompare(pred, idVars, callVars); ok {
-			if t, col, qualified, good := resolveRef(ref, primary, aliasesAt(off), vars); good {
-				add(ir.CondRead{Table: t, Column: col, Qualified: qualified, Line: line(off), Guard: guard,
+			if t, col, qualified, good := resolveRef(ref, primary, aliasesAt(scope), vars); good {
+				first := p.off + len(pred) - len(strings.TrimLeft(pred, " \t\r\n"))
+				add(ir.CondRead{Table: t, Column: col, Qualified: qualified, Line: line(first), Guard: guard,
 					OwnerVia: via, OwnerCall: call, OwnerCallVar: callVar})
 				return
 			}
 		}
-		emit(pred, primary, off, guard)
+		emit(pred, primary, scope, p.off, guard)
 	}
 
 	// The WHERE of the function's own UPDATE, DELETE and SELECT ... INTO.
@@ -398,8 +407,8 @@ func readConditionSet(code string, base int, params map[string]bool, readOnly bo
 		if stop < 0 {
 			stop = st.end
 		}
-		for _, pred := range splitAnd(mask[w+5 : stop]) {
-			if !isSelector(pred, isParam, isRecord) {
+		for _, pred := range splitAndAt(mask[w+5:stop], w+5) {
+			if !isSelector(pred.text, isParam, isRecord) {
 				emitPred(pred, st.table, w, false)
 			}
 		}
@@ -443,7 +452,7 @@ func readConditionSet(code string, base int, params map[string]bool, readOnly bo
 			guard = branchGuards(mask, then+len("then"))
 			guarded = guarded || guard
 		}
-		for _, pred := range splitAnd(cond) {
+		for _, pred := range splitAndAt(cond, loc[1]) {
 			emitPred(pred, primary, loc[0], guard)
 		}
 	}
@@ -533,8 +542,8 @@ func assignedVars(mask string) (map[string]string, map[string]string) {
 	for _, m := range reAssign.FindAllStringSubmatch(mask, -1) {
 		assign(m[1], m[2])
 	}
-	for _, m := range reDeclare.FindAllStringSubmatch(mask, -1) {
-		assign(m[1], m[2])
+	for _, d := range declInits(mask) {
+		assign(d[0], d[1])
 	}
 	for _, m := range reNoFromInto.FindAllStringSubmatch(mask, -1) {
 		if !strings.Contains(strings.ToLower(m[1]), " from ") {
@@ -789,8 +798,9 @@ func checkReads(expr string, table string, line int) []ir.CondRead {
 }
 
 var (
-	reAssign       = regexp.MustCompile(`(?is)(?:^|[;\s(])(` + ident + `)\s*:=\s*([^;]*);`)
-	reDeclare      = regexp.MustCompile(`(?is)(?:\bdeclare|;)\s*(` + ident + `)\s+[A-Za-z_][A-Za-z0-9_.\[\]]*(?:\s*\(\s*\d+(?:\s*,\s*\d+)?\s*\))?\s*(?::=|=|\bdefault\b)\s*([^;]*);`)
+	// reAssign does not consume the ";" that ends an assignment, so the next
+	// statement keeps it as its anchor.
+	reAssign       = regexp.MustCompile(`(?is)(?:^|[;\s(])(` + ident + `)\s*:=\s*([^;]*)`)
 	reIntoVars     = regexp.MustCompile(`(?is)\binto\s+(?:strict\s+)?([^;]*?)\s+from\b`)
 	reSelector     = regexp.MustCompile(`(?is)^\s*((?:` + ident + `)(?:\s*\.\s*(?:` + ident + `))*)\s*(=|\bin\b)\s*(.+?)\s*$`)
 	reParamEq      = regexp.MustCompile(`(?is)^\s*(.+?)\s*=\s*((?:` + ident + `)(?:\s*\.\s*(?:` + ident + `))*)\s*$`)
@@ -848,8 +858,8 @@ func paramVars(mask string, params map[string]bool) func(string) bool {
 	for _, m := range reAssign.FindAllStringSubmatch(mask, -1) {
 		as = append(as, assign{unquote(m[1]), strings.TrimSpace(reCondCastTail.ReplaceAllString(strings.TrimSpace(m[2]), ""))})
 	}
-	for _, m := range reDeclare.FindAllStringSubmatch(mask, -1) {
-		as = append(as, assign{unquote(m[1]), strings.TrimSpace(reCondCastTail.ReplaceAllString(strings.TrimSpace(m[2]), ""))})
+	for _, d := range declInits(mask) {
+		as = append(as, assign{unquote(d[0]), strings.TrimSpace(reCondCastTail.ReplaceAllString(strings.TrimSpace(d[1]), ""))})
 	}
 	for _, a := range as {
 		if _, seen := vars[a.name]; !seen {
@@ -877,19 +887,26 @@ func paramVars(mask string, params map[string]bool) func(string) bool {
 	}
 }
 
-// splitAnd splits a condition at its AND outside parentheses.
-func splitAnd(s string) []string {
-	var out []string
+// predAt is a predicate and its offset in the body.
+type predAt struct {
+	text string
+	off  int
+}
+
+// splitAndAt splits a condition at its AND outside parentheses, with each
+// predicate's offset, for s starting at offset base of the body.
+func splitAndAt(s string, base int) []predAt {
+	var out []predAt
 	from := 0
 	for {
 		i := findWord(s, from, len(s), "and")
 		if i < 0 {
 			break
 		}
-		out = append(out, s[from:i])
+		out = append(out, predAt{s[from:i], base + from})
 		from = i + 3
 	}
-	return append(out, s[from:])
+	return append(out, predAt{s[from:], base + from})
 }
 
 // isParamExpr says whether e is one value that picks a row without being a
@@ -943,7 +960,51 @@ func isSelector(pred string, isParam, isRecord func(string) bool) bool {
 	return false
 }
 
-var reDeclareBlock = regexp.MustCompile(`(?is)\bdeclare\b(.*?)\bbegin\b`)
+var (
+	reDeclareBlock = regexp.MustCompile(`(?is)\bdeclare\b(.*?)\bbegin\b`)
+	reDeclDefault  = regexp.MustCompile(`(?i)\bdefault\b`)
+)
+
+// declInits lists the declarations with an initial value in a body's DECLARE
+// sections, as name and value: each entry between semicolons, in order, of any
+// type (a multi-word type, %TYPE, CONSTANT, NOT NULL). The value is what follows
+// the first :=, = or DEFAULT of the entry. A cursor declaration is not one.
+// @enforces adapters.postgres:INV-18
+func declInits(mask string) [][2]string {
+	var out [][2]string
+	for _, m := range reDeclareBlock.FindAllStringSubmatch(mask, -1) {
+		for _, entry := range strings.Split(m[1], ";") {
+			name, ok := firstIdent(strings.TrimSpace(entry))
+			if !ok {
+				continue
+			}
+			at, width := -1, 0
+			if i := strings.Index(entry, ":="); i >= 0 {
+				at, width = i, 2
+			}
+			if loc := reDeclDefault.FindStringIndex(entry); loc != nil && (at < 0 || loc[0] < at) {
+				at, width = loc[0], loc[1]-loc[0]
+			}
+			for i := 0; i < len(entry); i++ {
+				if entry[i] == '=' && (i == 0 || !strings.ContainsRune(":<>!", rune(entry[i-1]))) {
+					if at < 0 || i < at {
+						at, width = i, 1
+					}
+					break
+				}
+			}
+			head := ""
+			if at >= 0 {
+				head = strings.ToLower(entry[:at])
+			}
+			if at < 0 || strings.Contains(head, " cursor") {
+				continue
+			}
+			out = append(out, [2]string{name, strings.TrimSpace(entry[at+width:])})
+		}
+	}
+	return out
+}
 
 // declaredVars lists the names a body declares in its DECLARE sections, of any
 // type. A name the loop variable of a FOR introduces is not declared there.

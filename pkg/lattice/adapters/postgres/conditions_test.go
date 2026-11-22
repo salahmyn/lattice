@@ -475,3 +475,62 @@ end`, 1, nil, true)
 		t.Errorf("guard reads = %v, payload reads = %v", guard, payload)
 	}
 }
+
+// A condition read is cited on the line of the reference itself, not on the
+// line of its statement's WHERE or of the IF: a predicate of a sub-select on a
+// later line is cited there.
+// @verifies adapters.postgres:INV-17
+func TestCondReadsCiteTheirOwnLine(t *testing.T) {
+	reads, _ := readConditionSet(`begin
+  delete from public.requests r
+   where r.status = 'pending'
+     and r.device_id in (select d.id from public.devices d
+                          where d.paired_by = p_user);
+  if exists (select 1 from public.devices k
+              where k.kind = 'tv') then
+    raise exception 'one tv';
+  end if;
+end`, 1, map[string]bool{"p_user": true}, false)
+	want := map[string]int{
+		"public.requests.status":   3,
+		"public.devices.paired_by": 5,
+		"public.devices.kind":      7,
+	}
+	got := map[string]int{}
+	for _, r := range reads {
+		if _, ok := want[r.Table+"."+r.Column]; ok {
+			got[r.Table+"."+r.Column] = r.Line
+		}
+	}
+	for k, line := range want {
+		if got[k] != line {
+			t.Errorf("%s cited at line %d, want %d (reads: %+v)", k, got[k], line, reads)
+		}
+	}
+}
+
+// Every declaration with an initial value is read, whatever comes before it in
+// the DECLARE section and whatever its type: a second one is not skipped
+// because the first ended with a semicolon.
+// @verifies adapters.postgres:INV-18
+func TestDeclInitsReadsEveryDeclaration(t *testing.T) {
+	for _, tc := range []struct{ name, decl string }{
+		{"after another initialised declaration", "v_uid uuid := auth.uid();\n  v_family uuid := public.current_family();"},
+		{"with DEFAULT after another", "v_uid uuid := auth.uid();\n  v_family uuid default public.current_family();"},
+		{"after a multi-word type", "v_t timestamp with time zone := now();\n  v_family uuid := public.current_family();"},
+		{"with %TYPE and CONSTANT", "v_t constant int := 3;\n  v_family public.devices.parent_id%type := public.current_family();"},
+		{"after a declaration with no value", "v_x int;\n  v_family uuid := public.current_family();"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			idVars, callVars := assignedVars(maskCode("declare\n  " + tc.decl + "\n  v_dev public.devices;\nbegin\n  return;\nend"))
+			if got := callVars["v_family"]; got != "sql.public.current_family" {
+				t.Errorf("v_family = %q, want the call public.current_family() (identity vars %v, call vars %v)", got, idVars, callVars)
+			}
+		})
+	}
+	// Two assignments with no space between them are both read.
+	_, calls := assignedVars(maskCode("begin v_a := public.f();v_a := public.g(); end"))
+	if _, ok := calls["v_a"]; ok {
+		t.Errorf("v_a is assigned two different calls: %v", calls)
+	}
+}
