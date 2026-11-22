@@ -82,7 +82,7 @@ var (
 	reOperandR = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_]*(?:\s*\.\s*[A-Za-z_][A-Za-z0-9_]*)?)\s*(\(?)`)
 	reOperandL = regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*(?:\s*\.\s*[A-Za-z_][A-Za-z0-9_]*)?)\s*(?:::\s*[A-Za-z_][A-Za-z0-9_.]*(?:\[\])?)?\s*$`)
 	reWordsRef = regexp.MustCompile(`\$\d+|[A-Za-z_][A-Za-z0-9_]*`)
-	reClause   = regexp.MustCompile(`(?i)\b(?:where|if|elsif|elseif)\b`)
+	reClause   = regexp.MustCompile(`(?i)\b(?:where|if|elsif|elseif|when)\b`)
 	notColumn  = map[string]bool{"null": true, "true": true, "false": true, "not": true, "any": true, "all": true,
 		"some": true, "select": true, "case": true, "exists": true, "then": true, "and": true, "or": true, "where": true}
 )
@@ -90,7 +90,8 @@ var (
 // hashAuth finds the first place a function body compares a hash of one of its
 // own parameters with something other than a parameter or a literal: a hash
 // function (digest, crypt, sha256, md5, hmac, also wrapped in encode(...)) whose
-// arguments name a parameter, tested with = in a WHERE or an IF. The hashed
+// arguments name a parameter, tested with = in a WHERE, or with =, <>, !=,
+// IS DISTINCT FROM or IS NOT DISTINCT FROM in an IF, ELSIF or CASE WHEN. The hashed
 // expression must reference a parameter by name, or $n; a hash of a column or
 // of a literal is not read, and neither is a hash that is only assigned or
 // returned. Comments and strings are not code.
@@ -110,41 +111,39 @@ func hashAuth(file string, st statement, params []param) *ir.HashAuth {
 			byName[p.name] = p
 		}
 	}
+	resolve := func(w string) string {
+		if w[0] == '$' {
+			n, _ := strconv.Atoi(w[1:])
+			if n >= 1 && n <= len(params) {
+				return params[n-1].ref()
+			}
+			return ""
+		}
+		if p, ok := byName[w]; ok {
+			return p.ref()
+		}
+		return ""
+	}
 	for _, loc := range reHashCall.FindAllStringIndex(code[from:], -1) {
 		callAt, open := from+loc[0], from+loc[1]-1
 		cl := matchParen(code, open)
 		if cl < 0 {
 			continue
 		}
-		pname := hashedParam(code[open+1:cl], byName, params)
+		pname := hashedParam(code[open+1:cl], resolve)
 		if pname == "" {
 			continue
 		}
-		start, end := callAt, cl+1
-		for i := 0; i < 4; i++ { // encode(digest(...), 'hex'), lower(...), casts
-			if m := reCastTail.FindString(code[end:]); m != "" {
-				end += len(m)
-				continue
-			}
-			before := strings.TrimRight(code[:start], " \t\r\n")
-			if !strings.HasSuffix(before, "(") {
-				break
-			}
-			w := reWrapper.FindStringIndex(strings.TrimRight(before[:len(before)-1], " \t\r\n"))
-			if w == nil {
-				break
-			}
-			wc := matchParen(code, len(before)-1)
-			if wc < 0 {
-				break
-			}
-			start, end = w[0], wc+1
-		}
-		if !comparedWithColumn(code, start, end, params) {
+		start, end := hashSpan(code, callAt, cl)
+		stmt := strings.LastIndexByte(code[:start], ';') + 1
+		cls := reClause.FindAllString(code[max(stmt, from):start], -1)
+		if len(cls) == 0 {
 			continue
 		}
-		stmt := strings.LastIndexByte(code[:start], ';') + 1
-		if !reClause.MatchString(code[max(stmt, from):start]) {
+		// A WHERE is read for = only; an IF, ELSIF or CASE WHEN condition
+		// also for <>, !=, IS DISTINCT FROM and IS NOT DISTINCT FROM.
+		inIf := !strings.EqualFold(cls[len(cls)-1], "where")
+		if !comparedWithColumn(code, start, end, params, inIf) {
 			continue
 		}
 		return &ir.HashAuth{Param: pname, File: file, Line: st.line + strings.Count(st.text[:callAt], "\n")}
@@ -152,9 +151,60 @@ func hashAuth(file string, st statement, params []param) *ir.HashAuth {
 	return nil
 }
 
-// hashedParam returns the first parameter the arguments of a hash call name,
-// as the body spells it, or "".
-func hashedParam(args string, byName map[string]param, params []param) string {
+// hashSpan widens a hash call code[callAt:cl+1] over the casts and wrappers
+// around it (encode(digest(...), 'hex'), lower(...), ::text) and returns the
+// span of the whole expression.
+func hashSpan(code string, callAt, cl int) (start, end int) {
+	start, end = callAt, cl+1
+	for i := 0; i < 4; i++ {
+		if m := reCastTail.FindString(code[end:]); m != "" {
+			end += len(m)
+			continue
+		}
+		before := strings.TrimRight(code[:start], " \t\r\n")
+		if !strings.HasSuffix(before, "(") {
+			break
+		}
+		w := reWrapper.FindStringIndex(strings.TrimRight(before[:len(before)-1], " \t\r\n"))
+		if w == nil {
+			break
+		}
+		wc := matchParen(code, len(before)-1)
+		if wc < 0 {
+			break
+		}
+		start, end = w[0], wc+1
+	}
+	return start, end
+}
+
+// isHashOfParam says whether e is, as a whole, a hash of a parameter: a hash
+// function whose arguments name one (isParam says which names do), with
+// optional casts and wrappers. It is the recogniser hashAuth uses, so a row
+// selector and an authentication read the same shape. e must be masked.
+func isHashOfParam(e string, isParam func(string) bool) bool {
+	e = strings.TrimSpace(e)
+	resolve := func(w string) string {
+		if isParam(w) {
+			return w
+		}
+		return ""
+	}
+	for _, loc := range reHashCall.FindAllStringIndex(e, -1) {
+		cl := matchParen(e, loc[1]-1)
+		if cl < 0 || hashedParam(e[loc[1]:cl], resolve) == "" {
+			continue
+		}
+		if start, end := hashSpan(e, loc[0], cl); start == 0 && end == len(e) {
+			return true
+		}
+	}
+	return false
+}
+
+// hashedParam returns the first name in the arguments of a hash call that
+// resolve says is a parameter, as it returns it, or "".
+func hashedParam(args string, resolve func(string) string) string {
 	for _, loc := range reWordsRef.FindAllStringIndex(args, -1) {
 		w := strings.ToLower(args[loc[0]:loc[1]])
 		if loc[0] > 0 && args[loc[0]-1] == '.' {
@@ -163,23 +213,23 @@ func hashedParam(args string, byName map[string]param, params []param) string {
 		if rest := strings.TrimLeft(args[loc[1]:], " \t\r\n"); strings.HasPrefix(rest, "(") {
 			continue // a function name
 		}
-		if w[0] == '$' {
-			n, _ := strconv.Atoi(w[1:])
-			if n >= 1 && n <= len(params) {
-				return params[n-1].ref()
-			}
-			continue
-		}
-		if p, ok := byName[w]; ok {
-			return p.ref()
+		if p := resolve(w); p != "" {
+			return p
 		}
 	}
 	return ""
 }
 
+var (
+	reOpRight = regexp.MustCompile(`(?is)^\s*(=[^=>]|<>|!=|is\s+not\s+distinct\s+from\b|is\s+distinct\s+from\b)`)
+	reOpLeft  = regexp.MustCompile(`(?is)(=|<>|!=|\bis\s+not\s+distinct\s+from|\bis\s+distinct\s+from)\s*$`)
+)
+
 // comparedWithColumn reports whether the expression code[start:end] is an
-// operand of a plain = whose other operand is a name that is not a parameter.
-func comparedWithColumn(code string, start, end int, params []param) bool {
+// operand of a comparison whose other operand is a name that is not a
+// parameter. The comparison is a plain =; with anyOp it is also <>, !=,
+// IS DISTINCT FROM or IS NOT DISTINCT FROM.
+func comparedWithColumn(code string, start, end int, params []param, anyOp bool) bool {
 	ok := func(operand string) bool {
 		w := strings.ToLower(strings.Join(strings.Fields(operand), ""))
 		if w == "" || notColumn[w] {
@@ -192,15 +242,27 @@ func comparedWithColumn(code string, start, end int, params []param) bool {
 		}
 		return true
 	}
-	if rest := strings.TrimLeft(code[end:], " \t\r\n"); strings.HasPrefix(rest, "=") && !strings.HasPrefix(rest, "=>") && !strings.HasPrefix(rest, "==") {
-		if m := reOperandR.FindStringSubmatch(rest[1:]); m != nil && m[2] == "" && ok(m[1]) {
+	allowed := func(op string) bool {
+		op = strings.ToLower(strings.TrimSpace(op))
+		return strings.HasPrefix(op, "=") || anyOp
+	}
+	rest := code[end:]
+	if m := reOpRight.FindStringSubmatch(rest); m != nil && allowed(m[1]) {
+		after := rest[len(m[0]):]
+		if strings.HasPrefix(m[1], "=") {
+			after = rest[len(m[0])-1:] // [^=>] consumed the next character
+		}
+		if o := reOperandR.FindStringSubmatch(after); o != nil && o[2] == "" && ok(o[1]) {
 			return true
 		}
 	}
 	before := strings.TrimRight(code[:start], " \t\r\n")
-	if strings.HasSuffix(before, "=") && (len(before) < 2 || !strings.ContainsRune("<>!:=|", rune(before[len(before)-2]))) {
-		if m := reOperandL.FindStringSubmatch(before[:len(before)-1]); m != nil && ok(m[1]) {
-			return true
+	if loc := reOpLeft.FindStringSubmatchIndex(before); loc != nil && allowed(before[loc[2]:loc[3]]) {
+		op := before[loc[2]:loc[3]]
+		if op != "=" || loc[2] == 0 || !strings.ContainsRune("<>!:=|", rune(before[loc[2]-1])) {
+			if o := reOperandL.FindStringSubmatch(before[:loc[2]]); o != nil && ok(o[1]) {
+				return true
+			}
 		}
 	}
 	return false

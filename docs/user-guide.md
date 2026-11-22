@@ -4297,8 +4297,26 @@ A column that only picks the row is not a condition read: one compared by `=`, `
 `= ANY(...)` with a function parameter (or a variable assigned only from parameters) in the
 `WHERE` of the enforcer's own `UPDATE`, `DELETE` or `SELECT ... INTO`. `WHERE status = 'running'
 AND id = p_id` reads `status`, not `id`. Comparisons with a literal, another column or a
-function, and `<`, `>`, `>=`, `<>`, still count, as do `IF`, `CASE` and `CHECK`. An enforcer
-whose only conditions are row selectors falls back to the columns it writes (below).
+function, and `<`, `>`, `>=`, `<>`, still count, as do `IF`, `CASE` and `CHECK`. Two more
+values pick a row and are not conditions: a field of a local record variable declared in
+`DECLARE` (`WHERE d.id = v_dev.id`; a name that is also a table alias in the body is not
+taken for one) and a hash function of a parameter
+(`WHERE d.token_hash = encode(sha256(convert_to(p_token, 'UTF8')), 'hex')`, read by the same
+recogniser as the hash authentication below). In `WHERE d.id = v_dev.id AND (d.last_seen_at IS NULL
+OR d.last_seen_at < now() - interval '1 minute')`, `id` is not a read and `last_seen_at` is: it is
+compared with `now()`. An enforcer whose only conditions are row selectors falls back to the
+columns it writes (below).
+
+An enforcer that writes nothing, such as a read-only function that filters `WHERE NOT v.ai_pending`,
+contributes its condition reads on any table, row selectors left out: a writer that flips
+`videos.ai_pending` changes exactly what it returns, so it is linked. An enforcer that writes
+keeps the rule above, its condition reads on the tables it writes.
+
+A table alias belongs to its statement: `i` may stand for `invites` in a `SELECT` and for
+`family_invites` in the `UPDATE` after it, and each read lands on its own statement's table. A
+name that no statement of the reference binds is resolved only when every statement of the body
+agrees on the table. A promise tested on `invites.email` is therefore not linked to writers of
+`family_invites` because the two tables share column names.
 
 When an enforcer has no condition read on the tables it writes, or its body could not be read,
 that enforcer falls back to the columns it writes, and the message says so (`no condition read
@@ -4317,8 +4335,8 @@ info  ENFORCER_EXPOSED  sql.public.finish_submission enforces review.submissions
 ```
 
 This is a fact, never a pass: the finding fires either way, and a function that reads the
-caller's identity can still let a parameter decide. Findings whose body reads none are listed
-first. The finding stays info and always on, so `fail_on: warning` stays green.
+caller's identity can still let a parameter decide. Findings that take a boolean parameter,
+then those whose body reads none, are listed first. The finding stays info and always on, so `fail_on: warning` stays green.
 
 **Three more facts on `ENFORCER_EXPOSED`.** Each is read from the migrations and stated only
 when it holds:
@@ -4331,10 +4349,12 @@ when it holds:
   migration creates and a name created with more than one argument list are not followed.
 - *Authentication by a hash.* A hash function (`digest`, `crypt`, `md5`, `sha224` to `sha512`,
   `hmac`, also inside `encode(...)` or a cast) applied to an expression that names one of the
-  function's parameters, by name or `$n`, and compared with `=` to a name in a `WHERE` or an
-  `IF`, reads as `authenticates by a hash of parameter p_token (file:line)`. It is a different
-  kind of identity from `auth.uid()`: the finding says which. A hash of a column or a literal, a
-  hash that is only assigned or returned, and one inside a comment or a string are not read.
+  function's parameters, by name or `$n`, and compared to a name reads as `authenticates by a hash of parameter p_token (file:line)`. It is a different
+  kind of identity from `auth.uid()`: the finding says which. The comparison is `=` in a `WHERE`,
+  and in an `IF`, `ELSIF` or `CASE WHEN` condition also `<>`, `!=`, `IS DISTINCT FROM` and
+  `IS NOT DISTINCT FROM` (`if r.secret_hash is distinct from encode(sha256(convert_to(p_secret,
+  'UTF8')), 'hex') then raise ...`). A hash of a column or a literal, a hash that is only assigned
+  or returned, and one inside a comment or a string are not read.
 - *Boolean parameters.* Each parameter declared `boolean` or `bool` is listed:
   `It takes boolean parameter(s): p_ok.` Only the declared type counts; no name is read for a
   meaning, and an output parameter or an array is not listed.
@@ -4343,10 +4363,12 @@ when it holds:
 info  ENFORCER_EXPOSED  sql.public.device_ping enforces review.access:INV-2 and is executable by authenticated (...:29); it is SECURITY DEFINER (...:18): a client can call it directly, so its inputs are the client's. Its body reads no caller identity (auth.uid(), auth.jwt(), a request.jwt claim, current_user or session_user); it authenticates by a hash of parameter p_token (supabase/migrations/20260102000000_access.sql:20).
 ```
 
-Findings are listed in four groups: reads no identity and takes a boolean parameter; reads no
-identity; takes a boolean parameter; the rest. A function that authenticates by a hash counts as
-reading an identity. The facts are about the body, never a pass: a function that reads an identity
-or hashes a token still fires, and the finding stays info and always on.
+Findings are listed in five groups: takes a boolean parameter and reads no identity; takes a
+boolean parameter (and reads an identity or authenticates by a hash); reads no identity and
+authenticates by no hash; authenticates by a hash only; the rest. A boolean parameter is a
+verdict the caller supplies, which a function can trust whatever else it reads, so it ranks
+before the identity facts. The facts are about the body, never a pass: a function that reads an
+identity or hashes a token still fires, and the finding stays info and always on.
 
 ## 5. Day-to-day commands
 

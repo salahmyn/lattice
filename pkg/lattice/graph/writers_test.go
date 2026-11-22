@@ -455,3 +455,36 @@ func TestReportColumnsFromConditions(t *testing.T) {
 		t.Errorf("report = %+v, want columns_from conditions", rep.Writers)
 	}
 }
+
+// An enforcer that writes nothing, such as a read-only function that filters
+// on a column, contributes its condition reads on any table: a writer that
+// changes that column changes what the function returns. Selectors do not
+// count, and an enforcer that writes keeps the tables it writes.
+// @verifies graph:INV-12
+func TestReadOnlyEnforcerConditionColumns(t *testing.T) {
+	videos := ir.TableColumns{Table: "public.videos", Columns: []string{"ai_pending", "id", "title", "updated_at"}}
+	reader := ir.Symbol{FQN: "sql.public.list_videos", File: "m.sql", Line: 3, Execute: &ir.Execute{},
+		CondReads: []ir.CondRead{{Table: "public.videos", Column: "ai_pending", Qualified: true, Line: 5}}}
+	writer := fn("sql.public.finish_enrich", 10, ir.TableWrite{Table: "public.videos", Op: ir.WriteUpdate, Columns: []string{"ai_pending", "updated_at"}, Line: 12})
+	touch := fn("sql.public.touch_video", 20, ir.TableWrite{Table: "public.videos", Op: ir.WriteUpdate, Columns: []string{"updated_at"}, Line: 22})
+	mods := []ir.Module{{File: "m.sql", Tables: []ir.TableColumns{videos}, Symbols: []ir.Symbol{reader, writer, touch}}}
+	got := CheckWriters(enforcing("sql.public.list_videos"), mods, nil, noDefault)
+	if len(got) != 1 || got[0].Code != schema.CodeUnguardedWriter || got[0].Subject != "sql.public.finish_enrich" {
+		t.Fatalf("findings = %v, want only finish_enrich", codesOf(got))
+	}
+	if m := got[0].Message; !strings.Contains(m, "columns from conditions") || !strings.Contains(m, "ai_pending (m.sql:12)") || strings.Contains(m, "updated_at (") {
+		t.Errorf("message = %q", m)
+	}
+	if got[0].Severity != schema.SeverityInfo {
+		t.Errorf("severity = %s, want info", got[0].Severity)
+	}
+	// The same read on an enforcer that writes another table does not count.
+	other := fn("sql.public.list_videos", 3, ir.TableWrite{Table: "public.audit", Op: ir.WriteInsert, Columns: []string{"note"}, Line: 4})
+	other.CondReads = reader.CondReads
+	mods = []ir.Module{{File: "m.sql", Tables: []ir.TableColumns{videos}, Symbols: []ir.Symbol{other, writer, touch}}}
+	for _, f := range CheckWriters(enforcing("sql.public.list_videos"), mods, nil, noDefault) {
+		if f.Subject == "sql.public.finish_enrich" && strings.Contains(f.Message, "columns from conditions") {
+			t.Errorf("an enforcer that writes keeps its tables: %s", f.Message)
+		}
+	}
+}

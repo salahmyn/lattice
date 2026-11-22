@@ -26,10 +26,14 @@ invariants:
   - id: INV-8
     statement: A function's caller-identity read is recorded only from code in its body, never from a comment, a string, or an argument default, and is absent when the body reads none.
   - id: INV-9
-    statement: A function is recorded as authenticating by a hash only when a hash function applied to an expression that names one of its own parameters is compared with = to a name in a WHERE or an IF; a hash of a column or a literal, one that is only assigned or returned, and one in a comment or a string are not recorded.
+    statement: A function is recorded as authenticating by a hash only when a hash function applied to an expression that names one of its own parameters is compared to a name, with = in a WHERE, or with =, <>, !=, IS DISTINCT FROM or IS NOT DISTINCT FROM in an IF, ELSIF or CASE WHEN; a hash of a column or a literal, one that is only assigned or returned, and one in a comment or a string are not recorded.
   - id: INV-10
     statement: A function that reads no caller identity itself is recorded as reading it through a SQL function it calls only when that call resolves to a function of the workspace created once and that function reads it directly; no deeper call, builtin, unknown or overloaded name is followed.
   - id: INV-11
     statement: A parameter is recorded as boolean only when its declared type is boolean or bool; no name, default or other type is read for a meaning, and an output parameter is not one.
   - id: INV-12
-    statement: A column a function reads in a condition is recorded only from the IF, ELSIF, CASE WHEN or WHERE text of its body (or a CHECK) that the adapter parsed, with the table it resolves to; a name it cannot place on a table is not recorded.
+    statement: A column a function reads in a condition is recorded only from the IF, ELSIF, CASE WHEN or WHERE text of its body (or a CHECK) that the adapter parsed, with the table it resolves to; a name it cannot place on a table is not recorded; the WHERE of a plain SELECT is read only in a function that writes nothing and has no unreadable write.
+  - id: INV-13
+    statement: A column compared by =, IN or = ANY in the WHERE of a function's own UPDATE, DELETE or SELECT ... INTO with a parameter, a field of a record variable declared in DECLARE (that is not a table alias of the body), or a hash function of a parameter is a row selector and is not recorded as a condition read; any other comparison of it still is.
+  - id: INV-14
+    statement: A table alias is bound within its own statement, so a name used as an alias of one table in one statement and of another in the next resolves in each to that statement's table; a name no statement of the reference binds is resolved only when every statement of the body agrees.

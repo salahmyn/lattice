@@ -54,8 +54,9 @@ func TestCallerIdentityHelperOverloaded(t *testing.T) {
 }
 
 // A hash of a parameter compared with a column in a WHERE or an IF is token
-// authentication, reported with the parameter and its line. A hash of a column
-// or a literal, a hash only assigned, and a comparison with another parameter
+// authentication, reported with the parameter and its line; in an IF, ELSIF or
+// CASE WHEN condition so is a comparison by <>, != or IS [NOT] DISTINCT FROM.
+// A hash of a column or a literal, a hash only assigned, and a comparison with another parameter
 // are not.
 // @verifies adapters.postgres:INV-9
 func TestHashAuthRead(t *testing.T) {
@@ -80,7 +81,16 @@ func TestHashAuthRead(t *testing.T) {
 		{"none: comment", "p_token text", "  -- where pw = md5(p_token)\n  null;", "", 0},
 		{"none: string", "p_token text", "  perform 'where pw = md5(p_token)';", "", 0},
 		{"none: qualified name", "token text", "  perform 1 from public.u where pw = md5(u.token);", "", 0},
-		{"none: not equality", "p_token text", "  perform 1 from public.u where pw <> md5(p_token);", "", 0},
+		{"none: not equality in a WHERE", "p_token text", "  perform 1 from public.u where pw <> md5(p_token);", "", 0},
+		{"if, is distinct from", "p_secret text", "  select * into r from public.device_pairings d where d.code = v_code;\n  if r.id is null or r.secret_hash is distinct from encode(sha256(convert_to(p_secret,'UTF8')),'hex') then raise exception 'no'; end if;", "p_secret", 5},
+		{"if, is not distinct from", "p_secret text", "  if r.secret_hash is not distinct from encode(sha256(convert_to(p_secret,'UTF8')),'hex') then null; end if;", "p_secret", 4},
+		{"if, <>", "p_secret text", "  if encode(digest(p_secret, 'sha256'), 'hex') <> r.secret_hash then raise exception 'no'; end if;", "p_secret", 4},
+		{"elsif, !=", "p_secret text", "  if a then null; elsif r.secret_hash != md5(p_secret) then raise exception 'no'; end if;", "p_secret", 4},
+		{"case when, <>", "p_secret text", "  v := case when r.secret_hash <> md5(p_secret) then 0 else 1 end;", "p_secret", 4},
+		{"none: if, hash of a column", "p_secret text", "  if r.secret_hash is distinct from md5(r.salt) then null; end if;", "", 0},
+		{"none: if, compared with a parameter", "p_a text, p_b text", "  if p_b is distinct from md5(p_a) then null; end if;", "", 0},
+		{"none: if, a hash only assigned", "p_secret text", "  if v is distinct from 1 then v := md5(p_secret); end if;", "", 0},
+		{"none: if, greater than", "p_secret text", "  if r.secret_hash >= md5(p_secret) then null; end if;", "", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ex := resolveSymbols(t, m1, fn(tc.args, tc.body))["sql.public.f"].Execute

@@ -776,7 +776,10 @@ func readFunctionWrites(mod *ir.Module, sym *ir.Symbol, st statement) {
 	for _, part := range codeBodies(st.text, st.line) {
 		w, g := readCode(mod.File, part.text, part.line, true)
 		sym.Writes = append(sym.Writes, w...)
-		sym.CondReads = append(sym.CondReads, readConditions(part.text, part.line, condParamNames(st.text))...)
+		// A body that writes nothing and has no gap is read-only: its own
+		// SELECTs are its statements, so their WHERE counts too.
+		readOnly := len(w) == 0 && len(g) == 0
+		sym.CondReads = append(sym.CondReads, readConditions(part.text, part.line, condParamNames(st.text), readOnly)...)
 		for _, gap := range g {
 			gapEvent(mod, gap, sym.FQN, st.line)
 		}
