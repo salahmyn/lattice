@@ -40,3 +40,5 @@ invariants:
     statement: Each column an UNGUARDED_WRITER or lattice writers links a writer through, when not declared, names every enforcer it came from with its file and line, and how (read in a condition, compared with the caller's identity, or written when the enforcer had no condition read); a finding lists at most three and says how many more, and --json lists them all; declared columns carry none.
   - id: INV-16
     statement: When a read-only enforcer's guard adds no column, the finding states why for that enforcer, never more than the code shows; it names a value loaded by EXECUTE of a string as unreadable, and otherwise says the guard reads no column Lattice can place on a table.
+  - id: INV-17
+    statement: An enforcer that adds columns from its condition reads but whose guard also tests a value loaded by EXECUTE of a string is named in the finding with that value and the line of the EXECUTE, as one whose columns may be incomplete; its readable columns still count.
