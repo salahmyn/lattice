@@ -4335,7 +4335,12 @@ ownership: `WHERE d.parent_id = auth.uid()` (also `(select auth.uid())`, a cast,
 identity itself (one helper level, the one `ENFORCER_EXPOSED` resolves), called directly or through
 a variable every assignment of which is that one call (`v_family uuid := public.current_family()`).
 A comparison with a field of a record, such as `k.parent_id = v_dev.parent_id`, is not one: it
-compares with another row's owner, not the caller, and stays an ordinary condition. Only a predicate at the
+compares with another row's owner, not the caller, and stays an ordinary condition. A
+comparison that counts or tests the existence of the caller's rows is not one either:
+`select count(*) into v_n from devices d where d.parent_id = v_family` (or `sum`, `exists`, another
+aggregate) decides how many rows there are, and an `INSERT` changes that, so for a quota such as
+"at most 3 devices" the insert writers stay linked. Ownership narrows only the comparisons that
+pick the rows the enforcer loads, lists or changes. Only a predicate at the
 top level of a condition is read this way; one inside a sub-select, a `coalesce(...)` or an `IN`
 list is an ordinary condition. Such a column links only the writers that can reassign whose row it
 is: an `UPDATE` of it, an `INSERT ... ON CONFLICT DO UPDATE` and a `MERGE ... UPDATE`. A plain

@@ -1347,3 +1347,58 @@ end $$;
 		t.Errorf("transfer_device updates parent_id and links through ownership: %q (%v)", msg, inv2)
 	}
 }
+
+// A comparison with the caller's identity that counts or tests the existence
+// of the caller's rows is about how many there are, and an INSERT changes that:
+// it is an ordinary read, so the insert-only writer links. A comparison that
+// picks the row the enforcer acts on stays ownership.
+// @verifies adapters.postgres:INV-19
+func TestCountOfCallersRowsIsNotOwnership(t *testing.T) {
+	for _, tc := range []struct {
+		name, enforcer string
+		insertLinks    bool
+	}{
+		{"a count loaded into a variable and tested", `create function public.add_device(p_id bigint) returns void
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_uid uuid := auth.uid();
+  v_family uuid := public.current_family();
+  v_n int;
+begin
+  select count(*) into v_n from public.devices d where d.parent_id = v_family;
+  if v_n >= 3 then raise exception 'at most 3 devices'; end if;
+  update public.devices set kind = 'tv' where id = p_id;
+end $$;
+`, true},
+		{"a read-only count", `create function public.device_count() returns bigint
+language sql stable security definer set search_path = '' as $$
+  select count(*) from public.devices d where d.parent_id = auth.uid();
+$$;
+`, true},
+		{"the row the enforcer acts on", `create function public.retag(p_id bigint) returns void
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_family uuid := public.current_family();
+  v_dev public.devices;
+begin
+  select * into v_dev from public.devices d where d.id = p_id and d.parent_id = v_family for update;
+  update public.devices set kind = 'tv' where id = v_dev.id;
+end $$;
+`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, rep := validateWriters(t, writersInv2Repo(t, ownershipWith(tc.enforcer)))
+			inv2 := unguardedFor(got, "INV-2")
+			msg, linked := inv2["sql.public.register_device"]
+			if linked != tc.insertLinks {
+				t.Fatalf("register_device (insert of parent_id) linked = %v, want %v: %v", linked, tc.insertLinks, inv2)
+			}
+			if linked && strings.Contains(msg, "(ownership:") {
+				t.Errorf("a counted column is not ownership: %q", msg)
+			}
+			if !rep.OK {
+				t.Errorf("an info finding must not fail validate")
+			}
+		})
+	}
+}
