@@ -47,3 +47,5 @@ invariants:
     statement: Every declaration with an initial value (:=, = or DEFAULT) in a DECLARE section is read as an assignment of its variable, whatever its type and whatever declarations come before it; a cursor declaration is not one.
   - id: INV-19
     statement: A comparison with the caller's identity in the WHERE of a SELECT whose select list counts or tests existence (count, sum, avg, min, max, bool_and, bool_or, every, an array, string or JSON aggregate, or EXISTS) is recorded as an ordinary condition read, never as an ownership comparison, because an INSERT changes how many rows it counts.
+  - id: INV-20
+    statement: A guard clause that tests a variable loaded by EXECUTE ... INTO is recorded with that variable and the line of the EXECUTE, because what the dynamic statement reads cannot be known; a guard that tests anything else records none.

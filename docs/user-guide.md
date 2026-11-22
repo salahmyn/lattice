@@ -4361,11 +4361,14 @@ and `select count(*) ... where d.last_seen_at > now() - interval '7 days'` is pa
 does not link the writers of `devices.last_seen_at`. A guard that tests a column counts that column
 (`if (select s.locked from public.settings s) then raise ...`). A read-only enforcer with no guard
 clause, such as a filtered listing, keeps counting its `WHERE`; one that writes keeps its rule. When
-the guard tests only the caller's identity or a function, the enforcer adds no column, and an
-invariant left with no column says so instead of passing in silence:
+the guard reads no column Lattice can place on a table (only the caller's identity, a function or
+a value it does not trace), the enforcer adds no column, and an invariant left with no column says
+so instead of passing in silence. A guard that tests a value an `EXECUTE` of a string loaded
+(`execute format(...) into v_count; if v_count >= 3 then raise ...`) says that instead, naming the
+variable and the line of the `EXECUTE`, because what the dynamic statement reads cannot be known:
 
 ```
-info  WRITERS_UNKNOWN  queue.jobs:INV-2 ties no column to its writers: sql.public.admin_stats is read-only and its guard (an IF that raises or returns early) tests no column, only the caller's identity or a function, so no writer of any column is linked and the writers that could break it are not listed
+info  WRITERS_UNKNOWN  queue.jobs:INV-2 ties no column to its writers: the guard (an IF that raises or returns early) of each read-only enforcer adds no column: sql.public.admin_stats (its guard reads no column Lattice can place on a table, only the caller's identity, a function or a value it does not trace). So no writer of any column is linked, and the writers that could break it are not listed
 ```
 
 Declare `columns:` on the invariant to name what it is about.

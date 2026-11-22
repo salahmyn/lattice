@@ -217,8 +217,8 @@ type condVar struct{ table, column string }
 // nothing, and the WHERE of each of its SELECTs counts as that of its own
 // statement. A read of NEW or OLD is on the table newTable, which Resolve
 // turns into the table of each trigger that runs the function.
-// @enforces adapters.postgres:INV-12, adapters.postgres:INV-14, adapters.postgres:INV-15, adapters.postgres:INV-16, adapters.postgres:INV-17, adapters.postgres:INV-19
-func readConditionSet(code string, base int, params map[string]bool, readOnly bool) ([]ir.CondRead, bool) {
+// @enforces adapters.postgres:INV-12, adapters.postgres:INV-14, adapters.postgres:INV-15, adapters.postgres:INV-16, adapters.postgres:INV-17, adapters.postgres:INV-19, adapters.postgres:INV-20
+func readConditionSet(code string, base int, params map[string]bool, readOnly bool) ([]ir.CondRead, bool, guardUnread) {
 	mask := maskCode(code)
 	idVars, callVars := assignedVars(mask)
 	isParam := paramVars(mask, params)
@@ -433,6 +433,16 @@ func readConditionSet(code string, base int, params map[string]bool, readOnly bo
 		}
 	}
 
+	// Variables an EXECUTE of a string loads: what they hold is not readable.
+	execVars := map[string]int{}
+	for _, m := range reExecInto.FindAllStringSubmatchIndex(mask, -1) {
+		name := unquote(mask[m[2]:m[3]])
+		if _, seen := execVars[name]; !seen {
+			execVars[name] = line(m[0])
+		}
+	}
+	var unread guardUnread
+
 	// IF, ELSIF and CASE WHEN conditions.
 	guarded := false
 	for _, loc := range reCondWord.FindAllStringIndex(mask, -1) {
@@ -471,12 +481,31 @@ func readConditionSet(code string, base int, params map[string]bool, readOnly bo
 			guard = branchGuards(mask, then+len("then"))
 			guarded = guarded || guard
 		}
+		if guard && unread.name == "" {
+			for _, ref := range refsIn(cond) {
+				if at, ok := execVars[ref.name]; ok && len(ref.qual) == 0 {
+					unread = guardUnread{name: ref.name, line: at}
+					break
+				}
+			}
+		}
 		for _, pred := range splitAndAt(cond, loc[1]) {
 			emitPred(pred, primary, loc[0], guard)
 		}
 	}
-	return out, guarded
+	return out, guarded, unread
 }
+
+// guardUnread is a variable a guard clause tests that an EXECUTE of a string
+// loaded, and the line of that EXECUTE; empty when there is none.
+type guardUnread struct {
+	name string
+	line int
+}
+
+// reExecInto finds EXECUTE ... INTO v: a dynamic statement whose result the
+// adapter cannot read.
+var reExecInto = regexp.MustCompile(`(?is)\bexecute\b[^;]*?\binto\s+(?:strict\s+)?(` + ident + `)`)
 
 var (
 	reIdentityExpr = regexp.MustCompile(`(?i)^(?:auth\s*\.\s*(?:uid|jwt)\s*\(\s*\)|current_user|session_user)$`)

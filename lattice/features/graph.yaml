@@ -38,3 +38,5 @@ invariants:
     statement: A read-only enforcer with a guard clause (an IF or ELSIF whose branch raises or returns before the end of the body) contributes only the columns its guard reads; when the guard reads no column the invariant says it ties no column to its writers, as an info finding, and never reads as an empty pass; an enforcer with no guard clause, and one that writes, keep their rule.
   - id: INV-15
     statement: Each column an UNGUARDED_WRITER or lattice writers links a writer through, when not declared, names every enforcer it came from with its file and line, and how (read in a condition, compared with the caller's identity, or written when the enforcer had no condition read); a finding lists at most three and says how many more, and --json lists them all; declared columns carry none.
+  - id: INV-16
+    statement: When a read-only enforcer's guard adds no column, the finding states why for that enforcer, never more than the code shows; it names a value loaded by EXECUTE of a string as unreadable, and otherwise says the guard reads no column Lattice can place on a table.

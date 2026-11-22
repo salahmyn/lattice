@@ -503,7 +503,7 @@ func (ix *WriterIndex) deriveColumns(iw *invWrites, syms map[string]ir.Symbol) {
 			continue
 		}
 		if guarded {
-			iw.guardOnly = append(iw.guardOnly, f)
+			iw.guardOnly = append(iw.guardOnly, f+" (its guard "+guardOnlyReason(sym)+")")
 			continue
 		}
 		wrote := false
@@ -886,6 +886,17 @@ func (iw *invWrites) guardedBy(w Writer) string {
 	return ""
 }
 
+// guardOnlyReason says why a read-only enforcer's guard adds no column: it
+// tests a value an EXECUTE of a string loaded, which is not readable, or no
+// column the adapter can place on a table.
+// @enforces graph:INV-16
+func guardOnlyReason(sym ir.Symbol) string {
+	if sym.GuardUnread != "" {
+		return "tests " + sym.GuardUnread + ", which Lattice cannot read"
+	}
+	return "reads no column Lattice can place on a table, only the caller's identity, a function or a value it does not trace"
+}
+
 // columnsPhrase says whose columns they are and how they were decided.
 func (iw *invWrites) columnsPhrase(ref string) string {
 	if iw.declared {
@@ -899,7 +910,7 @@ func (iw *invWrites) columnsPhrase(ref string) string {
 		phrase += "; for " + strings.Join(iw.fromWrites, ", ") + " no condition read was known, so its columns derived from writes"
 	}
 	if len(iw.guardOnly) > 0 {
-		phrase += "; for " + strings.Join(iw.guardOnly, ", ") + " the guard tests no column, only the caller's identity or a function, so it adds none"
+		phrase += "; " + strings.Join(iw.guardOnly, ", ") + " adds no column"
 	}
 	if len(iw.ownership) > 0 {
 		phrase += "; a column of ownership, compared with the caller's identity, links only the writers that UPDATE it"
@@ -1000,7 +1011,7 @@ func (ix *WriterIndex) Findings() []schema.Violation {
 					Code: schema.CodeWritersUnknown, Severity: schema.SeverityInfo,
 					FeatureID: f, InvariantID: inv, Subject: ref,
 					Location: &schema.Location{File: iw.file, Line: iw.line},
-					Message: fmt.Sprintf("%s ties no column to its writers: %s is read-only and its guard (an IF that raises or returns early) tests no column, only the caller's identity or a function, so no writer of any column is linked and the writers that could break it are not listed",
+					Message: fmt.Sprintf("%s ties no column to its writers: the guard (an IF that raises or returns early) of each read-only enforcer adds no column: %s. So no writer of any column is linked, and the writers that could break it are not listed",
 						ref, strings.Join(iw.guardOnly, ", ")),
 					NextAction: &schema.NextAction{Kind: "edit_feature", Ref: ref,
 						Detail: "declare columns: on the invariant to name the columns it is about, or allowlist the finding with a reason"},
