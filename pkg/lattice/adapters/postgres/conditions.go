@@ -72,6 +72,8 @@ var (
 type colRef struct {
 	qual []string
 	name string
+	// at is the offset of the reference in the text refsIn read.
+	at int
 }
 
 // refsIn lists the names in an expression that may be columns: a word or a
@@ -96,6 +98,7 @@ func refsIn(text string) []colRef {
 				i++
 			}
 		case c == '"' || isWordByte(c):
+			start := i
 			var parts []string
 			for {
 				m := reIdentAt.FindString(text[i:])
@@ -125,7 +128,7 @@ func refsIn(text string) []colRef {
 			if call || cast || len(parts) == 1 && condSkip[parts[0]] {
 				continue
 			}
-			out = append(out, colRef{qual: parts[:len(parts)-1], name: parts[len(parts)-1]})
+			out = append(out, colRef{qual: parts[:len(parts)-1], name: parts[len(parts)-1], at: start})
 		default:
 			if c != ' ' && c != '\t' && c != '\n' && c != '\r' {
 				afterCast = false
@@ -207,7 +210,7 @@ type condVar struct{ table, column string }
 // nothing, and the WHERE of each of its SELECTs counts as that of its own
 // statement. A read of NEW or OLD is on the table newTable, which Resolve
 // turns into the table of each trigger that runs the function.
-// @enforces adapters.postgres:INV-12, adapters.postgres:INV-14, adapters.postgres:INV-15, adapters.postgres:INV-16
+// @enforces adapters.postgres:INV-12, adapters.postgres:INV-14, adapters.postgres:INV-15, adapters.postgres:INV-16, adapters.postgres:INV-17
 func readConditionSet(code string, base int, params map[string]bool, readOnly bool) ([]ir.CondRead, bool) {
 	mask := maskCode(code)
 	idVars, callVars := assignedVars(mask)
@@ -366,26 +369,32 @@ func readConditionSet(code string, base int, params map[string]bool, readOnly bo
 			out = append(out, cr)
 		}
 	}
-	emit := func(text string, primary string, off int, guard bool) {
+	// emit records the reads of a predicate that starts at offset at of the
+	// body; scope is the offset of its statement, which binds its aliases. Each
+	// read is on the line where the reference itself is, so a predicate of a
+	// sub-select on a later line is cited there.
+	emit := func(text string, primary string, scope, at int, guard bool) {
 		for _, ref := range refsIn(text) {
-			t, col, qualified, ok := resolveRef(ref, primary, aliasesAt(off), vars)
+			t, col, qualified, ok := resolveRef(ref, primary, aliasesAt(scope), vars)
 			if !ok {
 				continue
 			}
-			add(ir.CondRead{Table: t, Column: col, Qualified: qualified, Line: line(off), Guard: guard})
+			add(ir.CondRead{Table: t, Column: col, Qualified: qualified, Line: line(at + ref.at), Guard: guard})
 		}
 	}
 	// emitPred emits one predicate. A column compared with the caller's
 	// identity is recorded as such; any other predicate as plain reads.
-	emitPred := func(pred string, primary string, off int, guard bool) {
+	emitPred := func(p predAt, primary string, scope int, guard bool) {
+		pred := p.text
 		if ref, via, call, callVar, ok := ownerCompare(pred, idVars, callVars); ok {
-			if t, col, qualified, good := resolveRef(ref, primary, aliasesAt(off), vars); good {
-				add(ir.CondRead{Table: t, Column: col, Qualified: qualified, Line: line(off), Guard: guard,
+			if t, col, qualified, good := resolveRef(ref, primary, aliasesAt(scope), vars); good {
+				first := p.off + len(pred) - len(strings.TrimLeft(pred, " \t\r\n"))
+				add(ir.CondRead{Table: t, Column: col, Qualified: qualified, Line: line(first), Guard: guard,
 					OwnerVia: via, OwnerCall: call, OwnerCallVar: callVar})
 				return
 			}
 		}
-		emit(pred, primary, off, guard)
+		emit(pred, primary, scope, p.off, guard)
 	}
 
 	// The WHERE of the function's own UPDATE, DELETE and SELECT ... INTO.
@@ -398,8 +407,8 @@ func readConditionSet(code string, base int, params map[string]bool, readOnly bo
 		if stop < 0 {
 			stop = st.end
 		}
-		for _, pred := range splitAnd(mask[w+5 : stop]) {
-			if !isSelector(pred, isParam, isRecord) {
+		for _, pred := range splitAndAt(mask[w+5:stop], w+5) {
+			if !isSelector(pred.text, isParam, isRecord) {
 				emitPred(pred, st.table, w, false)
 			}
 		}
@@ -443,7 +452,7 @@ func readConditionSet(code string, base int, params map[string]bool, readOnly bo
 			guard = branchGuards(mask, then+len("then"))
 			guarded = guarded || guard
 		}
-		for _, pred := range splitAnd(cond) {
+		for _, pred := range splitAndAt(cond, loc[1]) {
 			emitPred(pred, primary, loc[0], guard)
 		}
 	}
@@ -877,19 +886,26 @@ func paramVars(mask string, params map[string]bool) func(string) bool {
 	}
 }
 
-// splitAnd splits a condition at its AND outside parentheses.
-func splitAnd(s string) []string {
-	var out []string
+// predAt is a predicate and its offset in the body.
+type predAt struct {
+	text string
+	off  int
+}
+
+// splitAndAt splits a condition at its AND outside parentheses, with each
+// predicate's offset, for s starting at offset base of the body.
+func splitAndAt(s string, base int) []predAt {
+	var out []predAt
 	from := 0
 	for {
 		i := findWord(s, from, len(s), "and")
 		if i < 0 {
 			break
 		}
-		out = append(out, s[from:i])
+		out = append(out, predAt{s[from:i], base + from})
 		from = i + 3
 	}
-	return append(out, s[from:])
+	return append(out, predAt{s[from:], base + from})
 }
 
 // isParamExpr says whether e is one value that picks a row without being a

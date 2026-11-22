@@ -475,3 +475,36 @@ end`, 1, nil, true)
 		t.Errorf("guard reads = %v, payload reads = %v", guard, payload)
 	}
 }
+
+// A condition read is cited on the line of the reference itself, not on the
+// line of its statement's WHERE or of the IF: a predicate of a sub-select on a
+// later line is cited there.
+// @verifies adapters.postgres:INV-17
+func TestCondReadsCiteTheirOwnLine(t *testing.T) {
+	reads, _ := readConditionSet(`begin
+  delete from public.requests r
+   where r.status = 'pending'
+     and r.device_id in (select d.id from public.devices d
+                          where d.paired_by = p_user);
+  if exists (select 1 from public.devices k
+              where k.kind = 'tv') then
+    raise exception 'one tv';
+  end if;
+end`, 1, map[string]bool{"p_user": true}, false)
+	want := map[string]int{
+		"public.requests.status":   3,
+		"public.devices.paired_by": 5,
+		"public.devices.kind":      7,
+	}
+	got := map[string]int{}
+	for _, r := range reads {
+		if _, ok := want[r.Table+"."+r.Column]; ok {
+			got[r.Table+"."+r.Column] = r.Line
+		}
+	}
+	for k, line := range want {
+		if got[k] != line {
+			t.Errorf("%s cited at line %d, want %d (reads: %+v)", k, got[k], line, reads)
+		}
+	}
+}

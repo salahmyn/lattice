@@ -3706,7 +3706,9 @@ the file and line, and the operation; for a role it names the role and the grant
 also says where the invariant got it, in brackets after the writer's own lines: `read by <enforcer> at file:line` (a
 condition read), `compared with the caller by <enforcer> at file:line` (an identity comparison
 that did not make the column one of ownership, because another read of it is ordinary) or
-`written by <enforcer> at file:line` (an enforcer with no condition read). A finding lists at
+`written by <enforcer> at file:line` (an enforcer with no condition read). The line is the
+line of the column reference itself, so a predicate of a sub-select on a later line is cited
+there, not at its statement's `WHERE`. A finding lists at
 most three sources per column and says how many more; `lattice writers` prints every source
 under each unguarded promise, and `--json` adds `column_sources` (`table`, `column`,
 `enforcer`, `how`: `condition`, `ownership` or `write`, `file`, `line`) per promise. Declared
