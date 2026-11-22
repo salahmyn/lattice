@@ -246,6 +246,11 @@ type RootReach struct {
 // what the class says it does; a test never counts, because a root whose node
 // is a test is skipped. It is meant for a handful of features: nothing is
 // computed for an empty targets. Roots are sorted by FQN.
+//
+// A migration's applied top-level node (reason "migration", FQN
+// "sql.applied.<file>") is skipped too: applying a migration that calls a
+// function is a deploy step, not a way the running system reaches it. Class
+// still counts such a root, so FEATURE_UNREACHED is unchanged.
 // @enforces reachability:INV-7
 func (r *Result) RootsReaching(targets map[string][]string) map[string][]RootReach {
 	out := map[string][]RootReach{}
@@ -265,7 +270,7 @@ func (r *Result) RootsReaching(targets map[string][]string) map[string][]RootRea
 	}
 	sort.Strings(feats)
 	for _, rt := range roots {
-		if n := r.Graph.nodes[rt.FQN]; n == nil || n.isTest {
+		if n := r.Graph.nodes[rt.FQN]; n == nil || n.isTest || isMigrationRoot(rt) {
 			continue
 		}
 		must, _ := r.Graph.walk([]string{rt.FQN})
@@ -281,4 +286,11 @@ func (r *Result) RootsReaching(targets map[string][]string) map[string][]RootRea
 		}
 	}
 	return out
+}
+
+// isMigrationRoot reports whether a root is a migration's applied top-level
+// node, which the SQL adapter names "sql.applied.<file>" with root "migration".
+// @enforces validation:INV-26
+func isMigrationRoot(rt Root) bool {
+	return rt.Reason == "migration" || strings.HasPrefix(rt.FQN, "sql.applied.")
 }
