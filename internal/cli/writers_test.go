@@ -1193,7 +1193,7 @@ begin
 				note = f.Message
 			}
 		}
-		for _, want := range []string{"queue.jobs:INV-2 ties no column to its writers", "sql.public.admin_stats", "tests no column"} {
+		for _, want := range []string{"queue.jobs:INV-2 ties no column to its writers", "sql.public.admin_stats", "(its guard reads no column Lattice can place on a table"} {
 			if !strings.Contains(note, want) {
 				t.Errorf("fallback note %q lacks %q", note, want)
 			}
@@ -1400,5 +1400,39 @@ end $$;
 				t.Errorf("an info finding must not fail validate")
 			}
 		})
+	}
+}
+
+// A guard that tests a value an EXECUTE of a string loaded says so: the value is
+// not readable, which is why the enforcer adds no column. It never claims the
+// guard tests only the caller's identity.
+// @verifies graph:INV-16
+// @verifies adapters.postgres:INV-20
+func TestGuardOnDynamicSQLSaysItCannotBeRead(t *testing.T) {
+	got, rep := validateWriters(t, writersInv2Repo(t, guardedWith(`create function public.enforce_quota() returns trigger
+language plpgsql as $$
+declare v_count int;
+begin
+  execute format('select count(*) from public.%I where kind = $1', tg_table_name) into v_count using new.kind;
+  if v_count >= 3 then raise exception 'quota'; end if;
+  return new;
+end $$;
+create trigger t_quota before insert on public.devices for each row execute function public.enforce_quota();
+`)))
+	var note string
+	for _, f := range got {
+		if f.Code == schema.CodeWritersUnknown && f.InvariantID == "INV-2" {
+			note = f.Message
+		}
+	}
+	want := "sql.public.enforce_quota (its guard tests v_count, loaded by EXECUTE of a string at supabase/migrations/20260115000000_inv2.sql:"
+	if !strings.Contains(note, want) || !strings.Contains(note, "which Lattice cannot read") {
+		t.Errorf("note %q lacks %q", note, want)
+	}
+	if strings.Contains(note, "caller's identity or a function") {
+		t.Errorf("the note claims an identity-only guard: %q", note)
+	}
+	if !rep.OK {
+		t.Errorf("an info finding must not fail validate")
 	}
 }

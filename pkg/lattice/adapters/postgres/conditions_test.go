@@ -451,12 +451,12 @@ func TestGuardClause(t *testing.T) {
 		{"elsif raises", `begin if x then y := 1; elsif z then raise exception 'a'; end if; return 1; end`, true},
 		{"case when", `begin return case when x then raise_it() else 1 end; end`, false},
 	} {
-		_, got := readConditionSet(tc.body, 1, nil, true)
+		_, got, _ := readConditionSet(tc.body, 1, nil, true)
 		if got != tc.want {
 			t.Errorf("%s: guard clause = %v, want %v", tc.name, got, tc.want)
 		}
 	}
-	reads, _ := readConditionSet(`begin
+	reads, _, _ := readConditionSet(`begin
   if (select s.locked from public.settings s) then raise exception 'locked'; end if;
   return (select count(*) from public.devices d where d.last_seen_at > now());
 end`, 1, nil, true)
@@ -481,7 +481,7 @@ end`, 1, nil, true)
 // later line is cited there.
 // @verifies adapters.postgres:INV-17
 func TestCondReadsCiteTheirOwnLine(t *testing.T) {
-	reads, _ := readConditionSet(`begin
+	reads, _, _ := readConditionSet(`begin
   delete from public.requests r
    where r.status = 'pending'
      and r.device_id in (select d.id from public.devices d
@@ -532,5 +532,27 @@ func TestDeclInitsReadsEveryDeclaration(t *testing.T) {
 	_, calls := assignedVars(maskCode("begin v_a := public.f();v_a := public.g(); end"))
 	if _, ok := calls["v_a"]; ok {
 		t.Errorf("v_a is assigned two different calls: %v", calls)
+	}
+}
+
+// A guard that tests a variable an EXECUTE of a string loaded is recorded with
+// the variable and the line of the EXECUTE; one that tests anything else is not.
+// @verifies adapters.postgres:INV-20
+func TestGuardOnExecuteIntoIsUnread(t *testing.T) {
+	_, guarded, unread := readConditionSet(`declare v_count int;
+begin
+  execute format('select count(*) from public.%I', tg_table_name) into v_count;
+  if v_count >= 3 then raise exception 'quota'; end if;
+  return new;
+end`, 10, nil, true)
+	if !guarded || unread.name != "v_count" || unread.line != 12 {
+		t.Errorf("guarded = %v, unread = %+v, want v_count at line 12", guarded, unread)
+	}
+	_, _, unread = readConditionSet(`begin
+  if not public.is_admin() then raise exception 'no'; end if;
+  return;
+end`, 1, nil, true)
+	if unread.name != "" {
+		t.Errorf("an identity guard is not unread: %+v", unread)
 	}
 }

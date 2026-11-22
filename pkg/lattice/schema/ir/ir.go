@@ -87,6 +87,9 @@ type Symbol struct {
 	// raises (RAISE EXCEPTION) or returns before the end of the body (SQL
 	// functions only).
 	HasGuardClause bool `json:"guard_clause,omitempty"`
+	// GuardUnread, when set, names what a guard clause tests that the adapter
+	// cannot read: a variable loaded by EXECUTE of a string, with where.
+	GuardUnread string `json:"guard_unread,omitempty"`
 	// Guard says which table and commands a SQL policy or trigger applies
 	// to (nil for every other symbol).
 	Guard *Guard `json:"guard,omitempty"`

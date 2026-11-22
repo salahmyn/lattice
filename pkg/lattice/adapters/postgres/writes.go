@@ -779,9 +779,12 @@ func readFunctionWrites(mod *ir.Module, sym *ir.Symbol, st statement) {
 		// A body that writes nothing and has no gap is read-only: its own
 		// SELECTs are its statements, so their WHERE counts too.
 		readOnly := len(w) == 0 && len(g) == 0
-		reads, guarded := readConditionSet(part.text, part.line, condParamNames(st.text), readOnly)
+		reads, guarded, unread := readConditionSet(part.text, part.line, condParamNames(st.text), readOnly)
 		sym.CondReads = append(sym.CondReads, reads...)
 		sym.HasGuardClause = sym.HasGuardClause || guarded
+		if unread.name != "" && sym.GuardUnread == "" {
+			sym.GuardUnread = fmt.Sprintf("%s, loaded by EXECUTE of a string at %s:%d", unread.name, mod.File, unread.line)
+		}
 		for _, gap := range g {
 			gapEvent(mod, gap, sym.FQN, st.line)
 		}
