@@ -324,8 +324,8 @@ func migrationReachGraph(t *testing.T) (schema.KnowledgeGraph, *reach.Result) {
 	files := map[string]string{
 		"db/migrations/001_seed.sql":    "-- @module-feature seeded\ncreate function public.seed_rows() returns void language sql as $$ select 1 $$;\n",
 		"db/migrations/001_refresh.sql": "-- @module-feature mixed\ncreate function public.refresh_rows() returns void language sql as $$ select 1 $$;\n",
-		"db/migrations/002_apply.sql": "-- @module-feature jobs\nselect public.seed_rows();\nselect public.refresh_rows();\n",
-		"db/migrations/003_cron.sql":  "-- @module-feature jobs\nselect cron.schedule('refresh', '0 3 * * *', $$ select public.refresh_rows() $$);\n",
+		"db/migrations/002_apply.sql":   "-- @module-feature jobs\nselect public.seed_rows();\nselect public.refresh_rows();\n",
+		"db/migrations/003_cron.sql":    "-- @module-feature jobs\nselect cron.schedule('refresh', '0 3 * * *', $$ select public.refresh_rows() $$);\n",
 	}
 	var mods []ir.Module
 	for _, p := range []string{"db/migrations/001_refresh.sql", "db/migrations/001_seed.sql", "db/migrations/002_apply.sql", "db/migrations/003_cron.sql"} {
