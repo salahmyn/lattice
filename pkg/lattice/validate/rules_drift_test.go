@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/salahmyn/lattice/pkg/lattice/adapters/postgres"
 	"github.com/salahmyn/lattice/pkg/lattice/adapters/typescript"
 	"github.com/salahmyn/lattice/pkg/lattice/config"
 	"github.com/salahmyn/lattice/pkg/lattice/graph"
@@ -311,5 +312,55 @@ func TestProposalReachedByRoot(t *testing.T) {
 	kg2, _ := rootReachGraph(t)
 	if n := len(driftByCode(Validate(kg2, config.Default(), Options{}), schema.CodeProposalReachedByRoot)); n != 0 {
 		t.Errorf("without a reach result: %d findings", n)
+	}
+}
+
+// migrationReachGraph: two proposal features backed by SQL functions. "seeded"
+// is called only from a migration's top level; "mixed" is called from one
+// migration and from a cron job.
+func migrationReachGraph(t *testing.T) (schema.KnowledgeGraph, *reach.Result) {
+	t.Helper()
+	pg := postgres.New(nil, nil)
+	files := map[string]string{
+		"db/migrations/001_seed.sql":    "-- @module-feature seeded\ncreate function public.seed_rows() returns void language sql as $$ select 1 $$;\n",
+		"db/migrations/001_refresh.sql": "-- @module-feature mixed\ncreate function public.refresh_rows() returns void language sql as $$ select 1 $$;\n",
+		"db/migrations/002_apply.sql": "-- @module-feature jobs\nselect public.seed_rows();\nselect public.refresh_rows();\n",
+		"db/migrations/003_cron.sql":  "-- @module-feature jobs\nselect cron.schedule('refresh', '0 3 * * *', $$ select public.refresh_rows() $$);\n",
+	}
+	var mods []ir.Module
+	for _, p := range []string{"db/migrations/001_refresh.sql", "db/migrations/001_seed.sql", "db/migrations/002_apply.sql", "db/migrations/003_cron.sql"} {
+		m, err := pg.Parse(context.Background(), p, []byte(files[p]))
+		if err != nil {
+			t.Fatal(err)
+		}
+		mods = append(mods, m)
+	}
+	mods = pg.Resolve(mods)
+	var manifests []schema.Manifest
+	for id, st := range map[string]schema.Status{"seeded": schema.StatusProposal, "mixed": schema.StatusProposal, "jobs": schema.StatusProduction} {
+		manifests = append(manifests, schema.Manifest{ID: id, Version: 1, Status: st, Purpose: id, SourcePath: "features/" + id + ".yaml"})
+	}
+	sort.Slice(manifests, func(i, j int) bool { return manifests[i].ID < manifests[j].ID })
+	kg := graph.Build(graph.Input{Manifests: manifests, Modules: mods}, graph.Options{})
+	r := reach.Compute(reach.Input{Modules: mods, EntryPoints: kg.EntryPoints})
+	reach.Annotate(&kg, r)
+	return kg, r
+}
+
+// A root that is a migration's applied top level is a deploy step, not
+// runtime reach: a proposal feature reached only from one gets no finding, and
+// one also reached from a runtime root lists only that root.
+// @verifies validation:INV-26
+func TestProposalReachedByRootSkipsMigrationRoots(t *testing.T) {
+	kg, r := migrationReachGraph(t)
+	if r.FeaturesReached(kg)["seeded"] == false {
+		t.Fatal("fixture: a migration root should still reach seeded (FEATURE_UNREACHED reads that reach)")
+	}
+	got := driftByCode(Validate(kg, config.Default(), Options{Reach: r}), schema.CodeProposalReachedByRoot)
+	if len(got) != 1 || got[0].FeatureID != "mixed" {
+		t.Fatalf("PROPOSAL_REACHED_BY_ROOT = %+v", got)
+	}
+	if strings.Contains(got[0].Message, "sql.applied.") || len(got[0].Refs) != 1 {
+		t.Errorf("a migration root is named: refs %v, %s", got[0].Refs, got[0].Message)
 	}
 }

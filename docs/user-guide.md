@@ -4101,6 +4101,10 @@ lattice rtm          # the header gains: invariants 1/3 required
   `STATUS_DRIFT` reports, nor for a `production` or `deprecated` feature. Its next action:
   add the feature to the flow of the entry point that serves the root, then
   `lattice feature promote <id>`; or allowlist it with a reason.
+  A migration's applied top-level node (`sql.applied.*`, reason `migration`) is a deploy
+  step, so it is never one of the roots this finding names, and a feature reached only
+  from migrations gets no finding; `FEATURE_UNREACHED` still counts that reach, which is a
+  separate fact.
 
 ### What never fires them
 
