@@ -2,6 +2,20 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.26.1] — 2026-11-22
+
+A fix from a real project's evaluation of 0.26.0. Every finding is still info.
+
+### Fixed
+
+- **A guard that adds no column says why, truthfully.** A read-only enforcer whose guard adds no
+  column was always described as testing "only the caller's identity or a function". A quota
+  trigger that counts with `execute format(...) into v_count; if v_count >= 3 then raise` was
+  described that way too, which is not what it does. The finding now names, per enforcer, a value
+  loaded by `EXECUTE` of a string as unreadable, with the variable and the line of the `EXECUTE`;
+  otherwise it says the guard reads no column Lattice can place on a table. The IR adds
+  `guard_unread` to the symbol.
+
 ## [0.26.0] — 2026-11-22
 
 A rule change from a real project's evaluation of 0.25.x quotas. Every finding is still info.
