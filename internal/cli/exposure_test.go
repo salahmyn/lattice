@@ -488,6 +488,28 @@ func TestEnforcerExposureOrderReachesOutput(t *testing.T) {
 	if strings.Join(order, ",") != want {
 		t.Fatalf("json order = %v, want %s", order, want)
 	}
+	// Ranked findings sort after every finding with a file, whatever their
+	// code, and the findings with a file keep the file order.
+	seenRanked, lastFile, unrankedAfter := false, "", 0
+	for _, f := range v {
+		if f.Rank > 0 {
+			seenRanked = true
+			continue
+		}
+		if seenRanked {
+			unrankedAfter++
+			t.Errorf("unranked %s %s sorts after a ranked finding", f.Code, f.Subject)
+		}
+		if f.Location != nil {
+			if f.Location.File < lastFile {
+				t.Errorf("%s in %s sorts after %s", f.Code, f.Location.File, lastFile)
+			}
+			lastFile = f.Location.File
+		}
+	}
+	if !seenRanked || len(v) == len(order) {
+		t.Fatalf("fixture needs ranked and unranked findings: %d findings, %d ranked", len(v), len(order))
+	}
 
 	var out bytes.Buffer
 	io := &IO{Repo: repo, Out: &out, Err: &out, Actor: "test"}

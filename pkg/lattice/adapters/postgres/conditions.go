@@ -200,20 +200,14 @@ type condStmt struct {
 
 type condVar struct{ table, column string }
 
-// readConditions reads the condition reads of a function body that starts at
-// file line base. When readOnly, the body writes nothing, and the WHERE of each
-// of its SELECTs counts as that of its own statement. A read of NEW or OLD is on the table newTable, which Resolve
+// readConditionSet reads the condition reads of a function body that starts at
+// file line base, and whether the body has a guard clause: an IF or ELSIF
+// whose branch raises or returns before the end of the body. A read in the
+// condition of such a branch carries Guard. When readOnly, the body writes
+// nothing, and the WHERE of each of its SELECTs counts as that of its own
+// statement. A read of NEW or OLD is on the table newTable, which Resolve
 // turns into the table of each trigger that runs the function.
-// @enforces adapters.postgres:INV-12, adapters.postgres:INV-14
-func readConditions(code string, base int, params map[string]bool, readOnly bool) []ir.CondRead {
-	reads, _ := readConditionSet(code, base, params, readOnly)
-	return reads
-}
-
-// readConditionSet is readConditions with whether the body has a guard clause:
-// an IF or ELSIF whose branch raises or returns before the end of the body.
-// A read in the condition of such a branch carries Guard.
-// @enforces adapters.postgres:INV-15, adapters.postgres:INV-16
+// @enforces adapters.postgres:INV-12, adapters.postgres:INV-14, adapters.postgres:INV-15, adapters.postgres:INV-16
 func readConditionSet(code string, base int, params map[string]bool, readOnly bool) ([]ir.CondRead, bool) {
 	mask := maskCode(code)
 	idVars := identityVars(mask)
