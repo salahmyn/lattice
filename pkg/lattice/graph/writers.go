@@ -83,6 +83,10 @@ type WriterEntry struct {
 	// ("declared"), read in the conditions of its enforcers ("conditions"),
 	// or derived from the columns its enforcers write ("derived").
 	ColumnsFrom map[string]string `json:"columns_from,omitempty"`
+	// OwnershipColumns are the columns of this write that some invariant
+	// reads as ownership: compared with the caller's identity by an enforcer.
+	// A writer links through such a column only when it UPDATEs it.
+	OwnershipColumns []string `json:"ownership_columns,omitempty"`
 }
 
 // How the columns of an invariant were decided.
@@ -127,6 +131,20 @@ type invWrites struct {
 	// in a condition; fromWrites are those that fell back to the columns they
 	// write, because no condition read on their tables was known.
 	fromConditions, fromWrites []string
+	// ownership are the columns every condition read of which compares them
+	// with the caller's identity, by table and column.
+	ownership map[string]map[string]ownerRead
+	// guardOnly are the read-only enforcers whose guard clause reads no column,
+	// so they add none.
+	guardOnly []string
+}
+
+// ownerRead is where a column of ownership is compared with the caller's
+// identity: what it is compared with, and the first such read.
+type ownerRead struct {
+	via  string
+	file string
+	line int
 }
 
 // columnsFrom is how the invariant's columns were decided: declared, from
@@ -324,14 +342,31 @@ func BuildWriterIndex(kg schema.KnowledgeGraph, mods []ir.Module, apiRoles []str
 // nothing (a read-only function, a CHECK) contributes its condition reads on
 // any table. A bare name in a condition is a column
 // only if the table is known to have it.
-// @enforces graph:INV-11, graph:INV-12
+// @enforces graph:INV-11, graph:INV-12, graph:INV-14
 func (ix *WriterIndex) deriveColumns(iw *invWrites, syms map[string]ir.Symbol) {
 	enforcers := setList(iw.enforcers)
-	add := func(table, col string) {
+	// plain are the columns some condition read does not compare with the
+	// caller's identity; owned are the first identity comparisons.
+	plain := map[string]map[string]bool{}
+	owned := map[string]map[string]ownerRead{}
+	add := func(table, col string, own *ownerRead) {
 		if iw.columns[table] == nil {
 			iw.columns[table] = map[string]bool{}
 		}
 		iw.columns[table][col] = true
+		if own == nil {
+			if plain[table] == nil {
+				plain[table] = map[string]bool{}
+			}
+			plain[table][col] = true
+			return
+		}
+		if owned[table] == nil {
+			owned[table] = map[string]ownerRead{}
+		}
+		if _, ok := owned[table][col]; !ok {
+			owned[table][col] = *own
+		}
 	}
 	for _, f := range enforcers {
 		sym := syms[f]
@@ -340,19 +375,34 @@ func (ix *WriterIndex) deriveColumns(iw *invWrites, syms map[string]ir.Symbol) {
 		// filters on changes what it returns. One that writes keeps the
 		// tables it writes.
 		anyTable := len(sym.Writes) == 0
+		// A read-only enforcer with an explicit guard (an IF whose branch
+		// raises or returns early) is about its guard: the filters of its
+		// queries are payload, and only the guard's reads count.
+		guarded := anyTable && sym.HasGuardClause
 		tables := map[string]bool{}
 		for _, w := range sym.Writes {
 			tables[w.Table] = true
 		}
 		found := false
 		for _, c := range sym.CondReads {
+			if guarded && !c.Guard {
+				continue
+			}
 			if (anyTable || tables[c.Table]) && ix.isColumn(c) {
-				add(c.Table, c.Column)
+				var own *ownerRead
+				if c.OwnerVia != "" {
+					own = &ownerRead{via: c.OwnerVia, file: sym.File, line: c.Line}
+				}
+				add(c.Table, c.Column, own)
 				found = true
 			}
 		}
 		if found {
 			iw.fromConditions = append(iw.fromConditions, f)
+			continue
+		}
+		if guarded {
+			iw.guardOnly = append(iw.guardOnly, f)
 			continue
 		}
 		wrote := false
@@ -362,11 +412,25 @@ func (ix *WriterIndex) deriveColumns(iw *invWrites, syms map[string]ir.Symbol) {
 			}
 			wrote = true
 			for _, c := range w.Columns {
-				add(w.Table, c)
+				add(w.Table, c, nil)
 			}
 		}
 		if wrote {
 			iw.fromWrites = append(iw.fromWrites, f)
+		}
+	}
+	for t, cols := range owned {
+		for c, o := range cols {
+			if plain[t][c] {
+				continue
+			}
+			if iw.ownership == nil {
+				iw.ownership = map[string]map[string]ownerRead{}
+			}
+			if iw.ownership[t] == nil {
+				iw.ownership[t] = map[string]ownerRead{}
+			}
+			iw.ownership[t][c] = o
 		}
 	}
 }
@@ -449,7 +513,7 @@ func (ix *WriterIndex) declareColumns(kg schema.KnowledgeGraph) {
 				declared[table][col] = true
 			}
 			if iw := ix.invs[ref]; iw != nil {
-				iw.columns, iw.declared = declared, true
+				iw.columns, iw.declared, iw.ownership = declared, true, nil
 			}
 		}
 	}
@@ -733,16 +797,53 @@ func (iw *invWrites) columnsPhrase(ref string) string {
 	if len(iw.fromWrites) > 0 {
 		phrase += "; for " + strings.Join(iw.fromWrites, ", ") + " no condition read was known, so its columns derived from writes"
 	}
+	if len(iw.guardOnly) > 0 {
+		phrase += "; for " + strings.Join(iw.guardOnly, ", ") + " the guard tests no column, only the caller's identity or a function, so it adds none"
+	}
+	if len(iw.ownership) > 0 {
+		phrase += "; a column of ownership, compared with the caller's identity, links only the writers that UPDATE it"
+	}
 	return phrase + "; declare columns: on the invariant to override)"
 }
 
 // shared are the columns a writer's write has in common with the invariant's
 // columns on the table.
+//
+// A column of ownership, one every enforcer compares with the caller's
+// identity, is shared only by a write that UPDATEs it (also ON CONFLICT DO
+// UPDATE and MERGE ... UPDATE): that write can reassign whose row it is, while
+// an INSERT creates a row and is not about a promise on existing rows.
+// @enforces graph:INV-13
 func (iw *invWrites) shared(w Writer) []string {
 	if w.Op == ir.WriteDelete {
 		return nil
 	}
-	return overlap(w.Columns, setList(iw.columns[w.Table]))
+	cols := overlap(w.Columns, setList(iw.columns[w.Table]))
+	if w.Op == ir.WriteUpdate || len(iw.ownership[w.Table]) == 0 {
+		return cols
+	}
+	var out []string
+	for _, c := range cols {
+		if _, own := iw.ownership[w.Table][c]; !own {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// ownershipOf are the columns of a write that this invariant reads as
+// ownership, whatever the write's operation.
+func (iw *invWrites) ownershipOf(w Writer) []string {
+	if w.Op == ir.WriteDelete || len(iw.ownership[w.Table]) == 0 {
+		return nil
+	}
+	var out []string
+	for _, c := range overlap(w.Columns, setList(iw.columns[w.Table])) {
+		if _, own := iw.ownership[w.Table][c]; own {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // gapsFor are the gaps that leave the columns of the table incomplete.
@@ -792,6 +893,18 @@ func (ix *WriterIndex) Findings() []schema.Violation {
 	for _, ref := range ix.refs() {
 		iw := ix.invs[ref]
 		if len(iw.columns) == 0 {
+			if len(iw.guardOnly) > 0 {
+				f, inv, _ := strings.Cut(ref, ":")
+				out = append(out, schema.Violation{
+					Code: schema.CodeWritersUnknown, Severity: schema.SeverityInfo,
+					FeatureID: f, InvariantID: inv, Subject: ref,
+					Location: &schema.Location{File: iw.file, Line: iw.line},
+					Message: fmt.Sprintf("%s ties no column to its writers: %s is read-only and its guard (an IF that raises or returns early) tests no column, only the caller's identity or a function, so no writer of any column is linked and the writers that could break it are not listed",
+						ref, strings.Join(iw.guardOnly, ", ")),
+					NextAction: &schema.NextAction{Kind: "edit_feature", Ref: ref,
+						Detail: "declare columns: on the invariant to name the columns it is about, or allowlist the finding with a reason"},
+				})
+			}
 			continue
 		}
 		f, inv, _ := strings.Cut(ref, ":")
@@ -856,6 +969,9 @@ func (ix *WriterIndex) Findings() []schema.Violation {
 					if c == wildcard {
 						name = "every column"
 					}
+					if o, ok := iw.ownership[tableOfLabel(l)][c]; ok {
+						name = fmt.Sprintf("%s (ownership: compared with %s at %s:%d)", c, o.via, o.file, o.line)
+					}
 					cs = append(cs, fmt.Sprintf("%s (%s)", name, strings.Join(g.lines[l][c], "; ")))
 				}
 				parts = append(parts, fmt.Sprintf("%s: %s", l, strings.Join(cs, ", ")))
@@ -911,6 +1027,12 @@ func (ix *WriterIndex) Findings() []schema.Violation {
 	return out
 }
 
+// tableOfLabel is the table of a "<table> by <op>" label.
+func tableOfLabel(label string) string {
+	t, _, _ := strings.Cut(label, " by ")
+	return t
+}
+
 func tableColumns(iw *invWrites) []string {
 	var tables []string
 	for t := range iw.columns {
@@ -964,6 +1086,11 @@ func (ix *WriterIndex) Report(table, column string) WriterReport {
 			}
 		}
 		e := WriterEntry{Writer: w}
+		var own []string
+		for _, ref := range ix.refs() {
+			own = append(own, ix.invs[ref].ownershipOf(w)...)
+		}
+		e.OwnershipColumns = uniqSorted(own)
 		for _, ref := range ix.refs() {
 			iw := ix.invs[ref]
 			if len(iw.shared(w)) == 0 {

@@ -2,6 +2,25 @@
 
 All notable changes to Lattice are documented in this file.
 
+## [0.25.2] — 2026-11-22
+
+Fixes from a real project's evaluation of 0.25.1. Every finding is still info.
+
+### Fixed
+
+- **`ENFORCER_EXPOSED` keeps its rank order in the output.** 0.25.1 ranked the findings, but
+  `validate` re-sorted them by file. Each finding now carries an additive `rank`. Ranked findings
+  stay together in rank order in `validate` text, in `--json` and in `lattice.json`.
+- **Ownership columns link only writers that update them.** An ownership column is one an enforcer
+  compares with the caller's identity: `auth.uid()`, a variable assigned only from it, or a helper
+  that reads it. Only writers that `UPDATE` such a column can reassign whose row it is, so only they
+  link through it. Writers that only insert do not. The message and `lattice writers` name the column
+  as ownership.
+- **A guarded read-only enforcer counts only its guard.** For a read-only enforcer with an `IF` that
+  raises or returns early, only that guard's condition reads count, not the filters of its other
+  queries. A guard that tests no column is reported as `WRITERS_UNKNOWN` info, so it never reads as
+  an empty, silent pass.
+
 ## [0.25.1] — 2026-11-22
 
 Fixes from a real project's evaluation of 0.25.0. Every finding is still info.

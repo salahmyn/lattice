@@ -175,19 +175,30 @@ func renderValidate(io *IO, r validateReport) {
 		io.printf(")\n")
 		return
 	}
+	// Findings a rule has ranked are listed together, last, in rank order:
+	// grouping them by file would discard the order. Each names its own file.
+	const rankedGroup = "(ranked findings, most notable first)"
 	byFile := map[string][]schema.Violation{}
 	for _, v := range r.Violations {
 		f := "(corpus)"
 		if v.Location != nil && v.Location.File != "" {
 			f = v.Location.File
 		}
+		if v.Rank > 0 {
+			f = rankedGroup
+		}
 		byFile[f] = append(byFile[f], v)
 	}
 	files := make([]string, 0, len(byFile))
 	for f := range byFile {
-		files = append(files, f)
+		if f != rankedGroup {
+			files = append(files, f)
+		}
 	}
 	sort.Strings(files)
+	if _, ok := byFile[rankedGroup]; ok {
+		files = append(files, rankedGroup)
+	}
 
 	for _, f := range files {
 		io.printf("\n%s\n", f)
@@ -202,6 +213,13 @@ func renderValidate(io *IO, r validateReport) {
 			line := ""
 			if v.Location != nil && v.Location.Line > 0 {
 				line = " (line " + strconv.Itoa(v.Location.Line) + ")"
+			}
+			if v.Rank > 0 && v.Location != nil && v.Location.File != "" {
+				line = " (" + v.Location.File
+				if v.Location.Line > 0 {
+					line += ":" + strconv.Itoa(v.Location.Line)
+				}
+				line += ")"
 			}
 			io.printf("  %s %-32s %s%s\n", mark, v.Code, v.Message, line)
 			if v.NextAction != nil && v.NextAction.Kind != "" {

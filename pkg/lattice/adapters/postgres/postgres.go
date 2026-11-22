@@ -737,6 +737,7 @@ func (a *Adapter) Resolve(mods []ir.Module) []ir.Module {
 		eff[fqn] = [2]int{d.mod, d.sym}
 	}
 	resolveHelperIdentity(mods, eff, fold.overloaded)
+	resolveOwnerCalls(mods, eff, fold.overloaded)
 	resolveWrites(mods, order, eff, pending, tfold)
 
 	for mi := range mods {

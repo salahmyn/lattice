@@ -3709,7 +3709,9 @@ allowlist like any finding; the subject of a function writer is its FQN, of a ro
 `sql.role.<role>`, of a migration its file.
 
 Columns are decided from the conditions the enforcers test, not from everything they assign, so
-a `status` or `updated_at` every enforcer sets does not link unrelated promises; see 4z.
+a `status` or `updated_at` every enforcer sets does not link unrelated promises; see 4z. A column
+an enforcer compares with the caller's identity (`parent_id = auth.uid()`) links only the writers
+that update it, not those that insert a row; see 4z.
 
 **To clear `UNGUARDED_WRITER`**, do one of:
 
@@ -4316,6 +4318,40 @@ contributes its condition reads on any table, row selectors left out: a writer t
 `videos.ai_pending` changes exactly what it returns, so it is linked. An enforcer that writes
 keeps the rule above, its condition reads on the tables it writes.
 
+**Columns of ownership.** A condition column compared with the caller's identity is a column of
+ownership: `WHERE d.parent_id = auth.uid()` (also `(select auth.uid())`, a cast, `<>`, `!=` and
+`IS [NOT] DISTINCT FROM`, either side first), `= v_uid` where `v_uid` is assigned only from
+`auth.uid()`, and `= public.current_family()` where that function of the workspace reads the
+identity itself (one helper level, the one `ENFORCER_EXPOSED` resolves). Only a predicate at the
+top level of a condition is read this way; one inside a sub-select, a `coalesce(...)` or an `IN`
+list is an ordinary condition. Such a column links only the writers that can reassign whose row it
+is: an `UPDATE` of it, an `INSERT ... ON CONFLICT DO UPDATE` and a `MERGE ... UPDATE`. A plain
+`INSERT` creates a row and is not linked through it, though it still links through the promise's
+other columns. A column is ownership only when every condition read of it compares it with the
+identity; one test of it against anything else makes it an ordinary column. The finding names it:
+`parent_id (ownership: compared with auth.uid() at supabase/migrations/20260115000000_devices.sql:12)`,
+and `lattice writers` prints `(ownership)` beside the column, on the insert writer that is not
+linked as on the updater that is; `--json` adds `ownership_columns` to the writer. Declared
+`columns:` are never narrowed this way.
+
+**A guarded read-only enforcer counts only its guard.** A function that writes nothing and has an
+explicit guard clause is about the guard. A guard clause is an `IF` or `ELSIF` whose branch, at its
+own level, raises (`RAISE EXCEPTION`, or `RAISE` with no level) or returns before the end of the
+body (`RETURN`, `RETURN NULL`, `RETURN QUERY`; not `RETURN NEXT`, and not a `RETURN` that ends the
+body). In `admin_stats`, `if not public.is_admin() then raise exception ...; end if;` is the guard
+and `select count(*) ... where d.last_seen_at > now() - interval '7 days'` is payload: its filter
+does not link the writers of `devices.last_seen_at`. A guard that tests a column counts that column
+(`if (select s.locked from public.settings s) then raise ...`). A read-only enforcer with no guard
+clause, such as a filtered listing, keeps counting its `WHERE`; one that writes keeps its rule. When
+the guard tests only the caller's identity or a function, the enforcer adds no column, and an
+invariant left with no column says so instead of passing in silence:
+
+```
+info  WRITERS_UNKNOWN  queue.jobs:INV-2 ties no column to its writers: sql.public.admin_stats is read-only and its guard (an IF that raises or returns early) tests no column, only the caller's identity or a function, so no writer of any column is linked and the writers that could break it are not listed
+```
+
+Declare `columns:` on the invariant to name what it is about.
+
 A table alias belongs to its statement: `i` may stand for `invites` in a `SELECT` and for
 `family_invites` in the `UPDATE` after it, and each read lands on its own statement's table. A
 name that no statement of the reference binds is resolved only when every statement of the body
@@ -4369,7 +4405,10 @@ info  ENFORCER_EXPOSED  sql.public.device_ping enforces review.access:INV-2 and 
 
 Findings are listed in five groups: takes a boolean parameter and reads no identity; takes a
 boolean parameter (and reads an identity or authenticates by a hash); reads no identity and
-authenticates by no hash; authenticates by a hash only; the rest. A boolean parameter is a
+authenticates by no hash; authenticates by a hash only; the rest. The order holds in the output
+whatever file each function is in: every finding carries a `rank` (1 is first) in `--json` and
+`lattice.json`, and `lattice validate` lists ranked findings together, last, in rank order, each
+naming its file and line. A boolean parameter is a
 verdict the caller supplies, which a function can trust whatever else it reads, so it ranks
 before the identity facts. The facts are about the body, never a pass: a function that reads an
 identity or hashes a token still fires, and the finding stays info and always on.

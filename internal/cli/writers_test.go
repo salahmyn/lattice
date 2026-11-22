@@ -963,3 +963,239 @@ $$;
 		t.Errorf("INV-2 writers = %v, want none", inv2)
 	}
 }
+
+const ownershipDevices = `create table public.devices (
+  id bigint primary key,
+  parent_id uuid not null,
+  kind text not null default 'phone',
+  last_seen_at timestamptz
+);
+create function public.current_family() returns uuid language sql stable as $$ select auth.uid() $$;
+
+-- The creator of a row: it names whose row it is, and no row exists yet.
+create function public.register_device(p_id bigint, p_kind text) returns void
+language sql security definer set search_path = '' as $$
+  insert into public.devices (id, parent_id, kind) values (p_id, auth.uid(), p_kind);
+$$;
+-- A function that can reassign an existing row.
+create function public.transfer_device(p_id bigint, p_parent uuid) returns void
+language sql security definer set search_path = '' as $$
+  update public.devices set parent_id = p_parent where id = p_id;
+$$;
+create function public.upsert_device(p_id bigint, p_parent uuid) returns void
+language sql security definer set search_path = '' as $$
+  insert into public.devices (id, parent_id) values (p_id, p_parent)
+  on conflict (id) do update set parent_id = excluded.parent_id;
+$$;
+create function public.rename_kind(p_id bigint, p_kind text) returns void
+language sql security definer set search_path = '' as $$
+  update public.devices set kind = p_kind where id = p_id;
+$$;
+create function public.add_kind(p_id bigint, p_kind text) returns void
+language sql security definer set search_path = '' as $$
+  insert into public.devices (id, parent_id, kind) values (p_id, null, p_kind);
+$$;
+`
+
+// ownershipWith is the devices migration with one enforcer of INV-2.
+func ownershipWith(enforcer string) string {
+	return ownershipDevices + "\n-- @enforces queue.jobs:INV-2\n" + enforcer
+}
+
+// A column an enforcer compares with the caller's identity is a column of
+// ownership: it links only the writers that UPDATE it (also ON CONFLICT DO
+// UPDATE), not the one that INSERTs a new row. The comparison is auth.uid(), a
+// variable assigned only from it, or a helper that reads it. The finding names
+// the column as ownership and where it is compared; --json columns_from stays
+// conditions; and a plain column keeps its insert writers.
+// @verifies graph:INV-13
+func TestOwnershipColumnLinksOnlyUpdaters(t *testing.T) {
+	for _, tc := range []struct{ name, enforcer, via string }{
+		{"auth.uid()", `create function public.my_devices() returns setof public.devices
+language sql stable security definer set search_path = '' as $$
+  select d.* from public.devices d where d.parent_id = auth.uid();
+$$;
+`, "auth.uid()"},
+		{"variable", `create function public.my_devices() returns setof public.devices
+language plpgsql stable security definer set search_path = '' as $$
+declare v_uid uuid := auth.uid();
+begin
+  return query select d.* from public.devices d where d.parent_id = v_uid;
+end $$;
+`, "v_uid, assigned only from auth.uid()"},
+		{"identity helper", `create function public.my_devices() returns setof public.devices
+language sql stable security definer set search_path = '' as $$
+  select d.* from public.devices d where d.parent_id = public.current_family();
+$$;
+`, "public.current_family() → auth.uid()"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, rep := validateWriters(t, writersInv2Repo(t, ownershipWith(tc.enforcer)))
+			inv2 := unguardedFor(got, "INV-2")
+			var names []string
+			for n := range inv2 {
+				names = append(names, n)
+			}
+			if g := strings.Join(sorted(names), ", "); g != "sql.public.transfer_device, sql.public.upsert_device" {
+				t.Fatalf("INV-2 writers = %s, want transfer_device and upsert_device, not the insert-only register_device", g)
+			}
+			want := "parent_id (ownership: compared with " + tc.via + " at supabase/migrations/20260115000000_inv2.sql:"
+			for n, msg := range inv2 {
+				if !strings.Contains(msg, want) || !strings.Contains(msg, "columns from conditions") {
+					t.Errorf("%s: message %q lacks %q", n, msg, want)
+				}
+			}
+			if !rep.OK {
+				t.Errorf("an info finding must not fail validate")
+			}
+		})
+	}
+}
+
+// A column compared with something other than the caller's identity is not
+// ownership: its INSERT writers still link, and the writers report says so.
+// @verifies graph:INV-13
+func TestPlainConditionColumnStillLinksInserts(t *testing.T) {
+	got, _ := validateWriters(t, writersInv2Repo(t, ownershipWith(`create function public.phones() returns setof public.devices
+language sql stable security definer set search_path = '' as $$
+  select d.* from public.devices d where d.kind = 'phone';
+$$;
+`)))
+	inv2 := unguardedFor(got, "INV-2")
+	var names []string
+	for n, msg := range inv2 {
+		names = append(names, n)
+		if strings.Contains(msg, "ownership") {
+			t.Errorf("%s: kind is not an ownership column: %q", n, msg)
+		}
+	}
+	if g := strings.Join(sorted(names), ", "); g != "sql.public.add_kind, sql.public.register_device, sql.public.rename_kind" {
+		t.Errorf("INV-2 writers = %s, want every writer of kind (add_kind and register_device insert it)", g)
+	}
+}
+
+// `lattice writers` shows (ownership) beside an ownership column, on the
+// insert writer that is not linked through it as on the updater that is.
+// @verifies graph:INV-13
+func TestWritersCommandMarksOwnership(t *testing.T) {
+	repo := writersInv2Repo(t, ownershipWith(`create function public.my_devices() returns setof public.devices
+language sql stable security definer set search_path = '' as $$
+  select d.* from public.devices d where d.parent_id = auth.uid();
+$$;
+`))
+	var out bytes.Buffer
+	io := &IO{Repo: repo, Out: &out, Err: &out, Actor: "test"}
+	cmd := newWritersCommand(io)
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	cmd.SetArgs([]string{"devices"})
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("writers: %v\n%s", err, out.String())
+	}
+	text := out.String()
+	for _, want := range []string{"sql.public.register_device  insert  id, kind, parent_id (ownership)", "sql.public.transfer_device  update  parent_id (ownership)"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("output lacks %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "rename_kind  update  kind (ownership)") {
+		t.Errorf("kind is not ownership:\n%s", text)
+	}
+	i := strings.Index(text, "register_device")
+	j := strings.Index(text, "transfer_device")
+	if i < 0 || j < 0 || strings.Contains(text[i:j], "unguarded for") {
+		t.Errorf("register_device is linked through its ownership column:\n%s", text)
+	}
+}
+
+const guardedPieces = `create table public.admins (user_id uuid primary key);
+create table public.settings (id int primary key, locked boolean not null default false);
+create function public.is_admin() returns boolean language sql stable as $$
+  select exists (select 1 from public.admins a where a.user_id = auth.uid())
+$$;
+create function public.ping_device(p_id bigint) returns void
+language sql security definer set search_path = '' as $$
+  update public.devices set last_seen_at = now() where id = p_id;
+$$;
+create function public.lock_settings() returns void
+language sql security definer set search_path = '' as $$
+  update public.settings set locked = true where id = 1;
+$$;
+create function public.hide_device(p_id bigint) returns void
+language sql security definer set search_path = '' as $$
+  update public.devices set kind = 'hidden' where id = p_id;
+$$;
+`
+
+const guardedDevices = `create table public.devices (id bigint primary key, kind text not null default 'phone', last_seen_at timestamptz);
+`
+
+// guardedWith is the pieces with one enforcer of INV-2.
+func guardedWith(enforcer string) string {
+	return guardedDevices + guardedPieces + "\n-- @enforces queue.jobs:INV-2\n" + enforcer
+}
+
+// A read-only enforcer with an explicit guard is about its guard: the filter of
+// its statistics query does not link the writers of the column it filters on. A
+// guard that reads only identity leaves the invariant with no column, which is
+// said, not passed in silence; a guard that reads a column counts that column; a
+// read-only enforcer with no guard keeps counting its filters.
+// @verifies graph:INV-14
+func TestGuardedReadOnlyEnforcerCountsOnlyItsGuard(t *testing.T) {
+	const stats = `if not public.is_admin() then raise exception 'forbidden'; end if;
+  return (select count(*) from public.devices d where d.last_seen_at > now() - interval '7 days');
+`
+	t.Run("identity guard leaves no column, and says so", func(t *testing.T) {
+		got, rep := validateWriters(t, writersInv2Repo(t, guardedWith(`create function public.admin_stats() returns bigint
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  `+stats+`end $$;
+`)))
+		if inv2 := unguardedFor(got, "INV-2"); len(inv2) != 0 {
+			t.Errorf("the statistic filter links writers: %v", inv2)
+		}
+		var note string
+		for _, f := range got {
+			if f.Code == schema.CodeWritersUnknown && f.InvariantID == "INV-2" {
+				note = f.Message
+			}
+		}
+		for _, want := range []string{"queue.jobs:INV-2 ties no column to its writers", "sql.public.admin_stats", "tests no column"} {
+			if !strings.Contains(note, want) {
+				t.Errorf("fallback note %q lacks %q", note, want)
+			}
+		}
+		if !rep.OK {
+			t.Errorf("an info finding must not fail validate")
+		}
+	})
+
+	t.Run("a guard that reads a column counts it", func(t *testing.T) {
+		got, _ := validateWriters(t, writersInv2Repo(t, guardedWith(`create function public.admin_stats() returns bigint
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  if (select s.locked from public.settings s where s.id = 1) then raise exception 'locked'; end if;
+  return (select count(*) from public.devices d where d.last_seen_at > now() - interval '7 days');
+end $$;
+`)))
+		inv2 := unguardedFor(got, "INV-2")
+		if len(inv2) != 1 || !strings.Contains(inv2["sql.public.lock_settings"], "locked (") {
+			t.Fatalf("INV-2 writers = %v, want only lock_settings, on locked", inv2)
+		}
+	})
+
+	t.Run("an IF that neither raises nor returns is not a guard", func(t *testing.T) {
+		got, _ := validateWriters(t, writersInv2Repo(t, guardedWith(`create function public.visible_devices(p_kind text) returns setof public.devices
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  if p_kind is null then p_kind := 'phone'; end if;
+  return query select d.* from public.devices d where d.kind <> 'hidden';
+end $$;
+`)))
+		inv2 := unguardedFor(got, "INV-2")
+		if len(inv2) != 1 || !strings.Contains(inv2["sql.public.hide_device"], "kind (") {
+			t.Fatalf("INV-2 writers = %v, want hide_device, on kind", inv2)
+		}
+	})
+}

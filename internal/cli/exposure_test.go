@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -105,6 +106,23 @@ owners:
 // open findings of one validate run, with whether it passed.
 func exposureRun(t *testing.T, workspaceExtra, configExtra string, files map[string]string) ([]schema.Violation, bool) {
 	t.Helper()
+	return exposureValidate(t, exposureRepo(t, workspaceExtra, configExtra, files))
+}
+
+// exposureValidate runs validate --json on a repository built by exposureRepo.
+func exposureValidate(t *testing.T, repo string) ([]schema.Violation, bool) {
+	t.Helper()
+	out, err := run(t, repo, newValidateCommand)
+	var rep validateReport
+	if jerr := json.Unmarshal([]byte(out), &rep); jerr != nil || rep.FailOn == "" {
+		t.Fatalf("validate output: %v (%v)\n%s", jerr, err, out)
+	}
+	return rep.Violations, rep.OK
+}
+
+// exposureRepo writes the exposure example to a temporary repository.
+func exposureRepo(t *testing.T, workspaceExtra, configExtra string, files map[string]string) string {
+	t.Helper()
 	repo := t.TempDir()
 	write := func(rel, body string) {
 		p := filepath.Join(repo, filepath.FromSlash(rel))
@@ -125,12 +143,7 @@ func exposureRun(t *testing.T, workspaceExtra, configExtra string, files map[str
 	for rel, body := range files {
 		write(rel, body)
 	}
-	out, err := run(t, repo, newValidateCommand)
-	var rep validateReport
-	if jerr := json.Unmarshal([]byte(out), &rep); jerr != nil || rep.FailOn == "" {
-		t.Fatalf("validate output: %v (%v)\n%s", jerr, err, out)
-	}
-	return rep.Violations, rep.OK
+	return repo
 }
 
 func exposureFindings(v []schema.Violation) []schema.Violation {
@@ -422,14 +435,14 @@ func TestEnforcerExposureIdentityFacts(t *testing.T) {
 	for _, f := range got {
 		order = append(order, strings.TrimPrefix(f.Subject, "sql.public."))
 	}
-	if want := "finish_submission,a_count,admin_list,device_ping"; strings.Join(order, ",") != want {
+	if want := "finish_submission,a_count,device_ping,admin_list"; strings.Join(order, ",") != want {
 		t.Fatalf("order = %v, want %s", order, want)
 	}
 	for i, wants := range [][]string{
 		{"reads no caller identity", "It takes boolean parameter(s): p_ok."},
 		{"reads no caller identity"},
-		{"reads the caller's identity (via public.is_admin() → auth.uid() at supabase/migrations/20260102000000_access.sql:5)"},
 		{"authenticates by a hash of parameter p_token (supabase/migrations/20260102000000_access.sql:20)"},
+		{"reads the caller's identity (via public.is_admin() → auth.uid() at supabase/migrations/20260102000000_access.sql:5)"},
 	} {
 		for _, w := range wants {
 			if !strings.Contains(got[i].Message, w) {
@@ -445,5 +458,73 @@ func TestEnforcerExposureIdentityFacts(t *testing.T) {
 	}
 	if !ok {
 		t.Errorf("fail_on: warning failed on an info finding")
+	}
+}
+
+// The order the exposure rule gives its findings survives the output sort: the
+// function that takes a boolean sits in a file that sorts after the others and
+// is still listed first, in the JSON report and in the text report.
+// @verifies graph:INV-10
+func TestEnforcerExposureOrderReachesOutput(t *testing.T) {
+	files := map[string]string{
+		"lattice/features/review/submissions.yaml": exposureFeature,
+		"lattice/features/review/access.yaml":      exposureAccessFeature,
+		// Sorts before the migration that holds the boolean function.
+		"supabase/migrations/20250601000000_access.sql": exposureAccess,
+		"supabase/tests/02_access.sql":                  exposureAccessTests,
+	}
+	repo := exposureRepo(t, apiRoles, "", files)
+	v, _ := exposureValidate(t, repo)
+	var order []string
+	for _, f := range v {
+		if f.Code == schema.CodeEnforcerExposed {
+			order = append(order, strings.TrimPrefix(f.Subject, "sql.public."))
+			if f.Rank == 0 {
+				t.Errorf("%s has no rank", f.Subject)
+			}
+		}
+	}
+	const want = "finish_submission,a_count,device_ping,admin_list"
+	if strings.Join(order, ",") != want {
+		t.Fatalf("json order = %v, want %s", order, want)
+	}
+	// Ranked findings sort after every finding with a file, whatever their
+	// code, and the findings with a file keep the file order.
+	seenRanked, lastFile, unrankedAfter := false, "", 0
+	for _, f := range v {
+		if f.Rank > 0 {
+			seenRanked = true
+			continue
+		}
+		if seenRanked {
+			unrankedAfter++
+			t.Errorf("unranked %s %s sorts after a ranked finding", f.Code, f.Subject)
+		}
+		if f.Location != nil {
+			if f.Location.File < lastFile {
+				t.Errorf("%s in %s sorts after %s", f.Code, f.Location.File, lastFile)
+			}
+			lastFile = f.Location.File
+		}
+	}
+	if !seenRanked || len(v) == len(order) {
+		t.Fatalf("fixture needs ranked and unranked findings: %d findings, %d ranked", len(v), len(order))
+	}
+
+	var out bytes.Buffer
+	io := &IO{Repo: repo, Out: &out, Err: &out, Actor: "test"}
+	cmd := newValidateCommand(io)
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	_ = cmd.Execute()
+	text := out.String()
+	at := -1
+	for _, name := range strings.Split(want, ",") {
+		i := strings.Index(text[at+1:], "sql.public."+name+" enforces")
+		if i < 0 {
+			t.Fatalf("text lacks %s after position %d:\n%s", name, at, text)
+		}
+		at += 1 + i
 	}
 }
